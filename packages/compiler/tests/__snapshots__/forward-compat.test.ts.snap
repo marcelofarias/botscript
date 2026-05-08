@@ -1,0 +1,556 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in let / const / return / bare positions 1`] = `
+"
+const __r1 = f();
+if (__r1.kind === "err") return __r1;
+let a = __r1.value;
+const __r2 = g();
+if (__r2.kind === "err") return __r2;
+const b = __r2.value;
+const __r3 = h();
+if (__r3.kind === "err") return __r3;
+return __r3.value;const __r4 = h()?
+i();
+if (__r4.kind === "err") return __r4;
+return __r4.value;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > assert in statement position 1`] = `
+"import { $assert } from "@mbfarias/botscript-runtime";
+
+$assert(1 + 1 === 2);
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > async fn with uses + body using await 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+async function loadUser(id: string): Promise<User> {
+  return $enter(["net"] as const, async () => {
+
+      const r = await fetch(id);
+      return r as User;
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with = io shorthand 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function now(): number {
+  return $enter([] as const, () => {
+    return Date.now();
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with = match body 1`] = `
+"import { $enter, $match, $tagMatch } from "@mbfarias/botscript-runtime";
+
+function area(s: Shape): number {
+  return $enter([] as const, () => {
+    return $match(s, [
+  [$tagMatch("Circle", ["r"]), ({ r }: any) => (Math.PI * r * r)],
+  [$tagMatch("Square", ["side"]), ({ side }: any) => (side * side)],
+]);
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with = pure shorthand 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function slug(s: string): string {
+  return $enter([] as const, () => {
+    return s.toLowerCase();
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with = single-expression body 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function double(n: number): number {
+  return $enter([] as const, () => {
+    return n * 2;
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with object literal return type 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function make(): { code: string; error: string | null } {
+  return $enter([] as const, () => {
+
+      return { code: "x", error: null };
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > fn with uses + block body 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function ping(): string {
+  return $enter(["net"] as const, () => {
+
+      return "pong";
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > imports auto-prepend $enter when fn is used 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function x(): void {
+  return $enter(["net"] as const, () => {
+     
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > integration: primer + multiple fns + test + ? + assert 1`] = `
+"import { $assert, $enter, $test } from "@mbfarias/botscript-runtime";
+/**
+ * botscript v0.1 — primer
+ *
+ * A small TypeScript-superset language. All TypeScript syntax is legal. The
+ * additions below are the entire language surface.
+ *
+ * == FILE EXTENSION ==
+ *   *.bs       Source file. Compiled to TypeScript by @mbfarias/botscript-compiler.
+ *
+ * == DIRECTIVES ==
+ *   ?primer    First line of a file. Emits this primer as a comment block.
+ *
+ * == FUNCTIONS ==
+ *   fn name(args) uses { caps } -> ReturnType { body }
+ *                                               capabilities the function may use
+ *   fn name(args) -> ReturnType = pure { expr }
+ *                                               equivalent to uses { } + return expr
+ *   Capabilities: net, fs, time, random, process, stdout, stderr.
+ *   Under ?bs 0.2 the capability declaration is checked statically — a function
+ *   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse
+ *   error, not a runtime trap.
+ *   Under ?bs 0.3 the check also infers transitively across same-file calls
+ *   AND flags over-declaration:
+ *     CAP001  uses clause is missing a capability the body (or a callee in the
+ *             same file) actually consumes. The diagnostic names the call path:
+ *             "f -> g -> http.get".
+ *     CAP002  uses clause names a capability nothing in the body reaches. The
+ *             declaration must match what the function actually uses.
+ *
+ * == TAGGED UNIONS (0.2+) ==
+ *   type Shape = Circle { r: number } | Square { side: number };
+ *   type Status = Idle | Loading | Done { value: string };
+ *                                               desugars to a TS discriminated
+ *                                               union keyed on \`kind\`. Bare and
+ *                                               field-bearing alternatives mix.
+ *
+ * == BLOCKS ==
+ *   pure { expr }    no capabilities allowed; throws CapabilityViolation if any escape
+ *   io   { expr }    documents that this expression performs effects (informational)
+ *   unsafe "reason" { expr }  (0.3+) escape hatch around \`as\` casts and similar.
+ *                             The justification string is mandatory and shows up
+ *                             in the compiled output as a comment so the diff
+ *                             reviewer sees the *why* alongside the cast.
+ *
+ * == RESULT / OPTION ==
+ *   Result<T, E>     ok(value) | err(error)
+ *   Option<T>        some(value) | none
+ *   expr?            on a Result: unwrap or short-circuit Err out of the enclosing fn
+ *                    (only at end of let/const/return statement, never in expressions)
+ *   Result.try { body }       (0.3+) lift a throwing call into Result<T, string>
+ *   Result.tryAsync { body }  (0.3+) async variant; lifts rejections too
+ *
+ * == MATCH ==
+ *   match value {
+ *     Tag             -> arm       (tag-only)
+ *     Tag { a, b }    -> arm       (tag with field bindings)
+ *     "literal"       -> arm       (literal string/number/bool/null)
+ *     _               -> arm       (wildcard; required if not exhaustive)
+ *   }
+ *
+ * == TESTS ==
+ *   test "name" { body }                                vitest-compatible
+ *   test "name" with mocks { time, random } { body }    deterministic time
+ *                                                       and random in body
+ *                                                       (0.2+); time.now()
+ *                                                       returns 0,1,2,…
+ *   assert expr                                         throws on falsy
+ *
+ * == STDLIB CALLS ==
+ *   http.get(url) / http.post(url)       requires uses { net }
+ *   time.now() / time.iso()              requires uses { time }
+ *   random.next() / random.int(a, b)     requires uses { random }
+ *   // import { fs } from "@mbfarias/botscript-runtime/fs"; (Node only)
+ *   fs.exists(path)                      requires uses { fs }
+ *   fs.readText(path) -> Result          requires uses { fs }
+ *   fs.writeText(path, body) -> Result   requires uses { fs }, atomic write
+ *   fs.readJson(path) -> Result          requires uses { fs }
+ *   fs.writeJson(path, value) -> Result  requires uses { fs }, atomic write
+ *   stdout.println(s) / stderr.println(s)
+ *
+ * == IDIOMS (the canonical way to do common things) ==
+ *   // fail fast on a fetch
+ *   fn loadUser(id: string) uses { net } -> Result<User, Error> {
+ *     let res = http.get(\`/users/\${id}\`)?
+ *     ok(res as User)
+ *   }
+ *
+ *   // pure helper
+ *   fn slugify(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }
+ *
+ *   // exhaustive dispatch
+ *   fn area(s: Shape) -> number = match s {
+ *     Circle { r }    -> Math.PI * r * r
+ *     Square { side } -> side * side
+ *   }
+ *
+ * == WHEN IN DOUBT ==
+ *   - prefer pure { } over io { }
+ *   - prefer Result over throw
+ *   - prefer Option over null
+ *   - prefer match over if/else chains on tagged unions
+ *   - never use \`as\` outside an \`unsafe "reason" { }\` block
+ *   - run \`botscript explain <CODE>\` to see the rule/idiom/rewrite for any
+ *     diagnostic the compiler emits
+ *
+ */
+
+
+function slug(s: string): string {
+  return $enter([] as const, () => {
+    return s.toLowerCase().replaceAll(" ", "-");
+  });
+}
+
+function loadUser(id: string): Result< {
+  return $enter(["net"] as const, () => {
+    name: string
+  });
+}, string> {
+    const __r1 = http.get(\`/u/\${id}\`);
+  if (__r1.kind === "err") return __r1;
+  let res = __r1.value;
+  ok({ name: id })
+}
+
+$test("slug works", async () => {
+  $assert(slug("Hello World") === "hello-world");
+});
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > io { } at expression position 1`] = `
+"
+const x = (() => { return fetchSomething(); })();
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > match with tag, tag-with-binds, literal, wildcard 1`] = `
+"import { $literalMatch, $match, $tagMatch, $wildcard } from "@mbfarias/botscript-runtime";
+
+const r = $match(v, [
+  [$tagMatch("Tag", []), () => (1)],
+  [$tagMatch("Bag", ["x", "y"]), ({ x, y }: any) => (x + y)],
+  [$literalMatch("lit"), () => (2)],
+  [$wildcard(), () => (0)],
+]);
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > optional chaining foo?.bar is preserved 1`] = `
+"
+const x = foo?.bar;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > primer directive emits the v0.1 primer comment block 1`] = `
+"/**
+ * botscript v0.1 — primer
+ *
+ * A small TypeScript-superset language. All TypeScript syntax is legal. The
+ * additions below are the entire language surface.
+ *
+ * == FILE EXTENSION ==
+ *   *.bs       Source file. Compiled to TypeScript by @mbfarias/botscript-compiler.
+ *
+ * == DIRECTIVES ==
+ *   ?primer    First line of a file. Emits this primer as a comment block.
+ *
+ * == FUNCTIONS ==
+ *   fn name(args) uses { caps } -> ReturnType { body }
+ *                                               capabilities the function may use
+ *   fn name(args) -> ReturnType = pure { expr }
+ *                                               equivalent to uses { } + return expr
+ *   Capabilities: net, fs, time, random, process, stdout, stderr.
+ *   Under ?bs 0.2 the capability declaration is checked statically — a function
+ *   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse
+ *   error, not a runtime trap.
+ *   Under ?bs 0.3 the check also infers transitively across same-file calls
+ *   AND flags over-declaration:
+ *     CAP001  uses clause is missing a capability the body (or a callee in the
+ *             same file) actually consumes. The diagnostic names the call path:
+ *             "f -> g -> http.get".
+ *     CAP002  uses clause names a capability nothing in the body reaches. The
+ *             declaration must match what the function actually uses.
+ *
+ * == TAGGED UNIONS (0.2+) ==
+ *   type Shape = Circle { r: number } | Square { side: number };
+ *   type Status = Idle | Loading | Done { value: string };
+ *                                               desugars to a TS discriminated
+ *                                               union keyed on \`kind\`. Bare and
+ *                                               field-bearing alternatives mix.
+ *
+ * == BLOCKS ==
+ *   pure { expr }    no capabilities allowed; throws CapabilityViolation if any escape
+ *   io   { expr }    documents that this expression performs effects (informational)
+ *   unsafe "reason" { expr }  (0.3+) escape hatch around \`as\` casts and similar.
+ *                             The justification string is mandatory and shows up
+ *                             in the compiled output as a comment so the diff
+ *                             reviewer sees the *why* alongside the cast.
+ *
+ * == RESULT / OPTION ==
+ *   Result<T, E>     ok(value) | err(error)
+ *   Option<T>        some(value) | none
+ *   expr?            on a Result: unwrap or short-circuit Err out of the enclosing fn
+ *                    (only at end of let/const/return statement, never in expressions)
+ *   Result.try { body }       (0.3+) lift a throwing call into Result<T, string>
+ *   Result.tryAsync { body }  (0.3+) async variant; lifts rejections too
+ *
+ * == MATCH ==
+ *   match value {
+ *     Tag             -> arm       (tag-only)
+ *     Tag { a, b }    -> arm       (tag with field bindings)
+ *     "literal"       -> arm       (literal string/number/bool/null)
+ *     _               -> arm       (wildcard; required if not exhaustive)
+ *   }
+ *
+ * == TESTS ==
+ *   test "name" { body }                                vitest-compatible
+ *   test "name" with mocks { time, random } { body }    deterministic time
+ *                                                       and random in body
+ *                                                       (0.2+); time.now()
+ *                                                       returns 0,1,2,…
+ *   assert expr                                         throws on falsy
+ *
+ * == STDLIB CALLS ==
+ *   http.get(url) / http.post(url)       requires uses { net }
+ *   time.now() / time.iso()              requires uses { time }
+ *   random.next() / random.int(a, b)     requires uses { random }
+ *   // import { fs } from "@mbfarias/botscript-runtime/fs"; (Node only)
+ *   fs.exists(path)                      requires uses { fs }
+ *   fs.readText(path) -> Result          requires uses { fs }
+ *   fs.writeText(path, body) -> Result   requires uses { fs }, atomic write
+ *   fs.readJson(path) -> Result          requires uses { fs }
+ *   fs.writeJson(path, value) -> Result  requires uses { fs }, atomic write
+ *   stdout.println(s) / stderr.println(s)
+ *
+ * == IDIOMS (the canonical way to do common things) ==
+ *   // fail fast on a fetch
+ *   fn loadUser(id: string) uses { net } -> Result<User, Error> {
+ *     let res = http.get(\`/users/\${id}\`)?
+ *     ok(res as User)
+ *   }
+ *
+ *   // pure helper
+ *   fn slugify(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }
+ *
+ *   // exhaustive dispatch
+ *   fn area(s: Shape) -> number = match s {
+ *     Circle { r }    -> Math.PI * r * r
+ *     Square { side } -> side * side
+ *   }
+ *
+ * == WHEN IN DOUBT ==
+ *   - prefer pure { } over io { }
+ *   - prefer Result over throw
+ *   - prefer Option over null
+ *   - prefer match over if/else chains on tagged unions
+ *   - never use \`as\` outside an \`unsafe "reason" { }\` block
+ *   - run \`botscript explain <CODE>\` to see the rule/idiom/rewrite for any
+ *     diagnostic the compiler emits
+ *
+ */
+
+
+const x = 1;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > pure { } at expression position 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+const x = $enter([] as const, () => { return 1 + 2; });
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > test "name" { body } rewrites to $test 1`] = `
+"import { $assert, $test } from "@mbfarias/botscript-runtime";
+
+$test("ok", async () => { $assert(1 === 1); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > fn that declares a capability it uses (cap-check passes) 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function now(): number {
+  return $enter(["time"] as const, () => {
+
+      return time.now();
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > integration: tagged union + match + cap-check + test with mocks 1`] = `
+"import { $assert, $enter, $match, $tagMatch, $test, $withMocks } from "@mbfarias/botscript-runtime";
+
+type Status = { kind: "Idle" } | { kind: "Done"; value: string };
+
+function label(s: Status): string {
+  return $enter([] as const, () => {
+    return $match(s, [
+  [$tagMatch("Idle", []), () => ("-")],
+  [$tagMatch("Done", ["value"]), ({ value }: any) => (value)],
+]);
+  });
+}
+
+function loadOne(url: string): string {
+  return $enter(["net"] as const, () => {
+
+      return http.get(url) as unknown as string;
+
+  });
+}
+
+$test("labels", async () => { await $withMocks(["time"] as const, async () => {
+  $assert(label({ kind: "Idle" }) === "-");
+}); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > tagged union mixing bare and field-bearing alternatives 1`] = `
+"
+type Status = { kind: "Idle" } | { kind: "Loading" } | { kind: "Done"; value: string } | { kind: "Failed"; error: string };
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > tagged union with field-bearing alternatives 1`] = `
+"
+type Shape = { kind: "Circle"; r: number } | { kind: "Square"; side: number };
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time } 1`] = `
+"import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
+
+$test("deterministic clock", async () => { await $withMocks(["time"] as const, async () => {
+  $assert(time.now() === 0);
+  $assert(time.now() === 1);
+}); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time, random } 1`] = `
+"import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
+
+$test("deterministic both", async () => { await $withMocks(["time", "random"] as const, async () => {
+  $assert(time.now() === 0);
+  $assert(random.next() === 0);
+}); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > Result.try { body } 1`] = `
+"import { $resultTry } from "@mbfarias/botscript-runtime";
+
+const r = $resultTry(() => { return JSON.parse(input); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > Result.tryAsync { body } 1`] = `
+"import { $resultTryAsync } from "@mbfarias/botscript-runtime";
+
+const r = $resultTryAsync(async () => { return fetch(url); });
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > capability inference: same-file call graph propagates correctly 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function helper(s: string): string {
+  return $enter([] as const, () => {
+    return s.trim();
+  });
+}
+function outer(s: string): string {
+  return $enter([] as const, () => {
+
+      return helper(s);
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > integration: unsafe + Result.try + cap inference 1`] = `
+"import { $enter, $resultTry } from "@mbfarias/botscript-runtime";
+
+function parseConfig(raw: string): Result< {
+  return $enter([] as const, () => {
+     port: number 
+  });
+}, string> {
+    const __r1 = $resultTry(() => { return JSON.parse(raw); });
+  if (__r1.kind === "err") return __r1;
+  let parsed = __r1.value;
+  let p = /* unsafe: "JSON.parse returns any" */ (() => { return (parsed as { port?: number }).port; })();
+  return typeof p === "number" ? ok({ port: p }) : err("missing port");
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > transitive capability inference passes when callees match 1`] = `
+"import { $enter } from "@mbfarias/botscript-runtime";
+
+function doFetch(url: string): string {
+  return $enter(["net"] as const, () => {
+
+      const res = http.get(url);
+      return "x";
+
+  });
+}
+function loadOne(url: string): string {
+  return $enter(["net"] as const, () => {
+
+      return doFetch(url);
+
+  });
+}
+"
+`;
+
+exports[`forward-compat: ?bs 0.3 output is frozen > unsafe block with justification 1`] = `
+"
+const u = /* unsafe: "third-party types Response as any" */ (() => { return value as User })();
+"
+`;
