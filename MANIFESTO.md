@@ -86,6 +86,72 @@ to write correctly the first time.
 It is opinionated where TypeScript is permissive, and silent where TypeScript
 is chatty. That is the entire trade.
 
+## But isn't this just stricter TypeScript?
+
+A meticulously configured TypeScript project is in fact quite good. With the
+right `tsconfig` flags and the right `eslint.config.js`, you can catch:
+
+- Switch fallthrough (`noFallthroughCasesInSwitch`).
+- Exhaustive `match` (`@typescript-eslint/switch-exhaustiveness-check`).
+- Unhandled promises (`no-floating-promises`).
+- Naked `any` and unsafe casts (`no-explicit-any`, `no-unsafe-*`).
+- Throws disguised as control flow — by adopting `Result` via `neverthrow`
+  or `effect` — and most of what `Result.try` does syntactically.
+
+If your team writes TypeScript carefully, in a tight project with a sharp
+CI, you are catching most of what botscript catches. We are not pretending
+otherwise. botscript adds three things that lint cannot, in increasing
+order of cost-to-replicate:
+
+1. **Forced justification on every cast.** `unsafe "<reason>" { x as Foo }`
+   makes the *reason string* mandatory and visible at every escape-hatch
+   site. A lint rule can ban `as`. It cannot make a non-empty justification
+   show up in `git diff`.
+
+2. **Transitively pure functions.** `pure { … }` rejects capability use not
+   just lexically, but through every callee in the same module. ESLint sees
+   one file at a time and one expression at a time. A pure function that
+   calls a helper that calls a logger is a bug today's lint cannot see; in
+   botscript it is a CAP001 with the call path named in the diagnostic.
+
+3. **Capability inference on the call graph.** `effect-ts` achieves
+   something similar by threading `Effect<R, E, A>` through every signature
+   — a pervasive runtime and syntax tax. botscript's `uses { net }` is one
+   annotation in the fn header, and the compiler walks the same-file call
+   graph for you. A function declared `uses { }` that reaches the network
+   through three hops fails to compile.
+
+Those three are real. They are also the smaller half of why botscript
+exists. The bigger half is *who reads the rules*.
+
+A well-tuned TypeScript project says: "the surface is huge, here are 47
+rules that narrow it." That is a contract between humans and CI. A model
+writing into the codebase does not see your `eslint.config.js` at
+generation time. It writes idiomatic-but-locally-wrong TypeScript by
+analogy from training data, and finds out the linter disagrees only on
+commit. The iteration cost — read error, regenerate — is real, and it
+multiplies by every PR an agent opens.
+
+botscript's bet is that *the syntax that violates the rule should not
+exist*. The model does not have to know about your lint config because
+there is no `try { } catch (e) { }` to swallow, no naked `as`, no
+unannotated I/O, no untraced capability. The grammar enforces what lint
+requested.
+
+Whether that is worth a new language depends on your bet:
+
+- If you think a strict TypeScript project plus discipline plus code review
+  reliably keeps machine-written code on the rails — TypeScript plus lint
+  is the pragmatic answer. We agree.
+- If you think models will keep slipping through the surface that lint
+  cannot cover — capabilities, transitive purity, forced justifications —
+  botscript's narrower grammar is the bet.
+
+We are not telling you TypeScript is unsafe. We are telling you that the
+configuration you trust to keep TypeScript safe is invisible to the
+collaborator now writing most of your code, and a narrower grammar removes
+that asymmetry.
+
 ## Status
 
 This is a weekend project. The compiler is a token+small-AST preprocessor,

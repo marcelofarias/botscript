@@ -103,6 +103,14 @@ export function App() {
           </a>
           <span className="dot">·</span>
           <a
+            href="https://github.com/marcelofarias/botscript/blob/main/MANIFESTO.md#but-isnt-this-just-stricter-typescript"
+            target="_blank"
+            rel="noreferrer"
+          >
+            why not just stricter TypeScript?
+          </a>
+          <span className="dot">·</span>
+          <a
             href="https://www.npmjs.com/package/@mbfarias/botscript-compiler"
             target="_blank"
             rel="noreferrer"
@@ -187,6 +195,13 @@ function ProblemsView(props: ProblemsViewProps) {
         <h2 className="problem-title">{problem.title}</h2>
         <p className="problem-blurb">{problem.blurb}</p>
         <p className="problem-hint">→ {problem.fixHint}</p>
+        {isStructural ? (
+          <p className="problem-lint-note">
+            A strict ESLint config catches this too. The difference is that
+            in <code>.bs</code> the bug pattern has no shape to write — no
+            config to remember, nothing for a model to slip past.
+          </p>
+        ) : null}
       </section>
 
       <main className={isStructural ? "problem-panes problem-panes-structural" : "problem-panes"}>
