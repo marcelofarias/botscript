@@ -129,9 +129,9 @@ type ProblemsViewProps = {
 
 function ProblemsView(props: ProblemsViewProps) {
   const { problem, problemId, setProblemId, bsSource, setBsSource, bsCompiled } = props;
+  const isStructural = problem.outcome === "structural";
   const isError = bsCompiled.error !== null;
-  const outcomeClass =
-    problem.outcome === "rejects" ? "outcome outcome-rejects" : "outcome outcome-structural";
+  const outcomeClass = isStructural ? "outcome outcome-structural" : "outcome outcome-rejects";
   return (
     <>
       <nav className="tabs" aria-label="problem">
@@ -155,7 +155,7 @@ function ProblemsView(props: ProblemsViewProps) {
         <p className="problem-hint">→ {problem.fixHint}</p>
       </section>
 
-      <main className="problem-panes">
+      <main className={isStructural ? "problem-panes problem-panes-structural" : "problem-panes"}>
         <section className="pane pane-ts">
           <div className="pane-label">
             <span>typescript — what bots write</span>
@@ -168,32 +168,40 @@ function ProblemsView(props: ProblemsViewProps) {
 
         <section className="pane pane-bs">
           <div className="pane-label">
-            <span>botscript — try editing</span>
-            {isError ? (
+            <span>{isStructural ? "↦ the only shape in .bs" : "botscript — try editing"}</span>
+            {isStructural ? (
+              <span className="status-tag status-by-design">by design</span>
+            ) : isError ? (
               <span className="status-tag status-err">rejected</span>
             ) : (
               <span className="status-tag status-ok">accepted</span>
             )}
           </div>
-          <textarea
-            className="editor"
-            value={bsSource}
-            spellCheck={false}
-            onChange={(e) => setBsSource(e.target.value)}
-          />
+          {isStructural ? (
+            <pre className="output">
+              <code>{problem.bsCode}</code>
+            </pre>
+          ) : (
+            <textarea
+              className="editor"
+              value={bsSource}
+              spellCheck={false}
+              onChange={(e) => setBsSource(e.target.value)}
+            />
+          )}
         </section>
 
         <section className="pane pane-output">
           <div className="pane-label">
-            <span>compiler output</span>
-            {isError ? (
+            <span>{isStructural ? "desugared typescript" : "compiler output"}</span>
+            {isStructural ? null : isError ? (
               <span className="status-tag status-err">error</span>
             ) : (
               <span className="status-tag status-ok">clean tsx</span>
             )}
           </div>
-          <pre className={isError ? "output output-err" : "output"}>
-            <code>{bsCompiled.error ?? bsCompiled.code}</code>
+          <pre className={isError && !isStructural ? "output output-err" : "output"}>
+            <code>{isStructural ? bsCompiled.code : (bsCompiled.error ?? bsCompiled.code)}</code>
           </pre>
         </section>
       </main>

@@ -225,7 +225,7 @@ export const PROBLEMS: Problem[] = [
     outcome: "structural",
     outcomeLabel: "Bug pattern is unrepresentable",
     fixHint:
-      "Try removing the `?` after Result.try and watch the type stop matching the return signature.",
+      "Failure is part of the return type. `?` is the only unwrap, and the desugared TS makes the err-path branch explicit.",
     tsCode: SWALLOWED_PARSE_TS,
     bsCode: SWALLOWED_PARSE_BS,
   },
@@ -238,7 +238,7 @@ export const PROBLEMS: Problem[] = [
     outcome: "structural",
     outcomeLabel: "Bug pattern is unrepresentable",
     fixHint:
-      "Try deleting one of the match arms — the runtime dispatch will throw with the unmatched scrutinee printed, and TypeScript exhaustiveness will flag it at the call site.",
+      "No `default`, no fallthrough. The union's discriminator and the match arms are the same shape — they cannot drift.",
     tsCode: MATCH_FALLTHROUGH_TS,
     bsCode: MATCH_FALLTHROUGH_BS,
   },

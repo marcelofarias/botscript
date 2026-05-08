@@ -245,6 +245,11 @@ body {
   border-color: var(--err);
   background: var(--err-glow);
 }
+.status-by-design {
+  color: var(--teal);
+  border-color: var(--teal-deep);
+  background: var(--teal-glow);
+}
 
 /* legacy err-tag retained for the features view */
 .err-tag {
