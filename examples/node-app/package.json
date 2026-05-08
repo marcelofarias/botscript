@@ -5,7 +5,7 @@
   "description": "Tiny CLI showing botscript end-to-end on Node.",
   "type": "module",
   "scripts": {
-    "build": "botscript build src && botscript build tests",
+    "build": "pnpm exec botscript build src && pnpm exec botscript build tests",
     "dev": "pnpm build && tsx src/main.ts",
     "test": "pnpm build && vitest run",
     "clean": "rm -f src/*.ts tests/*.ts"
