@@ -153,85 +153,11 @@ If you've hit a bug a feature in this README would have prevented and it's
 publicly linkable, [open a PR](https://github.com/marcelofarias/botscript/pulls)
 adding a row.
 
-## What's new in `?bs 0.2` (opt-in)
+## What's new
 
-`LATEST` is still 0.1, so existing files compile unchanged. Pin a file to
-`?bs 0.2` to opt into:
-
-- **Static capability check (direct).** Direct references to `http.X` / `time.X` /
-  `random.X` / `fs.X` / `stdout.X` / `stderr.X` inside a `fn` whose
-  `uses { … }` clause doesn't list the matching capability are now a parse
-  error (code `CAP001`), not just a runtime trap. The runtime check is still
-  there as the second line of defence.
-- **Tagged-union sugar.** `type Shape = Circle { r: number } | Square { side: number }`
-  desugars to a TS discriminated union keyed on `kind`. Bare-tag alternatives
-  (`Idle | Loading | Done { value: string }`) are supported. Generics, leading-pipe,
-  and `export type` all work.
-- **Structured diagnostics.** Compiler errors carry stable codes (`BS001`,
-  `BS002`, `CAP001`) and a `{ rule, idiom, rewrite }` triple. The CLI exposes
-  `--format=json` so a bot can `compile → JSON.parse → patch` deterministically.
-- **`with mocks { time, random }` on tests.** `test "name" with mocks { time }
-  { … }` swaps `time.now()` for a deterministic 0,1,2,… counter (and
-  `random.next()` for a seeded RNG) inside the body, restoring the real
-  sources when it returns or throws. The only way to inject deterministic
-  time/RNG into a test, by design.
-- **MCP server.** `@mbfarias/botscript-mcp` exposes the compiler over the
-  Model Context Protocol so a model can `primer` / `transform` / `explain`
-  via tool calls. See "MCP server" below.
-
-## What's new in `?bs 0.3` (opt-in)
-
-Files pinned to `?bs 0.2` continue to compile identically — these are all new
-opt-ins behind the 0.3 version pin:
-
-- **Capability inference + transitive call-graph check.** The compiler now
-  derives the minimum capability set from each fn body and propagates it
-  across calls to other fns in the same file. `CAP001` diagnostics name the
-  path: `fn 'loadOne' transitively consumes 'net' via loadOne -> doFetch -> http.get`.
-- **`CAP002` over-declaration.** A `uses { … }` clause that names a capability
-  the body never reaches (directly or transitively) is now a parse error.
-  Declarations are the upper bound the compiler infers against; declarations
-  must match reality.
-- **`unsafe "<reason>" { expr }`.** The escape hatch for `as` casts. The
-  justification string is mandatory (`UNS001`/`UNS002`/`UNS003`) and survives
-  into the compiled `.ts` as a leading comment so diff reviewers (human or
-  model) see the *why* alongside the cast.
-- **`Result.try { body }` / `Result.tryAsync { body }`.** Block forms that
-  lift a throwing JS-boundary call into `Result<T, string>`, so the result
-  composes with the `?` unwrap operator instead of leaking try/catch into
-  your fn body.
-- **`botscript explain <CODE>` and `botscript check`.** New CLI subcommands.
-  `explain` prints the canonical rule/idiom/rewrite plus a worked example for
-  any diagnostic code; `check` runs the pipeline without writing files. Both
-  support `--format json` for downstream tools.
-
-## What's new in `?bs 0.4` (opt-in)
-
-Files pinned to `?bs 0.3` continue to compile identically — these are all new
-opt-ins behind the 0.4 version pin:
-
-- **Type parameters in `fn` signatures.** `fn id<T>(x: T) -> T = pure { x }`,
-  `fn pair<A, B>(a: A, b: B) -> [A, B] { … }`, plus `extends` constraints and
-  `= D` defaults. Generics emit verbatim into the desugared TypeScript output;
-  capability inference and `match` compose unchanged.
-- **Whole-file parse entry.** `parseProgram(src)` (exported from
-  `@mbfarias/botscript-compiler`) returns a typed AST (`Program` with the
-  lexed `tokens`, plus a top-level `fns` list carrying source ranges per
-  declaration) for tools that need source-level structure without
-  re-tokenizing the file. The model is shallow on purpose — only `fn`
-  declarations are surfaced as nodes today; deeper structure (test, type,
-  import) can grow when a real consumer needs it. cap-check is the only
-  in-pipeline consumer; LSP and rename tooling can build on the same
-  surface without growing the runtime.
-- **Source offsets on diagnostics.** Capability-check errors now carry
-  `start` / `end` UTF-16 string offsets (JS string indices, not UTF-8 bytes)
-  alongside `line` / `column`, so editors and agent loops can map to a
-  precise span without re-walking the source. `end` is exclusive — the
-  range matches `source.slice(start, end)`. The fields are optional and
-  populated by cap-check at every supported pin from `?bs 0.2` onward; the
-  offset coordinate system itself is the same as the line/column the pass
-  already produced (post-`?bs`-directive-stripping, with the trailing
-  newline preserved so line numbers match the user's original file).
+Per-version release notes live in [`CHANGELOG.md`](./CHANGELOG.md). `LATEST`
+is still 0.1, so existing files compile unchanged; opt into newer behaviour
+with a `?bs 0.2` / `?bs 0.3` / `?bs 0.4` directive.
 
 ## MCP server (for bots)
 

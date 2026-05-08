@@ -86,6 +86,13 @@ goes behind a new pin.
 - `test "name" with mocks { time, random } { body }` — deterministic clock
   and PRNG injected by the runner; sources restored on return or throw.
 - `?bs <version>` directive validation.
+- Structured diagnostics: compiler errors carry stable codes (`BS001`,
+  `BS002`, `CAP001`) and a `{ rule, idiom, rewrite }` triple. The CLI
+  exposes `--format=json` so a bot can `compile → JSON.parse → patch`
+  deterministically.
+- MCP server (`@mbfarias/botscript-mcp`) exposes the compiler over the
+  Model Context Protocol so a model can `primer` / `transform` / `explain`
+  via tool calls.
 
 ## ?bs 0.1 — 2026-05-03
 
