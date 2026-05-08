@@ -1,19 +1,32 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in let / const / return / bare positions 1`] = `
+exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`const\` position 1`] = `
+"
+const __r1 = g();
+if (__r1.kind === "err") return __r1;
+const b = __r1.value;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`let\` position 1`] = `
 "
 const __r1 = f();
 if (__r1.kind === "err") return __r1;
 let a = __r1.value;
-const __r2 = g();
-if (__r2.kind === "err") return __r2;
-const b = __r2.value;
-const __r3 = h();
-if (__r3.kind === "err") return __r3;
-return __r3.value;const __r4 = h()?
-i();
-if (__r4.kind === "err") return __r4;
-return __r4.value;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`return\` position 1`] = `
+"
+const __r1 = h();
+if (__r1.kind === "err") return __r1;
+return __r1.value;
+"
+`;
+
+exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in bare-statement position 1`] = `
+"const __r1 = i();
+if (__r1.kind === "err") return __r1;
 "
 `;
 
@@ -131,15 +144,15 @@ function slug(s: string): string {
   });
 }
 
-function loadUser(id: string): Result< {
+function loadUser(id: string): Result<User, string> {
   return $enter(["net"] as const, () => {
-    name: string
+
+            const __r1 = http.get(\`/u/\${id}\`);
+      if (__r1.kind === "err") return __r1;
+      let res = __r1.value;
+      ok({ name: id })
+
   });
-}, string> {
-    const __r1 = http.get(\`/u/\${id}\`);
-  if (__r1.kind === "err") return __r1;
-  let res = __r1.value;
-  ok({ name: id })
 }
 
 $test("slug works", async () => {

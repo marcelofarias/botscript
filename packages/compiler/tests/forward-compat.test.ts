@@ -21,6 +21,21 @@
  *   rule 2 requires it to grow with the language as new pins ship. Locking
  *   it here would conflict with rule 2. Primer-pass behaviour (recognize
  *   the directive, emit a comment) is covered in `transform.test.ts`.
+ *
+ *   Also intentionally NOT exercised in 0.1 fixtures, because freezing the
+ *   buggy output would lock a pre-existing 0.1 bug forever:
+ *
+ *     - Multiple bare `expr?` statements on consecutive lines (e.g.
+ *       `return h()?\ni()?\n`). The unwrap pass currently merges them
+ *       across the newline; fixing requires statement-boundary tightening
+ *       which is out of scope here.
+ *     - Object types nested as generic type arguments in a fn return
+ *       type (e.g. `Result<{name: string}, string>`). The fn parser's
+ *       body-opener heuristic mistakes the inner `{` for the body brace.
+ *       Fixing requires a deeper return-type parse than parse-fn does.
+ *
+ *   Both bugs exist at every shipped pin, are tracked separately, and
+ *   their fixes will need their own version-gating discussion.
  */
 
 import { describe, expect, it } from "vitest";
@@ -106,14 +121,22 @@ describe("forward-compat: ?bs 0.1 output is frozen", () => {
     expect(t(src)).toMatchSnapshot();
   });
 
-  it("? unwrap in let / const / return / bare positions", () => {
-    const src =
-      `?bs 0.1\n` +
-      `let a = f()?\n` +
-      `const b = g()?\n` +
-      `return h()?\n` +
-      `i()?\n`;
-    expect(t(src)).toMatchSnapshot();
+  // ? unwrap is exercised one position per fixture so the snapshots don't
+  // accidentally freeze the multi-statement bug noted in the file header.
+  it("? unwrap in `let` position", () => {
+    expect(t(`?bs 0.1\nlet a = f()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in `const` position", () => {
+    expect(t(`?bs 0.1\nconst b = g()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in `return` position", () => {
+    expect(t(`?bs 0.1\nreturn h()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in bare-statement position", () => {
+    expect(t(`?bs 0.1\ni()?\n`)).toMatchSnapshot();
   });
 
   it("optional chaining foo?.bar is preserved", () => {
@@ -135,11 +158,14 @@ describe("forward-compat: ?bs 0.1 output is frozen", () => {
   });
 
   it("integration: multiple fns + test + ? + assert", () => {
+    // Return type uses a named alias instead of an inline object literal
+    // inside a generic, to avoid the parse-fn body-opener limitation
+    // documented in the file header.
     const src =
       `?bs 0.1\n` +
       `fn slug(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }\n` +
       `\n` +
-      `fn loadUser(id: string) uses { net } -> Result<{name: string}, string> {\n` +
+      `fn loadUser(id: string) uses { net } -> Result<User, string> {\n` +
       `  let res = http.get(\`/u/\${id}\`)?\n` +
       `  ok({ name: id })\n` +
       `}\n` +
