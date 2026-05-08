@@ -65,9 +65,12 @@ export interface Program {
    */
   tokens: Token[];
   /**
-   * Top-level statements in source order. Today the AST only models fn
+   * Parsed statements in source order. Today the AST only models fn
    * declarations as nodes (per AGENTS.md rule 5 — deeper structure when a
    * real consumer needs it), so `statements` is the same set as `fns`.
+   * By default (`includeNestedFns: false`) the list is top-level fn
+   * declarations only; with `includeNestedFns: true`, fn declarations
+   * nested inside another fn's body are surfaced too, in source order.
    */
   statements: Stmt[];
   /**

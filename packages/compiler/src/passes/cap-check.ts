@@ -106,8 +106,12 @@ export function passCapCheck(src: string, version: VersionInfo): string {
 /**
  * 0.2 behavior: scan each fn's own body for direct stdlib refs whose
  * capability isn't declared. No transitive propagation, no over-declaration.
- * Preserved verbatim from the 0.2 release; do not modify the diagnostics it
- * emits.
+ *
+ * The observable diagnostic surface emitted here — code, message, rule,
+ * idiom, rewrite, and the (line, column) anchor — is frozen forever per
+ * AGENTS.md rule 4. The optional `start`/`end` byte range on
+ * `Diagnostic` is a strict additive extension; consumers that ignore
+ * those fields keep seeing what they always saw.
  *
  * From ?bs 0.4 we additionally honour `allowGenerics` — generic fns enter
  * the scan instead of being silently skipped by parseFn. Older pins (0.2,
