@@ -17,7 +17,9 @@
  * exactly the same way under 0.2, 0.3, etc. New syntax goes behind new
  * version pins. Nothing about a 0.1 file's *output* may change once shipped.
  */
-export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1"];
+import { BotscriptError } from "../diagnostics.js";
+
+export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2"];
 export const LATEST_VERSION = "0.1";
 
 const DIRECTIVE_RE = /^\s*\?bs\s+(\d+\.\d+(?:\.\d+)?)\s*$/m;
@@ -84,23 +86,53 @@ export function passVersion(src: string): { src: string; version: VersionInfo } 
   const version = src.slice(versionStart, j).trim();
 
   if (!/^\d+\.\d+(\.\d+)?$/.test(version)) {
-    throw new Error(
-      `botscript: malformed \`?bs\` directive — expected a version like \`0.1\`, got "${version}".\n` +
-        `  Idiom:   \`?bs 0.1\` at the top of a .bs file pins it to language version 0.1.\n` +
-        `  Rewrite: ?bs ${LATEST_VERSION}`,
-    );
+    const { line, column } = locationOf(src, i);
+    throw new BotscriptError([
+      {
+        code: "BS001",
+        severity: "error",
+        file: null,
+        line,
+        column,
+        message: `malformed \`?bs\` directive — expected a version like \`0.1\`, got "${version}"`,
+        rule: "the `?bs` directive must be followed by a version like `<major>.<minor>`",
+        idiom: `\`?bs 0.1\` at the top of a .bs file pins it to language version 0.1`,
+        rewrite: `?bs ${LATEST_VERSION}`,
+      },
+    ]);
   }
   if (!SUPPORTED_VERSIONS.includes(version)) {
-    throw new Error(
-      `botscript: unsupported version "${version}". This compiler supports: ${SUPPORTED_VERSIONS.join(", ")}.\n` +
-        `  Idiom:   pin a file to a known language version with \`?bs <version>\`.\n` +
-        `  Rewrite: ?bs ${LATEST_VERSION}`,
-    );
+    const { line, column } = locationOf(src, i);
+    throw new BotscriptError([
+      {
+        code: "BS002",
+        severity: "error",
+        file: null,
+        line,
+        column,
+        message: `unsupported version "${version}". This compiler supports: ${SUPPORTED_VERSIONS.join(", ")}`,
+        rule: "every `?bs <version>` must name a version this compiler ships",
+        idiom: "pin a file to a known language version with `?bs <version>`",
+        rewrite: `?bs ${LATEST_VERSION}`,
+      },
+    ]);
   }
 
-  // Strip the directive line (including its trailing newline if present).
-  const after = j < src.length && src[j] === "\n" ? j + 1 : j;
-  const stripped = src.slice(0, i) + src.slice(after);
+  // Strip the directive content but KEEP the trailing newline so subsequent
+  // line numbers in diagnostics still match the user's original file.
+  const stripped = src.slice(0, i) + src.slice(j);
 
   return { src: stripped, version: { declared: version, resolved: version } };
+}
+
+function locationOf(src: string, offset: number): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let k = 0; k < offset && k < src.length; k++) {
+    if (src[k] === "\n") {
+      line++;
+      lineStart = k + 1;
+    }
+  }
+  return { line, column: offset - lineStart + 1 };
 }

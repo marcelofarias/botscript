@@ -1,5 +1,7 @@
+import { BotscriptError } from "./diagnostics.js";
 import { passAssert } from "./passes/assert.js";
 import { passBlocks } from "./passes/blocks.js";
+import { passCapCheck } from "./passes/cap-check.js";
 import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passMatch } from "./passes/match.js";
@@ -24,8 +26,16 @@ export interface TransformResult {
   version: VersionInfo;
 }
 
-const PASS_PIPELINE = [
+interface PipelineEntry {
+  name: string;
+  fn: (src: string) => string;
+  /** If set, only run when version.resolved >= minVersion. */
+  minVersion?: string;
+}
+
+const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "primer", fn: passPrimer },
+  { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "fn", fn: passFn },
   { name: "blocks", fn: passBlocks },
@@ -33,21 +43,60 @@ const PASS_PIPELINE = [
   { name: "unwrap", fn: passUnwrap },
   { name: "assert", fn: passAssert },
   { name: "imports", fn: passImports },
-] as const;
+];
 
-export function transform(source: string, _opts: TransformOptions = {}): TransformResult {
-  // Version directive runs first so the rest of the pipeline can branch on it.
-  // For 0.1 there's nothing to branch on yet — but the contract is set: every
-  // future change must be gated on `version.resolved`.
-  const { src: versioned, version } = passVersion(source);
-  let code = versioned;
-  const forms: string[] = [];
-  for (const pass of PASS_PIPELINE) {
-    const next = pass.fn(code);
-    if (next !== code) forms.push(pass.name);
-    code = next;
+export function transform(source: string, opts: TransformOptions = {}): TransformResult {
+  try {
+    // Version directive runs first so the rest of the pipeline can branch on it.
+    const { src: versioned, version } = passVersion(source);
+    let code = versioned;
+    const forms: string[] = [];
+    for (const pass of PASS_PIPELINE) {
+      if (pass.minVersion && !atLeast(version.resolved, pass.minVersion)) continue;
+      const next = pass.fn(code);
+      if (next !== code) forms.push(pass.name);
+      code = next;
+    }
+    return { code, forms, version };
+  } catch (e) {
+    // Attach the filename to every diagnostic the pipeline emitted so callers
+    // and the CLI's JSON output point to the right file. Errors that aren't
+    // BotscriptError flow through unchanged.
+    if (opts.filename && e instanceof BotscriptError) {
+      throw withFilename(e, opts.filename);
+    }
+    throw e;
   }
-  return { code, forms, version };
+}
+
+function withFilename(err: BotscriptError, filename: string): BotscriptError {
+  const next = err.diagnostics.map((d) => ({ ...d, file: d.file ?? filename }));
+  // Subclasses (e.g. CapabilityCheckError) preserve their type by mutating in
+  // place via Object.assign — Error subclasses are awkward to clone faithfully.
+  Object.assign(err, { diagnostics: Object.freeze(next) });
+  err.message = next
+    .map((d) => {
+      const loc = `${d.file}:${d.line}:${d.column}`;
+      return `botscript[${d.code}]: ${d.message} (${loc})${
+        d.rule ? `\n  Rule:    ${d.rule}` : ""
+      }${d.idiom ? `\n  Idiom:   ${d.idiom}` : ""}${
+        d.rewrite ? `\n  Rewrite: ${d.rewrite}` : ""
+      }`;
+    })
+    .join("\n\n");
+  return err;
+}
+
+function atLeast(actual: string, min: string): boolean {
+  const a = actual.split(".").map(Number);
+  const m = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, m.length); i++) {
+    const av = a[i] ?? 0;
+    const mv = m[i] ?? 0;
+    if (av > mv) return true;
+    if (av < mv) return false;
+  }
+  return true;
 }
 
 export { LATEST_VERSION, SUPPORTED_VERSIONS } from "./passes/version.js";

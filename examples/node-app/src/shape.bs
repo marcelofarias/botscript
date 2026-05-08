@@ -1,8 +1,9 @@
-?bs 0.1
+?bs 0.2
 
 // Shapes — a tagged union and the helpers that operate on it. Everything in
-// this file is pure; the compiler enforces that by attaching `uses { }` to
-// each fn.
+// this file is pure; under ?bs 0.2 the compiler enforces purity *statically* —
+// any reference to http/time/random/fs/stdout/stderr inside one of these fns
+// is a parse error, not a runtime trap.
 
 export type Shape =
   | { kind: "Circle"; r: number }

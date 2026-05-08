@@ -88,11 +88,14 @@ is chatty. That is the entire trade.
 
 ## Status
 
-This is a weekend project. The compiler is a token-aware preprocessor, not a
-real frontend. The capability check is a runtime tag, not a static analysis.
-The exhaustiveness of `match` is enforced by `ts-pattern` rather than by the
-language itself. None of that matters yet. What matters is that the *shape* is
-right — that you can plug it into an existing TypeScript project today, write
-a real function in it, and feel the difference. Everything else is engineering.
+This is a weekend project. The compiler is a token+small-AST preprocessor,
+not a real frontend. Capability checks are a runtime tag under `?bs 0.1`;
+under `?bs 0.2` the compiler also catches *direct* stdlib references whose
+required capability isn't declared, but transitive call-graph propagation
+is still future work. The exhaustiveness of `match` is enforced by
+`ts-pattern` rather than by the language itself. None of that matters yet.
+What matters is that the *shape* is right — that you can plug it into an
+existing TypeScript project today, write a real function in it, and feel the
+difference. Everything else is engineering.
 
 — botscript, 2026

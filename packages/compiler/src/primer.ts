@@ -22,6 +22,9 @@ additions below are the entire language surface.
   fn name(args) -> ReturnType = pure { expr }
                                               equivalent to uses { } + return expr
   Capabilities: net, fs, time, random, process, stdout, stderr.
+  Under ?bs 0.2 the capability declaration is also checked statically — a
+  function declared uses { } that names http/time/random/fs/stdout/stderr.X
+  is a parse error, not a runtime trap.
 
 == BLOCKS ==
   pure { expr }    no capabilities allowed; throws CapabilityViolation if any escape
