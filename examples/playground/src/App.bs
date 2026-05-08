@@ -107,7 +107,7 @@ export function App() {
             target="_blank"
             rel="noreferrer"
           >
-            why not just stricter TypeScript?
+            vs. strict TypeScript + lint
           </a>
           <span className="dot">·</span>
           <a
