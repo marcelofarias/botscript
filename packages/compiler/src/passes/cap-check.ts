@@ -21,9 +21,9 @@
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex, type Token } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
-import type { FnDecl } from "../parser/parse-fn.js";
+import { parseFn, type FnDecl, type ParseFnOptions } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 /** stdlib namespace -> capability it consumes. */
@@ -110,9 +110,12 @@ export function passCapCheck(src: string, version: VersionInfo): string {
  * 0.3) call this with allowGenerics=false, preserving prior behaviour.
  */
 function checkDirect(src: string, allowGenerics: boolean): string {
-  const tokens = lex(src);
   const program = parseProgram(src, { allowGenerics });
-  const fns: FnDecl[] = program.fns.map((s) => s.decl);
+  const tokens = program.tokens;
+  // Program.fns surfaces TOP-LEVEL fns only. cap-check needs nested fns too
+  // (so the outer body scan can filter them out via insideAny). Walk the
+  // already-lexed tokens to collect every declaration in the file.
+  const fns = collectAllFnDecls(tokens, { allowGenerics });
   for (const fn of fns) {
     const inner = fns.filter((g) => g !== fn && g.start >= fn.start && g.end <= fn.end);
     checkDirectFn(src, tokens, fn, inner);
@@ -161,13 +164,12 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
  * pass allowGenerics=false, preserving prior behaviour.
  */
 function checkStrict(src: string, allowGenerics: boolean): string {
-  const tokens = lex(src);
-
-  // 1. Parse the whole file into the shared shallow AST. fns come from
-  //    Program.fns; we keep using tokens for intra-body scans (cheap, and
-  //    the AST deliberately doesn't model expressions yet).
+  // 1. Parse the whole file once into the shared AST and reuse its tokens.
+  //    Program.fns is top-level only; cap-check needs nested decls too so
+  //    inner-fn ranges can be excluded from outer body scans.
   const program = parseProgram(src, { allowGenerics });
-  const decls: FnDecl[] = program.fns.map((s) => s.decl);
+  const tokens = program.tokens;
+  const decls = collectAllFnDecls(tokens, { allowGenerics });
 
   // 2. Build per-fn records: direct stdlib uses + intra-module callees.
   const records = new Map<string, FnRecord>();
@@ -404,6 +406,24 @@ function leafDirectUse(path: Path): DirectUse {
   let cur: Path = path;
   while (cur.kind === "via") cur = cur.next;
   return cur.use;
+}
+
+/**
+ * Walk the entire token stream, parsing every `fn` keyword we hit. Unlike
+ * `parseProgram`, this does NOT skip past a parsed declaration's body —
+ * nested `fn` declarations end up in the result alongside their parents,
+ * which is what cap-check needs to filter inner ranges out of outer body
+ * scans. Returns declarations in source order.
+ */
+function collectAllFnDecls(tokens: Token[], opts: ParseFnOptions): FnDecl[] {
+  const decls: FnDecl[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t || t.kind !== "keyword" || t.keyword !== "fn") continue;
+    const decl = parseFn(tokens, i, opts);
+    if (decl) decls.push(decl);
+  }
+  return decls;
 }
 
 function insideAny(idx: number, ranges: FnDecl[]): boolean {

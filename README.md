@@ -215,11 +215,14 @@ opt-ins behind the 0.4 version pin:
   `= D` defaults. Generics emit verbatim into the desugared TypeScript output;
   capability inference and `match` compose unchanged.
 - **Whole-file parse entry.** `parseProgram(src)` (exported from
-  `@mbfarias/botscript-compiler`) returns a typed AST (`Program` with source
-  ranges per statement) for tools that need source-level structure without
-  re-tokenizing the file. Today `cap-check` is the only in-pipeline
-  consumer; LSP and rename tooling can build on the same surface without
-  growing the runtime.
+  `@mbfarias/botscript-compiler`) returns a typed AST (`Program` with the
+  lexed `tokens`, plus a top-level `fns` list carrying source ranges per
+  declaration) for tools that need source-level structure without
+  re-tokenizing the file. The model is shallow on purpose — only `fn`
+  declarations are surfaced as nodes today; deeper structure (test, type,
+  import) can grow when a real consumer needs it. cap-check is the only
+  in-pipeline consumer; LSP and rename tooling can build on the same
+  surface without growing the runtime.
 - **Source offsets on diagnostics.** Capability-check errors now carry
   `start` / `end` UTF-16 string offsets (JS string indices, not UTF-8 bytes)
   alongside `line` / `column`, so editors and agent loops can map to a

@@ -50,6 +50,20 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
+  it("excludes a nested `fn` declaration's body from the outer fn's scan", () => {
+    // Nested fn declarations must be filtered out of the outer body scan,
+    // OR the outer fn would inherit `time` from the inner's body. Pinning
+    // this behaviour: cap-check needs to collect ALL fn decls including
+    // nested ones (so it can compute `inner` ranges and exclude them),
+    // not just top-level fns.
+    const src =
+      `?bs 0.2\nfn outer() -> number = pure {\n` +
+      `  fn inner() uses { time } -> number { return time.now(); }\n` +
+      `  return 1;\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("does not run the static check on 0.1 files (forward compat)", () => {
     // Same source that errors under 0.2; under 0.1 it must compile.
     const src = `?bs 0.1\nfn now() -> number = pure { time.now() }\n`;

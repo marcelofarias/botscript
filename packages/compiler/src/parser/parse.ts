@@ -50,6 +50,7 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
   return {
     kind: "Program",
     src,
+    tokens,
     statements,
     fns,
   };

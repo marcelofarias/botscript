@@ -13,6 +13,7 @@
  * nodes (TypeStmt, TestStmt, ExprNode) land when a real consumer appears.
  */
 
+import type { Token } from "./lex.js";
 import type { FnDecl } from "./parse-fn.js";
 
 /**
@@ -56,11 +57,24 @@ export interface Program {
    * in this AST are positions in `src`.
    */
   src: string;
-  /** Top-level statements in source order. */
+  /**
+   * The token stream `parseProgram` lexed. Exposed so consumers (cap-check
+   * today, future tooling tomorrow) can do their own structural scans
+   * without paying for a second tokenization. Treat as immutable.
+   */
+  tokens: Token[];
+  /**
+   * Top-level statements in source order. Today the AST only models fn
+   * declarations as nodes (per AGENTS.md rule 5 — deeper structure when a
+   * real consumer needs it), so `statements` is the same set as `fns`.
+   */
   statements: Stmt[];
   /**
-   * Convenience accessor for the fn declarations. Same objects as the
-   * matching FnStmt nodes — duplicating here saves callers a `.filter()`.
+   * Convenience accessor for the TOP-LEVEL fn declarations only — fn
+   * declarations nested inside another fn's body are not surfaced here.
+   * Consumers that need every fn (e.g. cap-check, which has to filter
+   * inner fns out of an outer body scan) should walk `tokens` directly
+   * via `parseFn`. Same objects as the matching FnStmt nodes.
    */
   fns: FnStmt[];
 }
