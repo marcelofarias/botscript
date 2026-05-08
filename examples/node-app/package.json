@@ -11,10 +11,10 @@
     "clean": "rm -f src/*.ts tests/*.ts"
   },
   "dependencies": {
-    "@botscript/runtime": "workspace:*"
+    "@mbfarias/botscript-runtime": "workspace:*"
   },
   "devDependencies": {
-    "@botscript/cli": "workspace:*",
+    "@mbfarias/botscript-cli": "workspace:*",
     "tsx": "^4.19.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"

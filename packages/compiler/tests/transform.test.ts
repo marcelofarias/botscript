@@ -167,20 +167,20 @@ describe("assert", () => {
 describe("imports", () => {
   it("auto-prepends import for emitted helpers", () => {
     const out = t(`fn x() uses { net } -> void { }\n`);
-    expect(out).toMatch(/^import \{ \$enter \} from "@botscript\/runtime";/m);
+    expect(out).toMatch(/^import \{ \$enter \} from "@mbfarias\/botscript-runtime";/m);
   });
 
   it("does not auto-import user-facing names like `ok`", () => {
     const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
     // `ok` is a user-facing name — the compiler does not import it for you.
-    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@botscript\/runtime"/);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
   it("does not double-import when user already imports compiler helpers explicitly", () => {
     const out = t(
-      `import { $enter } from "@botscript/runtime";\nfn x() uses { net } -> void { }\n`,
+      `import { $enter } from "@mbfarias/botscript-runtime";\nfn x() uses { net } -> void { }\n`,
     );
-    const matches = out.match(/from "@botscript\/runtime"/g) ?? [];
+    const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(matches.length).toBe(1);
   });
 });

@@ -1,5 +1,5 @@
 {
-  "name": "@botscript/runtime",
+  "name": "@mbfarias/botscript-runtime",
   "version": "0.1.0",
   "description": "Runtime helpers for botscript: Result, Option, match, capability registry.",
   "type": "module",

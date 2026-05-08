@@ -1,4 +1,4 @@
-import { transform } from "@botscript/compiler";
+import { transform } from "@mbfarias/botscript-compiler";
 import type { Plugin } from "vite";
 
 export interface BotscriptPluginOptions {

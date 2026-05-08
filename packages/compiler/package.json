@@ -1,5 +1,5 @@
 {
-  "name": "@botscript/compiler",
+  "name": "@mbfarias/botscript-compiler",
   "version": "0.1.0",
   "description": "botscript compiler: transforms .bot source to TypeScript.",
   "type": "module",

@@ -1,1 +1,1 @@
-export { transform, PRIMER } from "@botscript/compiler";
+export { transform, PRIMER } from "@mbfarias/botscript-compiler";

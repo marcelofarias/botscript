@@ -11,7 +11,7 @@ A small TypeScript-superset language. All TypeScript syntax is legal. The
 additions below are the entire language surface.
 
 == FILE EXTENSION ==
-  *.bs       Source file. Compiled to TypeScript by @botscript/compiler.
+  *.bs       Source file. Compiled to TypeScript by @mbfarias/botscript-compiler.
 
 == DIRECTIVES ==
   ?primer    First line of a file. Emits this primer as a comment block.

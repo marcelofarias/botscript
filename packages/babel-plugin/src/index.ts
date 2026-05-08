@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 
-import { transform as botscriptTransform } from "@botscript/compiler";
+import { transform as botscriptTransform } from "@mbfarias/botscript-compiler";
 
 const require = createRequire(import.meta.url);
 
@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
  *
  * Usage:
  *   // babel.config.js
- *   import { parser } from "@botscript/babel-plugin";
+ *   import { parser } from "@mbfarias/botscript-babel-plugin";
  *   export default {
  *     parserOpts: { parser },
  *     // ...your other Babel config (TS preset, etc.)

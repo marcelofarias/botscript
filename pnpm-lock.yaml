@@ -20,11 +20,11 @@ importers:
 
   examples/node-app:
     dependencies:
-      '@botscript/runtime':
+      '@mbfarias/botscript-runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
     devDependencies:
-      '@botscript/cli':
+      '@mbfarias/botscript-cli':
         specifier: workspace:*
         version: link:../../packages/cli
       tsx:
@@ -39,7 +39,7 @@ importers:
 
   examples/react-app:
     dependencies:
-      '@botscript/runtime':
+      '@mbfarias/botscript-runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
       react:
@@ -49,7 +49,7 @@ importers:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@botscript/vite-plugin':
+      '@mbfarias/botscript-vite-plugin':
         specifier: workspace:*
         version: link:../../packages/vite-plugin
       '@types/react':
@@ -70,7 +70,7 @@ importers:
 
   packages/babel-plugin:
     dependencies:
-      '@botscript/compiler':
+      '@mbfarias/botscript-compiler':
         specifier: workspace:*
         version: link:../compiler
     devDependencies:
@@ -83,7 +83,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@botscript/compiler':
+      '@mbfarias/botscript-compiler':
         specifier: workspace:*
         version: link:../compiler
     devDependencies:
@@ -105,7 +105,7 @@ importers:
 
   packages/vite-plugin:
     dependencies:
-      '@botscript/compiler':
+      '@mbfarias/botscript-compiler':
         specifier: workspace:*
         version: link:../compiler
     devDependencies:

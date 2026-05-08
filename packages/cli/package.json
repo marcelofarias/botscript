@@ -1,5 +1,5 @@
 {
-  "name": "@botscript/cli",
+  "name": "@mbfarias/botscript-cli",
   "version": "0.1.0",
   "description": "botscript command-line: build *.bs files to *.ts, print the primer.",
   "type": "module",
@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@botscript/compiler": "workspace:*"
+    "@mbfarias/botscript-compiler": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

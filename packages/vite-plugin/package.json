@@ -1,5 +1,5 @@
 {
-  "name": "@botscript/vite-plugin",
+  "name": "@mbfarias/botscript-vite-plugin",
   "version": "0.1.0",
   "description": "Vite plugin for botscript: transforms *.bs files to TypeScript at build time.",
   "type": "module",
@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@botscript/compiler": "workspace:*"
+    "@mbfarias/botscript-compiler": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=5"

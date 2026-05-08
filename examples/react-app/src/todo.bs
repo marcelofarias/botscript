@@ -1,6 +1,6 @@
 ?bs 0.1
 
-import { ok, err, type Result } from "@botscript/runtime";
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 
 // Pure helpers for the todo list. The compiler enforces purity by attaching
 // `uses { }` to every fn — these would error at runtime if they ever called

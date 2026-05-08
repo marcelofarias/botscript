@@ -1,6 +1,6 @@
 ?bs 0.1
 
-import { stdout, stderr } from "@botscript/runtime";
+import { stdout, stderr } from "@mbfarias/botscript-runtime";
 
 import { area, describe } from "./shape.js";
 import { parseShape } from "./parse.js";

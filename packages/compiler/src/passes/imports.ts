@@ -1,19 +1,13 @@
 /**
- * Final pass: scan the rewritten output for runtime symbols and prepend a
- * single `import { ... } from "@botscript/runtime";` if any were used and not
- * already imported.
+ * Final pass. Scans the rewritten output for the `$`-prefixed helpers the
+ * compiler itself emits and prepends a single import from
+ * `@mbfarias/botscript-runtime` when any are used and not already imported.
  *
- * We only look for symbols we ourselves emit, plus the user-facing constructor
- * names that are common in idiomatic botscript (`ok`, `err`, `some`, `none`).
- * The heuristic is a word-boundary regex per symbol — false positives are
- * cheap (we just over-import).
- */
-/**
- * The compiler only auto-imports its own emissions (the `$`-prefixed helpers).
- * User-facing names (`ok`, `err`, `some`, `none`, `http`, `time`, `random`,
- * `stdout`, `stderr`) must be imported explicitly — this is intentional. It
- * keeps the magic narrow, avoids shadowing surprises, and means agents reading
- * a botscript file see real imports for real symbols.
+ * The compiler only auto-imports its own emissions. User-facing names (`ok`,
+ * `err`, `some`, `none`, `http`, `time`, `random`, `stdout`, `stderr`) must
+ * be imported explicitly — this is intentional. It keeps the magic narrow,
+ * avoids shadowing surprises, and means agents reading a botscript file see
+ * real imports for real symbols.
  */
 const RUNTIME_SYMBOLS = [
   "$enter",
@@ -34,8 +28,10 @@ export function passImports(src: string): string {
   }
   if (used.size === 0) return src;
 
-  // Don't double-import. If user already has `from "@botscript/runtime"`, append.
-  const existingImport = src.match(/^\s*import\s+\{([^}]*)\}\s+from\s+["']@botscript\/runtime["'];?/m);
+  // Don't double-import. If user already has `from "@mbfarias/botscript-runtime"`, append.
+  const existingImport = src.match(
+    /^\s*import\s+\{([^}]*)\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/m,
+  );
   if (existingImport) {
     const already = new Set(
       (existingImport[1] ?? "")
@@ -46,11 +42,11 @@ export function passImports(src: string): string {
     const toAdd = [...used].filter((s) => !already.has(s));
     if (toAdd.length === 0) return src;
     const merged = [...already, ...toAdd].sort();
-    const newImport = `import { ${merged.join(", ")} } from "@botscript/runtime";`;
+    const newImport = `import { ${merged.join(", ")} } from "@mbfarias/botscript-runtime";`;
     return src.replace(existingImport[0], newImport);
   }
 
-  const importLine = `import { ${[...used].sort().join(", ")} } from "@botscript/runtime";`;
+  const importLine = `import { ${[...used].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
   return `${importLine}\n${src}`;
 }
 

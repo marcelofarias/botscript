@@ -1,5 +1,5 @@
 {
-  "name": "@botscript/babel-plugin",
+  "name": "@mbfarias/botscript-babel-plugin",
   "version": "0.1.0",
   "description": "Babel plugin for botscript: prepends a transformation pass that desugars *.bs syntax.",
   "type": "module",
@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@botscript/compiler": "workspace:*"
+    "@mbfarias/botscript-compiler": "workspace:*"
   },
   "peerDependencies": {
     "@babel/core": "^7"

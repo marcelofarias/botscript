@@ -1,4 +1,4 @@
-import botscript from "@botscript/vite-plugin";
+import botscript from "@mbfarias/botscript-vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 

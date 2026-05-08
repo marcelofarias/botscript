@@ -54,7 +54,7 @@ export const $assert = (cond: unknown, msg?: string): void => {
       msg ??
         "assert failed.\n" +
           "  Idiom:   `assert x == y` is the inline form; use `assert.equal` for richer diffs.\n" +
-          "  Rewrite: import { equal } from \"@botscript/runtime/assert\"; equal(x, y)",
+          "  Rewrite: import { equal } from \"@mbfarias/botscript-runtime/assert\"; equal(x, y)",
     );
   }
 };

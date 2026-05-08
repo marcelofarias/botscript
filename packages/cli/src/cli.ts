@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { exit, stderr, stdout } from "node:process";
 
-import { PRIMER, transform } from "@botscript/compiler";
+import { PRIMER, transform } from "@mbfarias/botscript-compiler";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];

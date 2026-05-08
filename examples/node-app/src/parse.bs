@@ -1,6 +1,6 @@
 ?bs 0.1
 
-import { ok, err, type Result } from "@botscript/runtime";
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 
 import type { Shape } from "./shape.js";
 

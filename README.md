@@ -52,12 +52,12 @@ Three options, all equivalent:
 
 ```ts
 // Vite
-import botscript from "@botscript/vite-plugin";
+import botscript from "@mbfarias/botscript-vite-plugin";
 export default { plugins: [botscript()] };
 
 // Babel
 {
-  "plugins": ["@botscript/babel-plugin"]
+  "plugins": ["@mbfarias/botscript-babel-plugin"]
 }
 
 // CLI (one-shot, watches *.bot)
@@ -68,11 +68,11 @@ botscript build src --out src   # compiles *.bs to *.ts in place
 
 | Package                    | What it does                                      |
 | -------------------------- | ------------------------------------------------- |
-| `@botscript/runtime`       | Result/Option, match, capability registry         |
-| `@botscript/compiler`      | `transform(src) -> ts` — the only thing that bites |
-| `@botscript/cli`           | `botscript build`, `botscript primer`             |
-| `@botscript/vite-plugin`   | Vite integration                                  |
-| `@botscript/babel-plugin`  | Babel integration                                 |
+| `@mbfarias/botscript-runtime`       | Result/Option, match, capability registry         |
+| `@mbfarias/botscript-compiler`      | `transform(src) -> ts` — the only thing that bites |
+| `@mbfarias/botscript-cli`           | `botscript build`, `botscript primer`             |
+| `@mbfarias/botscript-vite-plugin`   | Vite integration                                  |
+| `@mbfarias/botscript-babel-plugin`  | Babel integration                                 |
 
 ## Status
 
