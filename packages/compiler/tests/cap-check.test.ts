@@ -166,6 +166,42 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).toThrow(/loadOne -> doFetch -> http\.get/);
   });
 
+  it("recognises a direct stdlib use through a generic-returning fn (0.4)", () => {
+    // Regression: the return-type scanner used to bail at the inner `}` of
+    // `Result<{ name: string }, string>`, treating that brace as the body
+    // opener. The fn body was effectively never scanned, so cap-check
+    // wrongly reported the declared `fs` capability as over-declared.
+    const src =
+      `?bs 0.4\n` +
+      `fn loadConfig(path: string) uses { fs } -> Result<{ name: string }, string> {\n` +
+      `  let cfg = fs.readJson<{ name: string }>(path)?\n` +
+      `  return ok(cfg);\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("handles nested generic close (>>) in the return type (0.4)", () => {
+    const src =
+      `?bs 0.4\n` +
+      `fn g() uses { fs } -> Map<string, Vec<{ name: string }>> {\n` +
+      `  fs.readJson<{ x: number }>("p");\n` +
+      `  return new Map();\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("handles a union return type with a leading object literal (0.4)", () => {
+    // Outer-level `{...}` followed by `|` — the case-list heuristic
+    // would have flagged this brace as the body opener.
+    const src =
+      `?bs 0.4\n` +
+      `fn g() uses { fs } -> { name: string } | string {\n` +
+      `  fs.readJson<{ x: number }>("p");\n` +
+      `  return "x";\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("accepts a fn whose declared caps match the transitive set (0.3)", () => {
     const src =
       `?bs 0.3\n` +
