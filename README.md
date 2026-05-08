@@ -7,9 +7,11 @@
 A small TypeScript-superset language for a world where most code is written by
 machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
 
-> Try it locally: clone, run `pnpm install && pnpm play`, open http://localhost:5173.
-> Type `.bs` on the left, see the desugared TypeScript on the right — the
-> actual compiler bundle running in your browser.
+> **Live playground:** [marcelofarias.github.io/botscript](https://marcelofarias.github.io/botscript/)
+> — type `.bs` on the left, see the desugared TypeScript on the right. The
+> actual compiler bundle, running in your browser, no install required.
+>
+> Or run it locally: `pnpm install && pnpm play` → http://localhost:5173.
 
 ## .bs vs .ts at a glance
 
