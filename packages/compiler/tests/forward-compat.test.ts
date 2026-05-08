@@ -8,10 +8,10 @@
  * be moved behind a NEW pin instead.
  *
  * Maintenance:
- *   - NEVER `--update-snapshots` an existing 0.1/0.2/0.3 snapshot. If a fix
- *     legitimately needs to change shipped output, that's an internal bug
- *     fix only allowed if the new output preserves observable behaviour.
- *     When in doubt: gate behind a new pin.
+ *   - NEVER `--update-snapshots` an existing 0.1/0.2/0.3 snapshot. AGENTS.md
+ *     rule 4 says shipped pins compile identically forever — any change
+ *     that alters shipped output goes behind a NEW pin, regardless of
+ *     intent. There is no "observable behaviour preserved" exception.
  *   - When a new pin (0.4, 0.5, …) ships, ADD a new `describe` block here
  *     so future changes are caught the same way.
  *
@@ -25,17 +25,16 @@
  *   Two pre-existing parser/unwrap limitations are deliberately routed
  *   AROUND by these fixtures (rather than locked into the snapshot):
  *
- *     1. The unwrap pass merges multiple consecutive bare-`expr?`
- *        statements across newlines. Fixtures use one `?`-position per
- *        `it` to dodge this, instead of stacking several in one source.
+ *     1. The unwrap pass merges multiple consecutive bare-`?` statements
+ *        across newlines. Fixtures use one `?`-position per `it` block,
+ *        not stacked in a single source.
  *     2. The fn parser's body-opener heuristic can mistake an inline
- *        object type inside a generic argument list for the body brace.
- *        Fixtures use a named alias for return types when generics
- *        contain object structure, instead of inlining it.
+ *        object structure inside a generic type argument for the body
+ *        brace. Fixtures use a named type alias for return types in
+ *        that situation, not the inline form.
  *
  *   Both limitations are tracked separately. Their fixes will need their
- *   own version-gating discussion (rule 4 makes them tricky — fixing
- *   changes shipped 0.1 output).
+ *   own version-gating discussion under AGENTS.md rule 4.
  */
 
 import { describe, expect, it } from "vitest";

@@ -12,7 +12,7 @@ import { passTest } from "./passes/test.js";
 import { passTestMocks } from "./passes/test-mocks.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
-import { atLeast, LATEST_VERSION, passVersion, type VersionInfo } from "./passes/version.js";
+import { atLeast, passVersion, type VersionInfo } from "./passes/version.js";
 
 export interface TransformOptions {
   /** Source filename for diagnostics. Optional. */
