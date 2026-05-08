@@ -6,6 +6,10 @@ dist/
 .pnpm-store/
 .DS_Store
 
+# never commit auth tokens
+.npmrc
+!packages/*/.npmrc.example
+
 # example build outputs
 examples/*/dist/
 examples/*/.bot-build/
