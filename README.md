@@ -5,6 +5,69 @@ machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
 
 ---
 
+## The one-shot prompt
+
+> Copy-paste this into an LLM (Claude, Codex, Gemini, etc.) inside an **empty
+> directory**. The agent will scaffold a working full-stack botscript app from
+> scratch — backend, frontend, tests, the lot — without any follow-up from you.
+
+```text
+You are creating a small full-stack app called "shapebook" using botscript, a
+TypeScript-superset language designed for bot-written code. Botscript files
+end in .bs and compile to TypeScript via @mbfarias/botscript-compiler.
+
+Read this once before starting:
+- README + manifesto: https://github.com/marcelofarias/botscript
+- The full language primer is the PRIMER export in
+  @mbfarias/botscript-compiler/dist/primer.js, and STDLIB.bs in the repo above
+  shows every feature exactly once. Read both before writing any .bs.
+
+Stack:
+- pnpm workspace with two packages: apps/api and apps/web.
+- apps/api: Node 22, Fastify (or stock node:http), persists to ./data/shapes.json.
+- apps/web: Vite + React 18, uses @mbfarias/botscript-vite-plugin.
+- Both apps use @mbfarias/botscript-runtime for Result/Option/match.
+- All business logic in .bs files; framework glue (server bootstrap, ReactDOM)
+  may stay in .ts/.tsx.
+
+What "shapebook" does:
+- A user can submit shapes (Circle{r}, Square{side}, Triangle{base,height})
+  via a small React form, and see a list of submissions with computed area.
+- Each submission gets an auto-incrementing id and an iso timestamp.
+- The API persists submissions to disk between restarts.
+- The frontend talks to the API at http://localhost:3000.
+
+Botscript usage requirements (this is the actual test — please use them all):
+- At least one `fn ... uses { fs } -> Result<..., ...>` for the persistence
+  layer.
+- At least one `match` expression for shape dispatch (e.g. computing area).
+- At least one `pure { ... }` block.
+- At least one `?` postfix unwrap.
+- At least three `test "name" { ... }` blocks across the two apps, all passing.
+
+Hard rules:
+- Pin every .bs file to `?bs 0.1` at the top.
+- Never use `any`, `null`, or unchecked exceptions in business logic; use
+  Result + Option + match.
+- The frontend must show an error message when the API returns Err — never
+  swallow.
+- Run `pnpm -r build && pnpm -r test` and confirm green BEFORE you say "done".
+- Run the api on port 3000 and the web on port 5173, manually open the browser,
+  add one circle and one square, confirm both render with computed areas, then
+  stop the servers.
+
+Deliverables:
+- A README.md at the root that explains how to install, run, test.
+- All source committed in a single commit titled "feat: shapebook v0".
+- A short note at the bottom of the README listing which botscript features
+  you used and where (one line each).
+```
+
+You can also feed this to the agent piece-by-piece if you want to watch it
+work. The above is the minimum viable spec for an end-to-end run.
+
+---
+
 ## Install (for bots)
 
 > If you are an LLM wiring botscript into an existing project, the rest of this
