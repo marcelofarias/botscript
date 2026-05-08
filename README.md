@@ -205,6 +205,25 @@ opt-ins behind the 0.3 version pin:
   any diagnostic code; `check` runs the pipeline without writing files. Both
   support `--format json` for downstream tools.
 
+## What's new in `?bs 0.4` (opt-in)
+
+Files pinned to `?bs 0.3` continue to compile identically — these are all new
+opt-ins behind the 0.4 version pin:
+
+- **Type parameters in `fn` signatures.** `fn id<T>(x: T) -> T = pure { x }`,
+  `fn pair<A, B>(a: A, b: B) -> [A, B] { … }`, plus `extends` constraints and
+  `= D` defaults. Generics emit verbatim into the desugared TypeScript output;
+  capability inference and `match` compose unchanged.
+- **Whole-file parse entry.** `parser/parseProgram(src)` returns a typed AST
+  (`Program` with byte ranges per statement) for tools that need source-level
+  structure without re-tokenizing the file. Today only `cap-check` consumes
+  it; LSP and rename tooling can build on the same surface without growing
+  the runtime.
+- **Byte offsets on diagnostics.** Capability-check errors now carry
+  `start` / `end` byte offsets alongside `line` / `column`, so editors and
+  agent loops can map to a precise span without re-walking the source. The
+  fields are optional and present from `?bs 0.4` onward.
+
 ## MCP server (for bots)
 
 A botscript-aware bot doesn't need to read this README, the manifesto, or

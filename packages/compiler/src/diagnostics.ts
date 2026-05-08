@@ -20,6 +20,21 @@ export interface Diagnostic {
   line: number;
   /** 1-indexed column. */
   column: number;
+  /**
+   * Byte offset where the offending range begins in the source as the pass
+   * sees it — that is, after the `?bs` directive at the top of the file has
+   * been stripped (passVersion runs first). Line and column above use the
+   * same coordinate system, but happen to coincide with original-source
+   * line numbering because passVersion preserves the trailing newline.
+   *
+   * Optional because passes that don't track ranges still emit (line,
+   * column) only. When present, callers (LSP, agent loops) can map straight
+   * to a source span without re-walking the file. Available from ?bs 0.4
+   * onward for diagnostics emitted by passes that consume the AST.
+   */
+  start?: number;
+  /** Byte offset just after the offending range ends. Pairs with `start`. */
+  end?: number;
   /** One-line summary, no embedded newlines. */
   message: string;
   /** The language rule that was violated (full sentence). */

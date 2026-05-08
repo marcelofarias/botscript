@@ -1,4 +1,4 @@
-?bs 0.3
+?bs 0.4
 ?primer
 
 // STDLIB.bs — every botscript feature, exactly once.
@@ -37,6 +37,15 @@ fn slug(s: string) -> string = pure {
 fn area(s: Shape) -> number = match s {
   Circle { r }    -> Math.PI * r * r
   Square { side } -> side * side
+}
+
+// ─── 4b. fn with type parameters (0.4+) ─────────────────────────────────────
+// Generic fns work like TypeScript: `<T>` between the name and the args.
+// `extends` constraints and defaults are supported. `match` and capabilities
+// compose unchanged.
+
+fn first<T>(xs: Array<T>) -> Option<T> = pure {
+  xs.length > 0 ? some(xs[0]!) : none
 }
 
 // ─── 5. ? unwrap ────────────────────────────────────────────────────────────

@@ -172,4 +172,43 @@ describe("static capability check (0.2)", () => {
       expect((e as CapabilityCheckError).line).toBe(3);
     }
   });
+
+  it("populates start/end byte offsets on the diagnostic (direct, 0.2)", () => {
+    // Direct usage at 0.2: the diagnostic should anchor at the offending
+    // `time` token. start/end are in post-?bs-stripping coordinates, which
+    // is what passes operate on. To assert against the substring, we strip
+    // the directive ourselves the same way passVersion does (drop the
+    // directive content, keep the trailing newline).
+    const src = `?bs 0.2\nfn now() -> number = pure { time.now() }\n`;
+    const passSrc = src.replace(/^\?bs [\d.]+/, "");
+    try {
+      t(src);
+      throw new Error("expected throw");
+    } catch (e) {
+      const d = (e as CapabilityCheckError).diagnostics[0]!;
+      expect(d.start).toBeDefined();
+      expect(d.end).toBeDefined();
+      expect(passSrc.slice(d.start!, d.end!)).toBe("time");
+    }
+  });
+
+  it("populates start/end on transitive (CAP001) diagnostics — 0.3", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) -> string = pure { doFetch(url) }\n`;
+    const passSrc = src.replace(/^\?bs [\d.]+/, "");
+    try {
+      t(src);
+      throw new Error("expected throw");
+    } catch (e) {
+      const d = (e as CapabilityCheckError).diagnostics[0]!;
+      expect(d.start).toBeDefined();
+      // Transitive errors anchor at the fn header — `fn loadOne`.
+      expect(passSrc.slice(d.start!, d.end!)).toBe("fn loadOne");
+    }
+  });
 });

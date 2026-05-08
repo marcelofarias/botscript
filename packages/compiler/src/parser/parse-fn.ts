@@ -14,8 +14,22 @@ export interface FnDecl {
   start: number;
   /** Token index just after the parsed run (the next token to emit normally). */
   end: number;
+  /** Byte offset of the parsed run start in the original source. */
+  byteStart: number;
+  /** Byte offset just after the parsed run end in the original source. */
+  byteEnd: number;
+  /** Byte offset of the `fn` keyword (after `async` if present). */
+  fnKeywordByteStart: number;
+  /** Byte offset of the function name identifier. */
+  nameByteStart: number;
   isAsync: boolean;
   name: string;
+  /**
+   * Verbatim type-parameter block including the angle brackets, e.g. `<T>` or
+   * `<T extends U, V = D>`, or null if none. Gated to ?bs 0.4+ at the call
+   * site — earlier pins do not parse generics.
+   */
+  typeParams: string | null;
   /** Verbatim args including parens. */
   args: string;
   capabilities: string[];
@@ -28,11 +42,26 @@ export type FnBody =
   | { kind: "block"; text: string }
   | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr" };
 
+export interface ParseFnOptions {
+  /**
+   * When true, the parser accepts an optional `<T, …>` type-parameter block
+   * between the function name and the args. Gated to ?bs 0.4+ at the call
+   * site — earlier pins do not parse generics, so a 0.1/0.2/0.3 file with
+   * `fn id<T>(…)` would have failed before this option existed and must
+   * continue to fail with allowGenerics=false.
+   */
+  allowGenerics?: boolean;
+}
+
 /**
  * Parse a fn declaration starting at `idx` (which must be the `fn` keyword
  * token). If the previous non-trivia token is `async`, that's consumed too.
  */
-export function parseFn(tokens: Token[], idx: number): FnDecl | null {
+export function parseFn(
+  tokens: Token[],
+  idx: number,
+  opts: ParseFnOptions = {},
+): FnDecl | null {
   // Detect leading `async` modifier.
   let isAsync = false;
   let start = idx;
@@ -48,8 +77,20 @@ export function parseFn(tokens: Token[], idx: number): FnDecl | null {
   const nameTok = tokens[i];
   if (!nameTok || nameTok.kind !== "ident") return null;
   const name = nameTok.text;
+  const nameByteStart = nameTok.start;
   i++;
   i = skipTrivia(tokens, i);
+
+  // Optional type-parameter block (0.4+, opt-in).
+  let typeParams: string | null = null;
+  if (opts.allowGenerics) {
+    const tp = tryParseTypeParams(tokens, i);
+    if (tp) {
+      typeParams = tp.text;
+      i = tp.end;
+      i = skipTrivia(tokens, i);
+    }
+  }
 
   // Args: balanced `(...)`.
   const argsOpen = tokens[i];
@@ -163,16 +204,70 @@ export function parseFn(tokens: Token[], idx: number): FnDecl | null {
     return null;
   }
 
+  const startTok = tokens[start]!;
+  const lastTok = tokens[bodyEnd - 1] ?? tokens[start]!;
   return {
     start,
     end: bodyEnd,
+    byteStart: startTok.start,
+    byteEnd: lastTok.end,
+    fnKeywordByteStart: tokens[idx]!.start,
+    nameByteStart,
     isAsync,
     name,
+    typeParams,
     args,
     capabilities,
     returnType,
     body,
   };
+}
+
+/**
+ * Recognize a balanced `<T, …>` block starting at `from`. Returns the verbatim
+ * text (including the angle brackets) and the token index just after the
+ * closing `>`. The lexer does NOT bracket-match `<`/`>` (they're operators,
+ * not opens/closes), so we count depth manually here, allowing balanced
+ * `(...)`, `{...}`, `[...]` inside, plus the multi-char `>>`/`>>>` operators
+ * that close two or three levels at once.
+ *
+ * Returns null if the next token isn't `<`, or if no balanced close is found.
+ */
+function tryParseTypeParams(tokens: Token[], from: number): { text: string; end: number } | null {
+  const t = tokens[from];
+  if (!t || t.kind !== "operator" || t.text !== "<") return null;
+  let depth = 1;
+  let i = from + 1;
+  while (i < tokens.length) {
+    const tk = tokens[i]!;
+    if (tk.kind === "eof") return null;
+    if (tk.kind === "open" && tk.matchedAt !== undefined) {
+      i = tk.matchedAt + 1;
+      continue;
+    }
+    if (tk.kind === "operator") {
+      if (tk.text === "<") {
+        depth++;
+        i++;
+        continue;
+      }
+      if (tk.text === ">") {
+        depth--;
+        i++;
+        if (depth === 0) return { text: sliceText(tokens, from, i), end: i };
+        continue;
+      }
+      if (tk.text === ">>" || tk.text === ">>>") {
+        depth -= tk.text.length;
+        i++;
+        if (depth <= 0) return { text: sliceText(tokens, from, i), end: i };
+        continue;
+      }
+      if (tk.text === ">=") return null;
+    }
+    i++;
+  }
+  return null;
 }
 
 function parseCapList(tokens: Token[], from: number, to: number): string[] {

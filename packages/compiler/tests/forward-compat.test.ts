@@ -14,6 +14,13 @@
  *     When in doubt: gate behind a new pin.
  *   - When a new pin (0.4, 0.5, …) ships, ADD a new `describe` block here
  *     so future changes are caught the same way.
+ *
+ * NOT covered:
+ *   The `?primer` comment block emitted at the top of a file. Its text is
+ *   the language reference (`packages/compiler/src/primer.ts`) and AGENTS.md
+ *   rule 2 requires it to grow with the language as new pins ship. Locking
+ *   it here would conflict with rule 2. Primer-pass behaviour (recognize
+ *   the directive, emit a comment) is covered in `transform.test.ts`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -27,10 +34,6 @@ const t = (src: string) => transform(src).code;
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("forward-compat: ?bs 0.1 output is frozen", () => {
-  it("primer directive emits the v0.1 primer comment block", () => {
-    expect(t(`?bs 0.1\n?primer\nconst x = 1;\n`)).toMatchSnapshot();
-  });
-
   it("fn with uses + block body", () => {
     const src =
       `?bs 0.1\n` +
@@ -131,10 +134,9 @@ describe("forward-compat: ?bs 0.1 output is frozen", () => {
     ).toMatchSnapshot();
   });
 
-  it("integration: primer + multiple fns + test + ? + assert", () => {
+  it("integration: multiple fns + test + ? + assert", () => {
     const src =
       `?bs 0.1\n` +
-      `?primer\n` +
       `fn slug(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }\n` +
       `\n` +
       `fn loadUser(id: string) uses { net } -> Result<{name: string}, string> {\n` +
@@ -273,6 +275,41 @@ describe("forward-compat: ?bs 0.3 output is frozen", () => {
       `fn outer(s: string) -> string {\n` +
       `  return helper(s);\n` +
       `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ?bs 0.4
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forward-compat: ?bs 0.4 output is frozen", () => {
+  it("fn with single type parameter", () => {
+    expect(t(`?bs 0.4\nfn id<T>(x: T) -> T = pure { x }\n`)).toMatchSnapshot();
+  });
+
+  it("fn with multiple type parameters and constraints", () => {
+    expect(
+      t(`?bs 0.4\nfn pick<A extends number, B = string>(a: A, b: B) -> [A, B] = pure { [a, b] }\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("async generic fn", () => {
+    const src =
+      `?bs 0.4\n` +
+      `async fn fetchOne<T>(url: string) uses { net } -> Promise<T> {\n` +
+      `  const r = await fetch(url);\n` +
+      `  return r as T;\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("0.3 program compiled at 0.4 produces 0.3 output (additive only)", () => {
+    // 0.4 adds generics + start/end on diagnostics; nothing about non-generic
+    // code changes. A 0.3-style file should compile at 0.4 to the same TS.
+    const src =
+      `?bs 0.4\n` +
+      `fn slug(s: string) -> string = pure { s.toLowerCase() }\n`;
     expect(t(src)).toMatchSnapshot();
   });
 });

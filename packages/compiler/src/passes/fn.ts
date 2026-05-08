@@ -11,9 +11,11 @@
 import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
+import type { VersionInfo } from "./version.js";
 
-export function passFn(src: string): string {
+export function passFn(src: string, version?: VersionInfo): string {
   const tokens = lex(src);
+  const allowGenerics = version ? atLeast(version.resolved, "0.4") : false;
   // Walk tokens, find every `fn` keyword, parse it, and emit the desugared TS.
   // We slice from previous emit-cursor to the start of the parsed run, then
   // append the emit. That keeps comments/whitespace verbatim.
@@ -22,7 +24,7 @@ export function passFn(src: string): string {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     if (t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i);
+    const decl = parseFn(tokens, i, { allowGenerics });
     if (!decl) continue;
     // Emit everything up to the start of this declaration.
     out += src.slice(cursor, tokens[decl.start]!.start);
@@ -36,14 +38,31 @@ export function passFn(src: string): string {
   return out;
 }
 
+function atLeast(actual: string, min: string): boolean {
+  const a = actual.split(".").map(Number);
+  const m = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, m.length); i++) {
+    const av = a[i] ?? 0;
+    const mv = m[i] ?? 0;
+    if (av > mv) return true;
+    if (av < mv) return false;
+  }
+  return true;
+}
+
 function emitFn(decl: FnDecl): string {
   const capsLiteral = `[${decl.capabilities.map((c) => JSON.stringify(c)).join(", ")}]`;
   const arrow = decl.isAsync ? "async () => " : "() => ";
 
   const inner = renderBody(decl);
   const asyncPrefix = decl.isAsync ? "async " : "";
+  // Type params are emitted verbatim between the name and the arg list.
+  // 0.1/0.2/0.3 produce typeParams === null (allowGenerics gated off), so
+  // the emitted shape there is byte-identical to before. Only ?bs 0.4+ sees
+  // the `<…>` block in the TS output.
+  const tparams = decl.typeParams ?? "";
   return (
-    `${asyncPrefix}function ${decl.name}${decl.args}: ${decl.returnType} {\n` +
+    `${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
     `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
     `${indent(inner, 4)}\n` +
     `  });\n` +

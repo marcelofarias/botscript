@@ -149,6 +149,8 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
       file: null,
       line,
       column,
+      start: tok.start,
+      end: tok.end,
       message: `fn '${fn.name}' calls '${tok.text}.${memberName}' which requires capability '${cap}', but uses clause is { ${granted} }`,
       rule: `a function declared 'uses { ${granted} }' may not call '${tok.text}.…' which requires capability '${cap}'`,
       idiom: `declare every capability the function consumes; pure helpers stay pure`,
@@ -310,9 +312,19 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   // (precise). For a transitive usage we anchor at the fn header — that's the
   // declaration the bot has to edit, and the path string says where the
   // requirement actually comes from.
-  const headerLoc = fnHeaderLocation(src, rec.decl);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordByteStart);
   const line = isTransitive ? headerLoc.line : leafUse.line;
   const column = isTransitive ? headerLoc.column : leafUse.column;
+  // The diagnostic's byte range anchors the same span the line/column does:
+  // the fn header for transitive cases, the offending stdlib member for
+  // direct ones. Available regardless of pin from this point — it's a strict
+  // addition; older callers that ignore start/end keep working.
+  const start = isTransitive
+    ? rec.decl.fnKeywordByteStart
+    : tokenOffsetForUse(src, leafUse);
+  const end = isTransitive
+    ? rec.decl.nameByteStart + rec.decl.name.length
+    : start + leafUse.namespace.length;
 
   const tail =
     missing.length > 1
@@ -328,6 +340,8 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
     file: null,
     line,
     column,
+    start,
+    end,
     message,
     rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}.…')`}`,
     idiom: entry.idiom,
@@ -337,8 +351,23 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   return new CapabilityCheckError(diagnostic, rec.decl.name, repCap, leafUse.namespace);
 }
 
+/**
+ * Byte offset of the leaf direct-use's stdlib token. We only have line/column
+ * recorded on `DirectUse`, not the token offset, so we recover the offset by
+ * walking the line/column. Cheap and avoids changing `DirectUse`'s shape.
+ */
+function tokenOffsetForUse(src: string, use: DirectUse): number {
+  let line = 1;
+  let i = 0;
+  while (i < src.length && line < use.line) {
+    if (src[i] === "\n") line++;
+    i++;
+  }
+  return i + (use.column - 1);
+}
+
 function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): BotscriptError {
-  const headerLoc = fnHeaderLocation(src, rec.decl);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordByteStart);
   const remaining = rec.decl.capabilities.filter((c) => !extra.includes(c));
   const remainingStr = remaining.length === 0 ? "" : ` uses { ${remaining.join(", ")} }`;
   const entry = getErrorCode("CAP002")!;
@@ -354,6 +383,8 @@ function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): Botsc
     file: null,
     line: headerLoc.line,
     column: headerLoc.column,
+    start: rec.decl.fnKeywordByteStart,
+    end: rec.decl.nameByteStart + rec.decl.name.length,
     message,
     rule: entry.rule,
     idiom: entry.idiom,
@@ -379,27 +410,6 @@ function leafDirectUse(path: Path): DirectUse {
   let cur: Path = path;
   while (cur.kind === "via") cur = cur.next;
   return cur.use;
-}
-
-/** Line/column of the `fn` keyword for a declaration. */
-function fnHeaderLocation(src: string, decl: FnDecl): { line: number; column: number } {
-  // The declaration start may include a leading `async` keyword; either way,
-  // walking forward to the `fn ` literal in the original source gives the
-  // header location stably.
-  // Decl tokens carry start = the token-array index of the start; we don't
-  // have offsets directly, so fall back to scanning from the decl name.
-  // Simpler: locate `fn <name>` in `src`. There may be many; rely on the fact
-  // that the parser already produced a unique decl per name — we pick the
-  // first occurrence by name. Good enough for diagnostics; precise offsets
-  // can be threaded later if needed.
-  const re = new RegExp(`\\bfn\\s+${escapeRegex(decl.name)}\\b`);
-  const match = re.exec(src);
-  if (!match) return { line: 1, column: 1 };
-  return locationOf(src, match.index);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function insideAny(idx: number, ranges: FnDecl[]): boolean {

@@ -21,6 +21,10 @@ additions below are the entire language surface.
                                               capabilities the function may use
   fn name(args) -> ReturnType = pure { expr }
                                               equivalent to uses { } + return expr
+  fn name<T>(args) -> ReturnType { body }     (0.4+) type parameters between
+                                              the name and the args. Constraints
+                                              (T extends U) and defaults (T = D)
+                                              are accepted and emitted verbatim.
   Capabilities: net, fs, time, random, process, stdout, stderr.
   Under ?bs 0.2 the capability declaration is checked statically — a function
   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse
@@ -32,6 +36,9 @@ additions below are the entire language surface.
             "f -> g -> http.get".
     CAP002  uses clause names a capability nothing in the body reaches. The
             declaration must match what the function actually uses.
+  Under ?bs 0.4 cap-check diagnostics also carry start/end byte offsets
+  alongside line/column so editor and LSP integrations can map the error to
+  a precise span without re-walking the source.
 
 == TAGGED UNIONS (0.2+) ==
   type Shape = Circle { r: number } | Square { side: number };
