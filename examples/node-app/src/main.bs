@@ -1,0 +1,25 @@
+?bs 0.1
+
+import { stdout, stderr } from "@botscript/runtime";
+
+import { area, describe } from "./shape.js";
+import { parseShape } from "./parse.js";
+
+// `uses { stdout, stderr, process }` is the contract: this function is allowed
+// to print and exit, and nothing more. A reviewer (human or model) reading
+// this signature alone knows the entire side-effect surface.
+
+fn main() uses { stdout, stderr, process } -> void {
+  const args = process.argv.slice(2);
+  const parsed = parseShape(args);
+  if (parsed.kind === "err") {
+    stderr.println(`error: ${parsed.error}`);
+    stderr.println("usage: shape circle <r> | square <side> | triangle <b> <h>");
+    process.exit(1);
+    return;
+  }
+  const s = parsed.value;
+  stdout.println(`${describe(s)} -> area=${area(s).toFixed(4)}`);
+}
+
+main();

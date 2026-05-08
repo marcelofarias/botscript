@@ -1,0 +1,19 @@
+{
+  "name": "botscript-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A small TypeScript-superset language designed for code that is mostly written by machines.",
+  "type": "module",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r --filter './packages/*' typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

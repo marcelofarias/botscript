@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.tsbuildinfo
+*.tsbuildinfo
+.vite/
+.pnpm-store/
+.DS_Store
+
+# example build outputs
+examples/*/dist/
+examples/*/.bot-build/
+
+# generated .ts from .bs (node-app compiles next-to-source)
+examples/node-app/src/*.ts
+examples/node-app/tests/*.ts

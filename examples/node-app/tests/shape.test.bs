@@ -1,0 +1,21 @@
+?bs 0.1
+
+import { area, describe } from "../src/shape.js";
+
+test "circle area" {
+  const a = area({ kind: "Circle", r: 2 });
+  assert Math.abs(a - Math.PI * 4) < 1e-9;
+}
+
+test "square area" {
+  assert area({ kind: "Square", side: 5 }) === 25;
+}
+
+test "triangle area" {
+  assert area({ kind: "Triangle", base: 4, height: 6 }) === 12;
+}
+
+test "describe formats nicely" {
+  assert describe({ kind: "Circle", r: 3 }) === "circle(r=3)";
+  assert describe({ kind: "Square", side: 4 }) === "square(4x4)";
+}

@@ -1,0 +1,89 @@
+?bs 0.1
+?primer
+
+// STDLIB.bs — every botscript feature, exactly once.
+//
+// Read this file end-to-end before writing botscript code in this repo. If a
+// feature you want is not in this file, it does not exist yet — propose it
+// before using it. Keep this file *small*: every form here is load-bearing.
+
+import { ok, err, some, none, http, time, type Option, type Result } from "@botscript/runtime";
+
+// ─── 1. Tagged union ────────────────────────────────────────────────────────
+// botscript does not (yet) ship a sugar for declaring tagged unions. Use TS.
+
+export type Shape =
+  | { kind: "Circle"; r: number }
+  | { kind: "Square"; side: number };
+
+// ─── 2. fn with capabilities ────────────────────────────────────────────────
+// `uses { ... }` declares the side-effect categories this function may touch.
+// Capabilities: net, fs, time, random, process, stdout, stderr.
+
+fn now() uses { time } -> number {
+  return time.now();
+}
+
+// ─── 3. fn pure shorthand ───────────────────────────────────────────────────
+// `= pure { expr }` is equivalent to `uses { } { return expr; }`.
+
+fn slug(s: string) -> string = pure {
+  s.trim().toLowerCase().replaceAll(" ", "-")
+}
+
+// ─── 4. fn single-expression body ───────────────────────────────────────────
+// Any single expression after `=` becomes the function body. Common with match.
+
+fn area(s: Shape) -> number = match s {
+  Circle { r }    -> Math.PI * r * r
+  Square { side } -> side * side
+}
+
+// ─── 5. ? unwrap ────────────────────────────────────────────────────────────
+// On a Result-returning expression at end of a `let`/`const`/`return` line,
+// `?` unwraps the Ok or short-circuits the enclosing fn with the Err.
+
+fn loadFirstLine(url: string) uses { net } -> Result<string, string> {
+  let res = doFetch(url)?
+  return ok(res.split("\n")[0] ?? "");
+}
+
+// ─── 6. Result vs Option ────────────────────────────────────────────────────
+// Result has an error payload; Option does not. Use Option for "maybe", Result
+// for "could fail".
+
+fn firstAdmin(users: { role: string; name: string }[]) -> Option<string> = pure {
+  (() => {
+    const u = users.find((u) => u.role === "admin");
+    return u ? some(u.name) : none;
+  })()
+}
+
+// ─── 7. match patterns (the four supported) ─────────────────────────────────
+
+fn label(x: unknown) -> string = match x {
+  "ping"          -> "pong"            // string literal
+  42              -> "answer"          // number literal
+  true            -> "yes"             // boolean literal
+  _               -> "unknown"         // wildcard (must be last)
+}
+
+// ─── 8. test "name" { } and assert ──────────────────────────────────────────
+// `test` is a top-level form; it forwards to vitest's `test` when run there.
+
+test "slug normalizes whitespace" {
+  assert slug("  Hello World  ") === "hello-world";
+}
+
+test "area handles both shapes" {
+  assert area({ kind: "Circle", r: 1 }) === Math.PI;
+  assert area({ kind: "Square", side: 4 }) === 16;
+}
+
+// ─── helpers used above ─────────────────────────────────────────────────────
+// (These exist only to make the examples compile in isolation.)
+
+fn doFetch(url: string) uses { net } -> Result<string, string> {
+  // Real code would use http.get and parse Response; the stub returns Ok.
+  return ok(`fetched ${url}`);
+}

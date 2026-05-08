@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [],
+  "references": [
+    { "path": "./packages/runtime" },
+    { "path": "./packages/compiler" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/vite-plugin" },
+    { "path": "./packages/babel-plugin" }
+  ]
+}

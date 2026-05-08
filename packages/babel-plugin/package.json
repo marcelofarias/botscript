@@ -1,0 +1,29 @@
+{
+  "name": "@botscript/babel-plugin",
+  "version": "0.1.0",
+  "description": "Babel plugin for botscript: prepends a transformation pass that desugars *.bs syntax.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@botscript/compiler": "workspace:*"
+  },
+  "peerDependencies": {
+    "@babel/core": "^7"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,24 @@
+?bs 0.1
+
+// Shapes — a tagged union and the helpers that operate on it. Everything in
+// this file is pure; the compiler enforces that by attaching `uses { }` to
+// each fn.
+
+export type Shape =
+  | { kind: "Circle"; r: number }
+  | { kind: "Square"; side: number }
+  | { kind: "Triangle"; base: number; height: number };
+
+fn area(s: Shape) -> number = match s {
+  Circle { r }              -> Math.PI * r * r
+  Square { side }           -> side * side
+  Triangle { base, height } -> (base * height) / 2
+}
+
+fn describe(s: Shape) -> string = match s {
+  Circle { r }              -> `circle(r=${r})`
+  Square { side }           -> `square(${side}x${side})`
+  Triangle { base, height } -> `triangle(${base}x${height})`
+}
+
+export { area, describe };

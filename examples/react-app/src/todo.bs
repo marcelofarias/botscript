@@ -1,0 +1,34 @@
+?bs 0.1
+
+import { ok, err, type Result } from "@botscript/runtime";
+
+// Pure helpers for the todo list. The compiler enforces purity by attaching
+// `uses { }` to every fn — these would error at runtime if they ever called
+// `http.get`, `time.now`, or any other capability-checked API.
+
+export type Todo = { id: number; text: string; done: boolean };
+
+fn nextId(todos: Todo[]) -> number = pure {
+  todos.reduce((m, t) => Math.max(m, t.id), 0) + 1
+}
+
+fn addTodo(todos: Todo[], text: string) -> Result<Todo[], string> {
+  const trimmed = text.trim();
+  if (trimmed === "") return err("todo text cannot be empty");
+  if (trimmed.length > 200) return err("todo text too long");
+  return ok([...todos, { id: nextId(todos), text: trimmed, done: false }]);
+}
+
+fn toggleTodo(todos: Todo[], id: number) -> Todo[] = pure {
+  todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+}
+
+fn removeTodo(todos: Todo[], id: number) -> Todo[] = pure {
+  todos.filter((t) => t.id !== id)
+}
+
+fn summary(todos: Todo[]) -> string = pure {
+  `${todos.filter((t) => t.done).length} / ${todos.length} done`
+}
+
+export { addTodo, toggleTodo, removeTodo, summary };

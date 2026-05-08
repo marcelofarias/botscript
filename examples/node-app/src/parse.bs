@@ -1,0 +1,38 @@
+?bs 0.1
+
+import { ok, err, type Result } from "@botscript/runtime";
+
+import type { Shape } from "./shape.js";
+
+// Parse a CLI argument list into a Shape. The whole pipeline is a Result,
+// so callers can choose to short-circuit with `?` or handle the error path.
+
+fn parseNumber(s: string) -> Result<number, string> = pure {
+  Number.isFinite(Number(s)) ? ok(Number(s)) : err(`not a number: ${JSON.stringify(s)}`)
+}
+
+fn parseShape(args: string[]) -> Result<Shape, string> {
+  const kind = args[0];
+  if (!kind) return err("missing shape kind (circle | square | triangle)");
+  const rest = args.slice(1);
+
+  if (kind === "circle") {
+    if (rest.length !== 1) return err("circle takes 1 number: <radius>");
+    let r = parseNumber(rest[0])?
+    return ok({ kind: "Circle", r });
+  }
+  if (kind === "square") {
+    if (rest.length !== 1) return err("square takes 1 number: <side>");
+    let side = parseNumber(rest[0])?
+    return ok({ kind: "Square", side });
+  }
+  if (kind === "triangle") {
+    if (rest.length !== 2) return err("triangle takes 2 numbers: <base> <height>");
+    let base = parseNumber(rest[0])?
+    let height = parseNumber(rest[1])?
+    return ok({ kind: "Triangle", base, height });
+  }
+  return err(`unknown shape: ${kind}`);
+}
+
+export { parseShape };

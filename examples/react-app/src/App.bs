@@ -1,0 +1,58 @@
+?bs 0.1
+
+import { useState } from "react";
+
+import { addTodo, removeTodo, summary, toggleTodo, type Todo } from "./todo.bs";
+
+export function App() {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const next = addTodo(todos, draft);
+    if (next.kind === "err") {
+      setError(next.error);
+      return;
+    }
+    setTodos(next.value);
+    setDraft("");
+    setError(null);
+  };
+
+  return (
+    <>
+      <h1>todo</h1>
+      <p className="sub">a tiny botscript app — {summary(todos)}</p>
+      <form onSubmit={onSubmit}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="what needs doing?"
+          autoFocus
+        />
+        <button type="submit">add</button>
+      </form>
+      {error && <p style={{ color: "#ff6b6b", margin: "0 0 12px" }}>{error}</p>}
+      {todos.length === 0 ? (
+        <p className="empty">nothing yet — add the first one</p>
+      ) : (
+        <ul>
+          {todos.map((t) => (
+            <li key={t.id} className={t.done ? "done" : ""}>
+              <input
+                type="checkbox"
+                checked={t.done}
+                onChange={() => setTodos(toggleTodo(todos, t.id))}
+              />
+              <span style={{ flex: 1 }}>{t.text}</span>
+              <span className="meta">#{t.id}</span>
+              <button onClick={() => setTodos(removeTodo(todos, t.id))}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
