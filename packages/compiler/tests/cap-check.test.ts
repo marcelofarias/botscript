@@ -50,6 +50,28 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
+  it("same-name fn decls in different scopes don't collide in the records map", () => {
+    // Pre-fix: the records Map was keyed by fn name, so two `fn helper`
+    // declarations would silently overwrite each other and corrupt
+    // inference. Post-fix: records keyed by FnDecl identity; declsByName
+    // resolves a call to ANY same-named decl conservatively.
+    //
+    // Here: two `helper`s, one pure, one consuming `time`. `outer` calls
+    // `helper(s)` — the resolver merges both candidates' caps, so `outer`
+    // transitively consumes `time` even though it doesn't declare it.
+    const src =
+      `?bs 0.3\n` +
+      `fn outer(s: string) -> string {\n` +
+      `  fn helper(s: string) -> string = pure { s.trim() }\n` +
+      `  return helper(s);\n` +
+      `}\n` +
+      `fn elsewhere() uses { time } -> number {\n` +
+      `  fn helper() uses { time } -> number { return time.now(); }\n` +
+      `  return helper();\n` +
+      `}\n`;
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+
   it("excludes a nested `fn` declaration's body from the outer fn's scan", () => {
     // Nested fn declarations must be filtered out of the outer body scan,
     // OR the outer fn would inherit `time` from the inner's body. Pinning

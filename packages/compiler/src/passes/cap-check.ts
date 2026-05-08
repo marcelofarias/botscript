@@ -179,20 +179,35 @@ function checkStrict(src: string, allowGenerics: boolean): string {
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  // 2. Build per-fn records: direct stdlib uses + intra-module callees.
-  const records = new Map<string, FnRecord>();
+  // 2. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
+  //    fns surfaced, two helpers with the same name in different scopes are
+  //    a real possibility — keying by name would silently let one
+  //    overwrite the other in the Map and corrupt inference. Identity
+  //    keys avoid that. Look-ups by name still work via `declsByName`.
+  const records = new Map<FnDecl, FnRecord>();
+  // Name -> all decls with that name. Used during closure to resolve a
+  // callee by name conservatively: if the source has two `fn helper` (e.g.
+  // shadowed across two outer scopes), a call to `helper(...)` is treated
+  // as potentially reaching ANY of them, so the caller's transitive
+  // consumed set is the union of every same-named decl's caps. Full
+  // lexical scoping is not modeled — same-name nested fns are unusual and
+  // the conservative merge prevents under-counting CAP001.
+  const declsByName = new Map<string, FnDecl[]>();
   for (const decl of decls) {
     const inner = decls.filter(
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
     const { direct, callNames } = scanBody(src, tokens, decl, inner, decls);
-    records.set(decl.name, {
+    records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
       direct,
       callees: callNames,
       consumed: new Map(),
     });
+    const sameName = declsByName.get(decl.name) ?? [];
+    sameName.push(decl);
+    declsByName.set(decl.name, sameName);
   }
 
   // 3. Seed `consumed` with each fn's direct uses.
@@ -202,23 +217,31 @@ function checkStrict(src: string, allowGenerics: boolean): string {
     }
   }
 
-  // 4. Closure: propagate callees' consumed caps back to callers until fixed point.
+  // 4. Closure: propagate callees' consumed caps back to callers until
+  //    fixed point. For each callee NAME the body called, merge the
+  //    consumed sets of EVERY decl in the file with that name (conservative
+  //    over-approximation when names are shadowed).
   let changed = true;
   while (changed) {
     changed = false;
     for (const rec of records.values()) {
       for (const calleeName of rec.callees) {
-        const callee = records.get(calleeName);
-        if (!callee) continue;
-        for (const [cap, path] of callee.consumed) {
-          if (rec.consumed.has(cap)) continue;
-          rec.consumed.set(cap, {
-            kind: "via",
-            fnName: rec.decl.name,
-            callee: calleeName,
-            next: path,
-          });
-          changed = true;
+        const matches = declsByName.get(calleeName);
+        if (!matches) continue;
+        for (const calleeDecl of matches) {
+          if (calleeDecl === rec.decl) continue;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const [cap, path] of callee.consumed) {
+            if (rec.consumed.has(cap)) continue;
+            rec.consumed.set(cap, {
+              kind: "via",
+              fnName: rec.decl.name,
+              callee: calleeName,
+              next: path,
+            });
+            changed = true;
+          }
         }
       }
     }
