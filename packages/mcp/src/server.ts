@@ -29,7 +29,7 @@ import { BotscriptError, PRIMER, transform } from "@mbfarias/botscript-compiler"
 import { EXPLANATIONS, KNOWN_CODES } from "./explanations.js";
 
 const SERVER_NAME = "botscript";
-const SERVER_VERSION = "0.2.1";
+const SERVER_VERSION = "0.3.0";
 
 /**
  * Construct a fresh Server with the botscript tool handlers wired up. Call

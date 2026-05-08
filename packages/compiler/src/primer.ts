@@ -22,9 +22,16 @@ additions below are the entire language surface.
   fn name(args) -> ReturnType = pure { expr }
                                               equivalent to uses { } + return expr
   Capabilities: net, fs, time, random, process, stdout, stderr.
-  Under ?bs 0.2 the capability declaration is also checked statically — a
-  function declared uses { } that names http/time/random/fs/stdout/stderr.X
-  is a parse error, not a runtime trap.
+  Under ?bs 0.2 the capability declaration is checked statically — a function
+  declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse
+  error, not a runtime trap.
+  Under ?bs 0.3 the check also infers transitively across same-file calls
+  AND flags over-declaration:
+    CAP001  uses clause is missing a capability the body (or a callee in the
+            same file) actually consumes. The diagnostic names the call path:
+            "f -> g -> http.get".
+    CAP002  uses clause names a capability nothing in the body reaches. The
+            declaration must match what the function actually uses.
 
 == TAGGED UNIONS (0.2+) ==
   type Shape = Circle { r: number } | Square { side: number };
@@ -36,12 +43,18 @@ additions below are the entire language surface.
 == BLOCKS ==
   pure { expr }    no capabilities allowed; throws CapabilityViolation if any escape
   io   { expr }    documents that this expression performs effects (informational)
+  unsafe "reason" { expr }  (0.3+) escape hatch around \`as\` casts and similar.
+                            The justification string is mandatory and shows up
+                            in the compiled output as a comment so the diff
+                            reviewer sees the *why* alongside the cast.
 
 == RESULT / OPTION ==
   Result<T, E>     ok(value) | err(error)
   Option<T>        some(value) | none
   expr?            on a Result: unwrap or short-circuit Err out of the enclosing fn
                    (only at end of let/const/return statement, never in expressions)
+  Result.try { body }       (0.3+) lift a throwing call into Result<T, string>
+  Result.tryAsync { body }  (0.3+) async variant; lifts rejections too
 
 == MATCH ==
   match value {
@@ -92,7 +105,9 @@ additions below are the entire language surface.
   - prefer Result over throw
   - prefer Option over null
   - prefer match over if/else chains on tagged unions
-  - never use \`as\` outside an unsafe { } block
+  - never use \`as\` outside an \`unsafe "reason" { }\` block
+  - run \`botscript explain <CODE>\` to see the rule/idiom/rewrite for any
+    diagnostic the compiler emits
 `;
 
 /** Wrap the primer as a leading comment block suitable for injection. */

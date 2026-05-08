@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-compiler",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "botscript compiler: transforms .bot source to TypeScript.",
   "type": "module",
   "main": "./dist/index.js",

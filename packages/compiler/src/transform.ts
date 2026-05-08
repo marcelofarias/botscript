@@ -6,9 +6,11 @@ import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passMatch } from "./passes/match.js";
 import { passPrimer } from "./passes/primer.js";
+import { passResultTry } from "./passes/result-try.js";
 import { passTaggedUnion } from "./passes/tagged-union.js";
 import { passTest } from "./passes/test.js";
 import { passTestMocks } from "./passes/test-mocks.js";
+import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
 import { LATEST_VERSION, passVersion, type VersionInfo } from "./passes/version.js";
 
@@ -30,17 +32,21 @@ export interface TransformResult {
 
 interface PipelineEntry {
   name: string;
-  fn: (src: string) => string;
+  fn: (src: string, version: VersionInfo) => string;
   /** If set, only run when version.resolved >= minVersion. */
   minVersion?: string;
 }
 
 const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "primer", fn: passPrimer },
+  // capCheck runs from 0.2; the pass itself branches on the resolved version
+  // to apply the direct-only check (0.2) vs. transitive + over-decl (0.3+).
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },
+  { name: "unsafe", fn: passUnsafe, minVersion: "0.3" },
+  { name: "resultTry", fn: passResultTry, minVersion: "0.3" },
   { name: "fn", fn: passFn },
   { name: "blocks", fn: passBlocks },
   { name: "match", fn: passMatch },
@@ -57,7 +63,7 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
     const forms: string[] = [];
     for (const pass of PASS_PIPELINE) {
       if (pass.minVersion && !atLeast(version.resolved, pass.minVersion)) continue;
-      const next = pass.fn(code);
+      const next = pass.fn(code, version);
       if (next !== code) forms.push(pass.name);
       code = next;
     }

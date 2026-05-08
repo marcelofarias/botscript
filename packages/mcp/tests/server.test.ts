@@ -44,7 +44,16 @@ describe("botscript-mcp explanations", () => {
   it("known codes match the diagnostic codes the compiler emits", () => {
     // Stable contract: every diagnostic code emitted by the compiler must
     // have an entry in EXPLANATIONS so `explain` can answer for it.
-    expect(KNOWN_CODES).toEqual(["BS001", "BS002", "CAP001"]);
+    expect(KNOWN_CODES).toEqual([
+      "BS001",
+      "BS002",
+      "CAP001",
+      "CAP002",
+      "RES001",
+      "UNS001",
+      "UNS002",
+      "UNS003",
+    ]);
   });
 
   it("each example pair represents a real fails/passes contrast", async () => {

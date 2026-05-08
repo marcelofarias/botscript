@@ -11,14 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build
+      # Build the published packages first so the cli's bin link is resolved
+      # before examples (which exec `botscript`) start.
+      - run: pnpm -r --filter './packages/*' build
+      - run: pnpm -r --filter './examples/*' build
       - run: pnpm test
       - run: pnpm --filter node-app test
       - run: pnpm --filter react-app build

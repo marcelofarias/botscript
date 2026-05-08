@@ -77,13 +77,80 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
-  it("does not flag the uses clause itself (the literal `time` identifier)", () => {
-    // The cap-check must skip its own declaration — `uses { time }` shouldn't
-    // count as a stdlib reference.
+  it("does not treat the `time` literal in the uses clause as a body usage (0.3)", () => {
+    // If the `time` token inside `uses { time }` were counted as a stdlib
+    // reference, CAP002 would NOT fire here — but it does, proving the uses
+    // clause is excluded from body scanning.
+    const src =
+      `?bs 0.3\nfn now() uses { time } -> number {\n` +
+      `  return Date.now();\n` +
+      `}\n`;
+    expect(() => t(src)).toThrow(/CAP002/);
+  });
+
+  it("flags an over-declared capability (CAP002, 0.3)", () => {
+    const src = `?bs 0.3\nfn slug(s: string) uses { net } -> string = pure { s.toLowerCase() }\n`;
+    expect(() => t(src)).toThrow(/CAP002/);
+    expect(() => t(src)).toThrow(/'slug' declares capability 'net'/);
+  });
+
+  it("propagates capabilities transitively across calls in the same module (0.3)", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) -> string = pure { doFetch(url) }\n`;
+    // loadOne is pure but transitively reaches `net` via doFetch.
+    expect(() => t(src)).toThrow(/CAP001/);
+    expect(() => t(src)).toThrow(/transitively/);
+    expect(() => t(src)).toThrow(/loadOne -> doFetch -> http\.get/);
+  });
+
+  it("accepts a fn whose declared caps match the transitive set (0.3)", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) uses { net } -> string {\n` +
+      `  return doFetch(url);\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("CAP002 fires when a caller declares more than its callees consume (0.3)", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn helper(s: string) -> string = pure { s.trim() }\n` +
+      `fn outer(s: string) uses { net } -> string {\n` +
+      `  return helper(s);\n` +
+      `}\n`;
+    expect(() => t(src)).toThrow(/CAP002/);
+  });
+
+  it("0.2 keeps its original direct-only check — over-declaration is allowed", () => {
+    // Forward-compat: a file pinned to 0.2 must continue to compile exactly
+    // as it did when 0.2 shipped. The strict checks (CAP002, transitive)
+    // are gated at 0.3+.
     const src =
       `?bs 0.2\nfn now() uses { time } -> number {\n` +
       `  return Date.now();\n` +
       `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("0.2 does not propagate capabilities transitively", () => {
+    // Same source that errors under 0.3 must compile under 0.2.
+    const src =
+      `?bs 0.2\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) -> string = pure { doFetch(url) }\n`;
     expect(() => t(src)).not.toThrow();
   });
 
