@@ -117,16 +117,36 @@ this codebase has caught more than once:
 
 | Bot failure mode in TypeScript | botscript fix |
 | ------------------------------ | ------------- |
-| Sneaks a `fetch()` into a function the human asked to be "pure" — survives review because the call is three layers deep. | `uses { … }` is part of the signature. A function declared with empty capabilities cannot transitively reach the network, no matter how deep the call graph. The runtime throws on violation. |
+| Sneaks a `fetch()` into a function the human asked to be "pure" — survives review because the call is three layers deep. | `uses { … }` is part of the signature. A function declared with empty capabilities cannot reach the network. Under `?bs 0.1` the runtime throws on violation; under `?bs 0.2` the compiler also rejects direct stdlib refs at parse time. |
 | Forgets a `case` in a `switch` and falls into `default`. The bug ships because the `default` branch silently swallows it. | `match` has no `default` and no fallthrough. A missing arm is a parse error; an unhandled value at runtime throws with a printed scrutinee. |
 | Wraps a `Result`-shaped return in `try/catch` and accidentally swallows the `Err`, returning `undefined` from the catch. | `Result<T, E>` is the return type. `expr?` postfix is the *only* way to unwrap. There is no try-catch flowing-through pattern to mis-write. |
 | Generates `null` checks in some paths and `undefined` checks in others, drifting over time. | `Option<T>` is the only optional type. No `null`. No `undefined`. The compiler refuses to model "missing" two ways. |
 | Adds an `as any` cast under reviewer pressure to make the build green; the cast becomes load-bearing. | `as` outside an explicit `unsafe { }` block is a parse error. Every cast shows up in diff review with a keyword the human will see. |
 | Writes a test that depends on `Date.now()` or `Math.random()`; flake creeps in over time. | Tests run in a frame where `time` and `random` capabilities are denied by default. The `with mocks { … }` clause on `test "…"` is the only way to inject them, and it does so deterministically. |
 | Hallucinates a built-in or convention that doesn't exist — costs a debug cycle. | The `?primer` directive emits the canonical spec as a top-of-file comment. Any agent dropped into a botscript file cold has the entire language surface in the same file. |
+| Models a tagged union with hand-written `kind: "Tag"` literals and drifts between the type and the `match` arms. | (0.2+) `type Shape = Circle { r: number } \| Square { side: number }` is native syntax. The desugaring is the discriminator the `match` arms already destructure on, so type and dispatch can't drift. |
+| Loops `compile → regex error text → patch` because the compiler only emits English prose. | `botscript build … --format=json` emits `{ ok, diagnostics: [{ code, file, line, column, message, rule, idiom, rewrite }] }`. A bot parses and patches; no regex on prose. |
 
 Every other choice in the language is in service of one of these. If a feature
 doesn't close a bot failure mode, it isn't here.
+
+## What's new in `?bs 0.2` (opt-in)
+
+`LATEST` is still 0.1, so existing files compile unchanged. Pin a file to
+`?bs 0.2` to opt into:
+
+- **Static capability check.** Direct references to `http.X` / `time.X` /
+  `random.X` / `fs.X` / `stdout.X` / `stderr.X` inside a `fn` whose
+  `uses { … }` clause doesn't list the matching capability are now a parse
+  error (code `CAP001`), not just a runtime trap. The runtime check is still
+  there as the second line of defence.
+- **Tagged-union sugar.** `type Shape = Circle { r: number } | Square { side: number }`
+  desugars to a TS discriminated union keyed on `kind`. Bare-tag alternatives
+  (`Idle | Loading | Done { value: string }`) are supported. Generics, leading-pipe,
+  and `export type` all work.
+- **Structured diagnostics.** Compiler errors carry stable codes (`BS001`,
+  `BS002`, `CAP001`) and a `{ rule, idiom, rewrite }` triple. The CLI exposes
+  `--format=json` so a bot can `compile → JSON.parse → patch` deterministically.
 
 ---
 

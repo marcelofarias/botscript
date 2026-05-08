@@ -152,6 +152,22 @@ Then exit. Another agent (or a human) will pick it up. Trying a third time
 without writing this down is how a session burns hours and produces nothing
 useful.
 
+## Diagnostic codes (0.2+)
+
+Compiler errors carry a stable code so bot loops can branch on the cause
+without regexing English text. Add `--format=json` to `botscript build` and
+parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
+
+| Code   | Cause                                         | The fix the `rewrite` field will suggest                |
+| ------ | --------------------------------------------- | ------------------------------------------------------- |
+| BS001  | Malformed `?bs` directive (e.g. `?bs nope`).  | `?bs 0.1` (or whatever `LATEST_VERSION` is).            |
+| BS002  | Unsupported version (e.g. `?bs 99.0`).        | Pin to a supported version; see `SUPPORTED_VERSIONS`.   |
+| CAP001 | A fn calls `http/time/random/fs/stdout/stderr.X` whose capability isn't in its `uses { … }`. | Either add the capability or remove the call. The diagnostic includes the literal `fn name(...) uses { … } -> ...` rewrite. |
+
+When you add a new compiler error, allocate the next free code in the same
+range (`BSnnn` for general parse errors, `CAPnnn` for capability checks). Add
+a row to the table above in the same PR.
+
 ## Conventions checklist
 
 A PR is ready when ALL of the following are true. CI checks the easy ones; you
