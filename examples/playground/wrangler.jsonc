@@ -1,0 +1,18 @@
+/**
+ * Cloudflare Workers configuration for the botscript playground.
+ *
+ * The playground is a static SPA — Vite emits HTML/JS/CSS into ./dist. Workers'
+ * Static Assets feature serves that directory at the worker's URL with no
+ * server-side code involved. `not_found_handling: "single-page-application"`
+ * makes any unknown path fall through to index.html (necessary for SPA routing
+ * even though this app currently has only one route).
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "botscript",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
