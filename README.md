@@ -226,7 +226,8 @@ opt-ins behind the 0.4 version pin:
 - **Source offsets on diagnostics.** Capability-check errors now carry
   `start` / `end` UTF-16 string offsets (JS string indices, not UTF-8 bytes)
   alongside `line` / `column`, so editors and agent loops can map to a
-  precise span without re-walking the source. The fields are optional and
+  precise span without re-walking the source. `end` is exclusive — the
+  range matches `source.slice(start, end)`. The fields are optional and
   populated by cap-check at every supported pin from `?bs 0.2` onward; the
   offset coordinate system itself is the same as the line/column the pass
   already produced (post-`?bs`-directive-stripping, with the trailing

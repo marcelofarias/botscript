@@ -109,9 +109,9 @@ export function passCapCheck(src: string, version: VersionInfo): string {
  *
  * The observable diagnostic surface emitted here — code, message, rule,
  * idiom, rewrite, and the (line, column) anchor — is frozen forever per
- * AGENTS.md rule 4. The optional `start`/`end` byte range on
- * `Diagnostic` is a strict additive extension; consumers that ignore
- * those fields keep seeing what they always saw.
+ * AGENTS.md rule 4. The optional `start`/`end` source range (UTF-16
+ * code-unit offsets) on `Diagnostic` is a strict additive extension;
+ * consumers that ignore those fields keep seeing what they always saw.
  *
  * From ?bs 0.4 we additionally honour `allowGenerics` — generic fns enter
  * the scan instead of being silently skipped by parseFn. Older pins (0.2,
