@@ -45,8 +45,8 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
     if (!decl) continue;
     const stmt: FnStmt = {
       kind: "FnStmt",
-      start: decl.byteStart,
-      end: decl.byteEnd,
+      start: decl.start,
+      end: decl.end,
       decl,
     };
     statements.push(stmt);
@@ -56,7 +56,7 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
     // run — a fn nested in a body is irrelevant at the program level for
     // the default LSP-style view.
     if (!includeNested) {
-      i = decl.end - 1;
+      i = decl.tokenEnd - 1;
     }
   }
 

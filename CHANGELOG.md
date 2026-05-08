@@ -13,9 +13,12 @@ goes behind a new pin.
   unchanged.
 - **Whole-file AST surface.** `parseProgram(src)` (exported from
   `@mbfarias/botscript-compiler`) returns a `Program` carrying source ranges
-  per top-level fn declaration, plus the underlying token-based `FnDecl`.
-  Shallow on purpose: only fn declarations are surfaced as nodes, per
-  AGENTS.md rule 5. Foundation for future LSP and rename tooling.
+  per top-level fn declaration, plus the underlying `FnDecl`. `FnDecl`
+  carries `start` / `end` (UTF-16 source offsets), `tokenStart` / `tokenEnd`
+  (token-array indices for callers that walk the lexer output), plus
+  `fnKeywordStart` and `nameStart` for diagnostic anchoring. Shallow on
+  purpose: only fn declarations are surfaced as nodes, per AGENTS.md
+  rule 5. Foundation for future LSP and rename tooling.
 - **Source offsets on diagnostics.** `Diagnostic.start` / `Diagnostic.end`
   are populated by `cap-check` from `?bs 0.2` onward. Offsets are UTF-16
   string offsets (JS string indices, not UTF-8 bytes) into the source as

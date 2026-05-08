@@ -124,7 +124,9 @@ function checkDirect(src: string, allowGenerics: boolean): string {
   const tokens = program.tokens;
   const fns = program.fns.map((s) => s.decl);
   for (const fn of fns) {
-    const inner = fns.filter((g) => g !== fn && g.start >= fn.start && g.end <= fn.end);
+    const inner = fns.filter(
+      (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
+    );
     checkDirectFn(src, tokens, fn, inner);
   }
   return src;
@@ -132,7 +134,7 @@ function checkDirect(src: string, allowGenerics: boolean): string {
 
 function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]): void {
   const declared = new Set(fn.capabilities);
-  for (let i = fn.start; i < fn.end; i++) {
+  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
@@ -180,7 +182,9 @@ function checkStrict(src: string, allowGenerics: boolean): string {
   // 2. Build per-fn records: direct stdlib uses + intra-module callees.
   const records = new Map<string, FnRecord>();
   for (const decl of decls) {
-    const inner = decls.filter((g) => g !== decl && g.start >= decl.start && g.end <= decl.end);
+    const inner = decls.filter(
+      (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
+    );
     const { direct, callNames } = scanBody(src, tokens, decl, inner, decls);
     records.set(decl.name, {
       decl,
@@ -254,7 +258,7 @@ function scanBody(
   const callNames = new Set<string>();
   const fnNames = new Set(decls.map((d) => d.name));
 
-  for (let i = fn.start; i < fn.end; i++) {
+  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
@@ -316,7 +320,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   // (precise). For a transitive usage we anchor at the fn header — that's the
   // declaration the bot has to edit, and the path string says where the
   // requirement actually comes from.
-  const headerLoc = locationOf(src, rec.decl.fnKeywordByteStart);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordStart);
   const line = isTransitive ? headerLoc.line : leafUse.line;
   const column = isTransitive ? headerLoc.column : leafUse.column;
   // The diagnostic's source range (UTF-16 code-unit offsets) anchors the
@@ -324,9 +328,9 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   // the offending stdlib member for direct ones. Available regardless of
   // pin from this point — it's a strict addition; older callers that
   // ignore start/end keep working.
-  const start = isTransitive ? rec.decl.fnKeywordByteStart : leafUse.start;
+  const start = isTransitive ? rec.decl.fnKeywordStart : leafUse.start;
   const end = isTransitive
-    ? rec.decl.nameByteStart + rec.decl.name.length
+    ? rec.decl.nameStart + rec.decl.name.length
     : leafUse.end;
 
   const tail =
@@ -355,7 +359,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
 }
 
 function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): BotscriptError {
-  const headerLoc = locationOf(src, rec.decl.fnKeywordByteStart);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordStart);
   const remaining = rec.decl.capabilities.filter((c) => !extra.includes(c));
   const remainingStr = remaining.length === 0 ? "" : ` uses { ${remaining.join(", ")} }`;
   const entry = getErrorCode("CAP002")!;
@@ -371,8 +375,8 @@ function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): Botsc
     file: null,
     line: headerLoc.line,
     column: headerLoc.column,
-    start: rec.decl.fnKeywordByteStart,
-    end: rec.decl.nameByteStart + rec.decl.name.length,
+    start: rec.decl.fnKeywordStart,
+    end: rec.decl.nameStart + rec.decl.name.length,
     message,
     rule: entry.rule,
     idiom: entry.idiom,
@@ -402,7 +406,7 @@ function leafDirectUse(path: Path): DirectUse {
 
 function insideAny(idx: number, ranges: FnDecl[]): boolean {
   for (const r of ranges) {
-    if (idx >= r.start && idx < r.end) return true;
+    if (idx >= r.tokenStart && idx < r.tokenEnd) return true;
   }
   return false;
 }

@@ -27,12 +27,14 @@ export function passFn(src: string, version?: VersionInfo): string {
     const decl = parseFn(tokens, i, { allowGenerics });
     if (!decl) continue;
     // Emit everything up to the start of this declaration.
-    out += src.slice(cursor, tokens[decl.start]!.start);
+    out += src.slice(cursor, tokens[decl.tokenStart]!.start);
     out += emitFn(decl);
     // Skip ahead past the declaration's last token.
-    cursor = tokens[decl.end - 1] ? tokens[decl.end - 1]!.end : tokens[decl.end]?.start ?? cursor;
+    cursor = tokens[decl.tokenEnd - 1]
+      ? tokens[decl.tokenEnd - 1]!.end
+      : tokens[decl.tokenEnd]?.start ?? cursor;
     // Advance the loop cursor to past the consumed run.
-    i = decl.end - 1;
+    i = decl.tokenEnd - 1;
   }
   out += src.slice(cursor);
   return out;

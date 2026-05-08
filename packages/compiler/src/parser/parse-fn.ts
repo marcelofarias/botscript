@@ -10,24 +10,23 @@
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
-  /** Token index where the parsed run begins (the `async` modifier or `fn`). */
-  start: number;
-  /** Token index just after the parsed run (the next token to emit normally). */
-  end: number;
+  /** Token-array index where the parsed run begins (`async` modifier or `fn`). */
+  tokenStart: number;
+  /** Token-array index just after the parsed run (the next token to emit normally). */
+  tokenEnd: number;
   /**
-   * Offset of the parsed run start in the source. UTF-16 code units (JS
-   * string indices), not UTF-8 bytes — the lexer increments `i++` over
-   * `string`, so every position in the AST shares that coordinate system.
-   * The fields are still named `byteStart` / `byteEnd` / `*ByteStart` for
-   * brevity and historical continuity; treat them as code-unit offsets.
+   * Source offset of the parsed run start. UTF-16 code units (JS string
+   * indices), not UTF-8 bytes — the lexer increments `i++` over `string`,
+   * so every position in the AST shares that coordinate system. End is
+   * exclusive: `src.slice(start, end)` yields the verbatim declaration.
    */
-  byteStart: number;
-  /** End offset (exclusive) of the parsed run. UTF-16 code units. */
-  byteEnd: number;
-  /** Offset of the `fn` keyword (after `async` if present). UTF-16 code units. */
-  fnKeywordByteStart: number;
-  /** Offset of the function name identifier. UTF-16 code units. */
-  nameByteStart: number;
+  start: number;
+  /** Source offset just after the parsed run end. UTF-16 code units, exclusive. */
+  end: number;
+  /** Source offset of the `fn` keyword (after `async` if present). UTF-16 code units. */
+  fnKeywordStart: number;
+  /** Source offset of the function name identifier. UTF-16 code units. */
+  nameStart: number;
   isAsync: boolean;
   name: string;
   /**
@@ -72,11 +71,11 @@ export function parseFn(
 ): FnDecl | null {
   // Detect leading `async` modifier.
   let isAsync = false;
-  let start = idx;
+  let tokenStart = idx;
   const prev = prevSignificant(tokens, idx);
   if (prev !== -1 && tokens[prev]!.kind === "keyword" && tokens[prev]!.keyword === "async") {
     isAsync = true;
-    start = prev;
+    tokenStart = prev;
   }
 
   // Skip past `fn` to the name.
@@ -85,7 +84,7 @@ export function parseFn(
   const nameTok = tokens[i];
   if (!nameTok || nameTok.kind !== "ident") return null;
   const name = nameTok.text;
-  const nameByteStart = nameTok.start;
+  const nameStart = nameTok.start;
   i++;
   i = skipTrivia(tokens, i);
 
@@ -212,15 +211,15 @@ export function parseFn(
     return null;
   }
 
-  const startTok = tokens[start]!;
-  const lastTok = tokens[bodyEnd - 1] ?? tokens[start]!;
+  const startTok = tokens[tokenStart]!;
+  const lastTok = tokens[bodyEnd - 1] ?? tokens[tokenStart]!;
   return {
-    start,
-    end: bodyEnd,
-    byteStart: startTok.start,
-    byteEnd: lastTok.end,
-    fnKeywordByteStart: tokens[idx]!.start,
-    nameByteStart,
+    tokenStart,
+    tokenEnd: bodyEnd,
+    start: startTok.start,
+    end: lastTok.end,
+    fnKeywordStart: tokens[idx]!.start,
+    nameStart,
     isAsync,
     name,
     typeParams,
