@@ -112,6 +112,16 @@ function classifyForm(tokens: Token[], start: number, qIdx: number): FormInfo | 
   const head = tokens[i];
   if (!head) return null;
 
+  // Bail if the apparent statement-start can't legitimately begin a JS
+  // expression. The walk-back from `?` to a preceding `;`, `{`, or
+  // boundary-newline can cross JSX text content (e.g. `<a>foo bar?</a>`)
+  // because the lexer doesn't pair `<` and `>` and JSX text isn't a
+  // statement at all. JSX tags start with `<` (an operator), which can't
+  // begin an expression — bail before we rewrite the surrounding markup
+  // as if it were `expr?`. The unary-prefix operators below are the only
+  // ones that can legitimately lead a bare expression statement.
+  if (head.kind === "operator" && !isUnaryPrefixOp(head.text)) return null;
+
   // let/const/var binding form.
   if (head.kind === "ident" && (head.text === "let" || head.text === "const" || head.text === "var")) {
     const binder = head.text as "let" | "const" | "var";
@@ -185,6 +195,17 @@ function findStatementStart(tokens: Token[], from: number): number {
     }
   }
   return 0;
+}
+
+function isUnaryPrefixOp(text: string): boolean {
+  return (
+    text === "+" ||
+    text === "-" ||
+    text === "!" ||
+    text === "~" ||
+    text === "++" ||
+    text === "--"
+  );
 }
 
 function nextSignificant(tokens: Token[], from: number): number {
