@@ -1,0 +1,99 @@
+?bs 0.1
+
+// Curated snippets the playground loads on startup. Each one is a small,
+// self-contained botscript program that demonstrates a single feature. Keep
+// these tight — anyone reading them should understand the feature in seconds.
+
+export type Snippet = { id: string; label: string; source: string };
+
+const HELLO = `?bs 0.1
+import { stdout } from "@mbfarias/botscript-runtime";
+
+fn greet(name: string) uses { stdout } -> void {
+  stdout.println(\`hi, \${name}\`);
+}
+
+greet("world");
+`;
+
+const PURE = `?bs 0.1
+
+// Pure helpers. The 'pure { ... }' shorthand is sugar for uses { } { return ... }
+// with the compiler enforcing zero side effects.
+
+fn slug(s: string) -> string = pure {
+  s.trim().toLowerCase().replaceAll(" ", "-")
+}
+
+fn double(n: number) -> number = n * 2
+
+const a = slug("  Hello World  ");  // "hello-world"
+const b = double(21);                // 42
+`;
+
+const MATCH = `?bs 0.1
+
+type Shape =
+  | { kind: "Circle"; r: number }
+  | { kind: "Square"; side: number }
+  | { kind: "Triangle"; base: number; height: number };
+
+fn area(s: Shape) -> number = match s {
+  Circle { r }              -> Math.PI * r * r
+  Square { side }           -> side * side
+  Triangle { base, height } -> (base * height) / 2
+}
+
+const a = area({ kind: "Circle", r: 3 });
+`;
+
+const RESULT = `?bs 0.1
+
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
+
+fn parsePort(s: string) -> Result<number, string> = pure {
+  /^\\d+$/.test(s) && Number(s) > 0 && Number(s) < 65536
+    ? ok(Number(s))
+    : err(\`bad port: \${s}\`)
+}
+
+fn parseHostPort(input: string) -> Result<{ host: string; port: number }, string> {
+  const [host, port] = input.split(":");
+  if (!host || !port) return err("expected host:port");
+  let p = parsePort(port)?
+  return ok({ host, port: p });
+}
+`;
+
+const FS = `?bs 0.1
+
+// Run anywhere with a Node runtime. Capability-checked, Result-typed.
+import { fs } from "@mbfarias/botscript-runtime/fs";
+
+fn loadConfig(path: string) uses { fs } -> Result<{ name: string }, string> {
+  let cfg = fs.readJson<{ name: string }>(path)?
+  return ok(cfg);
+}
+`;
+
+const TEST = `?bs 0.1
+
+fn add(a: number, b: number) -> number = pure { a + b }
+
+test "add commutes" {
+  assert add(2, 3) === add(3, 2);
+}
+
+test "add identity" {
+  assert add(0, 7) === 7;
+}
+`;
+
+export const SNIPPETS: Snippet[] = [
+  { id: "hello", label: "hello", source: HELLO },
+  { id: "pure", label: "pure", source: PURE },
+  { id: "match", label: "match", source: MATCH },
+  { id: "result", label: "result", source: RESULT },
+  { id: "fs", label: "fs", source: FS },
+  { id: "test", label: "test", source: TEST },
+];

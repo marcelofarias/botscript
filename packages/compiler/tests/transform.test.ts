@@ -89,6 +89,16 @@ describe("fn", () => {
     expect(out).toMatch(/\$enter\(\["net"\] as const, async \(\) => \{/);
   });
 
+  it("supports object literal return types", () => {
+    const out = t(
+      `fn make() -> { code: string; error: string | null } {\n  return { code: "x", error: null };\n}\n`,
+    );
+    expect(out).toContain("function make(): { code: string; error: string | null }");
+    expect(out).toContain('return { code: "x", error: null };');
+    // The body block, not the type, gets the $enter wrapper.
+    expect(out).toMatch(/error: string \| null \} \{[\s\S]*\$enter/);
+  });
+
   it("non-async fn keeps a sync inner arrow", () => {
     const out = t(`fn id<T>(x: T) -> T = pure { x }\n`);
     expect(out).toMatch(/\$enter\(\[\] as const, \(\) => \{/);

@@ -1,0 +1,11 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>botscript</title>
+  <desc>The botscript bracket-bot logo: two teal braces with eyes and a smile, rendered as a face.</desc>
+  <text x="40" y="135" text-anchor="middle" font-size="140" font-weight="500"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0D9488">{</text>
+  <text x="160" y="135" text-anchor="middle" font-size="140" font-weight="500"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0D9488">}</text>
+  <circle cx="86" cy="80" r="8" fill="#0D9488"/>
+  <circle cx="114" cy="80" r="8" fill="#0D9488"/>
+  <rect x="86" y="110" width="28" height="6" rx="3" fill="#0D9488"/>
+</svg>

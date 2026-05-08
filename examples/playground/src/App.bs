@@ -1,0 +1,93 @@
+?bs 0.1
+
+import { useEffect, useMemo, useState } from "react";
+import { transform } from "@mbfarias/botscript-compiler";
+
+import { Logo } from "./Logo";
+import { SNIPPETS } from "./snippets.bs";
+
+// Compile a .bs source string with the real compiler. Returns either the
+// generated TS or an error message — the playground UI renders both.
+fn compile(source: string) -> { code: string; error: string | null } {
+  try {
+    const r = transform(source);
+    return { code: r.code, error: null };
+  } catch (e) {
+    return { code: "", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export function App() {
+  const [activeId, setActiveId] = useState(SNIPPETS[0]!.id);
+  const [source, setSource] = useState(SNIPPETS[0]!.source);
+
+  // Recompile every keystroke. The compiler is a string-in/string-out function
+  // — there's no module loading or async work — so this is fine.
+  const compiled = useMemo(() => compile(source), [source]);
+
+  // Loading a snippet replaces the editor source.
+  useEffect(() => {
+    const snippet = SNIPPETS.find((s) => s.id === activeId);
+    if (snippet) setSource(snippet.source);
+  }, [activeId]);
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="brand">
+          <Logo size={36} />
+          <div className="brand-text">
+            <h1>botscript</h1>
+            <p>type .bs on the left — see the desugared TypeScript on the right</p>
+          </div>
+        </div>
+        <a className="ghlink" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noreferrer">
+          github
+        </a>
+      </header>
+
+      <nav className="tabs">
+        {SNIPPETS.map((s) => (
+          <button
+            key={s.id}
+            className={s.id === activeId ? "tab tab-active" : "tab"}
+            onClick={() => setActiveId(s.id)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
+
+      <main className="panes">
+        <section className="pane pane-input">
+          <div className="pane-label">.bs source</div>
+          <textarea
+            className="editor"
+            value={source}
+            spellCheck={false}
+            onChange={(e) => setSource(e.target.value)}
+          />
+        </section>
+        <section className="pane pane-output">
+          <div className="pane-label">
+            compiled TypeScript
+            {compiled.error && <span className="err-tag">error</span>}
+          </div>
+          <pre className={compiled.error ? "output output-err" : "output"}>
+            <code>{compiled.error ?? compiled.code}</code>
+          </pre>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <span>v0.1.1</span>
+        <span className="dot">·</span>
+        <a href="https://www.npmjs.com/package/@mbfarias/botscript-compiler" target="_blank" rel="noreferrer">
+          @mbfarias/botscript-compiler
+        </a>
+        <span className="dot">·</span>
+        <span>compiled in your browser</span>
+      </footer>
+    </div>
+  );
+}

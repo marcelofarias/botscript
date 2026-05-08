@@ -93,6 +93,19 @@ function parseFn(src: string, start: number): FnParse | null {
       continue;
     }
     if (c === "{" && depth === 0) {
+      // Could be the body-opener OR a `{ key: T; … }` object type. Disambiguate
+      // by lookahead: if balancing past this `{` lands us on whitespace then
+      // `{` or `=`, the brace we're at is part of the return type — what
+      // follows it is the body. Otherwise this brace IS the body.
+      // (One of the places a proper AST would simplify life; for v0.1 we
+      // lean on heuristics.)
+      const closeIdx = skipBalanced(src, i, "{", "}");
+      const after = skipWs(src, closeIdx);
+      const nextC = src[after];
+      if (nextC === "{" || nextC === "=") {
+        i = closeIdx;
+        continue;
+      }
       typeEnd = i;
       break;
     }
@@ -230,8 +243,40 @@ function skipAngles(src: string, openIdx: number): number {
 function wrapExprAsReturn(body: string): string {
   const trimmed = body.trim();
   if (trimmed === "") return "";
-  if (hasTopLevelSemicolon(trimmed) || /\breturn\b/.test(trimmed)) return trimmed;
+  // Only "looks like a block with its own return" if the `return` keyword
+  // appears at brace/paren depth 0. A `return` nested inside an IIFE returns
+  // from the IIFE, not from the outer fn — those don't count.
+  if (hasTopLevelSemicolon(trimmed) || hasTopLevelReturn(trimmed)) return trimmed;
   return `return ${trimmed};`;
+}
+
+function hasTopLevelReturn(src: string): boolean {
+  let i = 0;
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === "`" || (c === "/" && (src[i + 1] === "/" || src[i + 1] === "*"))) {
+      i = stepOne(src, i);
+      continue;
+    }
+    if (c === "{" || c === "(" || c === "[") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (c === "}" || c === ")" || c === "]") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (depth === 0 && src.startsWith("return", i)) {
+      const before = i === 0 ? " " : src[i - 1] ?? " ";
+      const after = src[i + 6] ?? " ";
+      if (!/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after)) return true;
+    }
+    i++;
+  }
+  return false;
 }
 
 function hasTopLevelSemicolon(src: string): boolean {

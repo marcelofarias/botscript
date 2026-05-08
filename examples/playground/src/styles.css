@@ -1,0 +1,162 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0d10;
+  --bg-elev: #11161b;
+  --bg-pane: #0d1116;
+  --border: #1d242c;
+  --border-soft: #161c22;
+  --text: #e7eaef;
+  --text-dim: #7d8592;
+  --text-faint: #4f5763;
+  --teal: #2dd4bf;
+  --teal-deep: #0d9488;
+  --teal-glow: rgba(45, 212, 191, 0.18);
+  --err: #f87171;
+  --err-glow: rgba(248, 113, 113, 0.12);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 80% -10%, rgba(13, 148, 136, 0.10), transparent 60%),
+              radial-gradient(1000px 700px at -10% 90%, rgba(13, 148, 136, 0.06), transparent 60%),
+              var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px clamp(20px, 4vw, 56px) 24px;
+  gap: 22px;
+}
+
+.header { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand-text h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-family: var(--mono);
+  color: var(--text);
+}
+.brand-text p { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
+.ghlink {
+  color: var(--text-dim);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  transition: all 120ms ease;
+}
+.ghlink:hover { color: var(--teal); border-color: var(--teal-deep); }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border-soft);
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.tab:hover { color: var(--text); border-color: var(--border); }
+.tab-active {
+  background: var(--teal-glow);
+  color: var(--teal);
+  border-color: var(--teal-deep);
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+.pane {
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  min-height: 460px;
+}
+.pane-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.err-tag {
+  text-transform: uppercase;
+  font-size: 10px;
+  background: var(--err-glow);
+  color: var(--err);
+  border: 1px solid var(--err);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.1em;
+}
+
+.editor, .output {
+  margin: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 16px 18px;
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+  white-space: pre;
+}
+.editor { caret-color: var(--teal); }
+.editor:focus { outline: none; box-shadow: inset 0 0 0 1px var(--teal-deep); }
+.output code { font-family: inherit; }
+.output-err { color: var(--err); }
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  padding-top: 4px;
+}
+.footer a { color: var(--text-dim); text-decoration: none; }
+.footer a:hover { color: var(--teal); }
+.dot { color: var(--text-faint); }
+
+@media (max-width: 800px) {
+  .panes { grid-template-columns: 1fr; }
+  .pane { min-height: 320px; }
+  .header { flex-direction: column; align-items: flex-start; }
+}

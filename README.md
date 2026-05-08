@@ -1,7 +1,15 @@
+<p align="center">
+  <img src="./images/botscript.svg" alt="botscript" width="120" />
+</p>
+
 # botscript
 
 A small TypeScript-superset language for a world where most code is written by
 machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
+
+> Try it without installing anything: run `pnpm --filter playground dev` and
+> open the local URL. Type `.bs` on the left, see the desugared TypeScript on
+> the right — the actual compiler bundle running in your browser.
 
 ---
 

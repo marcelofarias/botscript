@@ -37,6 +37,40 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.18)
 
+  examples/playground:
+    dependencies:
+      '@mbfarias/botscript-compiler':
+        specifier: workspace:*
+        version: link:../../packages/compiler
+      '@mbfarias/botscript-runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@mbfarias/botscript-vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.28)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.0
+        version: 4.7.0(vite@5.4.21(@types/node@22.19.18))
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@22.19.18)
+
   examples/react-app:
     dependencies:
       '@mbfarias/botscript-runtime':
