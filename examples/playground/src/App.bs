@@ -5,6 +5,9 @@ import { transform } from "@mbfarias/botscript-compiler";
 
 import { Logo } from "./Logo";
 import { SNIPPETS } from "./snippets.bs";
+import { PROBLEMS } from "./problems.bs";
+
+type Mode = "problems" | "features";
 
 // Compile a .bs source string with the real compiler. Returns either the
 // generated TS or an error message — the playground UI renders both.
@@ -18,18 +21,31 @@ fn compile(source: string) -> { code: string; error: string | null } {
 }
 
 export function App() {
-  const [activeId, setActiveId] = useState(SNIPPETS[0]!.id);
-  const [source, setSource] = useState(SNIPPETS[0]!.source);
+  const [mode, setMode] = useState<Mode>("problems");
 
-  // Recompile every keystroke. The compiler is a string-in/string-out function
-  // — there's no module loading or async work — so this is fine.
-  const compiled = useMemo(() => compile(source), [source]);
+  // ---- Problems mode state ----
+  const [problemId, setProblemId] = useState(PROBLEMS[0]!.id);
+  const problem = useMemo(
+    () => PROBLEMS.find((p) => p.id === problemId) ?? PROBLEMS[0]!,
+    [problemId],
+  );
+  const [bsSource, setBsSource] = useState(PROBLEMS[0]!.bsCode);
 
-  // Loading a snippet replaces the editor source.
+  // Loading a different problem replaces the editable .bs source.
   useEffect(() => {
-    const snippet = SNIPPETS.find((s) => s.id === activeId);
-    if (snippet) setSource(snippet.source);
-  }, [activeId]);
+    setBsSource(problem.bsCode);
+  }, [problem.id]);
+
+  const bsCompiled = useMemo(() => compile(bsSource), [bsSource]);
+
+  // ---- Features mode state ----
+  const [snippetId, setSnippetId] = useState(SNIPPETS[0]!.id);
+  const [snippetSource, setSnippetSource] = useState(SNIPPETS[0]!.source);
+  useEffect(() => {
+    const s = SNIPPETS.find((x) => x.id === snippetId);
+    if (s) setSnippetSource(s.source);
+  }, [snippetId]);
+  const snippetCompiled = useMemo(() => compile(snippetSource), [snippetSource]);
 
   return (
     <div className="app">
@@ -38,46 +54,56 @@ export function App() {
           <Logo size={36} />
           <div className="brand-text">
             <h1>botscript</h1>
-            <p>type .bs on the left — see the desugared TypeScript on the right</p>
+            <p>
+              {mode === "problems"
+                ? "real TypeScript bug patterns the compiler refuses to ship"
+                : "type .bs on the left — see the desugared TypeScript on the right"}
+            </p>
           </div>
         </div>
-        <a className="ghlink" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noreferrer">
-          github
-        </a>
+        <div className="header-right">
+          <div className="modes" role="tablist" aria-label="view mode">
+            <button
+              role="tab"
+              aria-selected={mode === "problems"}
+              className={mode === "problems" ? "mode mode-active" : "mode"}
+              onClick={() => setMode("problems")}
+            >
+              problems it solves
+            </button>
+            <button
+              role="tab"
+              aria-selected={mode === "features"}
+              className={mode === "features" ? "mode mode-active" : "mode"}
+              onClick={() => setMode("features")}
+            >
+              features
+            </button>
+          </div>
+          <a className="ghlink" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noreferrer">
+            github
+          </a>
+        </div>
       </header>
 
-      <nav className="tabs">
-        {SNIPPETS.map((s) => (
-          <button
-            key={s.id}
-            className={s.id === activeId ? "tab tab-active" : "tab"}
-            onClick={() => setActiveId(s.id)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="panes">
-        <section className="pane pane-input">
-          <div className="pane-label">.bs source</div>
-          <textarea
-            className="editor"
-            value={source}
-            spellCheck={false}
-            onChange={(e) => setSource(e.target.value)}
-          />
-        </section>
-        <section className="pane pane-output">
-          <div className="pane-label">
-            compiled TypeScript
-            {compiled.error && <span className="err-tag">error</span>}
-          </div>
-          <pre className={compiled.error ? "output output-err" : "output"}>
-            <code>{compiled.error ?? compiled.code}</code>
-          </pre>
-        </section>
-      </main>
+      {mode === "problems" ? (
+        <ProblemsView
+          problem={problem}
+          problemId={problemId}
+          setProblemId={setProblemId}
+          bsSource={bsSource}
+          setBsSource={setBsSource}
+          bsCompiled={bsCompiled}
+        />
+      ) : (
+        <FeaturesView
+          snippetId={snippetId}
+          setSnippetId={setSnippetId}
+          snippetSource={snippetSource}
+          setSnippetSource={setSnippetSource}
+          snippetCompiled={snippetCompiled}
+        />
+      )}
 
       <footer className="footer">
         <span>v0.3.0</span>
@@ -89,5 +115,144 @@ export function App() {
         <span>compiled in your browser</span>
       </footer>
     </div>
+  );
+}
+
+type ProblemsViewProps = {
+  problem: (typeof PROBLEMS)[number];
+  problemId: string;
+  setProblemId: (id: string) => void;
+  bsSource: string;
+  setBsSource: (src: string) => void;
+  bsCompiled: { code: string; error: string | null };
+};
+
+function ProblemsView(props: ProblemsViewProps) {
+  const { problem, problemId, setProblemId, bsSource, setBsSource, bsCompiled } = props;
+  const isStructural = problem.outcome === "structural";
+  const isError = bsCompiled.error !== null;
+  const outcomeClass = isStructural ? "outcome outcome-structural" : "outcome outcome-rejects";
+  return (
+    <>
+      <nav className="tabs" aria-label="problem">
+        {PROBLEMS.map((p) => (
+          <button
+            key={p.id}
+            className={p.id === problemId ? "tab tab-active" : "tab"}
+            onClick={() => setProblemId(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </nav>
+
+      <section className="problem-head">
+        <div className="problem-meta">
+          <span className={outcomeClass}>{problem.outcomeLabel}</span>
+        </div>
+        <h2 className="problem-title">{problem.title}</h2>
+        <p className="problem-blurb">{problem.blurb}</p>
+        <p className="problem-hint">→ {problem.fixHint}</p>
+      </section>
+
+      <main className={isStructural ? "problem-panes problem-panes-structural" : "problem-panes"}>
+        <section className="pane pane-ts">
+          <div className="pane-label">
+            <span>typescript — what bots write</span>
+            <span className="status-tag status-ts">compiles fine</span>
+          </div>
+          <pre className="output">
+            <code>{problem.tsCode}</code>
+          </pre>
+        </section>
+
+        <section className="pane pane-bs">
+          <div className="pane-label">
+            <span>{isStructural ? "↦ the only shape in .bs" : "botscript — try editing"}</span>
+            {isStructural ? (
+              <span className="status-tag status-by-design">by design</span>
+            ) : isError ? (
+              <span className="status-tag status-err">rejected</span>
+            ) : (
+              <span className="status-tag status-ok">accepted</span>
+            )}
+          </div>
+          {isStructural ? (
+            <pre className="output">
+              <code>{problem.bsCode}</code>
+            </pre>
+          ) : (
+            <textarea
+              className="editor"
+              value={bsSource}
+              spellCheck={false}
+              onChange={(e) => setBsSource(e.target.value)}
+            />
+          )}
+        </section>
+
+        <section className="pane pane-output">
+          <div className="pane-label">
+            <span>{isStructural ? "desugared typescript" : "compiler output"}</span>
+            {isStructural ? null : isError ? (
+              <span className="status-tag status-err">error</span>
+            ) : (
+              <span className="status-tag status-ok">clean tsx</span>
+            )}
+          </div>
+          <pre className={isError && !isStructural ? "output output-err" : "output"}>
+            <code>{isStructural ? bsCompiled.code : (bsCompiled.error ?? bsCompiled.code)}</code>
+          </pre>
+        </section>
+      </main>
+    </>
+  );
+}
+
+type FeaturesViewProps = {
+  snippetId: string;
+  setSnippetId: (id: string) => void;
+  snippetSource: string;
+  setSnippetSource: (src: string) => void;
+  snippetCompiled: { code: string; error: string | null };
+};
+
+function FeaturesView(props: FeaturesViewProps) {
+  const { snippetId, setSnippetId, snippetSource, setSnippetSource, snippetCompiled } = props;
+  return (
+    <>
+      <nav className="tabs" aria-label="snippet">
+        {SNIPPETS.map((s) => (
+          <button
+            key={s.id}
+            className={s.id === snippetId ? "tab tab-active" : "tab"}
+            onClick={() => setSnippetId(s.id)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
+
+      <main className="panes">
+        <section className="pane pane-input">
+          <div className="pane-label">.bs source</div>
+          <textarea
+            className="editor"
+            value={snippetSource}
+            spellCheck={false}
+            onChange={(e) => setSnippetSource(e.target.value)}
+          />
+        </section>
+        <section className="pane pane-output">
+          <div className="pane-label">
+            compiled TypeScript
+            {snippetCompiled.error && <span className="err-tag">error</span>}
+          </div>
+          <pre className={snippetCompiled.error ? "output output-err" : "output"}>
+            <code>{snippetCompiled.error ?? snippetCompiled.code}</code>
+          </pre>
+        </section>
+      </main>
+    </>
   );
 }
