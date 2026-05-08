@@ -112,14 +112,16 @@ function classifyForm(tokens: Token[], start: number, qIdx: number): FormInfo | 
   const head = tokens[i];
   if (!head) return null;
 
-  // Bail if the apparent statement-start can't legitimately begin a JS
-  // expression. The walk-back from `?` to a preceding `;`, `{`, or
+  // Bail when the apparent statement-start is an operator that this lexer
+  // can't disambiguate. The walk-back from `?` to a preceding `;`, `{`, or
   // boundary-newline can cross JSX text content (e.g. `<a>foo bar?</a>`)
-  // because the lexer doesn't pair `<` and `>` and JSX text isn't a
-  // statement at all. JSX tags start with `<` (an operator), which can't
-  // begin an expression — bail before we rewrite the surrounding markup
-  // as if it were `expr?`. The unary-prefix operators below are the only
-  // ones that can legitimately lead a bare expression statement.
+  // because `<` and `>` are tokenised as comparison-shaped operators and
+  // are never paired. A `<` token at statement-start could be a JSX
+  // element, a TSX generic call/cast, or a stray comparison fragment —
+  // each is a different real shape, and the unwrap pass (which has no AST)
+  // can't tell them apart from a token stream alone. The conservative
+  // choice is to refuse to rewrite. The unary-prefix operators below can
+  // unambiguously begin a bare expression statement and stay allowed.
   if (head.kind === "operator" && !isUnaryPrefixOp(head.text)) return null;
 
   // let/const/var binding form.
