@@ -35,6 +35,14 @@ goes behind a new pin.
   once from `passes/version.ts` and imported by every pass that gates on a
   resolved version.
 
+### Fixed
+- The fn return-type scanner now tracks `<...>` depth instead of
+  case-analysing what follows each matched `{...}`. Object types nested
+  inside generic args — `Result<{ name: string }, string>`,
+  `Map<K, Vec<T>>`, `{ a: T } | string` — used to be mis-parsed as the
+  body opener, silently dropping the body and producing wrong CAP002
+  diagnostics on declared capabilities the body actually consumed.
+
 ### Forward compatibility
 - Files pinned to `?bs 0.3` (or earlier) compile to byte-identical TypeScript.
   The forward-compat snapshot suite at
