@@ -173,6 +173,33 @@ adding a row.
   `random.next()` for a seeded RNG) inside the body, restoring the real
   sources when it returns or throws. The only way to inject deterministic
   time/RNG into a test, by design.
+- **MCP server.** `@mbfarias/botscript-mcp` exposes the compiler over the
+  Model Context Protocol so a model can `primer` / `transform` / `explain`
+  via tool calls. See "MCP server" below.
+
+## MCP server (for bots)
+
+A botscript-aware bot doesn't need to read this README, the manifesto, or
+`STDLIB.bs` to write correct `.bs`. Wire the MCP server into the agent's
+config and the language surface becomes a tool call away.
+
+**Install in Claude Code:**
+
+```sh
+claude mcp add botscript -- npx -y @mbfarias/botscript-mcp
+```
+
+**Tools exposed:**
+
+| Tool        | Input                                  | Output                                                                                              |
+| ----------- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `primer`    | (no args)                              | The canonical language primer (same text the `?primer` directive emits).                            |
+| `transform` | `{ source: string, filename?: string }` | `{ ok: true, code, forms, version }` on success, or `{ ok: false, diagnostics: [...] }` on failure. |
+| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`) plus a fails/passes example pair. |
+
+A bot's loop becomes deterministic: `transform` → if `ok=false`, read
+`diagnostics[0].code` → `explain(code)` → apply `rewrite` → `transform` again.
+No regex on English error text.
 
 ---
 

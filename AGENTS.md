@@ -194,6 +194,10 @@ check the others.
 5. `packages/compiler/src/passes/<any>.ts` — pick the simplest one as a template.
 6. `examples/node-app/src/main.bs` — the shape of an actual program.
 
+If your harness has MCP, you can also wire `@mbfarias/botscript-mcp` and call
+`primer` / `transform` / `explain` instead of file-reading the above. Same
+content, fewer reads.
+
 If anything in this document conflicts with the `MANIFESTO.md`, the manifesto
 wins. If the manifesto conflicts with reality, file an issue. We update
 docs in the same PR as the code; ambiguity gets resolved at the diff, not in

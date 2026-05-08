@@ -1,0 +1,43 @@
+{
+  "name": "@mbfarias/botscript-mcp",
+  "version": "0.2.0",
+  "description": "MCP server exposing the botscript compiler — primer, transform, and explain — so a model can discover the language surface via tool calls.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "botscript-mcp": "./dist/server.js"
+  },
+  "license": "MIT",
+  "author": "Marcelo Farias",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcelofarias/botscript.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/marcelofarias/botscript#readme",
+  "keywords": [
+    "botscript",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mbfarias/botscript-compiler": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
