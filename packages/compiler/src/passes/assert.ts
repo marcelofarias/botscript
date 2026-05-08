@@ -1,60 +1,83 @@
-import { findOutside } from "../lex.js";
-
 /**
- * Rewrite `assert <expr>` (statement form) to `$assert(<expr>)`. We only
- * rewrite when `assert` appears in statement position — i.e. preceded by
- * start-of-line whitespace, `;`, `{`, or beginning-of-file. Anything else
- * (member access, type predicate, etc.) is left alone.
+ * Token-AST-based assert pass. Rewrites `assert <expr>` (statement position)
+ * to `$assert(<expr>)`.
  */
-export function passAssert(src: string): string {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const found = findOutside(src, "assert", i);
-    if (found === -1) {
-      out += src.slice(i);
-      break;
-    }
-    const before = src[found - 1] ?? "\n";
-    const after = src[found + 6] ?? " ";
-    const isWordBoundary =
-      !/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after);
-    if (!isWordBoundary || !isStatementStart(src, found)) {
-      out += src.slice(i, found + 6);
-      i = found + 6;
-      continue;
-    }
+import { lex } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
 
-    // Emit everything up to here, then rewrite up to end-of-statement.
-    out += src.slice(i, found);
-    let j = found + 6;
-    // Skip whitespace.
-    while (j < src.length && (src[j] === " " || src[j] === "\t")) j++;
-    // Read until `;` or newline at top level.
+export function passAssert(src: string): string {
+  const tokens = lex(src);
+  let out = "";
+  let cursor = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "keyword" || t.keyword !== "assert") continue;
+    if (!isStatementPosition(tokens, i)) continue;
+
+    // Read expression until `;` or `\n` at brace depth 0.
+    let j = i + 1;
+    j = skipTrivia(tokens, j);
     const exprStart = j;
-    let depth = 0;
-    while (j < src.length) {
-      const c = src[j];
-      if (c === "(" || c === "[" || c === "{") depth++;
-      else if (c === ")" || c === "]" || c === "}") depth--;
-      else if (depth === 0 && (c === ";" || c === "\n")) break;
+    while (j < tokens.length) {
+      const tk = tokens[j]!;
+      if (tk.kind === "eof") break;
+      if (tk.kind === "open" && tk.matchedAt !== undefined) {
+        j = tk.matchedAt + 1;
+        continue;
+      }
+      if (tk.kind === "close") break;
+      if (tk.kind === "punct" && tk.text === ";") break;
+      if (tk.kind === "newline") break;
       j++;
     }
-    const expr = src.slice(exprStart, j).trim();
+    const expr = sliceText(tokens, exprStart, j).trim();
+    if (!expr) continue;
+
+    out += src.slice(cursor, t.start);
     out += `$assert(${expr})`;
-    if (src[j] === ";") {
+    let endIdx = j;
+    if (tokens[endIdx]?.kind === "punct" && tokens[endIdx]?.text === ";") {
       out += ";";
-      j++;
+      endIdx++;
     }
-    i = j;
+    cursor = tokens[endIdx]?.start ?? src.length;
+    i = endIdx - 1;
   }
+  out += src.slice(cursor);
   return out;
 }
 
-function isStatementStart(src: string, at: number): boolean {
-  let j = at - 1;
-  while (j >= 0 && (src[j] === " " || src[j] === "\t")) j--;
-  if (j < 0) return true;
-  const c = src[j];
-  return c === "\n" || c === ";" || c === "{";
+function isStatementPosition(tokens: Token[], idx: number): boolean {
+  for (let k = idx - 1; k >= 0; k--) {
+    const t = tokens[k]!;
+    if (t.kind === "whitespace") continue;
+    if (t.kind === "lineComment" || t.kind === "blockComment") continue;
+    if (t.kind === "newline") return true;
+    if (t.kind === "punct" && t.text === ";") return true;
+    if (t.kind === "open" && t.text === "{") return true;
+    return false;
+  }
+  return true;
+}
+
+function skipTrivia(tokens: Token[], i: number): number {
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") {
+      i++;
+      continue;
+    }
+    return i;
+  }
+  return i;
+}
+
+function sliceText(tokens: Token[], from: number, to: number): string {
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const t = tokens[i];
+    if (!t) break;
+    out += t.text;
+  }
+  return out;
 }

@@ -1,182 +1,219 @@
-import { stepOne } from "../lex.js";
+/**
+ * Token-AST-based unwrap pass.
+ *
+ * Looks for `?` postfix tokens that appear at the end of a let/const/var,
+ * return, or bare-expression statement and rewrites the entire statement to
+ * an unwrap-or-short-circuit pair.
+ *
+ * Bracket pairing comes from the lexer; comments/strings/templates can never
+ * be mistaken for statement endings because they're separate tokens.
+ */
+import { lex } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
+
+interface Unwrap {
+  /** Token index of the start of the rewritten statement. */
+  start: number;
+  /** Token index just past the `?` (and any trailing `;`). */
+  end: number;
+  form: "let-binding" | "return" | "bare";
+  binder?: "let" | "const" | "var";
+  name?: string;
+  typeAnnotation?: string;
+  /** Verbatim expression text before the `?`. */
+  expr: string;
+}
+
+export function passUnwrap(src: string): string {
+  const tokens = lex(src);
+  const unwraps: Unwrap[] = [];
+
+  // Scan for `?` tokens that are actually postfix unwraps. A real unwrap is
+  // followed (after trivia) by `;`, newline, or EOF — i.e. it terminates a
+  // statement.
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "question") continue;
+
+    // Lookahead: is this end-of-statement?
+    let j = i + 1;
+    while (j < tokens.length) {
+      const t2 = tokens[j]!;
+      if (t2.kind === "whitespace") { j++; continue; }
+      if (t2.kind === "punct" && t2.text === ";") break;
+      if (t2.kind === "newline") break;
+      if (t2.kind === "eof") break;
+      // Anything else means this `?` is not a postfix unwrap (likely ternary).
+      j = -1;
+      break;
+    }
+    if (j === -1) continue;
+
+    // Walk backwards from `i` to find the start of the statement.
+    const stmtStart = findStatementStart(tokens, i - 1);
+    if (stmtStart === -1) continue;
+
+    const form = classifyForm(tokens, stmtStart, i);
+    if (!form) continue;
+
+    // Past the `?`, also consume optional `;`.
+    let end = i + 1;
+    if (tokens[end]?.kind === "whitespace") end++;
+    if (tokens[end]?.kind === "punct" && tokens[end]?.text === ";") end++;
+
+    unwraps.push({ start: stmtStart, end, ...form });
+  }
+
+  // Emit. Walk source, replacing each unwrap range with the rewrite.
+  let out = "";
+  let cursor = 0;
+  let counter = 0;
+  for (const u of unwraps) {
+    counter++;
+    const startSrc = tokens[u.start]!.start;
+    const endSrc = u.end >= tokens.length ? src.length : tokens[u.end]?.start ?? src.length;
+    out += src.slice(cursor, startSrc);
+    // Preserve leading whitespace of the original line for indentation.
+    const lineStart = src.lastIndexOf("\n", startSrc - 1) + 1;
+    const indent = src.slice(lineStart, startSrc).match(/^[ \t]*/)?.[0] ?? "";
+    out += renderUnwrap(u, counter, indent);
+    cursor = endSrc;
+  }
+  out += src.slice(cursor);
+  return out;
+}
+
+function renderUnwrap(u: Unwrap, n: number, indent: string): string {
+  const id = `__r${n}`;
+  const decl = `${indent}const ${id} = ${u.expr.trim()};\n`;
+  const guard = `${indent}if (${id}.kind === "err") return ${id};\n`;
+  if (u.form === "let-binding") {
+    const binder = u.binder === "var" ? "let" : u.binder ?? "const";
+    const typeAnnot = u.typeAnnotation ? `: ${u.typeAnnotation}` : "";
+    return `${decl}${guard}${indent}${binder} ${u.name}${typeAnnot} = ${id}.value;`;
+  }
+  if (u.form === "return") {
+    return `${decl}${guard}${indent}return ${id}.value;`;
+  }
+  return `${decl}${guard.replace(/\n$/, "")}`;
+}
+
+interface FormInfo {
+  form: "let-binding" | "return" | "bare";
+  binder?: "let" | "const" | "var";
+  name?: string;
+  typeAnnotation?: string;
+  expr: string;
+}
+
+function classifyForm(tokens: Token[], start: number, qIdx: number): FormInfo | null {
+  let i = start;
+  i = skipTrivia(tokens, i);
+  const head = tokens[i];
+  if (!head) return null;
+
+  // let/const/var binding form.
+  if (head.kind === "ident" && (head.text === "let" || head.text === "const" || head.text === "var")) {
+    const binder = head.text as "let" | "const" | "var";
+    let j = i + 1;
+    j = skipTrivia(tokens, j);
+    const nameTok = tokens[j];
+    if (!nameTok || nameTok.kind !== "ident") return null;
+    const name = nameTok.text;
+    j++;
+    j = skipTrivia(tokens, j);
+    let typeAnnotation: string | undefined;
+    if (tokens[j]?.kind === "punct" && tokens[j]?.text === ":") {
+      const tStart = j + 1;
+      // Read type until `=`.
+      let tEnd = tStart;
+      while (tEnd < qIdx && tokens[tEnd]?.kind !== "eq") tEnd++;
+      typeAnnotation = sliceText(tokens, tStart, tEnd).trim();
+      j = tEnd;
+    }
+    if (tokens[j]?.kind !== "eq") return null;
+    j++;
+    const expr = sliceText(tokens, j, qIdx).trim();
+    if (!expr) return null;
+    return { form: "let-binding", binder, name, typeAnnotation, expr };
+  }
+
+  // return form.
+  if (head.kind === "ident" && head.text === "return") {
+    const expr = sliceText(tokens, i + 1, qIdx).trim();
+    if (!expr) return null;
+    return { form: "return", expr };
+  }
+
+  // Bare expression form.
+  const expr = sliceText(tokens, i, qIdx).trim();
+  if (!expr) return null;
+  return { form: "bare", expr };
+}
 
 /**
- * Postfix `?` on a Result expression: unwraps the Ok value, or short-circuits
- * the enclosing function with the Err.
- *
- *   let x = expr?       ->  const __r1 = expr; if (__r1.kind === "err") return __r1; const x = __r1.value;
- *   const x = expr?     ->  same with const
- *   return expr?        ->  const __r1 = expr; if (__r1.kind === "err") return __r1; return __r1.value;
- *   expr?               ->  const __r1 = expr; if (__r1.kind === "err") return __r1;
- *
- * The `?` must be at end-of-statement: followed by optional `;` and then
- * whitespace/newline/eof. Optional chaining (`foo?.bar`) and ternaries are
- * unaffected because they don't end the line.
+ * Walk backwards from `from` to find the start of the statement containing it.
+ * "Start" is the token immediately after the most recent `;`, `{`, newline at
+ * depth 0, or BOF. Comments and whitespace at that point are skipped forward.
  */
-export function passUnwrap(src: string): string {
-  // Walk line by line, but preserving original line endings.
-  // For each line that ends in `?` or `?;`, identify the statement and rewrite.
-  const lines = src.split("\n");
-  let counter = 0;
-  const out: string[] = [];
-  // Track whether we're inside a `/* ... */` block comment as we step lines.
-  let inBlockComment = false;
-
-  let buf = "";
-  for (const rawLine of lines) {
-    if (buf !== "") buf += "\n" + rawLine;
-    else buf = rawLine;
-
-    // If we're inside an unbalanced multi-line construct (string/template),
-    // accumulate. Crude check: if line has unmatched template-literal backtick.
-    if (isInsideTemplate(buf)) continue;
-
-    // Update block-comment state for this line and skip rewriting if we're
-    // inside one. Strict rule: the unwrap pass never touches comment content.
-    const wasInComment = inBlockComment;
-    inBlockComment = updateBlockCommentState(buf, inBlockComment);
-    if (wasInComment || inBlockComment || isCommentLine(buf)) {
-      out.push(buf);
-      buf = "";
+function findStatementStart(tokens: Token[], from: number): number {
+  let depth = 0;
+  for (let i = from; i >= 0; i--) {
+    const t = tokens[i]!;
+    if (t.kind === "close") depth++;
+    else if (t.kind === "open") {
+      if (depth === 0) {
+        return skipTrivia(tokens, i + 1);
+      }
+      depth--;
       continue;
     }
-
-    const result = rewriteLine(buf, counter);
-    if (result === null) {
-      out.push(buf);
-      buf = "";
-      continue;
-    }
-    counter = result.counter;
-    out.push(result.replacement);
-    buf = "";
-  }
-  if (buf !== "") out.push(buf);
-  return out.join("\n");
-}
-
-/** Returns true if the line is wholly a single-line or JSDoc-continuation comment. */
-function isCommentLine(line: string): boolean {
-  const t = line.trimStart();
-  return t.startsWith("//") || t.startsWith("*") || t.startsWith("/*");
-}
-
-/** Walk the line and flip block-comment state on opening/closing markers. */
-function updateBlockCommentState(line: string, inComment: boolean): boolean {
-  let i = 0;
-  while (i < line.length) {
-    if (inComment) {
-      const close = line.indexOf("*/", i);
-      if (close === -1) return true;
-      i = close + 2;
-      inComment = false;
-      continue;
-    }
-    const c = line[i];
-    if (c === '"' || c === "'" || c === "`") {
-      i = stepOne(line, i);
-      continue;
-    }
-    if (c === "/" && line[i + 1] === "/") return inComment;
-    if (c === "/" && line[i + 1] === "*") {
-      inComment = true;
-      i += 2;
-      continue;
-    }
-    i++;
-  }
-  return inComment;
-}
-
-function rewriteLine(line: string, counter: number): { replacement: string; counter: number } | null {
-  // Find a `?` at end of line (allowing optional `;` and trailing whitespace).
-  const m = line.match(/^(\s*)(.*?)\?\s*;?\s*$/s);
-  if (!m) return null;
-  const indent = m[1] ?? "";
-  const stmt = (m[2] ?? "").trim();
-  if (stmt === "") return null;
-
-  // Reject if the `?` looks like part of a ternary or optional chain.
-  // Heuristic: the char immediately before `?` must be `)`, `]`, identifier, or quote-end.
-  const beforeQ = stmt[stmt.length - 1];
-  if (!beforeQ) return null;
-  const isUnwrapPos =
-    /[A-Za-z0-9_$\)\]'"`]/.test(beforeQ) &&
-    !looksLikeOptionalChain(line);
-  if (!isUnwrapPos) return null;
-
-  // Detect statement form.
-  const letMatch = stmt.match(/^(let|const|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(.+)$/s);
-  const returnMatch = stmt.match(/^return\s+(.+)$/s);
-
-  const id = `__r${counter + 1}`;
-  let replacement: string;
-
-  if (letMatch) {
-    const kw = letMatch[1]!;
-    const name = letMatch[2]!;
-    const expr = letMatch[3]!.trim();
-    replacement =
-      `${indent}const ${id} = ${expr};\n` +
-      `${indent}if (${id}.kind === "err") return ${id};\n` +
-      `${indent}${kw === "var" ? "let" : kw} ${name} = ${id}.value;`;
-  } else if (returnMatch) {
-    const expr = returnMatch[1]!.trim();
-    replacement =
-      `${indent}const ${id} = ${expr};\n` +
-      `${indent}if (${id}.kind === "err") return ${id};\n` +
-      `${indent}return ${id}.value;`;
-  } else {
-    // Bare expression statement.
-    replacement =
-      `${indent}const ${id} = ${stmt};\n` +
-      `${indent}if (${id}.kind === "err") return ${id};`;
-  }
-
-  return { replacement, counter: counter + 1 };
-}
-
-function looksLikeOptionalChain(line: string): boolean {
-  // If the `?` we see is followed by `.` or `[` or `(`, it's optional chaining.
-  // Since we already match end-of-line, this can't be true, so always false.
-  return false;
-}
-
-function isInsideTemplate(buf: string): boolean {
-  let i = 0;
-  let inTemplate = false;
-  while (i < buf.length) {
-    const c = buf[i];
-    if (c === "\\") {
-      i += 2;
-      continue;
-    }
-    if (inTemplate) {
-      if (c === "`") inTemplate = false;
-      else if (c === "$" && buf[i + 1] === "{") {
-        // skip ${...}
-        let depth = 1;
-        i += 2;
-        while (i < buf.length && depth > 0) {
-          if (buf[i] === "{") depth++;
-          else if (buf[i] === "}") depth--;
-          i++;
+    if (depth === 0) {
+      if (t.kind === "punct" && t.text === ";") return skipTrivia(tokens, i + 1);
+      if (t.kind === "newline") {
+        // Newlines aren't statement boundaries on their own — `let x =\nfoo()?`
+        // is one statement. Only treat as boundary if the next significant
+        // token starts a new statement keyword (let/const/var/return).
+        const nextSig = nextSignificant(tokens, i + 1);
+        if (nextSig === -1) continue;
+        const nt = tokens[nextSig]!;
+        if (nt.kind === "ident" && (nt.text === "let" || nt.text === "const" || nt.text === "var" || nt.text === "return")) {
+          return nextSig;
         }
         continue;
       }
-      i++;
-      continue;
     }
-    if (c === "`") {
-      inTemplate = true;
-      i++;
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      i = stepOne(buf, i);
-      continue;
-    }
-    i++;
   }
-  return inTemplate;
+  return 0;
+}
+
+function nextSignificant(tokens: Token[], from: number): number {
+  for (let i = from; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") continue;
+    return i;
+  }
+  return -1;
+}
+
+function skipTrivia(tokens: Token[], i: number): number {
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") {
+      i++;
+      continue;
+    }
+    return i;
+  }
+  return i;
+}
+
+function sliceText(tokens: Token[], from: number, to: number): string {
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const t = tokens[i];
+    if (!t) break;
+    out += t.text;
+  }
+  return out;
 }

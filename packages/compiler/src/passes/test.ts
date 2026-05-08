@@ -1,68 +1,57 @@
-import { findOutside, skipBalanced, skipWs } from "../lex.js";
-
 /**
- * Rewrite `test "name" { body }` into `$test("name", async () => { body });`
- * Top-level only. Names must be string literals (single or double quoted).
+ * Token-AST-based test pass.
  *
- * The `body` is preserved verbatim — later passes (match, ?, assert) operate
- * on it as on any other code.
+ *   test "name" { body }   ->   $test("name", async () => { body });
  */
-export function passTest(src: string): string {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    // Find next `test` keyword at safe position.
-    const idx = findKeyword(src, "test", i);
-    if (idx === -1) {
-      out += src.slice(i);
-      break;
-    }
-    out += src.slice(i, idx);
+import { lex } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
 
-    // After `test`, expect whitespace, then a string literal.
-    let j = skipWs(src, idx + 4);
-    const quote = src[j];
-    if (quote !== '"' && quote !== "'") {
-      // Not a botscript test form — pass through.
-      out += "test";
-      i = idx + 4;
-      continue;
-    }
-    let k = j + 1;
-    while (k < src.length && src[k] !== quote) {
-      if (src[k] === "\\") k += 2;
-      else k++;
-    }
-    if (k >= src.length) {
-      out += "test";
-      i = idx + 4;
-      continue;
-    }
-    const name = src.slice(j, k + 1);
-    let after = skipWs(src, k + 1);
-    if (src[after] !== "{") {
-      out += "test";
-      i = idx + 4;
-      continue;
-    }
-    const bodyEnd = skipBalanced(src, after, "{", "}");
-    const body = src.slice(after + 1, bodyEnd - 1);
+export function passTest(src: string): string {
+  const tokens = lex(src);
+  let out = "";
+  let cursor = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "keyword" || t.keyword !== "test") continue;
+
+    let j = i + 1;
+    j = skipTrivia(tokens, j);
+    const nameTok = tokens[j];
+    if (!nameTok || nameTok.kind !== "string") continue;
+    const name = nameTok.text;
+    j++;
+    j = skipTrivia(tokens, j);
+    const open = tokens[j];
+    if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) continue;
+    const close = open.matchedAt;
+    const body = sliceText(tokens, j + 1, close);
+    out += src.slice(cursor, t.start);
     out += `$test(${name}, async () => {${body}});`;
-    i = bodyEnd;
+    cursor = tokens[close]!.end;
+    i = close;
   }
+  out += src.slice(cursor);
   return out;
 }
 
-function findKeyword(src: string, kw: string, from: number): number {
-  let i = from;
-  while (true) {
-    const found = findOutside(src, kw, i);
-    if (found === -1) return -1;
-    const before = src[found - 1] ?? " ";
-    const after = src[found + kw.length] ?? " ";
-    const isWordBoundary =
-      !/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after);
-    if (isWordBoundary) return found;
-    i = found + kw.length;
+function skipTrivia(tokens: Token[], i: number): number {
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") {
+      i++;
+      continue;
+    }
+    return i;
   }
+  return i;
+}
+
+function sliceText(tokens: Token[], from: number, to: number): string {
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const t = tokens[i];
+    if (!t) break;
+    out += t.text;
+  }
+  return out;
 }

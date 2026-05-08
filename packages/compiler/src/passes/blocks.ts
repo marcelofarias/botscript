@@ -1,89 +1,87 @@
-import { findOutside, skipBalanced, skipWs } from "../lex.js";
-
 /**
- * `pure { ... }` and `io { ... }` as expressions. (The forms attached to a
- * `fn ... = pure { ... }` declaration are already consumed by the fn pass.)
+ * Token-AST-based pure/io block pass. Each `pure { ... }` or `io { ... }` at
+ * an expression position is rewritten — `pure` to `$enter([], () => …)`,
+ * `io` to a plain IIFE.
  *
- *   pure { expr }   ->  $enter([], () => expr)
- *   io   { expr }   ->  ((() => expr)())
- *
- * If the body has top-level semicolons or a `return`, we leave it as a block
- * body. Otherwise the trailing expression is implicitly returned.
+ * Block-style `pure { … }` and `io { … }` attached to a `fn ... = pure { … }`
+ * declaration are consumed by the fn pass and never reach this pass; we only
+ * see the bare expression form.
  */
+import { lex } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
+
 export function passBlocks(src: string): string {
+  const tokens = lex(src);
   let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const next = nextBlockKeyword(src, i);
-    if (!next) {
-      out += src.slice(i);
-      break;
-    }
-    out += src.slice(i, next.idx);
-    const wsAfter = skipWs(src, next.idx + next.kw.length);
-    if (src[wsAfter] !== "{") {
-      out += next.kw;
-      i = next.idx + next.kw.length;
-      continue;
-    }
-    const bEnd = skipBalanced(src, wsAfter, "{", "}");
-    const body = src.slice(wsAfter + 1, bEnd - 1).trim();
+  let cursor = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "keyword") continue;
+    if (t.keyword !== "pure" && t.keyword !== "io") continue;
+    if (!isExpressionPosition(tokens, i)) continue;
+
+    // Expect `{` next (after whitespace/comments).
+    let j = i + 1;
+    j = skipTrivia(tokens, j);
+    const open = tokens[j];
+    if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) continue;
+    const close = open.matchedAt;
+    const body = sliceText(tokens, j + 1, close).trim();
     const wrapped = wrapBody(body);
-    if (next.kw === "pure") {
-      out += `$enter([] as const, () => { ${wrapped} })`;
-    } else {
-      out += `(() => { ${wrapped} })()`;
-    }
-    i = bEnd;
+    const emit = t.keyword === "pure"
+      ? `$enter([] as const, () => { ${wrapped} })`
+      : `(() => { ${wrapped} })()`;
+
+    out += src.slice(cursor, t.start);
+    out += emit;
+    cursor = open.matchedAt !== undefined ? tokens[close]!.end : cursor;
+    i = close;
   }
+  out += src.slice(cursor);
   return out;
 }
 
-function nextBlockKeyword(src: string, from: number): { idx: number; kw: "pure" | "io" } | null {
-  let bestIdx = -1;
-  let bestKw: "pure" | "io" | null = null;
-  for (const kw of ["pure", "io"] as const) {
-    let scan = from;
-    while (true) {
-      const found = findOutside(src, kw, scan);
-      if (found === -1) break;
-      const before = src[found - 1] ?? " ";
-      const after = src[found + kw.length] ?? " ";
-      // Word boundary on both sides.
-      if (/[A-Za-z0-9_$]/.test(before) || /[A-Za-z0-9_$]/.test(after)) {
-        scan = found + kw.length;
-        continue;
-      }
-      // Must look like a block expression: be preceded by something that
-      // suggests an expression position, not e.g. `function pure(){}`.
-      // We accept after `=`, `return`, `(`, `,`, `[`, `:`, `?`, `&&`, `||`, `=>`, `;`, `{`, or BOF.
-      if (!isExpressionPosition(src, found)) {
-        scan = found + kw.length;
-        continue;
-      }
-      if (bestIdx === -1 || found < bestIdx) {
-        bestIdx = found;
-        bestKw = kw;
-      }
-      break;
+function isExpressionPosition(tokens: Token[], idx: number): boolean {
+  // Walk back for the previous significant token. If it indicates an
+  // expression position (`=`, `(`, `,`, `[`, `:`, `?`, `;`, `{`, `=>`, `&&`,
+  // `||`, `return` keyword, or BOF), treat as expression-position.
+  for (let k = idx - 1; k >= 0; k--) {
+    const t = tokens[k]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") continue;
+    if (t.kind === "eq" || t.kind === "fatArrow") return true;
+    if (t.kind === "punct" && (t.text === "," || t.text === ":" || t.text === ";" || t.text === ".")) {
+      return t.text !== ".";
     }
+    if (t.kind === "open" && (t.text === "(" || t.text === "[" || t.text === "{")) return true;
+    if (t.kind === "question" || t.kind === "questionDot" || t.kind === "questionQuestion") return true;
+    if (t.kind === "operator" && (t.text === "&&" || t.text === "||" || t.text === "??")) return true;
+    if (t.kind === "ident" && t.text === "return") return true;
+    if (t.kind === "keyword" && (t.keyword === "pure" || t.keyword === "io" || t.keyword === "match")) return true;
+    return false;
   }
-  if (bestIdx === -1 || bestKw === null) return null;
-  return { idx: bestIdx, kw: bestKw };
+  return true;
 }
 
-function isExpressionPosition(src: string, at: number): boolean {
-  let j = at - 1;
-  while (j >= 0 && /\s/.test(src[j] ?? "")) j--;
-  if (j < 0) return true;
-  const c = src[j];
-  if (c === "=" || c === "(" || c === "," || c === "[" || c === ":" || c === "?" || c === ";" || c === "{") return true;
-  if (c === ">" && src[j - 1] === "=") return true; // `=>`
-  if (c === "&" && src[j - 1] === "&") return true;
-  if (c === "|" && src[j - 1] === "|") return true;
-  // `return` keyword
-  if (c === "n" && src.slice(Math.max(0, j - 5), j + 1) === "return") return true;
-  return false;
+function skipTrivia(tokens: Token[], i: number): number {
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") {
+      i++;
+      continue;
+    }
+    return i;
+  }
+  return i;
+}
+
+function sliceText(tokens: Token[], from: number, to: number): string {
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const t = tokens[i];
+    if (!t) break;
+    out += t.text;
+  }
+  return out;
 }
 
 function wrapBody(body: string): string {
@@ -95,10 +93,11 @@ function wrapBody(body: string): string {
 function hasTopLevelSemicolon(src: string): boolean {
   let i = 0;
   while (i < src.length) {
-    const c = src[i];
+    const c = src[i]!;
     if (c === '"' || c === "'" || c === "`") {
+      const q = c;
       i++;
-      while (i < src.length && src[i] !== c) {
+      while (i < src.length && src[i] !== q) {
         if (src[i] === "\\") i += 2;
         else i++;
       }

@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "botscript command-line: build *.bs files to *.ts, print the primer.",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,262 +1,107 @@
-import { findOutside, readIdent, skipBalanced, skipWs, stepOne } from "../lex.js";
-
 /**
- * Rewrites:
- *   fn name(args) [uses { caps }] -> ReturnType { body }
- *   fn name(args) [uses { caps }] -> ReturnType = pure { expr }
+ * Token-AST-based fn pass. The lexer produces a token stream with matched
+ * bracket pairs; the fn parser consumes a typed `FnDecl`; this pass emits the
+ * desugared TypeScript and stitches it back into the source.
  *
- * into ordinary TS function declarations with the body wrapped in `$enter`
- * so capability requirements are enforced at runtime.
- *
- * Anonymous function expressions are not supported in v0.1; the `fn` keyword
- * always introduces a top-level (or member-style) named declaration.
+ * This replaces the older string-rewrite version. Behaviour is identical for
+ * every test in `tests/transform.test.ts`, plus we no longer rely on the
+ * fragile `{ … }` body/object-type heuristic — bracket pairing comes from the
+ * lexer and is always correct.
  */
+import { lex } from "../parser/lex.js";
+import type { FnDecl } from "../parser/parse-fn.js";
+import { parseFn } from "../parser/parse-fn.js";
+
 export function passFn(src: string): string {
+  const tokens = lex(src);
+  // Walk tokens, find every `fn` keyword, parse it, and emit the desugared TS.
+  // We slice from previous emit-cursor to the start of the parsed run, then
+  // append the emit. That keeps comments/whitespace verbatim.
   let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const idx = findKeyword(src, "fn", i);
-    if (idx === -1) {
-      out += src.slice(i);
-      break;
-    }
-    out += src.slice(i, idx);
-    const result = parseFn(src, idx);
-    if (!result) {
-      // Malformed — pass through the keyword and keep going.
-      out += "fn";
-      i = idx + 2;
-      continue;
-    }
-    out += result.emit;
-    i = result.end;
+  let cursor = 0; // position in src
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "keyword" || t.keyword !== "fn") continue;
+    const decl = parseFn(tokens, i);
+    if (!decl) continue;
+    // Emit everything up to the start of this declaration.
+    out += src.slice(cursor, tokens[decl.start]!.start);
+    out += emitFn(decl);
+    // Skip ahead past the declaration's last token.
+    cursor = tokens[decl.end - 1] ? tokens[decl.end - 1]!.end : tokens[decl.end]?.start ?? cursor;
+    // Advance the loop cursor to past the consumed run.
+    i = decl.end - 1;
   }
+  out += src.slice(cursor);
   return out;
 }
 
-interface FnParse {
-  emit: string;
-  end: number;
-}
+function emitFn(decl: FnDecl): string {
+  const capsLiteral = `[${decl.capabilities.map((c) => JSON.stringify(c)).join(", ")}]`;
+  const arrow = decl.isAsync ? "async () => " : "() => ";
 
-function parseFn(src: string, start: number): FnParse | null {
-  // Detect a preceding `async` modifier so the inner $enter callback can be
-  // marked async too. Without this, `await` inside the body errors out
-  // because the arrow we wrap with isn't async.
-  const isAsync = precededByKeyword(src, start, "async");
-
-  // start points at `fn`. Move past keyword.
-  let i = skipWs(src, start + 2);
-
-  // Allow modifier `export` to have already been consumed by the caller's
-  // surrounding text — botscript treats `export fn` as `export function`.
-  // We let the existing prefix flow through unchanged.
-
-  // Read function name.
-  const [name, afterName] = readIdent(src, i);
-  if (!name) return null;
-  i = skipWs(src, afterName);
-
-  // Args: balanced parens.
-  if (src[i] !== "(") return null;
-  const argsEnd = skipBalanced(src, i, "(", ")");
-  const args = src.slice(i, argsEnd); // includes parens
-  i = skipWs(src, argsEnd);
-
-  // Optional `uses { ... }` clause.
-  let caps: string[] = [];
-  if (src.startsWith("uses", i) && /\W/.test(src[i + 4] ?? " ")) {
-    i = skipWs(src, i + 4);
-    if (src[i] !== "{") return null;
-    const usesEnd = skipBalanced(src, i, "{", "}");
-    const inner = src.slice(i + 1, usesEnd - 1);
-    caps = inner
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    i = skipWs(src, usesEnd);
-  }
-
-  // Required `->` ReturnType. Read until we hit `{` or `=`.
-  if (src[i] !== "-" || src[i + 1] !== ">") return null;
-  i += 2;
-  const typeStart = i;
-  // Walk until we hit a top-level `{` or `=` outside angle/square brackets.
-  let typeEnd = -1;
-  let depth = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "<" || c === "[" || c === "(") {
-      const close = c === "<" ? ">" : c === "[" ? "]" : ")";
-      // For `<`, only treat as bracket if it looks like a generic — best effort.
-      i = c === "<" ? skipAngles(src, i) : skipBalanced(src, i, c, close);
-      continue;
-    }
-    if (c === "{" && depth === 0) {
-      // Could be the body-opener OR a `{ key: T; … }` object type. Disambiguate
-      // by lookahead: if balancing past this `{` lands us on whitespace then
-      // `{` or `=`, the brace we're at is part of the return type — what
-      // follows it is the body. Otherwise this brace IS the body.
-      // (One of the places a proper AST would simplify life; for v0.1 we
-      // lean on heuristics.)
-      const closeIdx = skipBalanced(src, i, "{", "}");
-      const after = skipWs(src, closeIdx);
-      const nextC = src[after];
-      if (nextC === "{" || nextC === "=") {
-        i = closeIdx;
-        continue;
-      }
-      typeEnd = i;
-      break;
-    }
-    if (c === "=" && src[i + 1] !== "=" && depth === 0) {
-      typeEnd = i;
-      break;
-    }
-    if (c === '"' || c === "'" || c === "`" || (c === "/" && (src[i + 1] === "/" || src[i + 1] === "*"))) {
-      i = stepOne(src, i);
-      continue;
-    }
-    i++;
-  }
-  if (typeEnd === -1) return null;
-  const returnType = src.slice(typeStart, typeEnd).trim();
-  i = typeEnd;
-
-  // Now one of:
-  //   { body }                  — block body
-  //   = pure { expr }           — pure shorthand
-  //   = io   { expr }           — io shorthand
-  //   = expr                    — single-expression body (terminated by `;` or
-  //                               newline at brace-depth 0). Used to write
-  //                               `fn area(s) -> n = match s { … }`.
-  let body: string;
-  let wrapExpr = false;
-  if (src[i] === "=") {
-    i = skipWs(src, i + 1);
-    if (src.startsWith("pure", i) && /\W/.test(src[i + 4] ?? " ")) {
-      i = skipWs(src, i + 4);
-      if (src[i] !== "{") return null;
-      const bEnd = skipBalanced(src, i, "{", "}");
-      body = src.slice(i + 1, bEnd - 1);
-      caps = []; // pure overrides any `uses { }` clause
-      wrapExpr = true;
-      i = bEnd;
-    } else if (src.startsWith("io", i) && /\W/.test(src[i + 2] ?? " ")) {
-      i = skipWs(src, i + 2);
-      if (src[i] !== "{") return null;
-      const bEnd = skipBalanced(src, i, "{", "}");
-      body = src.slice(i + 1, bEnd - 1);
-      wrapExpr = true;
-      i = bEnd;
-    } else {
-      // Single-expression body. Read until `;` or newline at depth 0.
-      const exprStart = i;
-      let depth = 0;
-      while (i < src.length) {
-        const c = src[i];
-        if (
-          c === '"' ||
-          c === "'" ||
-          c === "`" ||
-          (c === "/" && (src[i + 1] === "/" || src[i + 1] === "*"))
-        ) {
-          i = stepOne(src, i);
-          continue;
-        }
-        if (c === "{" || c === "(" || c === "[") depth++;
-        else if (c === "}" || c === ")" || c === "]") depth--;
-        else if (depth === 0 && (c === ";" || c === "\n")) break;
-        i++;
-      }
-      body = src.slice(exprStart, i).trim();
-      if (body === "") return null;
-      wrapExpr = true;
-      if (src[i] === ";") i++;
-    }
-  } else if (src[i] === "{") {
-    const bEnd = skipBalanced(src, i, "{", "}");
-    body = src.slice(i + 1, bEnd - 1);
-    i = bEnd;
-  } else {
-    return null;
-  }
-
-  const capsLiteral = `[${caps.map((c) => JSON.stringify(c)).join(", ")}]`;
-  const innerBody = wrapExpr ? wrapExprAsReturn(body) : body;
-  const arrowPrefix = isAsync ? "async () => " : "() => ";
-  const emit =
-    `function ${name}${args}: ${returnType} {\n` +
-    `  return $enter(${capsLiteral} as const, ${arrowPrefix}{\n` +
-    `${indent(innerBody, 4)}\n` +
+  const inner = renderBody(decl);
+  const asyncPrefix = decl.isAsync ? "async " : "";
+  return (
+    `${asyncPrefix}function ${decl.name}${decl.args}: ${decl.returnType} {\n` +
+    `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
+    `${indent(inner, 4)}\n` +
     `  });\n` +
-    `}`;
-  return { emit, end: i };
+    `}`
+  );
 }
 
-/** True if `kw` (with word-boundary on both sides) is the previous token. */
-function precededByKeyword(src: string, at: number, kw: string): boolean {
-  let j = at - 1;
-  while (j >= 0 && /\s/.test(src[j] ?? "")) j--;
-  if (j < 0) return false;
-  const end = j + 1;
-  const startKw = end - kw.length;
-  if (startKw < 0) return false;
-  if (src.slice(startKw, end) !== kw) return false;
-  const before = startKw === 0 ? " " : src[startKw - 1] ?? " ";
-  return !/[A-Za-z0-9_$]/.test(before);
+function renderBody(decl: FnDecl): string {
+  if (decl.body.kind === "block") return decl.body.text;
+
+  const text = decl.body.text.trim();
+  if (text === "") return "";
+  // For pure/io/expr body forms, wrap in `return` IFF the body has no
+  // top-level return or top-level `;`. Without this an IIFE-bodied helper
+  // silently returns undefined.
+  if (hasTopLevelReturn(text) || hasTopLevelSemicolon(text)) return text;
+  return `return ${text};`;
 }
 
-function findKeyword(src: string, kw: string, from: number): number {
-  let i = from;
-  while (true) {
-    const found = findOutside(src, kw, i);
-    if (found === -1) return -1;
-    const before = src[found - 1] ?? " ";
-    const after = src[found + kw.length] ?? " ";
-    const isWordBoundary =
-      !/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after);
-    if (isWordBoundary) return found;
-    i = found + kw.length;
-  }
-}
-
-/** Heuristic angle-bracket skip for generic types like `Result<T, E>`. */
-function skipAngles(src: string, openIdx: number): number {
-  let i = openIdx + 1;
-  let depth = 1;
-  while (i < src.length && depth > 0) {
-    const c = src[i];
-    if (c === "<") depth++;
-    else if (c === ">") depth--;
-    else if (c === "\n") return openIdx + 1; // bail on newline — probably not a generic
-    i++;
-  }
-  return i;
-}
-
-/**
- * For `pure { expr }` where the body is meant to be an expression: if the body
- * contains no `;` outside strings/templates, prepend `return ` to make it a
- * value-returning block. Otherwise pass through.
- */
-function wrapExprAsReturn(body: string): string {
-  const trimmed = body.trim();
-  if (trimmed === "") return "";
-  // Only "looks like a block with its own return" if the `return` keyword
-  // appears at brace/paren depth 0. A `return` nested inside an IIFE returns
-  // from the IIFE, not from the outer fn — those don't count.
-  if (hasTopLevelSemicolon(trimmed) || hasTopLevelReturn(trimmed)) return trimmed;
-  return `return ${trimmed};`;
+function indent(s: string, n: number): string {
+  const pad = " ".repeat(n);
+  return s
+    .split("\n")
+    .map((l) => (l.length === 0 ? l : pad + l))
+    .join("\n");
 }
 
 function hasTopLevelReturn(src: string): boolean {
   let i = 0;
   let depth = 0;
   while (i < src.length) {
-    const c = src[i];
-    if (c === '"' || c === "'" || c === "`" || (c === "/" && (src[i + 1] === "/" || src[i + 1] === "*"))) {
-      i = stepOne(src, i);
+    const c = src[i]!;
+    if (c === '"' || c === "'") {
+      i++;
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === "\\") i += 2;
+        else i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === "`") {
+      i++;
+      while (i < src.length && src[i] !== "`") {
+        if (src[i] === "\\") i += 2;
+        else i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < src.length - 1 && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
       continue;
     }
     if (c === "{" || c === "(" || c === "[") {
@@ -281,10 +126,10 @@ function hasTopLevelReturn(src: string): boolean {
 
 function hasTopLevelSemicolon(src: string): boolean {
   let i = 0;
+  let depth = 0;
   while (i < src.length) {
-    const c = src[i];
-    if (c === '"' || c === "'" || c === "`") {
-      // Crude skip — fine because we're scanning a small expression.
+    const c = src[i]!;
+    if (c === '"' || c === "'") {
       i++;
       while (i < src.length && src[i] !== c) {
         if (src[i] === "\\") i += 2;
@@ -293,16 +138,27 @@ function hasTopLevelSemicolon(src: string): boolean {
       i++;
       continue;
     }
-    if (c === ";") return true;
+    if (c === "`") {
+      i++;
+      while (i < src.length && src[i] !== "`") {
+        if (src[i] === "\\") i += 2;
+        else i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === "{" || c === "(" || c === "[") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (c === "}" || c === ")" || c === "]") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (c === ";" && depth === 0) return true;
     i++;
   }
   return false;
-}
-
-function indent(s: string, n: number): string {
-  const pad = " ".repeat(n);
-  return s
-    .split("\n")
-    .map((l) => (l.length === 0 ? l : pad + l))
-    .join("\n");
 }
