@@ -62,6 +62,7 @@ const KEYWORDS = new Set([
   "test",
   "assert",
   "async", // modifier preceding fn
+  "unsafe", // 0.2+ — escape hatch that must carry a justification string
 ]);
 
 const PAIRS: Record<string, string> = { "{": "}", "(": ")", "[": "]" };

@@ -29,3 +29,35 @@ export const __unwrap_or_short_circuit = <T, E>(
   isOk(r)
     ? { __short: false, value: r.value }
     : { __short: true, err: r };
+
+/**
+ * Implementation of the `Result.try { ... }` block. Runs `body`; if it throws,
+ * the thrown value is stringified into `Err`. The compiler emits a call to
+ * this helper so user code never has to import `ok` / `err` to use the form.
+ */
+export const $resultTry = <T>(body: () => T): Result<T, string> => {
+  try {
+    return ok(body());
+  } catch (e) {
+    return err(stringifyThrown(e));
+  }
+};
+
+/** Async variant — awaits the body and lifts a thrown/rejected value into Err. */
+export const $resultTryAsync = async <T>(body: () => Promise<T> | T): Promise<Result<T, string>> => {
+  try {
+    return ok(await body());
+  } catch (e) {
+    return err(stringifyThrown(e));
+  }
+};
+
+const stringifyThrown = (e: unknown): string => {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+};

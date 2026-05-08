@@ -92,27 +92,51 @@ not what. Don't reference issue numbers in the title.
 
 ## How to add a feature (the recipe)
 
-The bot-optimized version of the contributor recipe:
+The bot-optimized version of the contributor recipe. Steps 1-9 are mandatory;
+skipping any of them is what causes "I added a feature, why doesn't anyone
+know about it?" drift between the compiler, the docs, and the bots.
 
 1. **Pick a target form.** What syntax are you adding? Write down the exact
    `.bs` snippet you want to support, and the TypeScript it should desugar to.
    Both must be in the PR description.
-2. **Update `STDLIB.bs`.** Add one example of the new form. If you can't write
+2. **Pick a version pin.** New syntax goes behind a new pin if (and only if)
+   the change can break already-shipped files at the previous pin. A purely
+   additive feature (new keyword, new block form) can land at the current
+   `LATEST` pin. A behaviour change to existing forms requires bumping
+   `SUPPORTED_VERSIONS` in `packages/compiler/src/passes/version.ts` and
+   gating internally.
+3. **Update `STDLIB.bs`.** Add one example of the new form. If you can't write
    one, the feature is probably not coherent yet.
-3. **Update `primer.ts`.** Add the new form to the right section. Keep the
+4. **Update `primer.ts`.** Add the new form to the right section. Keep the
    primer under one screen — if the feature can't be described in three lines,
    reconsider its scope.
-4. **Add a new pass.** Create `packages/compiler/src/passes/<name>.ts`.
-   Export a single function `(src: string) => string`. Reuse `lex.ts` helpers
-   (`skipBalanced`, `findOutside`, `stepOne`, `readIdent`); do not write your
-   own bracket matcher. Handle the success case and pass through unchanged on
-   any malformed input.
-5. **Wire the pass in.** Add it to `PASS_PIPELINE` in `transform.ts`. Order
+5. **Add a new pass.** Create `packages/compiler/src/passes/<name>.ts`.
+   Export a single function `(src: string, version: VersionInfo) => string`
+   (the second arg is optional — accept it if the pass branches on version).
+   Reuse `lex.ts` helpers (`skipBalanced`, `findOutside`, `stepOne`,
+   `readIdent`); do not write your own bracket matcher. Handle the success
+   case and pass through unchanged on any malformed input.
+6. **Wire the pass in.** Add it to `PASS_PIPELINE` in `transform.ts`. Order
    matters — passes that introduce new statements (like `fn`) must run before
    passes that transform statements (like `unwrap`).
-6. **Add tests.** A "rewrites X" test, a "leaves Y alone" test, an integration
-   test that uses the form alongside other features.
-7. **Run the suite.**
+7. **Add tests.** A "rewrites X" test, a "leaves Y alone" test, a
+   forward-compat test (`?bs <prev>` keeps its old behaviour), and an
+   integration test that uses the form alongside other features.
+8. **Update the peripheral artifacts in the SAME PR.** This is non-negotiable —
+   the items below are part of "done":
+   - **Diagnostics:** add any new error codes to
+     `packages/compiler/src/error-codes.ts` (rule/idiom/rewrite/example).
+   - **MCP server:** add a long-form entry per code to
+     `packages/mcp/src/explanations.ts` and update the
+     "known codes match the diagnostic codes" assertion in
+     `packages/mcp/tests/server.test.ts`.
+   - **AGENTS.md:** add a row to the diagnostic codes table.
+   - **README.md:** add the feature to the "What's new in `?bs <pin>`"
+     section, and update the MCP-tools table's `explain` row to list the new
+     codes.
+   - **Examples:** use the form at least once in `examples/node-app/` or
+     `examples/react-app/`. AGENTS.md rule 3.
+9. **Run the suite.**
    ```
    pnpm install
    pnpm -r build
@@ -121,8 +145,6 @@ The bot-optimized version of the contributor recipe:
    pnpm --filter react-app build
    ```
    All five must succeed.
-8. **Use the form in an example.** Add a usage to `node-app` or `react-app`.
-   This catches integration bugs that unit tests miss.
 
 ## How to fix a bug (the recipe)
 
@@ -162,11 +184,25 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | ------ | --------------------------------------------- | ------------------------------------------------------- |
 | BS001  | Malformed `?bs` directive (e.g. `?bs nope`).  | `?bs 0.1` (or whatever `LATEST_VERSION` is).            |
 | BS002  | Unsupported version (e.g. `?bs 99.0`).        | Pin to a supported version; see `SUPPORTED_VERSIONS`.   |
-| CAP001 | A fn calls `http/time/random/fs/stdout/stderr.X` whose capability isn't in its `uses { … }`. | Either add the capability or remove the call. The diagnostic includes the literal `fn name(...) uses { … } -> ...` rewrite. |
+| CAP001 | A fn calls or transitively reaches `http/time/random/fs/stdout/stderr.X` whose capability isn't in its `uses { … }`. (0.2 is direct-only; 0.3 adds transitive call-graph propagation and the diagnostic names the path.) | Either add the capability or remove the call. The diagnostic includes the literal `fn name(...) uses { … } -> ...` rewrite. |
+| CAP002 | (0.3+) A fn declares a capability nothing in its body or callees reaches. | Remove the unused capability from the `uses { … }` clause, or actually use it. |
+| UNS001 | (0.3+) `unsafe { … }` block missing a justification string. | `unsafe "<reason>" { … }`. |
+| UNS002 | (0.3+) `unsafe "" { … }` — empty justification. | Replace `""` with a one-sentence reason. |
+| UNS003 | (0.3+) `unsafe "reason"` with no following body. | `unsafe "reason" { <body> }`. |
+| RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
 
 When you add a new compiler error, allocate the next free code in the same
-range (`BSnnn` for general parse errors, `CAPnnn` for capability checks). Add
-a row to the table above in the same PR.
+range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
+`UNSnnn` for unsafe-block checks, `RESnnn` for Result-block checks). The
+single source of truth is `packages/compiler/src/error-codes.ts` — passes
+read rule/idiom/rewrite from that registry. When you add a code:
+
+1. Add the entry to `error-codes.ts` with rule, idiom, rewrite, and example.
+2. Add a long-form entry to `packages/mcp/src/explanations.ts` so the MCP
+   `explain` tool answers for it.
+3. Add a row to the table above.
+4. Add a row to the table in `README.md`'s "MCP server" tools section if the
+   new code is part of the user-facing surface.
 
 ## Conventions checklist
 
@@ -177,13 +213,18 @@ check the others.
 - [ ] `pnpm test` clean.
 - [ ] `pnpm --filter node-app test` clean.
 - [ ] `pnpm --filter react-app build` clean.
-- [ ] Test added (rewrites X) and (leaves Y alone).
+- [ ] Test added (rewrites X), (leaves Y alone), and forward-compat (previous `?bs` pin behaves identically).
 - [ ] `STDLIB.bs` updated if syntax changed.
 - [ ] `primer.ts` updated if syntax changed.
+- [ ] `error-codes.ts` updated if a new diagnostic was emitted.
+- [ ] `packages/mcp/src/explanations.ts` updated if a new diagnostic was emitted, and the MCP test's `KNOWN_CODES` assertion updated.
+- [ ] AGENTS.md diagnostic-codes table updated if a new diagnostic was emitted.
+- [ ] README.md "What's new in `?bs <pin>`" section updated if a feature was added.
+- [ ] At least one `examples/` program uses the new form.
 - [ ] No new dependencies (or the PR explains why a new dep was unavoidable).
 - [ ] No `console.log`, `// TODO`, `// FIXME`, or `.only`/`.skip` in tests.
 - [ ] No emojis anywhere.
-- [ ] No backward-incompatible change to a shipped `?bs <version>`.
+- [ ] No backward-incompatible change to a shipped `?bs <version>`. Behaviour changes go behind a new pin.
 
 ## Reading list (in order)
 

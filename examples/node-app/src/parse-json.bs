@@ -1,0 +1,33 @@
+?bs 0.3
+
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
+
+// Parse a JSON-encoded string into a typed value, lifting JSON.parse's
+// throwing behaviour into a Result so callers can compose with `?` instead
+// of writing try/catch by hand.
+
+interface Config {
+  name: string;
+  retries: number;
+}
+
+fn parseConfig(input: string) -> Result<Config, string> {
+  let parsed = Result.try { JSON.parse(input) }?
+  // JSON.parse returns `unknown`; we don't know it's `Config`. The unsafe
+  // block scopes the cast and carries the reason in a string the diff
+  // reviewer will see.
+  const cfg: Config = unsafe "JSON.parse returns unknown; the field guards below validate" {
+    parsed as Config
+  };
+  if (typeof cfg.name !== "string") return err("config.name must be a string");
+  if (typeof cfg.retries !== "number") return err("config.retries must be a number");
+  return ok(cfg);
+}
+
+fn parseJson(input: string) -> Result<unknown, string> {
+  let parsed = Result.try { JSON.parse(input) }?
+  return ok(parsed);
+}
+
+export { parseConfig, parseJson };
+export type { Config };

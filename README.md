@@ -158,7 +158,7 @@ adding a row.
 `LATEST` is still 0.1, so existing files compile unchanged. Pin a file to
 `?bs 0.2` to opt into:
 
-- **Static capability check.** Direct references to `http.X` / `time.X` /
+- **Static capability check (direct).** Direct references to `http.X` / `time.X` /
   `random.X` / `fs.X` / `stdout.X` / `stderr.X` inside a `fn` whose
   `uses { … }` clause doesn't list the matching capability are now a parse
   error (code `CAP001`), not just a runtime trap. The runtime check is still
@@ -179,6 +179,32 @@ adding a row.
   Model Context Protocol so a model can `primer` / `transform` / `explain`
   via tool calls. See "MCP server" below.
 
+## What's new in `?bs 0.3` (opt-in)
+
+Files pinned to `?bs 0.2` continue to compile identically — these are all new
+opt-ins behind the 0.3 version pin:
+
+- **Capability inference + transitive call-graph check.** The compiler now
+  derives the minimum capability set from each fn body and propagates it
+  across calls to other fns in the same file. `CAP001` diagnostics name the
+  path: `fn 'loadOne' transitively consumes 'net' via loadOne -> doFetch -> http.get`.
+- **`CAP002` over-declaration.** A `uses { … }` clause that names a capability
+  the body never reaches (directly or transitively) is now a parse error.
+  Declarations are the upper bound the compiler infers against; declarations
+  must match reality.
+- **`unsafe "<reason>" { expr }`.** The escape hatch for `as` casts. The
+  justification string is mandatory (`UNS001`/`UNS002`/`UNS003`) and survives
+  into the compiled `.ts` as a leading comment so diff reviewers (human or
+  model) see the *why* alongside the cast.
+- **`Result.try { body }` / `Result.tryAsync { body }`.** Block forms that
+  lift a throwing JS-boundary call into `Result<T, string>`, so the result
+  composes with the `?` unwrap operator instead of leaking try/catch into
+  your fn body.
+- **`botscript explain <CODE>` and `botscript check`.** New CLI subcommands.
+  `explain` prints the canonical rule/idiom/rewrite plus a worked example for
+  any diagnostic code; `check` runs the pipeline without writing files. Both
+  support `--format json` for downstream tools.
+
 ## MCP server (for bots)
 
 A botscript-aware bot doesn't need to read this README, the manifesto, or
@@ -197,7 +223,7 @@ claude mcp add botscript -- npx -y @mbfarias/botscript-mcp
 | ----------- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `primer`    | (no args)                              | The canonical language primer (same text the `?primer` directive emits).                            |
 | `transform` | `{ source: string, filename?: string }` | `{ ok: true, code, forms, version }` on success, or `{ ok: false, diagnostics: [...] }` on failure. |
-| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`) plus a fails/passes example pair. |
+| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`, `CAP002`, `UNS001`–`UNS003`, `RES001`) plus a fails/passes example pair. |
 
 A bot's loop becomes deterministic: `transform` → if `ok=false`, read
 `diagnostics[0].code` → `explain(code)` → apply `rewrite` → `transform` again.

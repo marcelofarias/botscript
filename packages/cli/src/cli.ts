@@ -3,7 +3,14 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { exit, stderr, stdout } from "node:process";
 
-import { BotscriptError, PRIMER, transform } from "@mbfarias/botscript-compiler";
+import {
+  BotscriptError,
+  PRIMER,
+  formatExplain,
+  getErrorCode,
+  listErrorCodes,
+  transform,
+} from "@mbfarias/botscript-compiler";
 import type { Diagnostic } from "@mbfarias/botscript-compiler";
 
 const argv = process.argv.slice(2);
@@ -23,6 +30,12 @@ async function main(): Promise<void> {
     case "build":
       await buildCmd(argv.slice(1));
       return;
+    case "check":
+      await checkCmd(argv.slice(1));
+      return;
+    case "explain":
+      explainCmd(argv.slice(1));
+      return;
     default:
       stderr.write(`unknown command: ${cmd}\n`);
       printUsage();
@@ -37,10 +50,14 @@ function printUsage(): void {
       `Usage:\n` +
       `  botscript build <input> [--out <dir>] [--format text|json]\n` +
       `                                          Compile *.bs files to *.ts.\n` +
+      `  botscript check <input> [--format text|json]\n` +
+      `                                          Type-/syntax-check without writing files.\n` +
+      `  botscript explain <CODE>                Print rule/idiom/rewrite for an error code.\n` +
+      `  botscript explain --list                List every diagnostic code.\n` +
       `  botscript primer                        Print the language primer.\n` +
       `  botscript help                          Show this message.\n` +
       `\n` +
-      `If <input> is a directory, every *.bs file underneath is compiled.\n` +
+      `If <input> is a directory, every *.bs file underneath is compiled/checked.\n` +
       `If --out is omitted, output sits next to each input as <name>.ts.\n` +
       `--format json emits machine-parseable diagnostics on success or failure.\n`,
   );
@@ -145,6 +162,105 @@ function emitBuildErr(payload: BuildErr, format: "text" | "json"): void {
       if (d.rewrite) stderr.write(`  Rewrite: ${d.rewrite}\n`);
     }
   }
+}
+
+interface CheckArgs {
+  input: string;
+  format: "text" | "json";
+}
+
+function parseCheckArgs(args: string[]): CheckArgs {
+  let input: string | undefined;
+  let format: "text" | "json" = "text";
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--format" || a === "-f") {
+      const v = args[++i];
+      if (v !== "text" && v !== "json") {
+        throw new Error(`unknown --format: ${v} (expected text|json)`);
+      }
+      format = v;
+    } else if (input === undefined) {
+      input = a;
+    } else {
+      throw new Error(`unexpected argument: ${a}`);
+    }
+  }
+  if (input === undefined) throw new Error("missing input path");
+  return { input, format };
+}
+
+interface CheckOk {
+  ok: true;
+  checked: number;
+  files: string[];
+}
+interface CheckErr {
+  ok: false;
+  diagnostics: Diagnostic[];
+}
+
+async function checkCmd(args: string[]): Promise<void> {
+  const { input, format } = parseCheckArgs(args);
+  const inputAbs = resolve(input);
+  const inputStat = await stat(inputAbs);
+  const files = inputStat.isDirectory() ? await collectBs(inputAbs) : [inputAbs];
+  if (files.length === 0) {
+    if (format === "json") {
+      stdout.write(JSON.stringify({ ok: true, checked: 0, files: [] } satisfies CheckOk) + "\n");
+    } else {
+      stderr.write(`no *.bs files found under ${input}\n`);
+    }
+    return;
+  }
+  const allDiagnostics: Diagnostic[] = [];
+  for (const f of files) {
+    const src = await readFile(f, "utf8");
+    try {
+      transform(src, { filename: f });
+    } catch (e) {
+      if (e instanceof BotscriptError) {
+        allDiagnostics.push(...e.diagnostics);
+        continue;
+      }
+      throw e;
+    }
+  }
+  if (allDiagnostics.length > 0) {
+    emitBuildErr({ ok: false, diagnostics: allDiagnostics }, format);
+    exit(1);
+  }
+  if (format === "json") {
+    stdout.write(
+      JSON.stringify({ ok: true, checked: files.length, files } satisfies CheckOk) + "\n",
+    );
+  } else {
+    stdout.write(`checked ${files.length} file${files.length === 1 ? "" : "s"} — ok\n`);
+  }
+}
+
+function explainCmd(args: string[]): void {
+  if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
+    stdout.write(
+      `botscript explain <CODE>     Print rule/idiom/rewrite for an error code.\n` +
+        `botscript explain --list     List every diagnostic code.\n`,
+    );
+    return;
+  }
+  if (args[0] === "--list") {
+    for (const e of listErrorCodes()) {
+      stdout.write(`  ${e.code}  ${e.title}\n`);
+    }
+    return;
+  }
+  const code = (args[0] ?? "").toUpperCase();
+  const entry = getErrorCode(code);
+  if (!entry) {
+    stderr.write(`botscript: unknown error code: ${args[0]}\n`);
+    stderr.write(`Run \`botscript explain --list\` to see every code.\n`);
+    exit(2);
+  }
+  stdout.write(formatExplain(entry) + "\n");
 }
 
 async function collectBs(root: string): Promise<string[]> {

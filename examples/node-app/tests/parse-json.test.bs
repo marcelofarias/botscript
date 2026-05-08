@@ -1,0 +1,36 @@
+?bs 0.3
+
+import { parseConfig, parseJson, type Config } from "../src/parse-json.js";
+
+test "parseJson: happy path lifts the value into Ok" {
+  const r = parseJson(`{"x": 42}`);
+  assert r.kind === "ok";
+  if (r.kind === "ok") {
+    const v = r.value as { x: number };
+    assert v.x === 42;
+  }
+}
+
+test "parseJson: a throwing parse becomes Err" {
+  const r = parseJson("not json");
+  assert r.kind === "err";
+}
+
+test "parseConfig: valid input flows through to Ok" {
+  const r = parseConfig(`{"name": "demo", "retries": 3}`);
+  assert r.kind === "ok";
+  if (r.kind === "ok") {
+    assert r.value.name === "demo";
+    assert r.value.retries === 3;
+  }
+}
+
+test "parseConfig: missing field is rejected by the post-parse guard" {
+  const r = parseConfig(`{"name": "demo"}`);
+  assert r.kind === "err";
+}
+
+test "parseConfig: malformed JSON short-circuits via ?" {
+  const r = parseConfig("not json");
+  assert r.kind === "err";
+}

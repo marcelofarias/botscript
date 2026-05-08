@@ -1,4 +1,4 @@
-?bs 0.2
+?bs 0.3
 ?primer
 
 // STDLIB.bs — every botscript feature, exactly once.
@@ -43,9 +43,18 @@ fn area(s: Shape) -> number = match s {
 // On a Result-returning expression at end of a `let`/`const`/`return` line,
 // `?` unwraps the Ok or short-circuits the enclosing fn with the Err.
 
-fn loadFirstLine(url: string) uses { net } -> Result<string, string> {
+async fn loadFirstLine(url: string) uses { net } -> Result<string, string> {
   let res = doFetch(url)?
   return ok(res.split("\n")[0] ?? "");
+}
+
+// ─── 5b. Result.try { } and Result.tryAsync { } (0.3+) ──────────────────────
+// Lift a JS-boundary call that may throw into a Result<T, string>. Use the
+// async form whenever the body awaits or returns a Promise. Composes with `?`.
+
+fn parseConfig(input: string) -> Result<unknown, string> {
+  let parsed = Result.try { JSON.parse(input) }?
+  return ok(parsed);
 }
 
 // ─── 6. Result vs Option ────────────────────────────────────────────────────
@@ -92,10 +101,20 @@ test "deterministic clock" with mocks { time } {
   assert b === a + 1;
 }
 
+// ─── 9. unsafe "<reason>" { } (0.3+) ────────────────────────────────────────
+// The escape hatch for `as` casts and other places the type system can't
+// follow. Every unsafe block must carry a non-empty justification string —
+// the cast and its reason live together in the diff, so the next reviewer
+// (human or model) sees the *why* not just the *what*.
+
+fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
+  raw as Shape
+}
+
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)
 
-fn doFetch(url: string) uses { net } -> Result<string, string> {
-  // Real code would use http.get and parse Response; the stub returns Ok.
-  return ok(`fetched ${url}`);
+async fn doFetch(url: string) uses { net } -> Result<string, string> {
+  let res = Result.tryAsync { (await http.get(url)).text() }?
+  return ok(res);
 }
