@@ -10,12 +10,31 @@
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
-  /** Token index where the parsed run begins (the `async` modifier or `fn`). */
+  /** Token-array index where the parsed run begins (`async` modifier or `fn`). */
+  tokenStart: number;
+  /** Token-array index just after the parsed run (the next token to emit normally). */
+  tokenEnd: number;
+  /**
+   * Source offset of the parsed run start. UTF-16 code units (JS string
+   * indices), not UTF-8 bytes — the lexer increments `i++` over `string`,
+   * so every position in the AST shares that coordinate system. End is
+   * exclusive: `src.slice(start, end)` yields the verbatim declaration.
+   */
   start: number;
-  /** Token index just after the parsed run (the next token to emit normally). */
+  /** Source offset just after the parsed run end. UTF-16 code units, exclusive. */
   end: number;
+  /** Source offset of the `fn` keyword (after `async` if present). UTF-16 code units. */
+  fnKeywordStart: number;
+  /** Source offset of the function name identifier. UTF-16 code units. */
+  nameStart: number;
   isAsync: boolean;
   name: string;
+  /**
+   * Verbatim type-parameter block including the angle brackets, e.g. `<T>` or
+   * `<T extends U, V = D>`, or null if none. Gated to ?bs 0.4+ at the call
+   * site — earlier pins do not parse generics.
+   */
+  typeParams: string | null;
   /** Verbatim args including parens. */
   args: string;
   capabilities: string[];
@@ -28,18 +47,35 @@ export type FnBody =
   | { kind: "block"; text: string }
   | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr" };
 
+export interface ParseFnOptions {
+  /**
+   * When true, the parser accepts an optional `<T, …>` type-parameter block
+   * between the function name and the args. Gated to ?bs 0.4+ at the call
+   * site — earlier pins must keep their original behaviour, where parseFn
+   * sees the unexpected `<` after the name and returns null. The
+   * declaration is then left unrewritten and passes through to the TS
+   * output as-is (the same forward-compat behaviour 0.1/0.2/0.3 always
+   * had on this construct).
+   */
+  allowGenerics?: boolean;
+}
+
 /**
  * Parse a fn declaration starting at `idx` (which must be the `fn` keyword
  * token). If the previous non-trivia token is `async`, that's consumed too.
  */
-export function parseFn(tokens: Token[], idx: number): FnDecl | null {
+export function parseFn(
+  tokens: Token[],
+  idx: number,
+  opts: ParseFnOptions = {},
+): FnDecl | null {
   // Detect leading `async` modifier.
   let isAsync = false;
-  let start = idx;
+  let tokenStart = idx;
   const prev = prevSignificant(tokens, idx);
   if (prev !== -1 && tokens[prev]!.kind === "keyword" && tokens[prev]!.keyword === "async") {
     isAsync = true;
-    start = prev;
+    tokenStart = prev;
   }
 
   // Skip past `fn` to the name.
@@ -48,8 +84,20 @@ export function parseFn(tokens: Token[], idx: number): FnDecl | null {
   const nameTok = tokens[i];
   if (!nameTok || nameTok.kind !== "ident") return null;
   const name = nameTok.text;
+  const nameStart = nameTok.start;
   i++;
   i = skipTrivia(tokens, i);
+
+  // Optional type-parameter block (0.4+, opt-in).
+  let typeParams: string | null = null;
+  if (opts.allowGenerics) {
+    const tp = tryParseTypeParams(tokens, i);
+    if (tp) {
+      typeParams = tp.text;
+      i = tp.end;
+      i = skipTrivia(tokens, i);
+    }
+  }
 
   // Args: balanced `(...)`.
   const argsOpen = tokens[i];
@@ -163,16 +211,76 @@ export function parseFn(tokens: Token[], idx: number): FnDecl | null {
     return null;
   }
 
+  const startTok = tokens[tokenStart]!;
+  const lastTok = tokens[bodyEnd - 1] ?? tokens[tokenStart]!;
   return {
-    start,
-    end: bodyEnd,
+    tokenStart,
+    tokenEnd: bodyEnd,
+    start: startTok.start,
+    end: lastTok.end,
+    fnKeywordStart: tokens[idx]!.start,
+    nameStart,
     isAsync,
     name,
+    typeParams,
     args,
     capabilities,
     returnType,
     body,
   };
+}
+
+/**
+ * Recognize a balanced `<T, …>` block starting at `from`. Returns the verbatim
+ * text (including the angle brackets) and the token index just after the
+ * closing `>`. The lexer does NOT bracket-match `<`/`>` (they're operators,
+ * not opens/closes), so we count depth manually here, allowing balanced
+ * `(...)`, `{...}`, `[...]` inside, plus the multi-char `>>`/`>>>` operators
+ * that close two or three levels at once.
+ *
+ * Returns null if the next token isn't `<`, or if no balanced close is found.
+ */
+function tryParseTypeParams(tokens: Token[], from: number): { text: string; end: number } | null {
+  const t = tokens[from];
+  if (!t || t.kind !== "operator" || t.text !== "<") return null;
+  let depth = 1;
+  let i = from + 1;
+  while (i < tokens.length) {
+    const tk = tokens[i]!;
+    if (tk.kind === "eof") return null;
+    if (tk.kind === "open" && tk.matchedAt !== undefined) {
+      i = tk.matchedAt + 1;
+      continue;
+    }
+    if (tk.kind === "operator") {
+      if (tk.text === "<") {
+        depth++;
+        i++;
+        continue;
+      }
+      if (tk.text === ">") {
+        depth--;
+        i++;
+        if (depth === 0) return { text: sliceText(tokens, from, i), end: i };
+        continue;
+      }
+      if (tk.text === ">>" || tk.text === ">>>") {
+        depth -= tk.text.length;
+        i++;
+        // depth must land exactly at 0 to be a valid type-param close.
+        // Overshoot (depth < 0) means the operator's `>`s would close more
+        // levels than were open — treat as malformed and bail so the caller
+        // doesn't get a phantom "valid" type-param block that desyncs the
+        // rest of parseFn.
+        if (depth === 0) return { text: sliceText(tokens, from, i), end: i };
+        if (depth < 0) return null;
+        continue;
+      }
+      if (tk.text === ">=") return null;
+    }
+    i++;
+  }
+  return null;
 }
 
 function parseCapList(tokens: Token[], from: number, to: number): string[] {

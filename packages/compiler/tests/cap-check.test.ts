@@ -50,6 +50,64 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
+  it("does not treat `obj.helper(...)` as a call to a same-file `fn helper`", () => {
+    // Pre-fix: scanBody only checked `ident` + next `(`, so `obj.helper()`
+    // was misclassified as a call to a top-level `fn helper`. If that
+    // helper consumed a cap the outer didn't declare, CAP001 would fire
+    // even though the call was actually to a method on `obj`.
+    const src =
+      `?bs 0.3\n` +
+      `fn helper() uses { time } -> number { return time.now(); }\n` +
+      `fn outer(obj: { helper: () => number }) -> number = pure { obj.helper() }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does not treat `obj?.helper(...)` (optional chain) as an intra-module call", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn helper() uses { time } -> number { return time.now(); }\n` +
+      `fn outer(obj: { helper?: () => number } | null) -> number {\n` +
+      `  return obj?.helper() ?? 0;\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("same-name fn decls in different scopes don't collide in the records map", () => {
+    // Pre-fix: the records Map was keyed by fn name, so two `fn helper`
+    // declarations would silently overwrite each other and corrupt
+    // inference. Post-fix: records keyed by FnDecl identity; declsByName
+    // resolves a call to ANY same-named decl conservatively.
+    //
+    // Here: two `helper`s, one pure, one consuming `time`. `outer` calls
+    // `helper(s)` — the resolver merges both candidates' caps, so `outer`
+    // transitively consumes `time` even though it doesn't declare it.
+    const src =
+      `?bs 0.3\n` +
+      `fn outer(s: string) -> string {\n` +
+      `  fn helper(s: string) -> string = pure { s.trim() }\n` +
+      `  return helper(s);\n` +
+      `}\n` +
+      `fn elsewhere() uses { time } -> number {\n` +
+      `  fn helper() uses { time } -> number { return time.now(); }\n` +
+      `  return helper();\n` +
+      `}\n`;
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("excludes a nested `fn` declaration's body from the outer fn's scan", () => {
+    // Nested fn declarations must be filtered out of the outer body scan,
+    // OR the outer fn would inherit `time` from the inner's body. Pinning
+    // this behaviour: cap-check needs to collect ALL fn decls including
+    // nested ones (so it can compute `inner` ranges and exclude them),
+    // not just top-level fns.
+    const src =
+      `?bs 0.2\nfn outer() -> number = pure {\n` +
+      `  fn inner() uses { time } -> number { return time.now(); }\n` +
+      `  return 1;\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("does not run the static check on 0.1 files (forward compat)", () => {
     // Same source that errors under 0.2; under 0.1 it must compile.
     const src = `?bs 0.1\nfn now() -> number = pure { time.now() }\n`;
@@ -170,6 +228,46 @@ describe("static capability check (0.2)", () => {
       throw new Error("expected throw");
     } catch (e) {
       expect((e as CapabilityCheckError).line).toBe(3);
+    }
+  });
+
+  it("populates start/end code-unit offsets on the diagnostic (direct, 0.2)", () => {
+    // Direct usage at 0.2: the diagnostic should anchor at the offending
+    // `time` token. start/end are UTF-16 string offsets in post-?bs-
+    // stripping coordinates, which is what passes operate on. To assert
+    // against the substring, we strip the directive ourselves the same
+    // way passVersion does (drop the directive content, keep the trailing
+    // newline).
+    const src = `?bs 0.2\nfn now() -> number = pure { time.now() }\n`;
+    const passSrc = src.replace(/^\?bs [\d.]+/, "");
+    try {
+      t(src);
+      throw new Error("expected throw");
+    } catch (e) {
+      const d = (e as CapabilityCheckError).diagnostics[0]!;
+      expect(d.start).toBeDefined();
+      expect(d.end).toBeDefined();
+      expect(passSrc.slice(d.start!, d.end!)).toBe("time");
+    }
+  });
+
+  it("populates start/end on transitive (CAP001) diagnostics — 0.3", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) -> string = pure { doFetch(url) }\n`;
+    const passSrc = src.replace(/^\?bs [\d.]+/, "");
+    try {
+      t(src);
+      throw new Error("expected throw");
+    } catch (e) {
+      const d = (e as CapabilityCheckError).diagnostics[0]!;
+      expect(d.start).toBeDefined();
+      // Transitive errors anchor at the fn header — `fn loadOne`.
+      expect(passSrc.slice(d.start!, d.end!)).toBe("fn loadOne");
     }
   });
 });

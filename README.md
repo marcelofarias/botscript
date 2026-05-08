@@ -205,6 +205,34 @@ opt-ins behind the 0.3 version pin:
   any diagnostic code; `check` runs the pipeline without writing files. Both
   support `--format json` for downstream tools.
 
+## What's new in `?bs 0.4` (opt-in)
+
+Files pinned to `?bs 0.3` continue to compile identically — these are all new
+opt-ins behind the 0.4 version pin:
+
+- **Type parameters in `fn` signatures.** `fn id<T>(x: T) -> T = pure { x }`,
+  `fn pair<A, B>(a: A, b: B) -> [A, B] { … }`, plus `extends` constraints and
+  `= D` defaults. Generics emit verbatim into the desugared TypeScript output;
+  capability inference and `match` compose unchanged.
+- **Whole-file parse entry.** `parseProgram(src)` (exported from
+  `@mbfarias/botscript-compiler`) returns a typed AST (`Program` with the
+  lexed `tokens`, plus a top-level `fns` list carrying source ranges per
+  declaration) for tools that need source-level structure without
+  re-tokenizing the file. The model is shallow on purpose — only `fn`
+  declarations are surfaced as nodes today; deeper structure (test, type,
+  import) can grow when a real consumer needs it. cap-check is the only
+  in-pipeline consumer; LSP and rename tooling can build on the same
+  surface without growing the runtime.
+- **Source offsets on diagnostics.** Capability-check errors now carry
+  `start` / `end` UTF-16 string offsets (JS string indices, not UTF-8 bytes)
+  alongside `line` / `column`, so editors and agent loops can map to a
+  precise span without re-walking the source. `end` is exclusive — the
+  range matches `source.slice(start, end)`. The fields are optional and
+  populated by cap-check at every supported pin from `?bs 0.2` onward; the
+  offset coordinate system itself is the same as the line/column the pass
+  already produced (post-`?bs`-directive-stripping, with the trailing
+  newline preserved so line numbers match the user's original file).
+
 ## MCP server (for bots)
 
 A botscript-aware bot doesn't need to read this README, the manifesto, or

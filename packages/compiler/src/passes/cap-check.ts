@@ -21,9 +21,10 @@
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex, type Token } from "../parser/lex.js";
-import { parseFn, type FnDecl } from "../parser/parse-fn.js";
-import type { VersionInfo } from "./version.js";
+import type { Token } from "../parser/lex.js";
+import { parseProgram } from "../parser/parse.js";
+import type { FnDecl } from "../parser/parse-fn.js";
+import { atLeast, type VersionInfo } from "./version.js";
 
 /** stdlib namespace -> capability it consumes. */
 const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
@@ -67,6 +68,10 @@ interface DirectUse {
   member: string;
   line: number;
   column: number;
+  /** Source offset of the namespace token (UTF-16 code units, inclusive). */
+  start: number;
+  /** Source offset just after the namespace token. */
+  end: number;
 }
 
 /**
@@ -90,38 +95,38 @@ interface FnRecord {
 }
 
 export function passCapCheck(src: string, version: VersionInfo): string {
-  if (atLeast(version.resolved, "0.3")) return checkStrict(src);
-  return checkDirect(src);
-}
-
-function atLeast(actual: string, min: string): boolean {
-  const a = actual.split(".").map(Number);
-  const m = min.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, m.length); i++) {
-    const av = a[i] ?? 0;
-    const mv = m[i] ?? 0;
-    if (av > mv) return true;
-    if (av < mv) return false;
-  }
-  return true;
+  // Allow generics in fn signatures from 0.4 onward, so a generic fn isn't
+  // silently dropped from the cap-check call graph. Earlier pins do not
+  // recognize `<…>` between the name and the args (forward-compat).
+  const allowGenerics = atLeast(version.resolved, "0.4");
+  if (atLeast(version.resolved, "0.3")) return checkStrict(src, allowGenerics);
+  return checkDirect(src, allowGenerics);
 }
 
 /**
  * 0.2 behavior: scan each fn's own body for direct stdlib refs whose
  * capability isn't declared. No transitive propagation, no over-declaration.
- * Preserved verbatim from the 0.2 release; do not modify.
+ *
+ * The observable diagnostic surface emitted here — code, message, rule,
+ * idiom, rewrite, and the (line, column) anchor — is frozen forever per
+ * AGENTS.md rule 4. The optional `start`/`end` source range (UTF-16
+ * code-unit offsets) on `Diagnostic` is a strict additive extension;
+ * consumers that ignore those fields keep seeing what they always saw.
+ *
+ * From ?bs 0.4 we additionally honour `allowGenerics` — generic fns enter
+ * the scan instead of being silently skipped by parseFn. Older pins (0.2,
+ * 0.3) call this with allowGenerics=false, preserving prior behaviour.
  */
-function checkDirect(src: string): string {
-  const tokens = lex(src);
-  const fns: FnDecl[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i);
-    if (decl) fns.push(decl);
-  }
+function checkDirect(src: string, allowGenerics: boolean): string {
+  // Single parse pass: include nested fns so the outer body scan can
+  // exclude inner ranges. Program.fns is the entire decl list.
+  const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
+  const tokens = program.tokens;
+  const fns = program.fns.map((s) => s.decl);
   for (const fn of fns) {
-    const inner = fns.filter((g) => g !== fn && g.start >= fn.start && g.end <= fn.end);
+    const inner = fns.filter(
+      (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
+    );
     checkDirectFn(src, tokens, fn, inner);
   }
   return src;
@@ -129,7 +134,7 @@ function checkDirect(src: string): string {
 
 function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]): void {
   const declared = new Set(fn.capabilities);
-  for (let i = fn.start; i < fn.end; i++) {
+  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
@@ -149,6 +154,8 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
       file: null,
       line,
       column,
+      start: tok.start,
+      end: tok.end,
       message: `fn '${fn.name}' calls '${tok.text}.${memberName}' which requires capability '${cap}', but uses clause is { ${granted} }`,
       rule: `a function declared 'uses { ${granted} }' may not call '${tok.text}.…' which requires capability '${cap}'`,
       idiom: `declare every capability the function consumes; pure helpers stay pure`,
@@ -160,31 +167,47 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
 
 /**
  * 0.3 behavior: full inference + over-declaration check.
+ *
+ * From ?bs 0.4 we additionally honour `allowGenerics` so generic fns are
+ * present in the call graph (and CAP001/CAP002 fire on them). 0.3 callers
+ * pass allowGenerics=false, preserving prior behaviour.
  */
-function checkStrict(src: string): string {
-  const tokens = lex(src);
+function checkStrict(src: string, allowGenerics: boolean): string {
+  // 1. Parse once with includeNestedFns so program.fns covers every decl
+  //    in the file. Reuse the lexed tokens for intra-body scans.
+  const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
+  const tokens = program.tokens;
+  const decls = program.fns.map((s) => s.decl);
 
-  // 1. Parse every fn declaration in the module.
-  const decls: FnDecl[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i);
-    if (decl) decls.push(decl);
-  }
-
-  // 2. Build per-fn records: direct stdlib uses + intra-module callees.
-  const records = new Map<string, FnRecord>();
+  // 2. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
+  //    fns surfaced, two helpers with the same name in different scopes are
+  //    a real possibility — keying by name would silently let one
+  //    overwrite the other in the Map and corrupt inference. Identity
+  //    keys avoid that. Look-ups by name still work via `declsByName`.
+  const records = new Map<FnDecl, FnRecord>();
+  // Name -> all decls with that name. Used during closure to resolve a
+  // callee by name conservatively: if the source has two `fn helper` (e.g.
+  // shadowed across two outer scopes), a call to `helper(...)` is treated
+  // as potentially reaching ANY of them, so the caller's transitive
+  // consumed set is the union of every same-named decl's caps. Full
+  // lexical scoping is not modeled — same-name nested fns are unusual and
+  // the conservative merge prevents under-counting CAP001.
+  const declsByName = new Map<string, FnDecl[]>();
   for (const decl of decls) {
-    const inner = decls.filter((g) => g !== decl && g.start >= decl.start && g.end <= decl.end);
+    const inner = decls.filter(
+      (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
+    );
     const { direct, callNames } = scanBody(src, tokens, decl, inner, decls);
-    records.set(decl.name, {
+    records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
       direct,
       callees: callNames,
       consumed: new Map(),
     });
+    const sameName = declsByName.get(decl.name) ?? [];
+    sameName.push(decl);
+    declsByName.set(decl.name, sameName);
   }
 
   // 3. Seed `consumed` with each fn's direct uses.
@@ -194,23 +217,31 @@ function checkStrict(src: string): string {
     }
   }
 
-  // 4. Closure: propagate callees' consumed caps back to callers until fixed point.
+  // 4. Closure: propagate callees' consumed caps back to callers until
+  //    fixed point. For each callee NAME the body called, merge the
+  //    consumed sets of EVERY decl in the file with that name (conservative
+  //    over-approximation when names are shadowed).
   let changed = true;
   while (changed) {
     changed = false;
     for (const rec of records.values()) {
       for (const calleeName of rec.callees) {
-        const callee = records.get(calleeName);
-        if (!callee) continue;
-        for (const [cap, path] of callee.consumed) {
-          if (rec.consumed.has(cap)) continue;
-          rec.consumed.set(cap, {
-            kind: "via",
-            fnName: rec.decl.name,
-            callee: calleeName,
-            next: path,
-          });
-          changed = true;
+        const matches = declsByName.get(calleeName);
+        if (!matches) continue;
+        for (const calleeDecl of matches) {
+          if (calleeDecl === rec.decl) continue;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const [cap, path] of callee.consumed) {
+            if (rec.consumed.has(cap)) continue;
+            rec.consumed.set(cap, {
+              kind: "via",
+              fnName: rec.decl.name,
+              callee: calleeName,
+              next: path,
+            });
+            changed = true;
+          }
         }
       }
     }
@@ -250,7 +281,7 @@ function scanBody(
   const callNames = new Set<string>();
   const fnNames = new Set(decls.map((d) => d.name));
 
-  for (let i = fn.start; i < fn.end; i++) {
+  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
@@ -270,23 +301,54 @@ function scanBody(
           member: memberName,
           line,
           column,
+          start: tok.start,
+          end: tok.end,
         });
       }
       continue;
     }
 
-    // (b) intra-module callee: `<fnName>(`
+    // (b) intra-module callee: `<fnName>(`. Must NOT be preceded by `.`
+    // or `?.` — those are member accesses (e.g. `obj.helper(...)`), not
+    // calls to a same-file `fn helper`. Same check stops false intra-
+    // module callees from sneaking into the call graph and triggering
+    // bogus CAP001/CAP002 inference.
     if (
       tok.text !== fn.name &&
       fnNames.has(tok.text) &&
       next?.kind === "open" &&
-      next.text === "("
+      next.text === "(" &&
+      !precededByMemberAccess(tokens, i)
     ) {
       callNames.add(tok.text);
     }
   }
 
   return { direct, callNames };
+}
+
+/**
+ * True if the previous significant token is `.` (punct) or `?.`
+ * (questionDot). Used by scanBody to skip method-style calls when
+ * looking for intra-module fn callees.
+ */
+function precededByMemberAccess(tokens: Token[], idx: number): boolean {
+  for (let k = idx - 1; k >= 0; k--) {
+    const t = tokens[k];
+    if (!t) return false;
+    if (
+      t.kind === "whitespace" ||
+      t.kind === "newline" ||
+      t.kind === "lineComment" ||
+      t.kind === "blockComment"
+    ) {
+      continue;
+    }
+    if (t.kind === "punct" && t.text === ".") return true;
+    if (t.kind === "questionDot") return true;
+    return false;
+  }
+  return false;
 }
 
 function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): CapabilityCheckError {
@@ -310,9 +372,18 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   // (precise). For a transitive usage we anchor at the fn header — that's the
   // declaration the bot has to edit, and the path string says where the
   // requirement actually comes from.
-  const headerLoc = fnHeaderLocation(src, rec.decl);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordStart);
   const line = isTransitive ? headerLoc.line : leafUse.line;
   const column = isTransitive ? headerLoc.column : leafUse.column;
+  // The diagnostic's source range (UTF-16 code-unit offsets) anchors the
+  // same span the line/column does: the fn header for transitive cases,
+  // the offending stdlib member for direct ones. Available regardless of
+  // pin from this point — it's a strict addition; older callers that
+  // ignore start/end keep working.
+  const start = isTransitive ? rec.decl.fnKeywordStart : leafUse.start;
+  const end = isTransitive
+    ? rec.decl.nameStart + rec.decl.name.length
+    : leafUse.end;
 
   const tail =
     missing.length > 1
@@ -328,6 +399,8 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
     file: null,
     line,
     column,
+    start,
+    end,
     message,
     rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}.…')`}`,
     idiom: entry.idiom,
@@ -338,7 +411,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
 }
 
 function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): BotscriptError {
-  const headerLoc = fnHeaderLocation(src, rec.decl);
+  const headerLoc = locationOf(src, rec.decl.fnKeywordStart);
   const remaining = rec.decl.capabilities.filter((c) => !extra.includes(c));
   const remainingStr = remaining.length === 0 ? "" : ` uses { ${remaining.join(", ")} }`;
   const entry = getErrorCode("CAP002")!;
@@ -354,6 +427,8 @@ function mkOverDeclaredError(src: string, rec: FnRecord, extra: string[]): Botsc
     file: null,
     line: headerLoc.line,
     column: headerLoc.column,
+    start: rec.decl.fnKeywordStart,
+    end: rec.decl.nameStart + rec.decl.name.length,
     message,
     rule: entry.rule,
     idiom: entry.idiom,
@@ -381,30 +456,9 @@ function leafDirectUse(path: Path): DirectUse {
   return cur.use;
 }
 
-/** Line/column of the `fn` keyword for a declaration. */
-function fnHeaderLocation(src: string, decl: FnDecl): { line: number; column: number } {
-  // The declaration start may include a leading `async` keyword; either way,
-  // walking forward to the `fn ` literal in the original source gives the
-  // header location stably.
-  // Decl tokens carry start = the token-array index of the start; we don't
-  // have offsets directly, so fall back to scanning from the decl name.
-  // Simpler: locate `fn <name>` in `src`. There may be many; rely on the fact
-  // that the parser already produced a unique decl per name — we pick the
-  // first occurrence by name. Good enough for diagnostics; precise offsets
-  // can be threaded later if needed.
-  const re = new RegExp(`\\bfn\\s+${escapeRegex(decl.name)}\\b`);
-  const match = re.exec(src);
-  if (!match) return { line: 1, column: 1 };
-  return locationOf(src, match.index);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function insideAny(idx: number, ranges: FnDecl[]): boolean {
   for (const r of ranges) {
-    if (idx >= r.start && idx < r.end) return true;
+    if (idx >= r.tokenStart && idx < r.tokenEnd) return true;
   }
   return false;
 }

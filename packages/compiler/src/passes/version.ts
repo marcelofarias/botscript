@@ -19,7 +19,7 @@
  */
 import { BotscriptError } from "../diagnostics.js";
 
-export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3"];
+export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3", "0.4"];
 export const LATEST_VERSION = "0.1";
 
 const DIRECTIVE_RE = /^\s*\?bs\s+(\d+\.\d+(?:\.\d+)?)\s*$/m;
@@ -123,6 +123,24 @@ export function passVersion(src: string): { src: string; version: VersionInfo } 
   const stripped = src.slice(0, i) + src.slice(j);
 
   return { src: stripped, version: { declared: version, resolved: version } };
+}
+
+/**
+ * Compare two version strings of the form `<major>.<minor>` (or longer), with
+ * missing components defaulting to 0. Returns true iff `actual >= min`. Single
+ * source of truth for version comparison; passes that gate behaviour on the
+ * resolved version import this rather than ship their own copy.
+ */
+export function atLeast(actual: string, min: string): boolean {
+  const a = actual.split(".").map(Number);
+  const m = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, m.length); i++) {
+    const av = a[i] ?? 0;
+    const mv = m[i] ?? 0;
+    if (av > mv) return true;
+    if (av < mv) return false;
+  }
+  return true;
 }
 
 function locationOf(src: string, offset: number): { line: number; column: number } {

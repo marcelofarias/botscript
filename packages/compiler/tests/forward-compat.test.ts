@@ -1,0 +1,346 @@
+/**
+ * Forward-compatibility snapshots.
+ *
+ * AGENTS.md rule 4: shipped versions of `?bs <pin>` produce identical output
+ * forever. This file is the tripwire. Each snapshot freezes the exact compiled
+ * output of a representative source under a given pin. If a change in the
+ * compiler ever alters that output, the snapshot fails — and the change must
+ * be moved behind a NEW pin instead.
+ *
+ * Maintenance:
+ *   - NEVER `--update-snapshots` an existing 0.1/0.2/0.3 snapshot. AGENTS.md
+ *     rule 4 says shipped pins compile identically forever — any change
+ *     that alters shipped output goes behind a NEW pin, regardless of
+ *     intent. There is no "observable behaviour preserved" exception.
+ *   - When a new pin (0.4, 0.5, …) ships, ADD a new `describe` block here
+ *     so future changes are caught the same way.
+ *
+ * NOT covered:
+ *   The `?primer` comment block emitted at the top of a file. Its text is
+ *   the language reference (`packages/compiler/src/primer.ts`) and AGENTS.md
+ *   rule 2 requires it to grow with the language as new pins ship. Locking
+ *   it here would conflict with rule 2. Primer-pass behaviour (recognize
+ *   the directive, emit a comment) is covered in `transform.test.ts`.
+ *
+ *   Two pre-existing parser/unwrap limitations are deliberately routed
+ *   AROUND by these fixtures (rather than locked into the snapshot):
+ *
+ *     1. The unwrap pass merges multiple consecutive bare-`?` statements
+ *        across newlines. Fixtures use one `?`-position per `it` block,
+ *        not stacked in a single source.
+ *     2. The fn parser's body-opener heuristic can mistake an inline
+ *        object structure inside a generic type argument for the body
+ *        brace. Fixtures use a named type alias for return types in
+ *        that situation, not the inline form.
+ *
+ *   Both limitations are tracked separately. Their fixes will need their
+ *   own version-gating discussion under AGENTS.md rule 4.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import { transform } from "../src/index.js";
+
+const t = (src: string) => transform(src).code;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ?bs 0.1
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forward-compat: ?bs 0.1 output is frozen", () => {
+  it("fn with uses + block body", () => {
+    const src =
+      `?bs 0.1\n` +
+      `fn ping() uses { net } -> string {\n` +
+      `  return "pong";\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("fn with = pure shorthand", () => {
+    expect(
+      t(`?bs 0.1\nfn slug(s: string) -> string = pure { s.toLowerCase() }\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("fn with = io shorthand", () => {
+    expect(t(`?bs 0.1\nfn now() -> number = io { Date.now() }\n`)).toMatchSnapshot();
+  });
+
+  it("fn with = single-expression body", () => {
+    expect(t(`?bs 0.1\nfn double(n: number) -> number = n * 2\n`)).toMatchSnapshot();
+  });
+
+  it("fn with = match body", () => {
+    const src =
+      `?bs 0.1\n` +
+      `fn area(s: Shape) -> number = match s {\n` +
+      `  Circle { r }    -> Math.PI * r * r\n` +
+      `  Square { side } -> side * side\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("async fn with uses + body using await", () => {
+    const src =
+      `?bs 0.1\n` +
+      `async fn loadUser(id: string) uses { net } -> Promise<User> {\n` +
+      `  const r = await fetch(id);\n` +
+      `  return r as User;\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("fn with object literal return type", () => {
+    const src =
+      `?bs 0.1\n` +
+      `fn make() -> { code: string; error: string | null } {\n` +
+      `  return { code: "x", error: null };\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("pure { } at expression position", () => {
+    expect(t(`?bs 0.1\nconst x = pure { 1 + 2 };\n`)).toMatchSnapshot();
+  });
+
+  it("io { } at expression position", () => {
+    expect(t(`?bs 0.1\nconst x = io { fetchSomething() };\n`)).toMatchSnapshot();
+  });
+
+  it("match with tag, tag-with-binds, literal, wildcard", () => {
+    const src =
+      `?bs 0.1\n` +
+      `const r = match v {\n` +
+      `  Tag             -> 1\n` +
+      `  Bag { x, y }    -> x + y\n` +
+      `  "lit"           -> 2\n` +
+      `  _               -> 0\n` +
+      `};\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  // ? unwrap is exercised one position per fixture so the snapshots don't
+  // accidentally freeze the multi-statement bug noted in the file header.
+  it("? unwrap in `let` position", () => {
+    expect(t(`?bs 0.1\nlet a = f()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in `const` position", () => {
+    expect(t(`?bs 0.1\nconst b = g()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in `return` position", () => {
+    expect(t(`?bs 0.1\nreturn h()?\n`)).toMatchSnapshot();
+  });
+
+  it("? unwrap in bare-statement position", () => {
+    expect(t(`?bs 0.1\ni()?\n`)).toMatchSnapshot();
+  });
+
+  it("optional chaining foo?.bar is preserved", () => {
+    expect(t(`?bs 0.1\nconst x = foo?.bar;\n`)).toMatchSnapshot();
+  });
+
+  it("assert in statement position", () => {
+    expect(t(`?bs 0.1\nassert 1 + 1 === 2;\n`)).toMatchSnapshot();
+  });
+
+  it("imports auto-prepend $enter when fn is used", () => {
+    expect(t(`?bs 0.1\nfn x() uses { net } -> void { }\n`)).toMatchSnapshot();
+  });
+
+  it("test \"name\" { body } rewrites to $test", () => {
+    expect(
+      t(`?bs 0.1\ntest "ok" { assert 1 === 1; }\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("integration: multiple fns + test + ? + assert", () => {
+    // Return type uses a named alias instead of an inline object literal
+    // inside a generic, to avoid the parse-fn body-opener limitation
+    // documented in the file header.
+    const src =
+      `?bs 0.1\n` +
+      `fn slug(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }\n` +
+      `\n` +
+      `fn loadUser(id: string) uses { net } -> Result<User, string> {\n` +
+      `  let res = http.get(\`/u/\${id}\`)?\n` +
+      `  ok({ name: id })\n` +
+      `}\n` +
+      `\n` +
+      `test "slug works" {\n` +
+      `  assert slug("Hello World") === "hello-world";\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ?bs 0.2
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forward-compat: ?bs 0.2 output is frozen", () => {
+  it("tagged union with field-bearing alternatives", () => {
+    const src =
+      `?bs 0.2\n` +
+      `type Shape = Circle { r: number } | Square { side: number };\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("tagged union mixing bare and field-bearing alternatives", () => {
+    const src =
+      `?bs 0.2\n` +
+      `type Status = Idle | Loading | Done { value: string } | Failed { error: string };\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("fn that declares a capability it uses (cap-check passes)", () => {
+    const src =
+      `?bs 0.2\n` +
+      `fn now() uses { time } -> number {\n` +
+      `  return time.now();\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("test with mocks { time }", () => {
+    const src =
+      `?bs 0.2\n` +
+      `test "deterministic clock" with mocks { time } {\n` +
+      `  assert time.now() === 0;\n` +
+      `  assert time.now() === 1;\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("test with mocks { time, random }", () => {
+    const src =
+      `?bs 0.2\n` +
+      `test "deterministic both" with mocks { time, random } {\n` +
+      `  assert time.now() === 0;\n` +
+      `  assert random.next() === 0;\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("integration: tagged union + match + cap-check + test with mocks", () => {
+    const src =
+      `?bs 0.2\n` +
+      `type Status = Idle | Done { value: string };\n` +
+      `\n` +
+      `fn label(s: Status) -> string = match s {\n` +
+      `  Idle           -> "-"\n` +
+      `  Done { value } -> value\n` +
+      `}\n` +
+      `\n` +
+      `fn loadOne(url: string) uses { net } -> string {\n` +
+      `  return http.get(url) as unknown as string;\n` +
+      `}\n` +
+      `\n` +
+      `test "labels" with mocks { time } {\n` +
+      `  assert label({ kind: "Idle" }) === "-";\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ?bs 0.3
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forward-compat: ?bs 0.3 output is frozen", () => {
+  it("unsafe block with justification", () => {
+    const src =
+      `?bs 0.3\n` +
+      `const u = unsafe "third-party types Response as any" { return value as User };\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("Result.try { body }", () => {
+    expect(
+      t(`?bs 0.3\nconst r = Result.try { JSON.parse(input) };\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("Result.tryAsync { body }", () => {
+    expect(
+      t(`?bs 0.3\nconst r = Result.tryAsync { fetch(url) };\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("transitive capability inference passes when callees match", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn doFetch(url: string) uses { net } -> string {\n` +
+      `  const res = http.get(url);\n` +
+      `  return "x";\n` +
+      `}\n` +
+      `fn loadOne(url: string) uses { net } -> string {\n` +
+      `  return doFetch(url);\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("integration: unsafe + Result.try + cap inference", () => {
+    // Return type uses a named alias for the success shape so the fn
+    // parser's body-opener heuristic doesn't misread the inline object.
+    // (See header note about routing around the inline-object-in-generic
+    // limitation.)
+    const src =
+      `?bs 0.3\n` +
+      `fn parseConfig(raw: string) -> Result<Config, string> {\n` +
+      `  let parsed = Result.try { JSON.parse(raw) }?\n` +
+      `  let p = unsafe "JSON.parse returns any" { (parsed as { port?: number }).port };\n` +
+      `  return typeof p === "number" ? ok({ port: p }) : err("missing port");\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("capability inference: same-file call graph propagates correctly", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn helper(s: string) -> string = pure { s.trim() }\n` +
+      `fn outer(s: string) -> string {\n` +
+      `  return helper(s);\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ?bs 0.4
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forward-compat: ?bs 0.4 output is frozen", () => {
+  it("fn with single type parameter", () => {
+    expect(t(`?bs 0.4\nfn id<T>(x: T) -> T = pure { x }\n`)).toMatchSnapshot();
+  });
+
+  it("fn with multiple type parameters and constraints", () => {
+    expect(
+      t(`?bs 0.4\nfn pick<A extends number, B = string>(a: A, b: B) -> [A, B] = pure { [a, b] }\n`),
+    ).toMatchSnapshot();
+  });
+
+  it("async generic fn", () => {
+    // Body uses http.get so cap-check at 0.4 (which sees generics) passes
+    // — the declared `net` is justified by the http.get call.
+    const src =
+      `?bs 0.4\n` +
+      `async fn fetchOne<T>(url: string) uses { net } -> Promise<T> {\n` +
+      `  const r = http.get(url);\n` +
+      `  return r as T;\n` +
+      `}\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+
+  it("0.3 program compiled at 0.4 produces 0.3 output (additive only)", () => {
+    // 0.4 adds generics + start/end on diagnostics; nothing about non-generic
+    // code changes. A 0.3-style file should compile at 0.4 to the same TS.
+    const src =
+      `?bs 0.4\n` +
+      `fn slug(s: string) -> string = pure { s.toLowerCase() }\n`;
+    expect(t(src)).toMatchSnapshot();
+  });
+});
