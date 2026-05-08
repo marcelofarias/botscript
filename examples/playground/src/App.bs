@@ -86,6 +86,40 @@ export function App() {
         </div>
       </header>
 
+      <section className="intro" aria-label="about botscript">
+        <p className="intro-lead">
+          A small TypeScript-superset language for a world where most code is
+          written by machines. The patterns that confuse LLMs into shipping
+          broken code aren&rsquo;t expressible in <code>.bs</code> — try editing
+          a tab below and watch the compiler refuse it.
+        </p>
+        <p className="intro-links">
+          <a
+            href="https://github.com/marcelofarias/botscript/blob/main/MANIFESTO.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            read the manifesto
+          </a>
+          <span className="dot">·</span>
+          <a
+            href="https://www.npmjs.com/package/@mbfarias/botscript-compiler"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <code>npm i @mbfarias/botscript-compiler</code>
+          </a>
+          <span className="dot">·</span>
+          <a
+            href="https://github.com/marcelofarias/botscript#readme"
+            target="_blank"
+            rel="noreferrer"
+          >
+            docs
+          </a>
+        </p>
+      </section>
+
       {mode === "problems" ? (
         <ProblemsView
           problem={problem}
