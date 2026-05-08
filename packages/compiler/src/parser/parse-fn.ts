@@ -124,32 +124,67 @@ export function parseFn(
   if (tokens[i]?.kind !== "arrow") return null;
   i++;
 
-  // Read return type tokens until we find body opener (`{` block) or `=` (single expr).
-  // Object types `{ a: T }` inside the return type are skipped via matchedAt.
+  // Read return type tokens until we find the body opener (`{` block) or
+  // `=` (single expr). The lexer pairs `()` `[]` `{}` via matchedAt, but
+  // does NOT pair `<` and `>` (they're ambiguous with comparison operators
+  // in expression context). After `->` we are unambiguously in type
+  // position, so we track angle-bracket depth manually here. With that, a
+  // `{...}` inside generic args is unambiguously part of the type, and an
+  // outer `{...}` only ever competes with the body opener — handled below.
   const typeStart = i;
   let typeEnd = -1;
+  let angleDepth = 0;
   while (i < tokens.length) {
     const t = tokens[i]!;
     if (t.kind === "eof") break;
+
+    // Track `<` and `>` as paired delimiters in type position. Angle close
+    // tokens can collapse: `Map<K, Vec<T>>` lexes its tail as a single `>>`,
+    // and three nested generics close as `>>>`. Decrement by length.
+    if (t.kind === "operator") {
+      if (t.text === "<") {
+        angleDepth++;
+        i++;
+        continue;
+      }
+      if (
+        angleDepth > 0 &&
+        (t.text === ">" || t.text === ">>" || t.text === ">>>")
+      ) {
+        angleDepth = Math.max(0, angleDepth - t.text.length);
+        i++;
+        continue;
+      }
+    }
+
     if (t.kind === "open" && t.matchedAt !== undefined) {
-      // The brace might be (a) part of the return type (object type) or
-      // (b) the body opener. Lookahead past matchedAt — if what follows is
-      // another `{` or `=`, this brace was part of the type. Otherwise, it
-      // IS the body.
+      // Inside generics, any bracketed group (including `{...}` object
+      // types) is unambiguously part of the type — skip past.
+      if (angleDepth > 0 || t.text !== "{") {
+        i = t.matchedAt + 1;
+        continue;
+      }
+      // At outer type level a `{...}` is either the return type's outermost
+      // object literal OR the body opener. Disambiguate by what follows the
+      // matched `}`: `{` or `=` means the type ended at this `{...}` and a
+      // body marker follows; `|` or `&` means the type continues as a union
+      // or intersection. Anything else means this `{` is the body.
       const after = skipTrivia(tokens, t.matchedAt + 1);
       const next = tokens[after];
-      const nextLooksLikeBodyMarker =
-        next?.kind === "open" && next.text === "{" ||
-        next?.kind === "eq";
-      if (t.text === "{" && !nextLooksLikeBodyMarker) {
+      const typeContinues =
+        (next?.kind === "open" && next.text === "{") ||
+        next?.kind === "eq" ||
+        (next?.kind === "operator" && (next.text === "|" || next.text === "&"));
+      if (!typeContinues) {
         typeEnd = i;
         break;
       }
-      // Otherwise skip past as part of the type (or whatever bracketed region).
       i = t.matchedAt + 1;
       continue;
     }
-    if (t.kind === "eq") {
+
+    // `=` at outer level marks the start of an expression body.
+    if (t.kind === "eq" && angleDepth === 0) {
       typeEnd = i;
       break;
     }
