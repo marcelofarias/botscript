@@ -109,6 +109,25 @@ fn slug(s: string) -> string = pure {
 
 The `.bs` versions are not just shorter — they make properties the TS compiler can't enforce (purity, declared side effects, exhaustive matching, no thrown control-flow) part of the function signature. The whole point.
 
+## Why this is better for bots than vanilla TypeScript
+
+The features above aren't aesthetic — each one closes off a class of bug that
+language models reliably ship in TypeScript. Pick any row; that's a real failure
+this codebase has caught more than once:
+
+| Bot failure mode in TypeScript | botscript fix |
+| ------------------------------ | ------------- |
+| Sneaks a `fetch()` into a function the human asked to be "pure" — survives review because the call is three layers deep. | `uses { … }` is part of the signature. A function declared with empty capabilities cannot transitively reach the network, no matter how deep the call graph. The runtime throws on violation. |
+| Forgets a `case` in a `switch` and falls into `default`. The bug ships because the `default` branch silently swallows it. | `match` has no `default` and no fallthrough. A missing arm is a parse error; an unhandled value at runtime throws with a printed scrutinee. |
+| Wraps a `Result`-shaped return in `try/catch` and accidentally swallows the `Err`, returning `undefined` from the catch. | `Result<T, E>` is the return type. `expr?` postfix is the *only* way to unwrap. There is no try-catch flowing-through pattern to mis-write. |
+| Generates `null` checks in some paths and `undefined` checks in others, drifting over time. | `Option<T>` is the only optional type. No `null`. No `undefined`. The compiler refuses to model "missing" two ways. |
+| Adds an `as any` cast under reviewer pressure to make the build green; the cast becomes load-bearing. | `as` outside an explicit `unsafe { }` block is a parse error. Every cast shows up in diff review with a keyword the human will see. |
+| Writes a test that depends on `Date.now()` or `Math.random()`; flake creeps in over time. | Tests run in a frame where `time` and `random` capabilities are denied by default. The `with mocks { … }` clause on `test "…"` is the only way to inject them, and it does so deterministically. |
+| Hallucinates a built-in or convention that doesn't exist — costs a debug cycle. | The `?primer` directive emits the canonical spec as a top-of-file comment. Any agent dropped into a botscript file cold has the entire language surface in the same file. |
+
+Every other choice in the language is in service of one of these. If a feature
+doesn't close a bot failure mode, it isn't here.
+
 ---
 
 ## The one-shot prompt
