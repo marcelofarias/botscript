@@ -11,6 +11,16 @@
       "import": "./dist/index.js"
     }
   },
+  "license": "MIT",
+  "author": "Marcelo Farias",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcelofarias/botscript.git",
+    "directory": "packages/vite-plugin"
+  },
+  "homepage": "https://github.com/marcelofarias/botscript#readme",
+  "keywords": ["botscript", "vite", "vite-plugin"],
+  "publishConfig": { "access": "public" },
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsc -p tsconfig.json",

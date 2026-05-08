@@ -9,6 +9,16 @@
     "botscript": "./dist/cli.js",
     "bs": "./dist/cli.js"
   },
+  "license": "MIT",
+  "author": "Marcelo Farias",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcelofarias/botscript.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/marcelofarias/botscript#readme",
+  "keywords": ["botscript", "cli"],
+  "publishConfig": { "access": "public" },
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsc -p tsconfig.json",

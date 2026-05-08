@@ -15,6 +15,16 @@
       "import": "./dist/primer.js"
     }
   },
+  "license": "MIT",
+  "author": "Marcelo Farias",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcelofarias/botscript.git",
+    "directory": "packages/compiler"
+  },
+  "homepage": "https://github.com/marcelofarias/botscript#readme",
+  "keywords": ["botscript", "compiler", "typescript"],
+  "publishConfig": { "access": "public" },
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
