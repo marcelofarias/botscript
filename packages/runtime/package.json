@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-runtime",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Runtime helpers for botscript: Result, Option, match, capability registry.",
   "type": "module",
   "main": "./dist/index.js",

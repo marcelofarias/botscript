@@ -4,7 +4,7 @@ All notable changes to botscript. Each release pins a `?bs` version; shipped
 pins do not change behaviour after release (AGENTS.md rule 4). New behaviour
 goes behind a new pin.
 
-## ?bs 0.4 (unreleased)
+## ?bs 0.4 — 2026-05-08
 
 ### Added
 - **Type parameters in `fn` signatures.** `fn id<T>(x: T) -> T`, multi-param
