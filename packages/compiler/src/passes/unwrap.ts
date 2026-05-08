@@ -112,6 +112,18 @@ function classifyForm(tokens: Token[], start: number, qIdx: number): FormInfo | 
   const head = tokens[i];
   if (!head) return null;
 
+  // Bail when the apparent statement-start is an operator that this lexer
+  // can't disambiguate. The walk-back from `?` to a preceding `;`, `{`, or
+  // boundary-newline can cross JSX text content (e.g. `<a>foo bar?</a>`)
+  // because `<` and `>` are tokenised as comparison-shaped operators and
+  // are never paired. A `<` token at statement-start could be a JSX
+  // element, a TSX generic call/cast, or a stray comparison fragment —
+  // each is a different real shape, and the unwrap pass (which has no AST)
+  // can't tell them apart from a token stream alone. The conservative
+  // choice is to refuse to rewrite. The unary-prefix operators below can
+  // unambiguously begin a bare expression statement and stay allowed.
+  if (head.kind === "operator" && !isUnaryPrefixOp(head.text)) return null;
+
   // let/const/var binding form.
   if (head.kind === "ident" && (head.text === "let" || head.text === "const" || head.text === "var")) {
     const binder = head.text as "let" | "const" | "var";
@@ -185,6 +197,17 @@ function findStatementStart(tokens: Token[], from: number): number {
     }
   }
   return 0;
+}
+
+function isUnaryPrefixOp(text: string): boolean {
+  return (
+    text === "+" ||
+    text === "-" ||
+    text === "!" ||
+    text === "~" ||
+    text === "++" ||
+    text === "--"
+  );
 }
 
 function nextSignificant(tokens: Token[], from: number): number {

@@ -42,6 +42,19 @@ goes behind a new pin.
   `Map<K, Vec<T>>`, `{ a: T } | string` — used to be mis-parsed as the
   body opener, silently dropping the body and producing wrong CAP002
   diagnostics on declared capabilities the body actually consumed.
+- The `?` postfix unwrap pass no longer rewrites a `?` whose apparent
+  statement-start tokenises as a non-prefix operator. The lexer treats
+  `<` and `>` as comparison-shaped operators and doesn't pair them, so
+  the walk-back from `?` could cross JSX text content like
+  `<a>foo bar?</a>`, land on the enclosing `(` of `return (...)`, and
+  rewrite the whole markup as
+  `const __r1 = <...>; if (__r1.kind === "err") return __r1;` — leaking
+  the unwrap desugar into the rendered DOM. A `<` at statement-start
+  could be a JSX element, a TSX generic call/cast, or a stray comparison
+  fragment, and the unwrap pass has no AST to disambiguate them; it now
+  refuses to rewrite. Unary-prefix operators (`+`, `-`, `!`, `~`, `++`,
+  `--`) and proper expression heads (idents, keywords, parens, etc.)
+  still lead to a rewrite as before.
 
 ### Forward compatibility
 - Files pinned to `?bs 0.3` (or earlier) compile to byte-identical TypeScript.
