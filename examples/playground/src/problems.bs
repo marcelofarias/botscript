@@ -1,0 +1,245 @@
+?bs 0.3
+
+// Each entry is a real TypeScript bug pattern paired with the .bs equivalent.
+// The .bs source is the editable starting state — sometimes intentionally
+// broken so the playground compiler fires the diagnostic; sometimes already
+// the structural fix so the desugared TS demonstrates the alternative shape.
+//
+// Outcome flag:
+//   "rejects"    the .bs source as-shipped fires a compile error — edit it to
+//                see it pass.
+//   "structural" the .bs source as-shipped compiles cleanly — the bug pattern
+//                from the TS panel cannot be expressed in .bs at all.
+
+export type Problem = {
+  id: string;
+  label: string;
+  title: string;
+  blurb: string;
+  outcome: "rejects" | "structural";
+  outcomeLabel: string;
+  fixHint: string;
+  tsCode: string;
+  bsCode: string;
+};
+
+const HIDDEN_SIDE_EFFECT_TS = `// looks pure to a code reviewer; \`fetch\` hides three layers down
+function formatHandle(user: { name: string }): string {
+  trackImpression(user.name);
+  return "@" + user.name.toLowerCase();
+}
+
+function trackImpression(name: string): void {
+  fetch("/api/events?n=" + name);  // ← the hidden side effect
+}
+
+formatHandle({ name: "Ada" });
+`;
+
+const HIDDEN_SIDE_EFFECT_BS = `?bs 0.3
+import { http } from "@mbfarias/botscript-runtime";
+
+// formatHandle declares no capabilities. The compiler walks the call graph,
+// notices trackImpression hits http.get, and rejects the file at compile time
+// — naming the path: formatHandle -> trackImpression -> http.get.
+//
+// Try fixing it: add \`uses { net }\` to BOTH fns and watch the output flip
+// from a CAP001 to clean TypeScript.
+
+fn formatHandle(user: { name: string }) -> string {
+  trackImpression(user.name);
+  return "@" + user.name.toLowerCase();
+}
+
+fn trackImpression(name: string) -> void {
+  http.get(\`/api/events?n=\${name}\`);
+}
+`;
+
+const NAKED_CAST_TS = `// the cast was load-bearing six months ago; nobody remembers why now
+async function loadUser(id: string): Promise<User> {
+  const res = await fetch(\`/users/\${id}\`);
+  const json = await res.json();
+  return json as User;          // ← no review trail, no reason in the diff
+}
+
+type User = { id: string; name: string };
+`;
+
+const NAKED_CAST_BS = `?bs 0.3
+
+// In .bs, the only place an \`as\` cast can live is inside an \`unsafe\` block,
+// and \`unsafe\` demands a non-empty justification string. UNS001 fires the
+// moment you try to ship a bare cast — the *why* must show up in the diff
+// alongside the *what*.
+//
+// Try fixing it: add a reason between \`unsafe\` and \`{\` —
+//   unsafe "Response.json() is typed any" { ... }
+
+type User = { id: string; name: string };
+
+fn coerceUser(json: unknown) -> User {
+  return unsafe { json as User };
+}
+`;
+
+const OVER_DECLARED_TS = `// the docstring claims this hits the network — it doesn't anymore.
+// reviewers trust the docstring; new callsites assume the wire is in scope
+/** Network-bound: parses an external feed URL. */
+function parseFeedUrl(url: string): string {
+  return url.trim().toLowerCase();   // ← no network call here at all
+}
+`;
+
+const OVER_DECLARED_BS = `?bs 0.3
+
+// .bs treats the \`uses { ... }\` clause as an UPPER bound the compiler
+// infers against. If the body never reaches \`net\`, declaring \`net\` is a
+// CAP002 parse error. Capability sets cannot drift from the body.
+//
+// Try fixing it: drop \`uses { net }\` from the signature, leaving the
+// pure-helper form: \`fn parseFeedUrl(url: string) -> string = pure { ... }\`.
+
+fn parseFeedUrl(url: string) uses { net } -> string = pure {
+  url.trim().toLowerCase()
+}
+`;
+
+const SWALLOWED_PARSE_TS = `// the type says \`Config\`. at runtime it can be \`undefined\`.
+// every caller that destructures \`port\` will crash, far from this file
+function loadConfig(raw: string): Config {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined as any;     // ← failure becomes a silent shape lie
+  }
+}
+
+type Config = { port: number };
+`;
+
+const SWALLOWED_PARSE_BS = `?bs 0.3
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
+
+// The .bs form makes failure visible in the type. \`Result.try { ... }\` lifts
+// a throwing JS-boundary call into a Result, the \`?\` postfix short-circuits
+// the err case out of the enclosing fn, and the caller's signature tells them
+// "this can fail — handle it." There is no try/catch flowing-through pattern
+// to mis-write.
+//
+// The compile output on the right is the clean desugared TypeScript. The TS
+// bug pattern on the left simply has no shape in .bs.
+
+type Config = { port: number };
+
+fn loadConfig(raw: string) -> Result<Config, string> {
+  let parsed = Result.try { JSON.parse(raw) }?
+  let p = (parsed as { port?: number }).port;
+  return typeof p === "number" ? ok({ port: p }) : err("missing port");
+}
+`;
+
+const MATCH_FALLTHROUGH_TS = `// added \`Triangle\` to the union, forgot to update the switch.
+// the \`default\` swallows it — area returns 0, no compile error, no warning
+type Shape =
+  | { kind: "Circle"; r: number }
+  | { kind: "Square"; side: number }
+  | { kind: "Triangle"; base: number; height: number };
+
+function area(s: Shape): number {
+  switch (s.kind) {
+    case "Circle": return Math.PI * s.r * s.r;
+    case "Square": return s.side * s.side;
+    default: return 0;            // ← Triangle silently lands here
+  }
+}
+`;
+
+const MATCH_FALLTHROUGH_BS = `?bs 0.3
+
+// \`match\` has no \`default\` and no fallthrough by design. The tagged-union
+// sugar on the type and the destructuring patterns on the arms share the
+// same discriminator — they cannot drift. Adding \`Triangle\` to the type and
+// failing to handle it surfaces immediately at the matchsite.
+//
+// The compile output is the clean desugared TypeScript dispatch.
+
+type Shape =
+  | Circle { r: number }
+  | Square { side: number }
+  | Triangle { base: number; height: number };
+
+fn area(s: Shape) -> number = match s {
+  Circle { r }              -> Math.PI * r * r
+  Square { side }           -> side * side
+  Triangle { base, height } -> (base * height) / 2
+}
+`;
+
+export const PROBLEMS: Problem[] = [
+  {
+    id: "hidden-effect",
+    label: "hidden side effect",
+    title: "A hidden network call ships unnoticed",
+    blurb:
+      "The bot sneaks fetch() into a helper that looks pure. Reviewers read the top-level fn and trust it; the side effect lives three layers down. TypeScript has no way to spell \"no side effects\" in a signature.",
+    outcome: "rejects",
+    outcomeLabel: "BotScript rejects this — CAP001",
+    fixHint:
+      "Add `uses { net }` to both fns, or remove the http.get call.",
+    tsCode: HIDDEN_SIDE_EFFECT_TS,
+    bsCode: HIDDEN_SIDE_EFFECT_BS,
+  },
+  {
+    id: "naked-cast",
+    label: "as any cast",
+    title: "An `as` cast slips into the diff with no reason",
+    blurb:
+      "Under reviewer pressure, a bot makes the build green with `as User` or `as any`. The cast becomes load-bearing; six months later, no one remembers why. Casts in .bs only live inside `unsafe`, and `unsafe` demands a one-line reason.",
+    outcome: "rejects",
+    outcomeLabel: "BotScript rejects this — UNS001",
+    fixHint:
+      'Add a justification string: `unsafe "Response.json() is typed any" { ... }`.',
+    tsCode: NAKED_CAST_TS,
+    bsCode: NAKED_CAST_BS,
+  },
+  {
+    id: "over-declared",
+    label: "stale capability",
+    title: "Capability set drifts from what the body actually does",
+    blurb:
+      "A function once hit the network; the implementation changed and nothing flagged that the docstring (or the `uses` clause, in another language) was now a lie. .bs treats `uses { ... }` as the upper bound — the compiler refuses to keep declarations the body never reaches.",
+    outcome: "rejects",
+    outcomeLabel: "BotScript rejects this — CAP002",
+    fixHint:
+      "Drop `uses { net }` from the signature — the body is already pure.",
+    tsCode: OVER_DECLARED_TS,
+    bsCode: OVER_DECLARED_BS,
+  },
+  {
+    id: "swallowed-parse",
+    label: "swallowed error",
+    title: "JSON.parse failure becomes silent `undefined`",
+    blurb:
+      "The most common error pattern in TypeScript: wrap a throwing call in try/catch, return undefined on failure, lie about the type. Every caller that destructures the result crashes far from the source. .bs makes the failure path part of the return type.",
+    outcome: "structural",
+    outcomeLabel: "Bug pattern is unrepresentable",
+    fixHint:
+      "Try removing the `?` after Result.try and watch the type stop matching the return signature.",
+    tsCode: SWALLOWED_PARSE_TS,
+    bsCode: SWALLOWED_PARSE_BS,
+  },
+  {
+    id: "match-fallthrough",
+    label: "switch fallthrough",
+    title: "A new union case slips past the switch's default",
+    blurb:
+      "Adding a third shape to the union should be a one-line change. With `switch` + `default`, the new case lands silently in the default branch — area returns 0 and the test suite never notices. .bs's `match` has no default and no fallthrough.",
+    outcome: "structural",
+    outcomeLabel: "Bug pattern is unrepresentable",
+    fixHint:
+      "Try deleting one of the match arms — the runtime dispatch will throw with the unmatched scrutinee printed, and TypeScript exhaustiveness will flag it at the call site.",
+    tsCode: MATCH_FALLTHROUGH_TS,
+    bsCode: MATCH_FALLTHROUGH_BS,
+  },
+];
