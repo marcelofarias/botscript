@@ -1,4 +1,4 @@
-?bs 0.3
+?bs 0.4
 
 // Each entry is a real TypeScript bug pattern paired with the .bs equivalent.
 // The .bs source is the editable starting state — sometimes intentionally
@@ -36,7 +36,7 @@ function trackImpression(name: string): void {
 formatHandle({ name: "Ada" });
 `;
 
-const HIDDEN_SIDE_EFFECT_BS = `?bs 0.3
+const HIDDEN_SIDE_EFFECT_BS = `?bs 0.4
 import { http } from "@mbfarias/botscript-runtime";
 
 // formatHandle declares no capabilities. The compiler walks the call graph,
@@ -66,7 +66,7 @@ async function loadUser(id: string): Promise<User> {
 type User = { id: string; name: string };
 `;
 
-const NAKED_CAST_BS = `?bs 0.3
+const NAKED_CAST_BS = `?bs 0.4
 
 // In .bs, the only place an \`as\` cast can live is inside an \`unsafe\` block,
 // and \`unsafe\` demands a non-empty justification string. UNS001 fires the
@@ -91,7 +91,7 @@ function parseFeedUrl(url: string): string {
 }
 `;
 
-const OVER_DECLARED_BS = `?bs 0.3
+const OVER_DECLARED_BS = `?bs 0.4
 
 // .bs treats the \`uses { ... }\` clause as an UPPER bound the compiler
 // infers against. If the body never reaches \`net\`, declaring \`net\` is a
@@ -118,7 +118,7 @@ function loadConfig(raw: string): Config {
 type Config = { port: number };
 `;
 
-const SWALLOWED_PARSE_BS = `?bs 0.3
+const SWALLOWED_PARSE_BS = `?bs 0.4
 import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 
 // The .bs form makes failure visible in the type. \`Result.try { ... }\` lifts
@@ -155,7 +155,7 @@ function area(s: Shape): number {
 }
 `;
 
-const MATCH_FALLTHROUGH_BS = `?bs 0.3
+const MATCH_FALLTHROUGH_BS = `?bs 0.4
 
 // \`match\` has no \`default\` and no fallthrough by design. The tagged-union
 // sugar on the type and the destructuring patterns on the arms share the

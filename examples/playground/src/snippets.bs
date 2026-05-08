@@ -1,4 +1,4 @@
-?bs 0.3
+?bs 0.4
 
 // Curated snippets the playground loads on startup. Each one is a small,
 // self-contained botscript program that demonstrates a single feature. Keep
@@ -6,7 +6,7 @@
 
 export type Snippet = { id: string; label: string; source: string };
 
-const HELLO = `?bs 0.3
+const HELLO = `?bs 0.4
 import { stdout } from "@mbfarias/botscript-runtime";
 
 fn greet(name: string) uses { stdout } -> void {
@@ -16,7 +16,7 @@ fn greet(name: string) uses { stdout } -> void {
 greet("world");
 `;
 
-const PURE = `?bs 0.3
+const PURE = `?bs 0.4
 
 // Pure helpers. The 'pure { ... }' shorthand is sugar for uses { } { return ... }
 // with the compiler enforcing zero side effects.
@@ -31,7 +31,27 @@ const a = slug("  Hello World  ");  // "hello-world"
 const b = double(21);                // 42
 `;
 
-const MATCH = `?bs 0.3
+const GENERICS = `?bs 0.4
+
+// Type parameters in fn signatures (0.4). Generic helpers compose with
+// the rest of botscript — purity, capabilities, match — without giving
+// anything up. The header is emitted verbatim into the TypeScript output.
+
+fn identity<T>(x: T) -> T = pure { x }
+
+fn pair<A, B>(a: A, b: B) -> [A, B] = pure { [a, b] }
+
+// 'extends' constrains; the constraint is plain TypeScript.
+fn firstId<T extends { id: string }>(xs: T[]) -> string | undefined = pure {
+  xs[0]?.id
+}
+
+const a = identity("hello");          // string
+const b = pair(1, "two");             // [number, string]
+const c = firstId([{ id: "a" }]);     // string | undefined
+`;
+
+const MATCH = `?bs 0.4
 
 // Tagged-union sugar (0.2+) — declare the kinds inline; the compiler
 // desugars to a TypeScript discriminated union keyed on \`kind\`.
@@ -50,7 +70,7 @@ fn area(s: Shape) -> number = match s {
 const a = area({ kind: "Circle", r: 3 });
 `;
 
-const RESULT = `?bs 0.3
+const RESULT = `?bs 0.4
 
 import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 
@@ -68,7 +88,7 @@ fn parseHostPort(input: string) -> Result<{ host: string; port: number }, string
 }
 `;
 
-const TRY = `?bs 0.3
+const TRY = `?bs 0.4
 
 // Result.try (0.3+) lifts a JS-boundary call that throws into a
 // Result<T, string>. No try/catch, no swallowed exceptions, and the ?
@@ -83,7 +103,7 @@ fn parseConfig(raw: string) -> Result<{ port: number }, string> {
 }
 `;
 
-const CAPS = `?bs 0.3
+const CAPS = `?bs 0.4
 
 // Capability inference (0.3): the compiler walks the call graph at compile
 // time. Declare the ceiling, and every callee must fit under it. Try
@@ -101,7 +121,7 @@ fn loadStamp() uses { time } -> { value: number } {
 }
 `;
 
-const FS = `?bs 0.3
+const FS = `?bs 0.4
 
 // Run anywhere with a Node runtime. Capability-checked, Result-typed.
 import { fs } from "@mbfarias/botscript-runtime/fs";
@@ -112,7 +132,7 @@ fn loadConfig(path: string) uses { fs } -> Result<{ name: string }, string> {
 }
 `;
 
-const TEST = `?bs 0.3
+const TEST = `?bs 0.4
 
 // 'with mocks { time, random }' (0.2+) hands the test a deterministic clock
 // and PRNG. The runner is the only thing that can pass real ones.
@@ -133,6 +153,7 @@ test "deterministic now()" with mocks { time } {
 export const SNIPPETS: Snippet[] = [
   { id: "hello", label: "hello", source: HELLO },
   { id: "pure", label: "pure", source: PURE },
+  { id: "generics", label: "generics", source: GENERICS },
   { id: "match", label: "match", source: MATCH },
   { id: "result", label: "result", source: RESULT },
   { id: "try", label: "try", source: TRY },
