@@ -308,18 +308,47 @@ function scanBody(
       continue;
     }
 
-    // (b) intra-module callee: `<fnName>(`
+    // (b) intra-module callee: `<fnName>(`. Must NOT be preceded by `.`
+    // or `?.` — those are member accesses (e.g. `obj.helper(...)`), not
+    // calls to a same-file `fn helper`. Same check stops false intra-
+    // module callees from sneaking into the call graph and triggering
+    // bogus CAP001/CAP002 inference.
     if (
       tok.text !== fn.name &&
       fnNames.has(tok.text) &&
       next?.kind === "open" &&
-      next.text === "("
+      next.text === "(" &&
+      !precededByMemberAccess(tokens, i)
     ) {
       callNames.add(tok.text);
     }
   }
 
   return { direct, callNames };
+}
+
+/**
+ * True if the previous significant token is `.` (punct) or `?.`
+ * (questionDot). Used by scanBody to skip method-style calls when
+ * looking for intra-module fn callees.
+ */
+function precededByMemberAccess(tokens: Token[], idx: number): boolean {
+  for (let k = idx - 1; k >= 0; k--) {
+    const t = tokens[k];
+    if (!t) return false;
+    if (
+      t.kind === "whitespace" ||
+      t.kind === "newline" ||
+      t.kind === "lineComment" ||
+      t.kind === "blockComment"
+    ) {
+      continue;
+    }
+    if (t.kind === "punct" && t.text === ".") return true;
+    if (t.kind === "questionDot") return true;
+    return false;
+  }
+  return false;
 }
 
 function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): CapabilityCheckError {

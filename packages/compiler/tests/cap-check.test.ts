@@ -50,6 +50,28 @@ describe("static capability check (0.2)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
+  it("does not treat `obj.helper(...)` as a call to a same-file `fn helper`", () => {
+    // Pre-fix: scanBody only checked `ident` + next `(`, so `obj.helper()`
+    // was misclassified as a call to a top-level `fn helper`. If that
+    // helper consumed a cap the outer didn't declare, CAP001 would fire
+    // even though the call was actually to a method on `obj`.
+    const src =
+      `?bs 0.3\n` +
+      `fn helper() uses { time } -> number { return time.now(); }\n` +
+      `fn outer(obj: { helper: () => number }) -> number = pure { obj.helper() }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does not treat `obj?.helper(...)` (optional chain) as an intra-module call", () => {
+    const src =
+      `?bs 0.3\n` +
+      `fn helper() uses { time } -> number { return time.now(); }\n` +
+      `fn outer(obj: { helper?: () => number } | null) -> number {\n` +
+      `  return obj?.helper() ?? 0;\n` +
+      `}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("same-name fn decls in different scopes don't collide in the records map", () => {
     // Pre-fix: the records Map was keyed by fn name, so two `fn helper`
     // declarations would silently overwrite each other and corrupt
