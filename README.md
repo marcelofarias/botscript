@@ -130,6 +130,27 @@ this codebase has caught more than once:
 Every other choice in the language is in service of one of these. If a feature
 doesn't close a bot failure mode, it isn't here.
 
+## Real bugs this design would have prevented
+
+These are *real, public* issues and PRs from real TypeScript projects (mostly
+Microsoft's own TypeScript repo, since they're heavily used and the linked
+artifacts will outlive most projects). Every row is a class of bug that's
+either parse-time-impossible or signature-visible in botscript.
+
+| Real-world bug                                                                                                                                                                      | What botscript does instead |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **Hidden `useEffect` side effect breaks SSR hydration.** [vercel/swr#2391](https://github.com/vercel/swr/pull/2391) — a hook reading from cache during streaming hydration produced a mismatch between server and client render. The side effect was buried in a hook deep in the component tree. | A function with side effects must declare `uses { net }` (etc.) in its signature. The hydration-time reader's capability set is part of the type — it can't hide three layers down. |
+| **Exhaustive switch can't actually be made exhaustive.** [microsoft/TypeScript#9838](https://github.com/microsoft/TypeScript/issues/9838), [#40160](https://github.com/microsoft/TypeScript/issues/40160), [#13467](https://github.com/microsoft/TypeScript/issues/13467) — adding a `default` case for safety silently breaks exhaustiveness narrowing. Real bugs filed against the TS compiler itself. | `match` has no `default` and no fallthrough. A new tag added to a tagged union is a parse error in every `match` that doesn't update — not a silent runtime fall-through. |
+| **`catch` clause's `unknown` was originally `any`, swallowing typed errors industry-wide.** [microsoft/TypeScript#26174](https://github.com/microsoft/TypeScript/issues/26174) — every `try { … } catch (e) { return undefined; }` returning a typed promise `Promise<T>` silently masked failures for years until the `useUnknownInCatchVariables` option (TS 4.0). | `Result<T, E>` is the return type. `expr?` is the *only* unwrap. There is no try-catch flowing-through pattern to mis-write; the error path is in the type. |
+| **TS's own null-narrowing fails through callbacks.** [microsoft/TypeScript#18244](https://github.com/microsoft/TypeScript/issues/18244) — `if (x !== null) { fn(() => x.method()) }` re-widens `x` to nullable inside the callback. Workarounds for this issue are load-bearing in real codebases. | `Option<T>` is the only optional type. There is no `null` and no `undefined` in business logic. A missing value is unwrapped with `match` or `?`, not narrowed across closure boundaries. |
+| **`as any` regressions ship with TypeScript itself.** [microsoft/TypeScript#56618](https://github.com/microsoft/TypeScript/issues/56618), [#45640](https://github.com/microsoft/TypeScript/issues/45640) — even Microsoft's own `.d.ts` shipping uses `any` in places that have caused regressions across versions. | `as` outside an explicit `unsafe { … }` block is a parse error. Every cast surfaces in diff review under a keyword the human will see. |
+| **Copilot routinely hallucinates methods and even whole repos.** [microsoft/vscode-copilot-release#281](https://github.com/microsoft/vscode-copilot-release/issues/281), [#1407](https://github.com/microsoft/vscode-copilot-release/issues/1407) — a model fabricates `array.removeAt`, an entire repo's contents. The code looks right; the method doesn't exist. | The `?primer` directive embeds the canonical language spec as a top-of-file comment. `STDLIB.bs` shows every feature exactly once. An agent has the entire surface in the same file before it writes a token. |
+| **Tests baked on `Date.now()` and timezone-sensitive math break years later.** GitHub's own engineering team has shipped tests that pass for three years and then fail every leap year, plus tests that break at midnight and during DST transitions ([herodevs.com](https://www.herodevs.com/blog-posts/future-proof-your-javascript-datetime-tests)). | (0.2, planned) `test "name" with mocks { time, random } { … }` is the only way to inject a clock or RNG inside a test. Tests run in a frame where `time` and `random` capabilities are denied by default. |
+
+If you've hit a bug a feature in this README would have prevented and it's
+publicly linkable, [open a PR](https://github.com/marcelofarias/botscript/pulls)
+adding a row.
+
 ## What's new in `?bs 0.2` (opt-in)
 
 `LATEST` is still 0.1, so existing files compile unchanged. Pin a file to
