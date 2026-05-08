@@ -14,7 +14,7 @@
     "examples:node": "pnpm build && pnpm --filter node-app dev circle 3",
     "examples:react": "pnpm build && pnpm --filter react-app dev",
     "publish:all": "pnpm build && pnpm test && pnpm -r --filter './packages/*' publish --no-git-checks --access public",
-    "publish:check": "for p in runtime compiler cli vite-plugin babel-plugin; do printf '%-32s ' \"@mbfarias/botscript-$p\"; npm view \"@mbfarias/botscript-$p\" version 2>/dev/null || echo MISSING; done",
+    "publish:check": "for p in runtime compiler cli vite-plugin babel-plugin mcp; do printf '%-32s ' \"@mbfarias/botscript-$p\"; npm view \"@mbfarias/botscript-$p\" version 2>/dev/null || echo MISSING; done",
     "version:bump": "pnpm -r --filter './packages/*' exec npm version --no-git-tag-version"
   },
   "devDependencies": {
