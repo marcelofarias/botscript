@@ -15,11 +15,97 @@ machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
 
 The same program in idiomatic TypeScript and in botscript:
 
-| TypeScript | botscript |
-| ---------- | --------- |
-| <pre lang="ts">async function loadUser(id: string) {<br/>  try {<br/>    const res = await fetch(`/users/${id}`);<br/>    if (!res.ok) throw new Error(`HTTP ${res.status}`);<br/>    return await res.json();<br/>  } catch (e) {<br/>    return { error: String(e) };<br/>  }<br/>}</pre> | <pre lang="bs">async fn loadUser(id: string) uses { net }<br/>    -> Result&lt;User, string&gt; {<br/>  let res = http.get(`/users/${id}`)?<br/>  ok(await res.json() as User)<br/>}</pre> |
-| <pre lang="ts">function area(s: Shape): number {<br/>  switch (s.kind) {<br/>    case "Circle": return Math.PI * s.r * s.r;<br/>    case "Square": return s.side * s.side;<br/>    default: throw new Error("unhandled");<br/>  }<br/>}</pre> | <pre lang="bs">fn area(s: Shape) -> number = match s {<br/>  Circle { r }    -> Math.PI * r * r<br/>  Square { side } -> side * side<br/>}</pre> |
-| <pre lang="ts">function slug(s: string): string {<br/>  return s.trim().toLowerCase()<br/>          .replaceAll(" ", "-");<br/>}</pre> | <pre lang="bs">fn slug(s: string) -> string = pure {<br/>  s.trim().toLowerCase().replaceAll(" ", "-")<br/>}</pre> |
+### Async fetch with errors
+
+<table>
+<tr><th>TypeScript</th><th>botscript</th></tr>
+<tr>
+<td>
+
+```ts
+async function loadUser(id: string) {
+  try {
+    const res = await fetch(`/users/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    return { error: String(e) };
+  }
+}
+```
+
+</td>
+<td>
+
+```bs
+async fn loadUser(id: string) uses { net }
+    -> Result<User, string> {
+  let res = http.get(`/users/${id}`)?
+  ok(await res.json() as User)
+}
+```
+
+</td>
+</tr>
+</table>
+
+### Exhaustive shape dispatch
+
+<table>
+<tr><th>TypeScript</th><th>botscript</th></tr>
+<tr>
+<td>
+
+```ts
+function area(s: Shape): number {
+  switch (s.kind) {
+    case "Circle": return Math.PI * s.r * s.r;
+    case "Square": return s.side * s.side;
+    default: throw new Error("unhandled");
+  }
+}
+```
+
+</td>
+<td>
+
+```bs
+fn area(s: Shape) -> number = match s {
+  Circle { r }    -> Math.PI * r * r
+  Square { side } -> side * side
+}
+```
+
+</td>
+</tr>
+</table>
+
+### Pure helper
+
+<table>
+<tr><th>TypeScript</th><th>botscript</th></tr>
+<tr>
+<td>
+
+```ts
+function slug(s: string): string {
+  return s.trim().toLowerCase()
+          .replaceAll(" ", "-");
+}
+```
+
+</td>
+<td>
+
+```bs
+fn slug(s: string) -> string = pure {
+  s.trim().toLowerCase().replaceAll(" ", "-")
+}
+```
+
+</td>
+</tr>
+</table>
 
 The `.bs` versions are not just shorter — they make properties the TS compiler can't enforce (purity, declared side effects, exhaustive matching, no thrown control-flow) part of the function signature. The whole point.
 
