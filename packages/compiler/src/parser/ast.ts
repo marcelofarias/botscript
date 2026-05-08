@@ -71,11 +71,13 @@ export interface Program {
    */
   statements: Stmt[];
   /**
-   * Convenience accessor for the TOP-LEVEL fn declarations only — fn
-   * declarations nested inside another fn's body are not surfaced here.
-   * Consumers that need every fn (e.g. cap-check, which has to filter
-   * inner fns out of an outer body scan) should walk `tokens` directly
-   * via `parseFn`. Same objects as the matching FnStmt nodes.
+   * Convenience accessor for the parsed fn declarations. By default
+   * (`includeNestedFns: false`) this is top-level fns only — the
+   * LSP-friendly view. When the parser is invoked with
+   * `includeNestedFns: true` (cap-check does this), nested fn decls
+   * inside another fn's body are surfaced here too, in source order.
+   * Same objects as the matching FnStmt nodes — duplicating here saves
+   * callers a `.filter()`.
    */
   fns: FnStmt[];
 }

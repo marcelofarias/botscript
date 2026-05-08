@@ -283,9 +283,13 @@ describe("forward-compat: ?bs 0.3 output is frozen", () => {
   });
 
   it("integration: unsafe + Result.try + cap inference", () => {
+    // Return type uses a named alias for the success shape so the fn
+    // parser's body-opener heuristic doesn't misread the inline object.
+    // (See header note about routing around the inline-object-in-generic
+    // limitation.)
     const src =
       `?bs 0.3\n` +
-      `fn parseConfig(raw: string) -> Result<{ port: number }, string> {\n` +
+      `fn parseConfig(raw: string) -> Result<Config, string> {\n` +
       `  let parsed = Result.try { JSON.parse(raw) }?\n` +
       `  let p = unsafe "JSON.parse returns any" { (parsed as { port?: number }).port };\n` +
       `  return typeof p === "number" ? ok({ port: p }) : err("missing port");\n` +

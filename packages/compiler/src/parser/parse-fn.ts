@@ -52,9 +52,11 @@ export interface ParseFnOptions {
   /**
    * When true, the parser accepts an optional `<T, …>` type-parameter block
    * between the function name and the args. Gated to ?bs 0.4+ at the call
-   * site — earlier pins do not parse generics, so a 0.1/0.2/0.3 file with
-   * `fn id<T>(…)` would have failed before this option existed and must
-   * continue to fail with allowGenerics=false.
+   * site — earlier pins must keep their original behaviour, where parseFn
+   * sees the unexpected `<` after the name and returns null. The
+   * declaration is then left unrewritten and passes through to the TS
+   * output as-is (the same forward-compat behaviour 0.1/0.2/0.3 always
+   * had on this construct).
    */
   allowGenerics?: boolean;
 }

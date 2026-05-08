@@ -307,16 +307,16 @@ function outer(s: string): string {
 exports[`forward-compat: ?bs 0.3 output is frozen > integration: unsafe + Result.try + cap inference 1`] = `
 "import { $enter, $resultTry } from "@mbfarias/botscript-runtime";
 
-function parseConfig(raw: string): Result< {
+function parseConfig(raw: string): Result<Config, string> {
   return $enter([] as const, () => {
-     port: number 
+
+            const __r1 = $resultTry(() => { return JSON.parse(raw); });
+      if (__r1.kind === "err") return __r1;
+      let parsed = __r1.value;
+      let p = /* unsafe: "JSON.parse returns any" */ (() => { return (parsed as { port?: number }).port; })();
+      return typeof p === "number" ? ok({ port: p }) : err("missing port");
+
   });
-}, string> {
-    const __r1 = $resultTry(() => { return JSON.parse(raw); });
-  if (__r1.kind === "err") return __r1;
-  let parsed = __r1.value;
-  let p = /* unsafe: "JSON.parse returns any" */ (() => { return (parsed as { port?: number }).port; })();
-  return typeof p === "number" ? ok({ port: p }) : err("missing port");
 }
 "
 `;

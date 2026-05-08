@@ -20,6 +20,14 @@ import { parseFn, type ParseFnOptions } from "./parse-fn.js";
 export interface ParseOptions {
   /** Forwarded to `parseFn` — opt in to generics (?bs 0.4+). */
   allowGenerics?: boolean;
+  /**
+   * When true, fn declarations nested inside another fn's body are also
+   * surfaced in `fns` / `statements`. The default (false) is the LSP-
+   * friendly view: only top-level decls. cap-check sets this to true
+   * because it needs every fn in the file to compute the inner-range
+   * exclusion when scanning each fn's body for stdlib references.
+   */
+  includeNestedFns?: boolean;
 }
 
 export function parseProgram(src: string, opts: ParseOptions = {}): Program {
@@ -28,6 +36,7 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
   const fns: FnStmt[] = [];
 
   const parseFnOpts: ParseFnOptions = { allowGenerics: opts.allowGenerics };
+  const includeNested = !!opts.includeNestedFns;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -42,9 +51,13 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
     };
     statements.push(stmt);
     fns.push(stmt);
-    // Advance past the consumed run so we don't re-enter on inner `fn`s
-    // — a fn nested in a body is irrelevant at the program level.
-    i = decl.end - 1;
+    // When includeNested is on, keep walking into the body so nested `fn`
+    // declarations are picked up too. Otherwise advance past the consumed
+    // run — a fn nested in a body is irrelevant at the program level for
+    // the default LSP-style view.
+    if (!includeNested) {
+      i = decl.end - 1;
+    }
   }
 
   return {
