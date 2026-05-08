@@ -1,4 +1,4 @@
-?bs 0.1
+?bs 0.2
 ?primer
 
 // STDLIB.bs — every botscript feature, exactly once.
@@ -9,12 +9,12 @@
 
 import { ok, err, some, none, http, time, type Option, type Result } from "@mbfarias/botscript-runtime";
 
-// ─── 1. Tagged union ────────────────────────────────────────────────────────
-// botscript does not (yet) ship a sugar for declaring tagged unions. Use TS.
+// ─── 1. Tagged union (0.2+) ────────────────────────────────────────────────
+// `type Name = Tag { fields } | Tag2 { fields } | …` desugars to a TS
+// discriminated union with a `kind` literal that matches what `match` already
+// destructures on. Bare-tag alternatives (no `{ }`) are supported too.
 
-export type Shape =
-  | { kind: "Circle"; r: number }
-  | { kind: "Square"; side: number };
+export type Shape = Circle { r: number } | Square { side: number };
 
 // ─── 2. fn with capabilities ────────────────────────────────────────────────
 // `uses { ... }` declares the side-effect categories this function may touch.

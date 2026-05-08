@@ -6,6 +6,7 @@ import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passMatch } from "./passes/match.js";
 import { passPrimer } from "./passes/primer.js";
+import { passTaggedUnion } from "./passes/tagged-union.js";
 import { passTest } from "./passes/test.js";
 import { passUnwrap } from "./passes/unwrap.js";
 import { LATEST_VERSION, passVersion, type VersionInfo } from "./passes/version.js";
@@ -37,6 +38,7 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "primer", fn: passPrimer },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "test", fn: passTest },
+  { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },
   { name: "fn", fn: passFn },
   { name: "blocks", fn: passBlocks },
   { name: "match", fn: passMatch },

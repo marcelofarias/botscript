@@ -26,6 +26,13 @@ additions below are the entire language surface.
   function declared uses { } that names http/time/random/fs/stdout/stderr.X
   is a parse error, not a runtime trap.
 
+== TAGGED UNIONS (0.2+) ==
+  type Shape = Circle { r: number } | Square { side: number };
+  type Status = Idle | Loading | Done { value: string };
+                                              desugars to a TS discriminated
+                                              union keyed on \`kind\`. Bare and
+                                              field-bearing alternatives mix.
+
 == BLOCKS ==
   pure { expr }    no capabilities allowed; throws CapabilityViolation if any escape
   io   { expr }    documents that this expression performs effects (informational)

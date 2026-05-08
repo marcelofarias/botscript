@@ -6,9 +6,9 @@
 // is a parse error, not a runtime trap.
 
 export type Shape =
-  | { kind: "Circle"; r: number }
-  | { kind: "Square"; side: number }
-  | { kind: "Triangle"; base: number; height: number };
+  | Circle { r: number }
+  | Square { side: number }
+  | Triangle { base: number; height: number };
 
 fn area(s: Shape) -> number = match s {
   Circle { r }              -> Math.PI * r * r
