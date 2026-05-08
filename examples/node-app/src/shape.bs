@@ -11,14 +11,14 @@ export type Shape =
   | Triangle { base: number; height: number };
 
 fn area(s: Shape) -> number = match s {
-  Circle { r }              -> Math.PI * r * r
-  Square { side }           -> side * side
+  Circle { r } -> Math.PI * r * r
+  Square { side } -> side * side
   Triangle { base, height } -> (base * height) / 2
 }
 
 fn describe(s: Shape) -> string = match s {
-  Circle { r }              -> `circle(r=${r})`
-  Square { side }           -> `square(${side}x${side})`
+  Circle { r } -> `circle(r=${r})`
+  Square { side } -> `square(${side}x${side})`
   Triangle { base, height } -> `triangle(${base}x${height})`
 }
 

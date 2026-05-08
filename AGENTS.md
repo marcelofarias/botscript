@@ -19,7 +19,7 @@ botscript/
 ├── packages/
 │   ├── runtime/        Pure JS/TS. Result, Option, $match, $enter, $assert.
 │   ├── compiler/       String-in / TypeScript-out transformer. Pass pipeline.
-│   ├── cli/            `botscript build`, `botscript primer`. Thin wrapper.
+│   ├── cli/            `botscript build`, `botscript fmt`, `botscript primer`. Thin wrapper.
 │   ├── vite-plugin/    Vite integration. Calls compiler, then esbuild for JSX.
 │   └── babel-plugin/   Babel integration. parserOverride.
 ├── examples/

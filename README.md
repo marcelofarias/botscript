@@ -391,7 +391,7 @@ botscript build src --out src   # compiles *.bs to *.ts in place
 | -------------------------- | ------------------------------------------------- |
 | `@mbfarias/botscript-runtime`       | Result/Option, match, capability registry         |
 | `@mbfarias/botscript-compiler`      | `transform(src) -> ts` — the only thing that bites |
-| `@mbfarias/botscript-cli`           | `botscript build`, `botscript primer`             |
+| `@mbfarias/botscript-cli`           | `botscript build`, `botscript fmt`, `botscript primer` |
 | `@mbfarias/botscript-vite-plugin`   | Vite integration                                  |
 | `@mbfarias/botscript-babel-plugin`  | Babel integration                                 |
 

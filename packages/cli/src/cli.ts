@@ -7,6 +7,7 @@ import {
   BotscriptError,
   PRIMER,
   formatExplain,
+  formatSource,
   getErrorCode,
   listErrorCodes,
   transform,
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
     case "check":
       await checkCmd(argv.slice(1));
       return;
+    case "fmt":
+      await fmtCmd(argv.slice(1));
+      return;
     case "explain":
       explainCmd(argv.slice(1));
       return;
@@ -52,6 +56,11 @@ function printUsage(): void {
       `                                          Compile *.bs files to *.ts.\n` +
       `  botscript check <input> [--format text|json]\n` +
       `                                          Type-/syntax-check without writing files.\n` +
+      `  botscript fmt <input> [--check | --write] [--format text|json]\n` +
+      `                                          Rewrite *.bs to canonical form (RFC #13).\n` +
+      `                                          With no flag and a single file, prints to stdout.\n` +
+      `                                          With a directory, --write is the default.\n` +
+      `                                          --check exits 1 if any file differs from canonical.\n` +
       `  botscript explain <CODE>                Print rule/idiom/rewrite for an error code.\n` +
       `  botscript explain --list                List every diagnostic code.\n` +
       `  botscript primer                        Print the language primer.\n` +
@@ -236,6 +245,144 @@ async function checkCmd(args: string[]): Promise<void> {
     );
   } else {
     stdout.write(`checked ${files.length} file${files.length === 1 ? "" : "s"} — ok\n`);
+  }
+}
+
+interface FmtArgs {
+  input: string;
+  mode: "stdout" | "check" | "write";
+  format: "text" | "json";
+}
+
+function parseFmtArgs(args: string[]): FmtArgs {
+  let input: string | undefined;
+  let mode: "stdout" | "check" | "write" | undefined;
+  let format: "text" | "json" = "text";
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--check") {
+      if (mode && mode !== "check") throw new Error(`conflicting flags: --check vs --${mode}`);
+      mode = "check";
+    } else if (a === "--write" || a === "-w") {
+      if (mode && mode !== "write") throw new Error(`conflicting flags: --write vs --${mode}`);
+      mode = "write";
+    } else if (a === "--format" || a === "-f") {
+      const v = args[++i];
+      if (v !== "text" && v !== "json") {
+        throw new Error(`unknown --format: ${v} (expected text|json)`);
+      }
+      format = v;
+    } else if (input === undefined) {
+      input = a;
+    } else {
+      throw new Error(`unexpected argument: ${a}`);
+    }
+  }
+  if (input === undefined) throw new Error("missing input path");
+  return { input, mode: mode ?? "stdout", format };
+}
+
+interface FmtCheckOk {
+  ok: true;
+  checked: number;
+  unformatted: string[];
+}
+interface FmtWriteOk {
+  ok: true;
+  written: number;
+  files: string[];
+}
+
+async function fmtCmd(args: string[]): Promise<void> {
+  const parsed = parseFmtArgs(args);
+  const { input, format } = parsed;
+  const inputAbs = resolve(input);
+  const inputStat = await stat(inputAbs);
+  const isDir = inputStat.isDirectory();
+  const files = isDir ? await collectBs(inputAbs) : [inputAbs];
+
+  // A directory + no explicit mode defaults to --write. A single file + no
+  // explicit mode prints to stdout (gofmt-style).
+  const mode: "stdout" | "check" | "write" =
+    parsed.mode === "stdout" && isDir ? "write" : parsed.mode;
+
+  if (files.length === 0) {
+    if (format === "json") {
+      stdout.write(
+        JSON.stringify(
+          mode === "check"
+            ? ({ ok: true, checked: 0, unformatted: [] } satisfies FmtCheckOk)
+            : ({ ok: true, written: 0, files: [] } satisfies FmtWriteOk),
+        ) + "\n",
+      );
+    } else {
+      stderr.write(`no *.bs files found under ${input}\n`);
+    }
+    return;
+  }
+
+  if (mode === "stdout") {
+    // Single-file print to stdout. With multiple files this would be
+    // ambiguous; only allowed when input is one file.
+    if (files.length !== 1) {
+      throw new Error("stdout mode requires a single file; pass --check or --write");
+    }
+    const f = files[0]!;
+    const src = await readFile(f, "utf8");
+    stdout.write(formatSource(src));
+    return;
+  }
+
+  if (mode === "check") {
+    const unformatted: string[] = [];
+    for (const f of files) {
+      const src = await readFile(f, "utf8");
+      const out = formatSource(src);
+      if (out !== src) unformatted.push(f);
+    }
+    if (format === "json") {
+      stdout.write(
+        JSON.stringify({ ok: unformatted.length === 0, checked: files.length, unformatted } satisfies
+          | FmtCheckOk
+          | { ok: false; checked: number; unformatted: string[] }) + "\n",
+      );
+    } else if (unformatted.length === 0) {
+      stdout.write(`checked ${files.length} file${files.length === 1 ? "" : "s"} — all canonical\n`);
+    } else {
+      for (const f of unformatted) stderr.write(`not canonical: ${f}\n`);
+      stderr.write(
+        `${unformatted.length} of ${files.length} file${
+          files.length === 1 ? "" : "s"
+        } need formatting; run \`botscript fmt ${input} --write\`\n`,
+      );
+    }
+    if (unformatted.length > 0) exit(1);
+    return;
+  }
+
+  // mode === "write"
+  const written: string[] = [];
+  for (const f of files) {
+    const src = await readFile(f, "utf8");
+    const out = formatSource(src);
+    if (out !== src) {
+      await writeFile(f, out);
+      written.push(f);
+    }
+  }
+  if (format === "json") {
+    stdout.write(
+      JSON.stringify({ ok: true, written: written.length, files: written } satisfies FmtWriteOk) +
+        "\n",
+    );
+  } else if (written.length === 0) {
+    stdout.write(
+      `checked ${files.length} file${files.length === 1 ? "" : "s"} — already canonical\n`,
+    );
+  } else {
+    stdout.write(
+      `formatted ${written.length} of ${files.length} file${files.length === 1 ? "" : "s"}\n`,
+    );
   }
 }
 

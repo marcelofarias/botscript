@@ -16,3 +16,7 @@ export type { Program, Stmt, FnStmt, SourceRange } from "./parser/ast.js";
 export type { FnDecl, FnBody, ParseFnOptions } from "./parser/parse-fn.js";
 export { atLeast, LATEST_VERSION, SUPPORTED_VERSIONS } from "./passes/version.js";
 export type { VersionInfo } from "./passes/version.js";
+// Canonical-form formatter (RFC #13). Pure source-to-source rewrite; not part
+// of the compile pipeline. Tooling consumers (CLI `botscript fmt`, MCP, IDE
+// integrations) call this directly.
+export { formatSource } from "./format/format.js";
