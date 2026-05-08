@@ -52,9 +52,12 @@ additions below are the entire language surface.
   }
 
 == TESTS ==
-  test "name" { body }                 vitest-compatible
-  test "name" with mocks { ... } { }   declarative mocks (planned)
-  assert expr                          throws on falsy
+  test "name" { body }                                vitest-compatible
+  test "name" with mocks { time, random } { body }    deterministic time
+                                                      and random in body
+                                                      (0.2+); time.now()
+                                                      returns 0,1,2,…
+  assert expr                                         throws on falsy
 
 == STDLIB CALLS ==
   http.get(url) / http.post(url)       requires uses { net }

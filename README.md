@@ -145,7 +145,7 @@ either parse-time-impossible or signature-visible in botscript.
 | **TS's own null-narrowing fails through callbacks.** [microsoft/TypeScript#18244](https://github.com/microsoft/TypeScript/issues/18244) — `if (x !== null) { fn(() => x.method()) }` re-widens `x` to nullable inside the callback. Workarounds for this issue are load-bearing in real codebases. | `Option<T>` is the only optional type. There is no `null` and no `undefined` in business logic. A missing value is unwrapped with `match` or `?`, not narrowed across closure boundaries. |
 | **`as any` regressions ship with TypeScript itself.** [microsoft/TypeScript#56618](https://github.com/microsoft/TypeScript/issues/56618), [#45640](https://github.com/microsoft/TypeScript/issues/45640) — even Microsoft's own `.d.ts` shipping uses `any` in places that have caused regressions across versions. | `as` outside an explicit `unsafe { … }` block is a parse error. Every cast surfaces in diff review under a keyword the human will see. |
 | **Copilot routinely hallucinates methods and even whole repos.** [microsoft/vscode-copilot-release#281](https://github.com/microsoft/vscode-copilot-release/issues/281), [#1407](https://github.com/microsoft/vscode-copilot-release/issues/1407) — a model fabricates `array.removeAt`, an entire repo's contents. The code looks right; the method doesn't exist. | The `?primer` directive embeds the canonical language spec as a top-of-file comment. `STDLIB.bs` shows every feature exactly once. An agent has the entire surface in the same file before it writes a token. |
-| **Tests baked on `Date.now()` and timezone-sensitive math break years later.** GitHub's own engineering team has shipped tests that pass for three years and then fail every leap year, plus tests that break at midnight and during DST transitions ([herodevs.com](https://www.herodevs.com/blog-posts/future-proof-your-javascript-datetime-tests)). | (0.2, planned) `test "name" with mocks { time, random } { … }` is the only way to inject a clock or RNG inside a test. Tests run in a frame where `time` and `random` capabilities are denied by default. |
+| **Tests baked on `Date.now()` and timezone-sensitive math break years later.** GitHub's own engineering team has shipped tests that pass for three years and then fail every leap year, plus tests that break at midnight and during DST transitions ([herodevs.com](https://www.herodevs.com/blog-posts/future-proof-your-javascript-datetime-tests)). | (0.2) `test "name" with mocks { time, random } { … }` swaps `time.now()` for a deterministic counter and `random.next()` for a deterministic seeded RNG. Sources are restored on body exit, even on throw. |
 
 If you've hit a bug a feature in this README would have prevented and it's
 publicly linkable, [open a PR](https://github.com/marcelofarias/botscript/pulls)
@@ -168,6 +168,11 @@ adding a row.
 - **Structured diagnostics.** Compiler errors carry stable codes (`BS001`,
   `BS002`, `CAP001`) and a `{ rule, idiom, rewrite }` triple. The CLI exposes
   `--format=json` so a bot can `compile → JSON.parse → patch` deterministically.
+- **`with mocks { time, random }` on tests.** `test "name" with mocks { time }
+  { … }` swaps `time.now()` for a deterministic 0,1,2,… counter (and
+  `random.next()` for a seeded RNG) inside the body, restoring the real
+  sources when it returns or throws. The only way to inject deterministic
+  time/RNG into a test, by design.
 
 ---
 

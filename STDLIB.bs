@@ -80,6 +80,18 @@ test "area handles both shapes" {
   assert area({ kind: "Square", side: 4 }) === 16;
 }
 
+// ─── 8b. test with mocks (0.2+) ─────────────────────────────────────────────
+// `with mocks { time, random }` injects deterministic stubs for the named
+// capabilities. Inside the body, time.now() returns 0, 1, 2, … and
+// random.next() returns a deterministic counter. Sources are restored when
+// the body returns or throws.
+
+test "deterministic clock" with mocks { time } {
+  const a = time.now();
+  const b = time.now();
+  assert b === a + 1;
+}
+
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)
 

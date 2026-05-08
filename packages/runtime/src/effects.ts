@@ -23,26 +23,43 @@ export const http = {
   },
 };
 
+// Mockable sources. `with mocks { time, random }` swaps these in tests; in
+// app code they default to the real wallclock and Math.random.
+let timeSource: () => number = () => Date.now();
+let randomSource: () => number = () => Math.random();
+
 export const time = {
   now: (): number => {
     $require("time");
-    return Date.now();
+    return timeSource();
   },
   iso: (): string => {
     $require("time");
-    return new Date().toISOString();
+    return new Date(timeSource()).toISOString();
   },
 };
 
 export const random = {
   next: (): number => {
     $require("random");
-    return Math.random();
+    return randomSource();
   },
   int: (min: number, max: number): number => {
     $require("random");
-    return Math.floor(Math.random() * (max - min)) + min;
+    return Math.floor(randomSource() * (max - min)) + min;
   },
+};
+
+// Internal — used by $withMocks. Don't import from app code.
+export const __setTimeSource = (fn: () => number): void => {
+  timeSource = fn;
+};
+export const __setRandomSource = (fn: () => number): void => {
+  randomSource = fn;
+};
+export const __resetSources = (): void => {
+  timeSource = () => Date.now();
+  randomSource = () => Math.random();
 };
 
 export const stdout = {

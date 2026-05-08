@@ -1,4 +1,6 @@
-?bs 0.1
+?bs 0.2
+
+import { time } from "@mbfarias/botscript-runtime";
 
 import { area, describe } from "../src/shape.js";
 
@@ -18,4 +20,10 @@ test "triangle area" {
 test "describe formats nicely" {
   assert describe({ kind: "Circle", r: 3 }) === "circle(r=3)";
   assert describe({ kind: "Square", side: 4 }) === "square(4x4)";
+}
+
+test "time mock makes elapsed-ms math deterministic" with mocks { time } {
+  const start = time.now();
+  const end = time.now();
+  assert end - start === 1;
 }

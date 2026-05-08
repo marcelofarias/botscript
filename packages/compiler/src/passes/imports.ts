@@ -18,6 +18,7 @@ const RUNTIME_SYMBOLS = [
   "$tagMatch",
   "$wildcard",
   "$literalMatch",
+  "$withMocks",
 ] as const;
 
 export function passImports(src: string): string {
