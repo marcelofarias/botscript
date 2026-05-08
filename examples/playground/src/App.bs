@@ -1,4 +1,4 @@
-?bs 0.1
+?bs 0.3
 
 import { useEffect, useMemo, useState } from "react";
 import { transform } from "@mbfarias/botscript-compiler";
@@ -80,7 +80,7 @@ export function App() {
       </main>
 
       <footer className="footer">
-        <span>v0.1.1</span>
+        <span>v0.3.0</span>
         <span className="dot">·</span>
         <a href="https://www.npmjs.com/package/@mbfarias/botscript-compiler" target="_blank" rel="noreferrer">
           @mbfarias/botscript-compiler
