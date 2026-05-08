@@ -7,7 +7,7 @@
 A small TypeScript-superset language for a world where most code is written by
 machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
 
-> **Live playground:** [marcelofarias.github.io/botscript](https://marcelofarias.github.io/botscript/)
+> **Live playground:** [botscript.org](https://botscript.org/)
 > — type `.bs` on the left, see the desugared TypeScript on the right. The
 > actual compiler bundle, running in your browser, no install required.
 >
