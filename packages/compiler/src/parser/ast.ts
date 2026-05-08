@@ -2,11 +2,12 @@
  * Whole-file AST.
  *
  * Shipped at ?bs 0.4. The model is shallow on purpose: top-level statements
- * are surfaced as typed nodes carrying byte ranges into the original source,
- * but expression-level structure inside fn bodies stays as token spans. That
- * way cap-check (and future passes) get the structural information they need
- * — fn boundaries, source offsets — without paying for a full expression
- * parser the rest of the language doesn't yet need.
+ * are surfaced as typed nodes carrying source ranges (UTF-16 code-unit
+ * offsets) into the source, but expression-level structure inside fn
+ * bodies stays as token spans. That way cap-check (and future passes) get
+ * the structural information they need — fn boundaries, source offsets —
+ * without paying for a full expression parser the rest of the language
+ * doesn't yet need.
  *
  * AGENTS.md rule 5 ("don't add abstractions speculatively") says the same
  * thing in plain English: we add what passes today's passes need; deeper

@@ -311,10 +311,11 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   const headerLoc = locationOf(src, rec.decl.fnKeywordByteStart);
   const line = isTransitive ? headerLoc.line : leafUse.line;
   const column = isTransitive ? headerLoc.column : leafUse.column;
-  // The diagnostic's byte range anchors the same span the line/column does:
-  // the fn header for transitive cases, the offending stdlib member for
-  // direct ones. Available regardless of pin from this point — it's a strict
-  // addition; older callers that ignore start/end keep working.
+  // The diagnostic's source range (UTF-16 code-unit offsets) anchors the
+  // same span the line/column does: the fn header for transitive cases,
+  // the offending stdlib member for direct ones. Available regardless of
+  // pin from this point — it's a strict addition; older callers that
+  // ignore start/end keep working.
   const start = isTransitive
     ? rec.decl.fnKeywordByteStart
     : tokenOffsetForUse(src, leafUse);
@@ -348,9 +349,10 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
 }
 
 /**
- * Byte offset of the leaf direct-use's stdlib token. We only have line/column
- * recorded on `DirectUse`, not the token offset, so we recover the offset by
- * walking the line/column. Cheap and avoids changing `DirectUse`'s shape.
+ * Source offset (UTF-16 code units) of the leaf direct-use's stdlib token.
+ * We only have line/column recorded on `DirectUse`, not the token offset,
+ * so we recover the offset by walking the line/column. Cheap and avoids
+ * changing `DirectUse`'s shape.
  */
 function tokenOffsetForUse(src: string, use: DirectUse): number {
   let line = 1;

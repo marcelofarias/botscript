@@ -187,12 +187,13 @@ describe("static capability check (0.2)", () => {
     }
   });
 
-  it("populates start/end byte offsets on the diagnostic (direct, 0.2)", () => {
+  it("populates start/end code-unit offsets on the diagnostic (direct, 0.2)", () => {
     // Direct usage at 0.2: the diagnostic should anchor at the offending
-    // `time` token. start/end are in post-?bs-stripping coordinates, which
-    // is what passes operate on. To assert against the substring, we strip
-    // the directive ourselves the same way passVersion does (drop the
-    // directive content, keep the trailing newline).
+    // `time` token. start/end are UTF-16 string offsets in post-?bs-
+    // stripping coordinates, which is what passes operate on. To assert
+    // against the substring, we strip the directive ourselves the same
+    // way passVersion does (drop the directive content, keep the trailing
+    // newline).
     const src = `?bs 0.2\nfn now() -> number = pure { time.now() }\n`;
     const passSrc = src.replace(/^\?bs [\d.]+/, "");
     try {

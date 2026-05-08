@@ -22,20 +22,20 @@
  *   it here would conflict with rule 2. Primer-pass behaviour (recognize
  *   the directive, emit a comment) is covered in `transform.test.ts`.
  *
- *   Also intentionally NOT exercised in 0.1 fixtures, because freezing the
- *   buggy output would lock a pre-existing 0.1 bug forever:
+ *   Two pre-existing parser/unwrap limitations are deliberately routed
+ *   AROUND by these fixtures (rather than locked into the snapshot):
  *
- *     - Multiple bare `expr?` statements on consecutive lines (e.g.
- *       `return h()?\ni()?\n`). The unwrap pass currently merges them
- *       across the newline; fixing requires statement-boundary tightening
- *       which is out of scope here.
- *     - Object types nested as generic type arguments in a fn return
- *       type (e.g. `Result<{name: string}, string>`). The fn parser's
- *       body-opener heuristic mistakes the inner `{` for the body brace.
- *       Fixing requires a deeper return-type parse than parse-fn does.
+ *     1. The unwrap pass merges multiple consecutive bare-`expr?`
+ *        statements across newlines. Fixtures use one `?`-position per
+ *        `it` to dodge this, instead of stacking several in one source.
+ *     2. The fn parser's body-opener heuristic can mistake an inline
+ *        object type inside a generic argument list for the body brace.
+ *        Fixtures use a named alias for return types when generics
+ *        contain object structure, instead of inlining it.
  *
- *   Both bugs exist at every shipped pin, are tracked separately, and
- *   their fixes will need their own version-gating discussion.
+ *   Both limitations are tracked separately. Their fixes will need their
+ *   own version-gating discussion (rule 4 makes them tricky — fixing
+ *   changes shipped 0.1 output).
  */
 
 import { describe, expect, it } from "vitest";
