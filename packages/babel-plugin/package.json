@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-babel-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Babel plugin for botscript: prepends a transformation pass that desugars *.bs syntax.",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,9 +19,18 @@
     "directory": "packages/babel-plugin"
   },
   "homepage": "https://github.com/marcelofarias/botscript#readme",
-  "keywords": ["botscript", "babel", "babel-plugin"],
-  "publishConfig": { "access": "public" },
-  "files": ["dist", "src"],
+  "keywords": [
+    "botscript",
+    "babel",
+    "babel-plugin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -50,6 +50,12 @@ additions below are the entire language surface.
   http.get(url) / http.post(url)       requires uses { net }
   time.now() / time.iso()              requires uses { time }
   random.next() / random.int(a, b)     requires uses { random }
+  // import { fs } from "@mbfarias/botscript-runtime/fs"; (Node only)
+  fs.exists(path)                      requires uses { fs }
+  fs.readText(path) -> Result          requires uses { fs }
+  fs.writeText(path, body) -> Result   requires uses { fs }, atomic write
+  fs.readJson(path) -> Result          requires uses { fs }
+  fs.writeJson(path, value) -> Result  requires uses { fs }, atomic write
   stdout.println(s) / stderr.println(s)
 
 == IDIOMS (the canonical way to do common things) ==

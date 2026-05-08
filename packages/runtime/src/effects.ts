@@ -4,6 +4,12 @@ import { $require } from "./capabilities.js";
  * Capability-checked wrappers around the few side effects botscript blesses
  * with built-in syntax. App code can extend this set by writing thin wrappers
  * that call `$require(...)` themselves.
+ *
+ * The `fs` wrappers live in a separate entry — `@mbfarias/botscript-runtime/fs`
+ * — so importing this module is safe in the browser. Server-only code that
+ * needs filesystem access imports both:
+ *   import { http } from "@mbfarias/botscript-runtime";
+ *   import { fs }   from "@mbfarias/botscript-runtime/fs";
  */
 
 export const http = {

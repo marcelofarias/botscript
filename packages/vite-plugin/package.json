@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-vite-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vite plugin for botscript: transforms *.bs files to TypeScript at build time.",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,9 +19,18 @@
     "directory": "packages/vite-plugin"
   },
   "homepage": "https://github.com/marcelofarias/botscript#readme",
-  "keywords": ["botscript", "vite", "vite-plugin"],
-  "publishConfig": { "access": "public" },
-  "files": ["dist", "src"],
+  "keywords": [
+    "botscript",
+    "vite",
+    "vite-plugin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

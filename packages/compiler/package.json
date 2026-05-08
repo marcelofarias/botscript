@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-compiler",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "botscript compiler: transforms .bot source to TypeScript.",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,9 +23,18 @@
     "directory": "packages/compiler"
   },
   "homepage": "https://github.com/marcelofarias/botscript#readme",
-  "keywords": ["botscript", "compiler", "typescript"],
-  "publishConfig": { "access": "public" },
-  "files": ["dist", "src"],
+  "keywords": [
+    "botscript",
+    "compiler",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

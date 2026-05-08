@@ -40,6 +40,11 @@ interface FnParse {
 }
 
 function parseFn(src: string, start: number): FnParse | null {
+  // Detect a preceding `async` modifier so the inner $enter callback can be
+  // marked async too. Without this, `await` inside the body errors out
+  // because the arrow we wrap with isn't async.
+  const isAsync = precededByKeyword(src, start, "async");
+
   // start points at `fn`. Move past keyword.
   let i = skipWs(src, start + 2);
 
@@ -166,13 +171,27 @@ function parseFn(src: string, start: number): FnParse | null {
 
   const capsLiteral = `[${caps.map((c) => JSON.stringify(c)).join(", ")}]`;
   const innerBody = wrapExpr ? wrapExprAsReturn(body) : body;
+  const arrowPrefix = isAsync ? "async () => " : "() => ";
   const emit =
     `function ${name}${args}: ${returnType} {\n` +
-    `  return $enter(${capsLiteral} as const, () => {\n` +
+    `  return $enter(${capsLiteral} as const, ${arrowPrefix}{\n` +
     `${indent(innerBody, 4)}\n` +
     `  });\n` +
     `}`;
   return { emit, end: i };
+}
+
+/** True if `kw` (with word-boundary on both sides) is the previous token. */
+function precededByKeyword(src: string, at: number, kw: string): boolean {
+  let j = at - 1;
+  while (j >= 0 && /\s/.test(src[j] ?? "")) j--;
+  if (j < 0) return false;
+  const end = j + 1;
+  const startKw = end - kw.length;
+  if (startKw < 0) return false;
+  if (src.slice(startKw, end) !== kw) return false;
+  const before = startKw === 0 ? " " : src[startKw - 1] ?? " ";
+  return !/[A-Za-z0-9_$]/.test(before);
 }
 
 function findKeyword(src: string, kw: string, from: number): number {

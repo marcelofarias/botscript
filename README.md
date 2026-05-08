@@ -162,6 +162,31 @@ test "normalize trims and lowercases" {
 }
 ```
 
+## Conventions worth knowing
+
+- **Test files end in `.test.bs`.** `test "name" { … }` blocks inside non-test
+  files (e.g. `shape.bs`) re-execute every time something imports that file,
+  which inflates test counts and is almost never what you want. Keep tests in
+  dedicated `*.test.bs` files alongside the code under test.
+- **Use `.bs` extensions in imports.** With the Vite plugin, `import "./foo.bs"`
+  Just Works. The Vite plugin also rewrites `import "./foo.js"` to the `.bs`
+  sibling automatically, so you can use the TS-ESM `.js` convention if you
+  prefer (handy when you also compile to `.ts` ahead of time).
+- **JSX inside `.bs` is fine.** The Vite plugin runs your file through botscript
+  then through esbuild with `loader: "tsx"`. Write JSX in `.bs` like you would
+  in `.tsx`.
+- **Vitest wiring requires `globals: true`** plus the botscript Vite plugin so
+  vitest's global `test` is what `$test` forwards to. Minimal config:
+  ```ts
+  // vitest.config.ts
+  import { defineConfig } from "vitest/config";
+  import botscript from "@mbfarias/botscript-vite-plugin";
+  export default defineConfig({
+    plugins: [botscript()],
+    test: { globals: true, include: ["src/**/*.test.bs"] },
+  });
+  ```
+
 ## Plugging into a TypeScript project
 
 Three options, all equivalent:

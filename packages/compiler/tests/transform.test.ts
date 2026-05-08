@@ -78,6 +78,22 @@ describe("fn", () => {
     expect(out).toContain("function double(n: number): number");
     expect(out).toContain("return n * 2;");
   });
+
+  it("emits async () => for the inner $enter callback when fn is async", () => {
+    const out = t(
+      `async fn loadUser(id: string) uses { net } -> Promise<User> {\n  const r = await fetch(id);\n  return r as User;\n}\n`,
+    );
+    // Outer `async function` survives because it sat in the prefix; inner
+    // arrow MUST be async so `await` doesn't blow up.
+    expect(out).toMatch(/async function loadUser/);
+    expect(out).toMatch(/\$enter\(\["net"\] as const, async \(\) => \{/);
+  });
+
+  it("non-async fn keeps a sync inner arrow", () => {
+    const out = t(`fn id<T>(x: T) -> T = pure { x }\n`);
+    expect(out).toMatch(/\$enter\(\[\] as const, \(\) => \{/);
+    expect(out).not.toMatch(/async \(\) =>/);
+  });
 });
 
 describe("blocks", () => {

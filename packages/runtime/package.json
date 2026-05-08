@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runtime helpers for botscript: Result, Option, match, capability registry.",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./fs": {
+      "types": "./dist/fs.d.ts",
+      "import": "./dist/fs.js"
     }
   },
   "license": "MIT",
@@ -19,9 +23,20 @@
     "directory": "packages/runtime"
   },
   "homepage": "https://github.com/marcelofarias/botscript#readme",
-  "keywords": ["botscript", "result", "option", "match", "capabilities"],
-  "publishConfig": { "access": "public" },
-  "files": ["dist", "src"],
+  "keywords": [
+    "botscript",
+    "result",
+    "option",
+    "match",
+    "capabilities"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
