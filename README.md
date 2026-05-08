@@ -7,9 +7,21 @@
 A small TypeScript-superset language for a world where most code is written by
 machines. Read [`MANIFESTO.md`](./MANIFESTO.md) for the why.
 
-> Try it without installing anything: run `pnpm --filter playground dev` and
-> open the local URL. Type `.bs` on the left, see the desugared TypeScript on
-> the right — the actual compiler bundle running in your browser.
+> Try it locally: clone, run `pnpm install && pnpm play`, open http://localhost:5173.
+> Type `.bs` on the left, see the desugared TypeScript on the right — the
+> actual compiler bundle running in your browser.
+
+## .bs vs .ts at a glance
+
+The same program in idiomatic TypeScript and in botscript:
+
+| TypeScript | botscript |
+| ---------- | --------- |
+| <pre lang="ts">async function loadUser(id: string) {<br/>  try {<br/>    const res = await fetch(`/users/${id}`);<br/>    if (!res.ok) throw new Error(`HTTP ${res.status}`);<br/>    return await res.json();<br/>  } catch (e) {<br/>    return { error: String(e) };<br/>  }<br/>}</pre> | <pre lang="bs">async fn loadUser(id: string) uses { net }<br/>    -> Result&lt;User, string&gt; {<br/>  let res = http.get(`/users/${id}`)?<br/>  ok(await res.json() as User)<br/>}</pre> |
+| <pre lang="ts">function area(s: Shape): number {<br/>  switch (s.kind) {<br/>    case "Circle": return Math.PI * s.r * s.r;<br/>    case "Square": return s.side * s.side;<br/>    default: throw new Error("unhandled");<br/>  }<br/>}</pre> | <pre lang="bs">fn area(s: Shape) -> number = match s {<br/>  Circle { r }    -> Math.PI * r * r<br/>  Square { side } -> side * side<br/>}</pre> |
+| <pre lang="ts">function slug(s: string): string {<br/>  return s.trim().toLowerCase()<br/>          .replaceAll(" ", "-");<br/>}</pre> | <pre lang="bs">fn slug(s: string) -> string = pure {<br/>  s.trim().toLowerCase().replaceAll(" ", "-")<br/>}</pre> |
+
+The `.bs` versions are not just shorter — they make properties the TS compiler can't enforce (purity, declared side effects, exhaustive matching, no thrown control-flow) part of the function signature. The whole point.
 
 ---
 
