@@ -14,13 +14,19 @@ export interface FnDecl {
   start: number;
   /** Token index just after the parsed run (the next token to emit normally). */
   end: number;
-  /** Byte offset of the parsed run start in the original source. */
+  /**
+   * Offset of the parsed run start in the source. UTF-16 code units (JS
+   * string indices), not UTF-8 bytes — the lexer increments `i++` over
+   * `string`, so every position in the AST shares that coordinate system.
+   * The fields are still named `byteStart` / `byteEnd` / `*ByteStart` for
+   * brevity and historical continuity; treat them as code-unit offsets.
+   */
   byteStart: number;
-  /** Byte offset just after the parsed run end in the original source. */
+  /** End offset (exclusive) of the parsed run. UTF-16 code units. */
   byteEnd: number;
-  /** Byte offset of the `fn` keyword (after `async` if present). */
+  /** Offset of the `fn` keyword (after `async` if present). UTF-16 code units. */
   fnKeywordByteStart: number;
-  /** Byte offset of the function name identifier. */
+  /** Offset of the function name identifier. UTF-16 code units. */
   nameByteStart: number;
   isAsync: boolean;
   name: string;
@@ -260,7 +266,13 @@ function tryParseTypeParams(tokens: Token[], from: number): { text: string; end:
       if (tk.text === ">>" || tk.text === ">>>") {
         depth -= tk.text.length;
         i++;
-        if (depth <= 0) return { text: sliceText(tokens, from, i), end: i };
+        // depth must land exactly at 0 to be a valid type-param close.
+        // Overshoot (depth < 0) means the operator's `>`s would close more
+        // levels than were open — treat as malformed and bail so the caller
+        // doesn't get a phantom "valid" type-param block that desyncs the
+        // rest of parseFn.
+        if (depth === 0) return { text: sliceText(tokens, from, i), end: i };
+        if (depth < 0) return null;
         continue;
       }
       if (tk.text === ">=") return null;

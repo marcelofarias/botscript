@@ -1,9 +1,11 @@
 /**
  * Whole-file parse entry. ?bs 0.4+.
  *
- * This is the single tokenization + structural-parse step the passes that
- * need source ranges share. Passes that don't need it keep operating on the
- * source text directly — see `transform.ts` for who threads the AST through.
+ * This is the single tokenization + structural-parse step shared by passes
+ * (today: cap-check) and external tooling that needs source ranges without
+ * re-tokenizing the file. The pipeline does NOT thread a single AST through
+ * every pass — passes that don't need an AST keep operating on the source
+ * text directly. cap-check builds its own Program when version >= 0.2.
  *
  * The parser is intentionally narrow: it only surfaces fn declarations as
  * typed nodes. Everything else is left to the existing passes that already

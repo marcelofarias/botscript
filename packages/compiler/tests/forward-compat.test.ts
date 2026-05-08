@@ -295,10 +295,12 @@ describe("forward-compat: ?bs 0.4 output is frozen", () => {
   });
 
   it("async generic fn", () => {
+    // Body uses http.get so cap-check at 0.4 (which sees generics) passes
+    // — the declared `net` is justified by the http.get call.
     const src =
       `?bs 0.4\n` +
       `async fn fetchOne<T>(url: string) uses { net } -> Promise<T> {\n` +
-      `  const r = await fetch(url);\n` +
+      `  const r = http.get(url);\n` +
       `  return r as T;\n` +
       `}\n`;
     expect(t(src)).toMatchSnapshot();

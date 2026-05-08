@@ -36,9 +36,10 @@ additions below are the entire language surface.
             "f -> g -> http.get".
     CAP002  uses clause names a capability nothing in the body reaches. The
             declaration must match what the function actually uses.
-  Under ?bs 0.4 cap-check diagnostics also carry start/end byte offsets
-  alongside line/column so editor and LSP integrations can map the error to
-  a precise span without re-walking the source.
+  cap-check diagnostics also carry start/end UTF-16 string offsets alongside
+  line/column from 0.2 onward, so editor and LSP integrations can map the
+  error to a precise span without re-walking the source. (The whole-file
+  parseProgram surface that cap-check now consumes shipped at 0.4.)
 
 == TAGGED UNIONS (0.2+) ==
   type Shape = Circle { r: number } | Square { side: number };

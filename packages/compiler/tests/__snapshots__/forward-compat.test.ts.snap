@@ -352,7 +352,7 @@ exports[`forward-compat: ?bs 0.4 output is frozen > async generic fn 1`] = `
 async function fetchOne<T>(url: string): Promise<T> {
   return $enter(["net"] as const, async () => {
 
-      const r = await fetch(url);
+      const r = http.get(url);
       return r as T;
 
   });

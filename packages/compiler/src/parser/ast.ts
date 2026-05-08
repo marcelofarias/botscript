@@ -16,15 +16,18 @@
 import type { FnDecl } from "./parse-fn.js";
 
 /**
- * Statement-level node in a Program. Each node carries byte offsets into
- * the source text so consumers can produce diagnostics with precise ranges
- * and tooling can map AST positions to user-visible locations without
- * walking tokens twice.
+ * Statement-level node in a Program. Each node carries source offsets so
+ * consumers can produce diagnostics with precise ranges and tooling can map
+ * AST positions to user-visible locations without walking tokens twice.
+ *
+ * Offsets are UTF-16 code units (JS string indices), not UTF-8 bytes — the
+ * lexer increments `i++` over `string`, and every position in the AST
+ * shares that coordinate system.
  */
 export interface SourceRange {
-  /** Byte offset where the node starts. */
+  /** Offset where the node starts. UTF-16 code units. */
   start: number;
-  /** Byte offset just after the node ends. */
+  /** End offset (exclusive) of the node. UTF-16 code units. */
   end: number;
 }
 
@@ -44,7 +47,14 @@ export type Stmt = FnStmt;
 /** The whole-file AST. */
 export interface Program {
   kind: "Program";
-  /** The source text the AST was built from (after `?bs` directive stripping). */
+  /**
+   * The exact source string `parseProgram` was handed. parseProgram does
+   * not strip `?bs` directives — when called from inside the pipeline
+   * (cap-check), `passVersion` has already stripped the directive before
+   * the pass runs; when called directly by external tools, the directive
+   * is whatever the caller passed in. Either way, all SourceRange offsets
+   * in this AST are positions in `src`.
+   */
   src: string;
   /** Top-level statements in source order. */
   statements: Stmt[];

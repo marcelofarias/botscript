@@ -11,20 +11,26 @@ goes behind a new pin.
   `<A, B>`, `extends` constraints, and `= Default` defaults. Emitted verbatim
   into the TS output; capability inference, `match`, and async fn compose
   unchanged.
-- **Whole-file AST.** `parser/parseProgram(src)` returns a `Program` carrying
-  byte ranges per top-level fn declaration, plus the underlying token-based
-  `FnDecl`. Shallow on purpose: only fn declarations are surfaced as nodes,
-  per AGENTS.md rule 5. Foundation for future LSP and rename tooling.
-- **Byte offsets on diagnostics.** `Diagnostic.start` / `Diagnostic.end` are
-  now populated for capability-check errors. Offsets are in coordinates of
-  the source as the pass sees it (after `?bs` directive stripping); line and
-  column continue to refer to the original source numbering thanks to the
+- **Whole-file AST surface.** `parseProgram(src)` (exported from
+  `@mbfarias/botscript-compiler`) returns a `Program` carrying source ranges
+  per top-level fn declaration, plus the underlying token-based `FnDecl`.
+  Shallow on purpose: only fn declarations are surfaced as nodes, per
+  AGENTS.md rule 5. Foundation for future LSP and rename tooling.
+- **Source offsets on diagnostics.** `Diagnostic.start` / `Diagnostic.end`
+  are populated by `cap-check` from `?bs 0.2` onward. Offsets are UTF-16
+  string offsets (JS string indices, not UTF-8 bytes) into the source as
+  the pass sees it (after `?bs` directive stripping); line and column
+  continue to refer to the original source numbering thanks to the
   preserved newline.
 
 ### Changed
-- `cap-check` now derives fn-header source locations from byte offsets on
-  the parsed `FnDecl` rather than searching the source with a regex. No
-  observable change in line/column for any 0.2 or 0.3 file.
+- `cap-check` now consumes `parseProgram` end-to-end and derives fn-header
+  source locations from offsets on the parsed `FnDecl` rather than searching
+  the source with a regex. No observable change in line/column for any
+  0.2 or 0.3 file (forward-compat snapshots gate this).
+- The duplicated `atLeast()` version-comparison helper is now exported
+  once from `passes/version.ts` and imported by every pass that gates on a
+  resolved version.
 
 ### Forward compatibility
 - Files pinned to `?bs 0.3` (or earlier) compile to byte-identical TypeScript.

@@ -11,7 +11,7 @@
 import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
-import type { VersionInfo } from "./version.js";
+import { atLeast, type VersionInfo } from "./version.js";
 
 export function passFn(src: string, version?: VersionInfo): string {
   const tokens = lex(src);
@@ -36,18 +36,6 @@ export function passFn(src: string, version?: VersionInfo): string {
   }
   out += src.slice(cursor);
   return out;
-}
-
-function atLeast(actual: string, min: string): boolean {
-  const a = actual.split(".").map(Number);
-  const m = min.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, m.length); i++) {
-    const av = a[i] ?? 0;
-    const mv = m[i] ?? 0;
-    if (av > mv) return true;
-    if (av < mv) return false;
-  }
-  return true;
 }
 
 function emitFn(decl: FnDecl): string {

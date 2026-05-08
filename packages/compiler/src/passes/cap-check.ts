@@ -22,8 +22,9 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
-import { parseFn, type FnDecl } from "../parser/parse-fn.js";
-import type { VersionInfo } from "./version.js";
+import { parseProgram } from "../parser/parse.js";
+import type { FnDecl } from "../parser/parse-fn.js";
+import { atLeast, type VersionInfo } from "./version.js";
 
 /** stdlib namespace -> capability it consumes. */
 const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
@@ -90,36 +91,28 @@ interface FnRecord {
 }
 
 export function passCapCheck(src: string, version: VersionInfo): string {
-  if (atLeast(version.resolved, "0.3")) return checkStrict(src);
-  return checkDirect(src);
-}
-
-function atLeast(actual: string, min: string): boolean {
-  const a = actual.split(".").map(Number);
-  const m = min.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, m.length); i++) {
-    const av = a[i] ?? 0;
-    const mv = m[i] ?? 0;
-    if (av > mv) return true;
-    if (av < mv) return false;
-  }
-  return true;
+  // Allow generics in fn signatures from 0.4 onward, so a generic fn isn't
+  // silently dropped from the cap-check call graph. Earlier pins do not
+  // recognize `<…>` between the name and the args (forward-compat).
+  const allowGenerics = atLeast(version.resolved, "0.4");
+  if (atLeast(version.resolved, "0.3")) return checkStrict(src, allowGenerics);
+  return checkDirect(src, allowGenerics);
 }
 
 /**
  * 0.2 behavior: scan each fn's own body for direct stdlib refs whose
  * capability isn't declared. No transitive propagation, no over-declaration.
- * Preserved verbatim from the 0.2 release; do not modify.
+ * Preserved verbatim from the 0.2 release; do not modify the diagnostics it
+ * emits.
+ *
+ * From ?bs 0.4 we additionally honour `allowGenerics` — generic fns enter
+ * the scan instead of being silently skipped by parseFn. Older pins (0.2,
+ * 0.3) call this with allowGenerics=false, preserving prior behaviour.
  */
-function checkDirect(src: string): string {
+function checkDirect(src: string, allowGenerics: boolean): string {
   const tokens = lex(src);
-  const fns: FnDecl[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i);
-    if (decl) fns.push(decl);
-  }
+  const program = parseProgram(src, { allowGenerics });
+  const fns: FnDecl[] = program.fns.map((s) => s.decl);
   for (const fn of fns) {
     const inner = fns.filter((g) => g !== fn && g.start >= fn.start && g.end <= fn.end);
     checkDirectFn(src, tokens, fn, inner);
@@ -162,18 +155,19 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
 
 /**
  * 0.3 behavior: full inference + over-declaration check.
+ *
+ * From ?bs 0.4 we additionally honour `allowGenerics` so generic fns are
+ * present in the call graph (and CAP001/CAP002 fire on them). 0.3 callers
+ * pass allowGenerics=false, preserving prior behaviour.
  */
-function checkStrict(src: string): string {
+function checkStrict(src: string, allowGenerics: boolean): string {
   const tokens = lex(src);
 
-  // 1. Parse every fn declaration in the module.
-  const decls: FnDecl[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i);
-    if (decl) decls.push(decl);
-  }
+  // 1. Parse the whole file into the shared shallow AST. fns come from
+  //    Program.fns; we keep using tokens for intra-body scans (cheap, and
+  //    the AST deliberately doesn't model expressions yet).
+  const program = parseProgram(src, { allowGenerics });
+  const decls: FnDecl[] = program.fns.map((s) => s.decl);
 
   // 2. Build per-fn records: direct stdlib uses + intra-module callees.
   const records = new Map<string, FnRecord>();

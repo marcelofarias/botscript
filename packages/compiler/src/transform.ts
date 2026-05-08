@@ -12,7 +12,7 @@ import { passTest } from "./passes/test.js";
 import { passTestMocks } from "./passes/test-mocks.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
-import { LATEST_VERSION, passVersion, type VersionInfo } from "./passes/version.js";
+import { atLeast, LATEST_VERSION, passVersion, type VersionInfo } from "./passes/version.js";
 
 export interface TransformOptions {
   /** Source filename for diagnostics. Optional. */
@@ -95,18 +95,6 @@ function withFilename(err: BotscriptError, filename: string): BotscriptError {
     })
     .join("\n\n");
   return err;
-}
-
-function atLeast(actual: string, min: string): boolean {
-  const a = actual.split(".").map(Number);
-  const m = min.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, m.length); i++) {
-    const av = a[i] ?? 0;
-    const mv = m[i] ?? 0;
-    if (av > mv) return true;
-    if (av < mv) return false;
-  }
-  return true;
 }
 
 export { LATEST_VERSION, SUPPORTED_VERSIONS } from "./passes/version.js";

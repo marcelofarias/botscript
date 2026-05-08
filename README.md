@@ -214,15 +214,20 @@ opt-ins behind the 0.4 version pin:
   `fn pair<A, B>(a: A, b: B) -> [A, B] { … }`, plus `extends` constraints and
   `= D` defaults. Generics emit verbatim into the desugared TypeScript output;
   capability inference and `match` compose unchanged.
-- **Whole-file parse entry.** `parser/parseProgram(src)` returns a typed AST
-  (`Program` with byte ranges per statement) for tools that need source-level
-  structure without re-tokenizing the file. Today only `cap-check` consumes
-  it; LSP and rename tooling can build on the same surface without growing
-  the runtime.
-- **Byte offsets on diagnostics.** Capability-check errors now carry
-  `start` / `end` byte offsets alongside `line` / `column`, so editors and
-  agent loops can map to a precise span without re-walking the source. The
-  fields are optional and present from `?bs 0.4` onward.
+- **Whole-file parse entry.** `parseProgram(src)` (exported from
+  `@mbfarias/botscript-compiler`) returns a typed AST (`Program` with source
+  ranges per statement) for tools that need source-level structure without
+  re-tokenizing the file. Today `cap-check` is the only in-pipeline
+  consumer; LSP and rename tooling can build on the same surface without
+  growing the runtime.
+- **Source offsets on diagnostics.** Capability-check errors now carry
+  `start` / `end` UTF-16 string offsets (JS string indices, not UTF-8 bytes)
+  alongside `line` / `column`, so editors and agent loops can map to a
+  precise span without re-walking the source. The fields are optional and
+  populated by cap-check at every supported pin from `?bs 0.2` onward; the
+  offset coordinate system itself is the same as the line/column the pass
+  already produced (post-`?bs`-directive-stripping, with the trailing
+  newline preserved so line numbers match the user's original file).
 
 ## MCP server (for bots)
 

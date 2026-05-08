@@ -43,14 +43,25 @@ describe("generics in fn signatures (0.4)", () => {
   });
 
   it("supports generics on async fn", () => {
+    // Body uses http.get so the declared `net` is justified under 0.4
+    // strict cap-check (which now sees generic fns thanks to allowGenerics).
     const out = t(
       `?bs 0.4\nasync fn fetchOne<T>(url: string) uses { net } -> Promise<T> {\n` +
-      `  const r = await fetch(url);\n` +
+      `  const r = http.get(url);\n` +
       `  return r as T;\n` +
       `}\n`,
     );
     expect(out).toMatch(/async function fetchOne<T>\(url: string\): Promise<T> \{/);
     expect(out).toMatch(/\$enter\(\["net"\] as const, async \(\) => \{/);
+  });
+
+  it("cap-check at 0.4 sees generic fns and flags over-declaration on them", () => {
+    // The fix Copilot flagged: pre-fix, parseProgram was called without
+    // allowGenerics, so a generic fn was silently dropped from the call
+    // graph and CAP002 never fired. Post-fix, this MUST throw.
+    const src =
+      `?bs 0.4\nfn id<T>(x: T) uses { net } -> T = pure { x }\n`;
+    expect(() => t(src)).toThrow(/CAP002/);
   });
 
   it("supports generics on a fn with a block body and uses clause", () => {
