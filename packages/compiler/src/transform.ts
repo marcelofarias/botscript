@@ -1,4 +1,6 @@
 import { BotscriptError } from "./diagnostics.js";
+import { getErrorCode } from "./error-codes.js";
+import { formatSource } from "./format/format.js";
 import { passAssert } from "./passes/assert.js";
 import { passBlocks } from "./passes/blocks.js";
 import { passCapCheck } from "./passes/cap-check.js";
@@ -59,6 +61,12 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
   try {
     // Version directive runs first so the rest of the pipeline can branch on it.
     const { src: versioned, version } = passVersion(source);
+    // Canonical-form gate (RFC #13). From `?bs 0.4` on, the compiler refuses
+    // any input that isn't already in canonical form — `botscript fmt --write`
+    // (or the playground's "format" button) is the one-and-only fix.
+    // Older pins (0.2 / 0.3) keep accepting whatever whitespace they were
+    // accepting before; the gate is opt-in via the version pin.
+    if (atLeast(version.resolved, "0.4")) assertCanonical(source);
     let code = versioned;
     const forms: string[] = [];
     for (const pass of PASS_PIPELINE) {
@@ -95,6 +103,39 @@ function withFilename(err: BotscriptError, filename: string): BotscriptError {
     })
     .join("\n\n");
   return err;
+}
+
+function assertCanonical(source: string): void {
+  const canonical = formatSource(source);
+  if (canonical === source) return;
+  // Find the first byte that differs so the diagnostic points somewhere
+  // useful, not just (1, 1). Both strings are LF-normalized at the boundary
+  // we care about (formatSource emits LF), so the index walk is safe.
+  let off = 0;
+  const len = Math.min(source.length, canonical.length);
+  while (off < len && source[off] === canonical[off]) off++;
+  let line = 1;
+  let col = 1;
+  for (let k = 0; k < off; k++) {
+    if (source[k] === "\n") {
+      line++;
+      col = 1;
+    } else {
+      col++;
+    }
+  }
+  const entry = getErrorCode("FMT001")!;
+  throw new BotscriptError([{
+    code: entry.code,
+    severity: "error",
+    file: null,
+    line,
+    column: col,
+    message: entry.title,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite: entry.rewrite,
+  }]);
 }
 
 export { LATEST_VERSION, SUPPORTED_VERSIONS } from "./passes/version.js";

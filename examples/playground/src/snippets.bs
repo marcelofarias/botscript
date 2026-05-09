@@ -27,8 +27,8 @@ fn slug(s: string) -> string = pure {
 
 fn double(n: number) -> number = n * 2
 
-const a = slug("  Hello World  ");  // "hello-world"
-const b = double(21);                // 42
+const a = slug("  Hello World  "); // "hello-world"
+const b = double(21); // 42
 `;
 
 const GENERICS = `?bs 0.4
@@ -46,9 +46,9 @@ fn firstId<T extends { id: string }>(xs: T[]) -> string | undefined = pure {
   xs[0]?.id
 }
 
-const a = identity("hello");          // string
-const b = pair(1, "two");             // [number, string]
-const c = firstId([{ id: "a" }]);     // string | undefined
+const a = identity("hello"); // string
+const b = pair(1, "two"); // [number, string]
+const c = firstId([{ id: "a" }]); // string | undefined
 `;
 
 const MATCH = `?bs 0.4
@@ -62,8 +62,8 @@ type Shape =
   | Triangle { base: number; height: number };
 
 fn area(s: Shape) -> number = match s {
-  Circle { r }              -> Math.PI * r * r
-  Square { side }           -> side * side
+  Circle { r } -> Math.PI * r * r
+  Square { side } -> side * side
   Triangle { base, height } -> (base * height) / 2
 }
 
@@ -132,14 +132,14 @@ fn loadConfig(path: string) uses { fs } -> Result<{ name: string }, string> {
 }
 `;
 
-// Deliberately mis-formatted on every dimension the formatter cleans up:
-// multi-space directive, leading blank lines, tab indentation, alignment
-// padding inside match arms, trailing spaces, multi-space between tokens.
-// Click "format" to see the canonical output the compiler would write back.
+// Deliberately non-canonical: multi-space directive, leading blank lines,
+// tab indentation, alignment padding in match arms, multi-space between
+// tokens. The compiler refuses non-canonical .bs (FMT001 / RFC #13) — click
+// "format" to rewrite the buffer in canonical form and watch it compile.
 const FMT = `?bs   0.4
 
 
-// canonical-form formatter — click "format" to clean this up.
+// FMT001: this file isn't canonical. Click "format" to fix it.
 
 
 
