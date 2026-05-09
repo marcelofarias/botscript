@@ -204,7 +204,7 @@ describe("formatSource — semantic preservation", () => {
   ];
 
   for (const [idx, sample] of samples.entries()) {
-    it(`formatSource produces something compileable on sample ${idx}`, () => {
+    it(`formatSource produces something compilable on sample ${idx}`, () => {
       const after = transform(formatSource(sample));
       expect(after.code.length).toBeGreaterThan(0);
     });

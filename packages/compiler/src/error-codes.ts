@@ -111,9 +111,9 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "botscript fmt --write <file>",
     example:
-      "// before — extra spaces, tab indent, alignment padding\n" +
+      "// before — multi-space directive, alignment padding, trailing whitespace\n" +
       "?bs   0.4\n" +
-      "fn add(a:number,  b:number)  ->  number  =  a + b\n\n" +
+      "fn add(a: number, b: number) -> number   =   a + b   \n\n" +
       "// after — canonical\n" +
       "?bs 0.4\n" +
       "fn add(a: number, b: number) -> number = a + b",

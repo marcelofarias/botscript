@@ -108,16 +108,22 @@ function withFilename(err: BotscriptError, filename: string): BotscriptError {
 function assertCanonical(source: string): void {
   const canonical = formatSource(source);
   if (canonical === source) return;
-  // Find the first byte that differs so the diagnostic points somewhere
-  // useful, not just (1, 1). Both strings are LF-normalized at the boundary
-  // we care about (formatSource emits LF), so the index walk is safe.
+  // Find the first code unit (UTF-16) that differs so the diagnostic points
+  // somewhere useful, not just (1, 1). The walk treats `\r\n`, lone `\r`, and
+  // lone `\n` each as one line break so CR-only and CRLF inputs land on the
+  // right line.
   let off = 0;
   const len = Math.min(source.length, canonical.length);
   while (off < len && source[off] === canonical[off]) off++;
   let line = 1;
   let col = 1;
   for (let k = 0; k < off; k++) {
-    if (source[k] === "\n") {
+    const ch = source[k];
+    if (ch === "\r") {
+      line++;
+      col = 1;
+      if (source[k + 1] === "\n") k++;
+    } else if (ch === "\n") {
       line++;
       col = 1;
     } else {
