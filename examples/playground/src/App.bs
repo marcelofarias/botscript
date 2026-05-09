@@ -1,7 +1,7 @@
 ?bs 0.4
 
 import { useEffect, useMemo, useState } from "react";
-import { transform } from "@mbfarias/botscript-compiler";
+import { transform, formatSource } from "@mbfarias/botscript-compiler";
 
 import { Logo } from "./Logo";
 import { SNIPPETS } from "./snippets.bs";
@@ -284,7 +284,17 @@ function FeaturesView(props: FeaturesViewProps) {
 
       <main className="panes">
         <section className="pane pane-input">
-          <div className="pane-label">.bs source</div>
+          <div className="pane-label">
+            <span>.bs source</span>
+            <button
+              type="button"
+              className="fmt-button"
+              onClick={() => setSnippetSource(formatSource(snippetSource))}
+              title="rewrite the buffer in canonical form"
+            >
+              format
+            </button>
+          </div>
           <textarea
             className="editor"
             value={snippetSource}

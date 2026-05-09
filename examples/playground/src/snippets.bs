@@ -132,6 +132,29 @@ fn loadConfig(path: string) uses { fs } -> Result<{ name: string }, string> {
 }
 `;
 
+// Deliberately mis-formatted on every dimension the formatter cleans up:
+// multi-space directive, leading blank lines, tab indentation, alignment
+// padding inside match arms, trailing spaces, multi-space between tokens.
+// Click "format" to see the canonical output the compiler would write back.
+const FMT = `?bs   0.4
+
+
+// canonical-form formatter — click "format" to clean this up.
+
+
+
+type Shape =
+  | Circle   { r: number }
+  | Square   { side: number };
+
+fn area(s: Shape) -> number = match s {
+\tCircle  { r }    -> Math.PI * r * r
+\tSquare  { side } -> side * side
+}
+
+const a   =   area({ kind: "Circle", r: 3 });
+`;
+
 const TEST = `?bs 0.4
 
 // 'with mocks { time, random }' (0.2+) hands the test a deterministic clock
@@ -160,4 +183,5 @@ export const SNIPPETS: Snippet[] = [
   { id: "caps", label: "caps", source: CAPS },
   { id: "fs", label: "fs", source: FS },
   { id: "test", label: "test", source: TEST },
+  { id: "fmt", label: "fmt", source: FMT },
 ];
