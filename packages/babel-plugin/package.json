@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-babel-plugin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Babel plugin for botscript: prepends a transformation pass that desugars *.bs syntax.",
   "type": "module",
   "main": "./dist/index.js",
