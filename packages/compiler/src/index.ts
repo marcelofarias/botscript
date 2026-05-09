@@ -18,5 +18,7 @@ export { atLeast, LATEST_VERSION, SUPPORTED_VERSIONS } from "./passes/version.js
 export type { VersionInfo } from "./passes/version.js";
 // Canonical-form formatter (RFC #13). Pure source-to-source rewrite; not part
 // of the compile pipeline. Tooling consumers (CLI `botscript fmt`, MCP, IDE
-// integrations) call this directly.
-export { formatSource } from "./format/format.js";
+// integrations) call this directly. `isCanonical` is the cheap "would
+// formatSource(src) === src?" check — short-circuits on first diff and avoids
+// the output-string allocation when the file is already canonical.
+export { formatSource, isCanonical } from "./format/format.js";

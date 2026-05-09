@@ -192,10 +192,10 @@ describe("formatSource — idempotence", () => {
 });
 
 describe("formatSource — semantic preservation", () => {
-  // Property: if `transform(src)` succeeds, then `transform(formatSource(src))`
-  // also succeeds. Stronger property (byte-equality of TS output) does NOT
-  // hold — passes that emit verbatim slices of the source pick up our
-  // whitespace changes — but the parsed program is equivalent.
+  // Property: formatSource is the one-and-only path from a non-canonical
+  // 0.4 source to something the compiler will accept. Under RFC #13's
+  // canonical-form gate, transform() refuses non-canonical input; passing
+  // it through formatSource first must produce code that compiles.
   const samples = [
     "?bs 0.4\nfn x() -> number = 1\n",
     "?bs 0.4\nfn   add(a: number,b: number)->number=a+b\n",
@@ -204,15 +204,57 @@ describe("formatSource — semantic preservation", () => {
   ];
 
   for (const [idx, sample] of samples.entries()) {
-    it(`preserves compileability on sample ${idx}`, () => {
-      const before = transform(sample);
+    it(`formatSource produces something compilable on sample ${idx}`, () => {
       const after = transform(formatSource(sample));
-      expect(after.version.resolved).toBe(before.version.resolved);
-      // Both outputs must be non-empty strings; the formatter's whitespace
-      // changes propagate through string-slicing passes, so byte-equality
-      // is not guaranteed.
       expect(after.code.length).toBeGreaterThan(0);
-      expect(before.code.length).toBeGreaterThan(0);
     });
   }
+});
+
+describe("canonical-form gate (FMT001)", () => {
+  // From `?bs 0.4` on, transform() refuses non-canonical input. Older pins
+  // keep accepting any whitespace.
+  it("0.4: accepts canonical input", () => {
+    const src = "?bs 0.4\nfn x() -> number = 1\n";
+    expect(transform(src).code.length).toBeGreaterThan(0);
+  });
+
+  it("0.4: rejects extra spaces with FMT001", () => {
+    const src = "?bs 0.4\nfn   x() -> number = 1\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.4: rejects non-canonical directive (?bs   0.4)", () => {
+    const src = "?bs   0.4\nfn x() -> number = 1\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.3: still accepts non-canonical input (gate is opt-in via the pin)", () => {
+    const src = "?bs 0.3\nfn   x() -> number = 1\n";
+    expect(transform(src).code.length).toBeGreaterThan(0);
+  });
+
+  it("FMT001 points at the first differing line", () => {
+    const src = "?bs 0.4\nfn x() -> number = 1\nfn  y() -> number = 2\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const d = (e as { diagnostics: { code: string; line: number }[] }).diagnostics[0]!;
+      expect(d.code).toBe("FMT001");
+      expect(d.line).toBe(3);
+    }
+  });
 });

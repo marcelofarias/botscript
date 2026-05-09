@@ -101,6 +101,23 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       'unsafe "Response.json() returns any" { return value as User }',
   },
+  FMT001: {
+    code: "FMT001",
+    title: "source is not in canonical form",
+    rule:
+      "every botscript program has exactly one canonical surface form (RFC #13); from `?bs 0.4` on, the compiler rejects non-canonical input rather than silently accepting whitespace variants",
+    idiom:
+      "run `botscript fmt <file> --write` once; from then on the source is canonical and compiles cleanly",
+    rewrite:
+      "botscript fmt <file> --write",
+    example:
+      "// before — multi-space directive, alignment padding, trailing whitespace\n" +
+      "?bs   0.4\n" +
+      "fn add(a: number, b: number) -> number   =   a + b   \n\n" +
+      "// after — canonical\n" +
+      "?bs 0.4\n" +
+      "fn add(a: number, b: number) -> number = a + b",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
