@@ -11,6 +11,7 @@
 import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
+import { lowerBlockBody } from "./_block-body.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export function passFn(src: string, version?: VersionInfo): string {
@@ -65,11 +66,12 @@ function renderBody(decl: FnDecl): string {
 
   const text = decl.body.text.trim();
   if (text === "") return "";
-  // For pure/io/expr body forms, wrap in `return` IFF the body has no
-  // top-level return or top-level `;`. Without this an IIFE-bodied helper
-  // silently returns undefined.
-  if (hasTopLevelReturn(text) || hasTopLevelSemicolon(text)) return text;
-  return `return ${text};`;
+  // For pure/io/expr body forms, lower the body into statement segments and
+  // `return`-wrap only the tail expression. Without this an IIFE-bodied
+  // helper either silently returns undefined (single-expr case) or emits
+  // invalid TS (`return let x = ...`) when the body has multiple
+  // statements separated by newlines instead of `;`.
+  return lowerBlockBody(text);
 }
 
 function indent(s: string, n: number): string {
@@ -80,94 +82,3 @@ function indent(s: string, n: number): string {
     .join("\n");
 }
 
-function hasTopLevelReturn(src: string): boolean {
-  let i = 0;
-  let depth = 0;
-  while (i < src.length) {
-    const c = src[i]!;
-    if (c === '"' || c === "'") {
-      i++;
-      while (i < src.length && src[i] !== c) {
-        if (src[i] === "\\") i += 2;
-        else i++;
-      }
-      i++;
-      continue;
-    }
-    if (c === "`") {
-      i++;
-      while (i < src.length && src[i] !== "`") {
-        if (src[i] === "\\") i += 2;
-        else i++;
-      }
-      i++;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      i += 2;
-      while (i < src.length - 1 && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    if (c === "{" || c === "(" || c === "[") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (c === "}" || c === ")" || c === "]") {
-      depth--;
-      i++;
-      continue;
-    }
-    if (depth === 0 && src.startsWith("return", i)) {
-      const before = i === 0 ? " " : src[i - 1] ?? " ";
-      const after = src[i + 6] ?? " ";
-      if (!/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after)) return true;
-    }
-    i++;
-  }
-  return false;
-}
-
-function hasTopLevelSemicolon(src: string): boolean {
-  let i = 0;
-  let depth = 0;
-  while (i < src.length) {
-    const c = src[i]!;
-    if (c === '"' || c === "'") {
-      i++;
-      while (i < src.length && src[i] !== c) {
-        if (src[i] === "\\") i += 2;
-        else i++;
-      }
-      i++;
-      continue;
-    }
-    if (c === "`") {
-      i++;
-      while (i < src.length && src[i] !== "`") {
-        if (src[i] === "\\") i += 2;
-        else i++;
-      }
-      i++;
-      continue;
-    }
-    if (c === "{" || c === "(" || c === "[") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (c === "}" || c === ")" || c === "]") {
-      depth--;
-      i++;
-      continue;
-    }
-    if (c === ";" && depth === 0) return true;
-    i++;
-  }
-  return false;
-}
