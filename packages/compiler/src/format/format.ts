@@ -30,8 +30,10 @@
  *     stripping is unconditional).
  *   - Collapses runs of mid-line whitespace to a single space (outside
  *     strings/templates/comments/regex).
- *   - Normalizes line endings to `\n` (CR and CRLF inputs are accepted; the
- *     formatter emits LF).
+ *   - Normalizes line endings outside string / template / regex / block-
+ *     comment tokens to `\n` (CR-only and CRLF inputs are accepted). The
+ *     formatter does NOT touch `\r` characters embedded inside those tokens
+ *     (they're literal content and rewriting them could change semantics).
  *   - Ensures the file ends with exactly one trailing newline.
  *
  * The formatter is idempotent: `formatSource(formatSource(x)) === formatSource(x)`.

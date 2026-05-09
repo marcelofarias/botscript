@@ -132,6 +132,11 @@ describe("formatSource — line-ending normalization", () => {
     const src = "?bs 0.4\r\n\r\n\r\n\r\nfn x() -> number = 1\r\n";
     expect(formatSource(src)).toBe("?bs 0.4\n\nfn x() -> number = 1\n");
   });
+
+  it("preserves a `//` line comment on CR-only input (does not swallow following lines)", () => {
+    const src = "?bs 0.4\r// hi\rfn x() -> number = 1\r";
+    expect(formatSource(src)).toBe("?bs 0.4\n// hi\nfn x() -> number = 1\n");
+  });
 });
 
 describe("formatSource — trailing newline", () => {

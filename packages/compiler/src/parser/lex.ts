@@ -114,7 +114,7 @@ export function lex(src: string): Token[] {
 
     // --- comments ---
     if (c === "/" && src[i + 1] === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
+      while (i < src.length && src[i] !== "\n" && src[i] !== "\r") i++;
       tokens.push({ kind: "lineComment", text: src.slice(start, i), start, end: i });
       continue;
     }
