@@ -26,7 +26,16 @@ describe("UNS004 — bare `as` cast outside unsafe (0.5+)", () => {
   });
 
   it("rejects a bare `as` cast in a return statement", () => {
-    const src = `?bs 0.5\nfn f(x: unknown) -> User { return x as User; }\n`;
+    // Two statements so the body stays a brace block — a single
+    // `return x as User;` would be canonicalized to `= x as User` by the
+    // RFC #13 brace→expr rewrite (FMT001 path), short-circuiting the
+    // UNS004 check we want to exercise here.
+    const src =
+      `?bs 0.5\n` +
+      `fn f(x: unknown) -> User {\n` +
+      `  const y = x;\n` +
+      `  return y as User;\n` +
+      `}\n`;
     expect(() => t(src)).toThrow(BotscriptError);
     try {
       t(src);
@@ -85,11 +94,15 @@ describe("UNS004 — bare `as` cast outside unsafe (0.5+)", () => {
   });
 
   it("accepts a cast nested inside a deeper unsafe block", () => {
+    // Two-statement body so the brace block stays canonical; otherwise
+    // the RFC #13 rewrite would collapse `{ return e; }` to `= e` and
+    // FMT001 would fire before UNS004 had a chance to.
     const src =
       `?bs 0.5\n` +
       `fn cast(raw: unknown) -> User {\n` +
+      `  const intermediate = raw;\n` +
       `  return unsafe "JSON payload was already validated upstream" {\n` +
-      `    (raw as { name: string }) as User\n` +
+      `    (intermediate as { name: string }) as User\n` +
       `  };\n` +
       `}\n`;
     expect(() => t(src)).not.toThrow();

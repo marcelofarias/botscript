@@ -300,6 +300,14 @@ function emitWhitespace(t: Token, tokens: Token[], i: number): string {
  * that could itself be a candidate.
  */
 function rewriteBraceToExprBody(src: string): string | null {
+  // Cheap pre-check before the lex: a candidate body needs both an `fn`
+  // declaration and a `return` somewhere in the source. Substring tests are
+  // O(n) string scans without allocations, so they pay for themselves on the
+  // common already-canonical case (no fn-keyword or no return → null without
+  // ever lexing). False positives — e.g. `return` sitting inside a string
+  // literal — fall through to the lex/parse path and correctly return null
+  // there, so no rewrite is ever missed.
+  if (src.indexOf("fn") < 0 || src.indexOf("return") < 0) return null;
   const tokens = lex(src);
   let patches: { start: number; end: number; replacement: string }[] | null = null;
   for (let i = 0; i < tokens.length; i++) {
@@ -342,7 +350,10 @@ function rewriteBraceToExprBody(src: string): string | null {
  * when the block is not a candidate.
  *
  * Bails (returns null) when:
- *   - the first significant token isn't the `return` keyword;
+ *   - the first significant token isn't the `return` identifier (the lexer
+ *     does NOT include `return` in its botscript keyword set — it lexes as
+ *     a plain `ident`, just like `let` or `if`. The check below matches on
+ *     `kind === "ident"` and `text === "return"`, not `kind === "keyword"`);
  *   - there's a newline between `return` and the expression start (would
  *     ASI to `return;` in the emitted TS);
  *   - there's a depth-0 newline inside the expression (potential ASI cut);
