@@ -101,6 +101,23 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       'unsafe "Response.json() returns any" { return value as User }',
   },
+  UNS004: {
+    code: "UNS004",
+    title: "bare `as` cast outside unsafe block",
+    rule:
+      "every `as` is a claim the compiler cannot verify; from `?bs 0.5` it must be justified by a written reason inside an `unsafe \"<reason>\" { ... }` block",
+    idiom:
+      "wrap the cast in `unsafe \"<reason>\" { ... }`; the reason becomes the review record on the cast",
+    rewrite:
+      'unsafe "<short reason>" { <expr> as <type> }',
+    example:
+      "// before\n" +
+      "?bs 0.5\n" +
+      "const u = data as User;\n\n" +
+      "// after\n" +
+      "?bs 0.5\n" +
+      'const u = unsafe "Response.json() returns any" { data as User };',
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

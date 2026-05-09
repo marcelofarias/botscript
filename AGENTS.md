@@ -189,6 +189,7 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | UNS001 | (0.3+) `unsafe { … }` block missing a justification string. | `unsafe "<reason>" { … }`. |
 | UNS002 | (0.3+) `unsafe "" { … }` — empty justification. | Replace `""` with a one-sentence reason. |
 | UNS003 | (0.3+) `unsafe "reason"` with no following body. | `unsafe "reason" { <body> }`. |
+| UNS004 | (0.5+) Bare `as` cast outside an `unsafe "<reason>" { ... }` block. Every cast must live inside an unsafe block so the diff carries a written reason. `import * as ns`, `import { foo as bar }`, and `export * as ns` are not flagged. | `unsafe "<short reason>" { <expr> as <type> }`. |
 | RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
 
 When you add a new compiler error, allocate the next free code in the same

@@ -12,6 +12,7 @@ import { passResultTry } from "./passes/result-try.js";
 import { passTaggedUnion } from "./passes/tagged-union.js";
 import { passTest } from "./passes/test.js";
 import { passTestMocks } from "./passes/test-mocks.js";
+import { passBareAs } from "./passes/bare-as.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
 import { atLeast, passVersion, type VersionInfo } from "./passes/version.js";
@@ -47,6 +48,12 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },
+  // bareAs MUST run before unsafe: passUnsafe rewrites the source and erases
+  // the original `unsafe` keyword, so the bare-as walk has to use the
+  // pre-rewrite token stream to find unsafe-block body ranges. New enforced
+  // check on syntax that was previously legal -> behind a 0.5 pin per
+  // AGENTS.md rule 4.
+  { name: "bareAs", fn: passBareAs, minVersion: "0.5" },
   { name: "unsafe", fn: passUnsafe, minVersion: "0.3" },
   { name: "resultTry", fn: passResultTry, minVersion: "0.3" },
   { name: "fn", fn: passFn },
