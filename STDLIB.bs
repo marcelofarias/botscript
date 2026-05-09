@@ -1,4 +1,4 @@
-?bs 0.4
+?bs 0.5
 ?primer
 
 // STDLIB.bs — every botscript feature, exactly once.
@@ -115,6 +115,10 @@ test "deterministic clock" with mocks { time } {
 // follow. Every unsafe block must carry a non-empty justification string —
 // the cast and its reason live together in the diff, so the next reviewer
 // (human or model) sees the *why* not just the *what*.
+//
+// From ?bs 0.5 the rule is enforced at parse time: a bare `as` cast outside
+// an unsafe "<reason>" { ... } block is UNS004. The form below is the only
+// way to write a cast in 0.5 and later.
 
 fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
   raw as Shape

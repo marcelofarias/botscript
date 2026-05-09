@@ -1,10 +1,15 @@
-?bs 0.3
+?bs 0.5
 
 import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 
 // Parse a JSON-encoded string into a typed value, lifting JSON.parse's
 // throwing behaviour into a Result so callers can compose with `?` instead
 // of writing try/catch by hand.
+//
+// Pinned at ?bs 0.5 to demonstrate UNS004: every `as` lives inside an
+// unsafe "<reason>" { ... } block. The bare `parsed as Config` below
+// would be a parse error without the surrounding unsafe block, so the
+// review record on the cast is required, not optional.
 
 interface Config {
   name: string;
