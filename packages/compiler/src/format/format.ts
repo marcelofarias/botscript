@@ -23,9 +23,13 @@
  *   - Replaces leading-tab characters with 2 spaces each.
  *   - Strips trailing whitespace on every line.
  *   - Collapses runs of 2+ blank lines to a single blank line.
- *   - Strips leading blank lines (after `?bs` / `?primer` directives).
+ *   - Strips leading blank lines so the first line of output is the file's
+ *     first non-empty line (typically a `?bs` / `?primer` directive, but the
+ *     stripping is unconditional).
  *   - Collapses runs of mid-line whitespace to a single space (outside
  *     strings/templates/comments/regex).
+ *   - Normalizes line endings to `\n` (CR and CRLF inputs are accepted; the
+ *     formatter emits LF).
  *   - Ensures the file ends with exactly one trailing newline.
  *
  * The formatter is idempotent: `formatSource(formatSource(x)) === formatSource(x)`.
@@ -62,7 +66,7 @@ export function formatSource(src: string): string {
       while (j < tokens.length) {
         const tk = tokens[j]!;
         if (tk.kind === "newline") {
-          for (const ch of tk.text) if (ch === "\n") newlineCount++;
+          newlineCount += countLineBreaks(tk.text);
           j++;
           continue;
         }
@@ -84,6 +88,23 @@ export function formatSource(src: string): string {
   }
 
   return postProcess(out);
+}
+
+function countLineBreaks(s: string): number {
+  // The lexer's `newline` token can contain any mix of `\n` and `\r`. Count
+  // each `\r\n` as one break, each lone `\r` as one break, each lone `\n` as
+  // one break — so CR-only and CRLF inputs are normalized correctly.
+  let n = 0;
+  for (let k = 0; k < s.length; k++) {
+    const ch = s[k]!;
+    if (ch === "\r") {
+      n++;
+      if (s[k + 1] === "\n") k++;
+    } else if (ch === "\n") {
+      n++;
+    }
+  }
+  return n;
 }
 
 function emitWhitespace(t: Token, tokens: Token[], i: number): string {

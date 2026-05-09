@@ -80,6 +80,23 @@ describe("formatSource — mid-line whitespace", () => {
   });
 });
 
+describe("formatSource — line-ending normalization", () => {
+  it("normalizes CRLF input to LF", () => {
+    const src = "?bs 0.4\r\nfn x() -> number = 1\r\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("normalizes CR-only input to LF without joining lines", () => {
+    const src = "?bs 0.4\rfn x() -> number = 1\r";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("collapses CRLF blank-line runs the same as LF runs", () => {
+    const src = "?bs 0.4\r\n\r\n\r\n\r\nfn x() -> number = 1\r\n";
+    expect(formatSource(src)).toBe("?bs 0.4\n\nfn x() -> number = 1\n");
+  });
+});
+
 describe("formatSource — trailing newline", () => {
   it("adds a trailing newline if missing", () => {
     const src = "?bs 0.4\nfn x() -> number = 1";
