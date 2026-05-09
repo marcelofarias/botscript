@@ -170,8 +170,8 @@ type Shape =
   | Triangle { base: number; height: number };
 
 fn area(s: Shape) -> number = match s {
-  Circle { r }              -> Math.PI * r * r
-  Square { side }           -> side * side
+  Circle { r } -> Math.PI * r * r
+  Square { side } -> side * side
   Triangle { base, height } -> (base * height) / 2
 }
 `;
