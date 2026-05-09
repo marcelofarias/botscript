@@ -7,6 +7,18 @@ goes behind a new pin.
 ## ?bs 0.4 — 2026-05-08
 
 ### Added
+- **`botscript fmt` — canonical-form formatter (RFC #13).** Token-level
+  whitespace tidier: collapses mid-line whitespace runs to a single space,
+  converts leading tabs to two spaces, strips trailing whitespace, collapses
+  blank-line runs, and ensures exactly one trailing newline. Cross-version:
+  works on any pinned `?bs` version. Modes: `fmt <file>` prints to stdout
+  (gofmt-style), `fmt <dir>` writes in place, `--check` exits 1 if any file
+  differs from canonical, `--write` rewrites files. Content inside strings,
+  templates, regex, and comments is preserved verbatim; declaration / import /
+  union-member ordering, brace-style re-flow, and quote normalization are
+  deliberately out of scope for v1 (each needs proof of order-irrelevance or
+  an AST). Idempotent and semantics-preserving. Exported as `formatSource`
+  from `@mbfarias/botscript-compiler`.
 - **Type parameters in `fn` signatures.** `fn id<T>(x: T) -> T`, multi-param
   `<A, B>`, `extends` constraints, and `= Default` defaults. Emitted verbatim
   into the TS output; capability inference, `match`, and async fn compose

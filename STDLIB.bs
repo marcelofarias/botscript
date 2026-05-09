@@ -35,7 +35,7 @@ fn slug(s: string) -> string = pure {
 // Any single expression after `=` becomes the function body. Common with match.
 
 fn area(s: Shape) -> number = match s {
-  Circle { r }    -> Math.PI * r * r
+  Circle { r } -> Math.PI * r * r
   Square { side } -> side * side
 }
 
@@ -80,10 +80,10 @@ fn firstAdmin(users: { role: string; name: string }[]) -> Option<string> = pure 
 // ─── 7. match patterns (the four supported) ─────────────────────────────────
 
 fn label(x: unknown) -> string = match x {
-  "ping"          -> "pong"            // string literal
-  42              -> "answer"          // number literal
-  true            -> "yes"             // boolean literal
-  _               -> "unknown"         // wildcard (must be last)
+  "ping" -> "pong" // string literal
+  42 -> "answer" // number literal
+  true -> "yes" // boolean literal
+  _ -> "unknown" // wildcard (must be last)
 }
 
 // ─── 8. test "name" { } and assert ──────────────────────────────────────────
