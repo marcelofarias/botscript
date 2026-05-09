@@ -48,6 +48,23 @@ goes behind a new pin.
   resolved version.
 
 ### Fixed
+- Block bodies in expression position (`pure { let; expr }`,
+  `Result.try { let; expr }`, `match` arms with brace-block bodies, and
+  `fn name(args) -> T = pure { let; expr }`) now lower to valid TypeScript.
+  Previously the lowering helper tested only for top-level `;` and the literal
+  substring `return`, then unconditionally prefixed `return` to the rest, so
+  newline-separated bodies like `pure { let lower = s.toLowerCase()\n lower }`
+  emitted `return let lower = ...;` (parse error) and brace-block match arms
+  emitted `({ value }: any) => ({ let prefix = ... })` (`let` inside a
+  parenthesized expression). The new shared lowering in
+  `passes/_block-body.ts` splits the body into top-level statement segments
+  (separated by `;` or unambiguous newlines, with continuation-token
+  detection on both sides of the newline), terminates each with `;`, and
+  `return`-wraps only the tail expression. `match` arms whose body is a
+  full `{ ... }` block now emit `(...) => { ...lowered... }` instead of
+  `(...) => (...)`. Single-expression arms keep their existing
+  parenthesized-arrow form, so forward-compat snapshots are byte-identical.
+  Closes #23.
 - The fn return-type scanner now tracks `<...>` depth instead of
   case-analysing what follows each matched `{...}`. Object types nested
   inside generic args — `Result<{ name: string }, string>`,

@@ -56,4 +56,22 @@ describe("Result.try (0.3)", () => {
     expect(out).toMatch(/__r1.*\$resultTry/s);
     expect(out).toMatch(/if \(__r1\.kind === "err"\)/);
   });
+
+  it("lowers Result.try { let stmt; tail expr } correctly (probe D)", () => {
+    const src =
+      `?bs 0.4\n\n` +
+      `fn parse(input: string) -> Result<unknown, string> {\n` +
+      `  return Result.try {\n` +
+      `    let trimmed = input.trim()\n` +
+      `    JSON.parse(trimmed)\n` +
+      `  }\n` +
+      `}\n`;
+    const out = t(src);
+    // Must NOT emit `return let ...`.
+    expect(out).not.toMatch(/return\s+let\b/);
+    // The let statement is preserved, the tail expr is return-wrapped.
+    expect(out).toMatch(/let trimmed = input\.trim\(\)\s*;/);
+    expect(out).toMatch(/return\s+JSON\.parse\(trimmed\)\s*;/);
+    expect(out).toContain("$resultTry(() => {");
+  });
 });
