@@ -111,14 +111,10 @@ const CAPS = `?bs 0.4
 
 import { time } from "@mbfarias/botscript-runtime";
 
-fn now() uses { time } -> number {
-  return time.now();
-}
+fn now() uses { time } -> number = time.now()
 
 // loadStamp transitively reaches \`time\` via now(), so it must declare it.
-fn loadStamp() uses { time } -> { value: number } {
-  return { value: now() };
-}
+fn loadStamp() uses { time } -> { value: number } = { value: now() }
 `;
 
 const FS = `?bs 0.4

@@ -182,7 +182,7 @@ describe("? unwrap", () => {
     // surrounding markup as an unwrappable expression, leaking
     // `if (__r1.kind === "err") return __r1;` into the rendered DOM.
     const out = t(
-      `?bs 0.4\nfn Demo() -> any {\n  return (\n    <p>why not just stricter TypeScript?</p>\n  );\n}\n`,
+      `?bs 0.4\nfn Demo() -> any = (\n    <p>why not just stricter TypeScript?</p>\n  )\n`,
     );
     expect(out).not.toContain("__r1");
     expect(out).toContain("why not just stricter TypeScript?");
@@ -192,7 +192,7 @@ describe("? unwrap", () => {
     // Multi-line JSX where the `?` ends a text line and the closing tag
     // sits on the next line — the shape from the live botscript.org link.
     const out = t(
-      `?bs 0.4\nfn Demo() -> any {\n  return (\n    <a href="x">\n      why not just stricter TypeScript?\n    </a>\n  );\n}\n`,
+      `?bs 0.4\nfn Demo() -> any = (\n    <a href="x">\n      why not just stricter TypeScript?\n    </a>\n  )\n`,
     );
     expect(out).not.toContain("__r1");
     expect(out).not.toMatch(/kind === "err"/);

@@ -43,9 +43,18 @@ export interface FnDecl {
   body: FnBody;
 }
 
+/**
+ * `start` / `end` are source offsets covering the whole body construct: for
+ * `block`, the `{` through the matching `}` (inclusive of both braces); for
+ * `expr`, the `=` through the end of the expression (and the trailing `;` if
+ * `parseFn` consumed one). UTF-16 code units, end-exclusive — same coordinate
+ * system as `FnDecl.start` / `FnDecl.end`. Tools that rewrite the body in
+ * place (the canonical-form formatter) splice `src.slice(0, body.start) + ...
+ * + src.slice(body.end)` to keep everything else verbatim.
+ */
 export type FnBody =
-  | { kind: "block"; text: string }
-  | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr" };
+  | { kind: "block"; text: string; start: number; end: number }
+  | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr"; start: number; end: number };
 
 export interface ParseFnOptions {
   /**
@@ -199,9 +208,15 @@ export function parseFn(
   const at = tokens[typeEnd]!;
   if (at.kind === "open" && at.text === "{") {
     if (at.matchedAt === undefined) return null;
-    body = { kind: "block", text: sliceText(tokens, typeEnd + 1, at.matchedAt) };
+    body = {
+      kind: "block",
+      text: sliceText(tokens, typeEnd + 1, at.matchedAt),
+      start: at.start,
+      end: tokens[at.matchedAt]!.end,
+    };
     bodyEnd = at.matchedAt + 1;
   } else if (at.kind === "eq") {
+    const eqStart = at.start;
     let j = typeEnd + 1;
     j = skipTrivia(tokens, j);
     const head = tokens[j];
@@ -211,7 +226,13 @@ export function parseFn(
       j = skipTrivia(tokens, j);
       const open = tokens[j];
       if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) return null;
-      body = { kind: "expr", text: sliceText(tokens, j + 1, open.matchedAt), wrappedAs: tag };
+      body = {
+        kind: "expr",
+        text: sliceText(tokens, j + 1, open.matchedAt),
+        wrappedAs: tag,
+        start: eqStart,
+        end: tokens[open.matchedAt]!.end,
+      };
       bodyEnd = open.matchedAt + 1;
     } else {
       // `= <expression>` — read until `;` or newline at depth 0.
@@ -237,10 +258,17 @@ export function parseFn(
       }
       const exprText = sliceText(tokens, exprStart, j).trim();
       if (exprText === "") return null;
-      body = { kind: "expr", text: exprText, wrappedAs: "expr" };
       bodyEnd = j;
       // Consume a trailing `;` if present.
       if (tokens[bodyEnd]?.kind === "punct" && tokens[bodyEnd]?.text === ";") bodyEnd++;
+      const lastBodyTok = tokens[bodyEnd - 1] ?? at;
+      body = {
+        kind: "expr",
+        text: exprText,
+        wrappedAs: "expr",
+        start: eqStart,
+        end: lastBodyTok.end,
+      };
     }
   } else {
     return null;

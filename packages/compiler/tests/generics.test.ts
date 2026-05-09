@@ -65,8 +65,11 @@ describe("generics in fn signatures (0.4)", () => {
   });
 
   it("supports generics on a fn with a block body and uses clause", () => {
+    // Multi-statement body: a single `return e;` would be normalized to the
+    // expression-body form `= e` by the canonical formatter (RFC #13), so a
+    // two-statement body keeps this exercising the block-body code path.
     const out = t(
-      `?bs 0.4\nfn first<T>(xs: Array<T>) uses { } -> T {\n  return xs[0]!;\n}\n`,
+      `?bs 0.4\nfn first<T>(xs: Array<T>) uses { } -> T {\n  const head = xs[0]!;\n  return head;\n}\n`,
     );
     expect(out).toContain("function first<T>(xs: Array<T>): T {");
     expect(out).toContain("$enter([] as const");
