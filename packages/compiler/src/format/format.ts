@@ -88,10 +88,11 @@ export function formatSource(src: string): string {
     }
 
     if (t.kind === "lineComment") {
-      // The lexer reads `//` up to (but not including) `\n`, so trailing
-      // spaces/tabs and a trailing `\r` (CRLF input) end up inside the
-      // comment token. Strip them so the formatter's "no trailing
-      // whitespace on any line" rule covers comment-only lines too.
+      // The lexer reads `//` up to (but not including) `\n` or `\r`. Trailing
+      // spaces/tabs end up inside the comment token; strip them so the
+      // formatter's "no trailing whitespace on any line" rule covers
+      // comment-only lines too. (CR/CRLF normalization is handled by the
+      // newline-token path; the `\r` in the strip is defensive.)
       out += t.text.replace(/[ \t\r]+$/, "");
       continue;
     }
