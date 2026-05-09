@@ -46,8 +46,54 @@ import { lex } from "../parser/lex.js";
 import type { Token } from "../parser/lex.js";
 
 export function formatSource(src: string): string {
-  const tokens = lex(src);
   let out = "";
+  emitCanonical(src, (chunk) => {
+    out += chunk;
+    return true;
+  });
+  return postProcess(out);
+}
+
+/**
+ * Returns true iff `src` is already in canonical form. Cheaper than
+ * `formatSource(src) === src` because the walk halts at the first byte that
+ * doesn't match — most non-canonical inputs bail out long before the file ends,
+ * and canonical inputs avoid the string allocation entirely.
+ */
+export function isCanonical(src: string): boolean {
+  let off = 0;
+  let ok = true;
+  emitCanonical(src, (chunk) => {
+    if (off + chunk.length > src.length) {
+      ok = false;
+      return false;
+    }
+    for (let k = 0; k < chunk.length; k++) {
+      if (src.charCodeAt(off + k) !== chunk.charCodeAt(k)) {
+        ok = false;
+        return false;
+      }
+    }
+    off += chunk.length;
+    return true;
+  });
+  if (!ok || off !== src.length) return false;
+  // postProcess invariants — these would change `src` even if every chunk
+  // matched. An empty file is canonical; otherwise it must not start with
+  // `\n` (leading-strip), must end with exactly one `\n` (trailing fix).
+  if (src === "") return true;
+  if (src[0] === "\n") return false;
+  if (!src.endsWith("\n") || src.endsWith("\n\n")) return false;
+  return true;
+}
+
+/**
+ * Walks `src` token-by-token and yields each canonical-form chunk via `emit`.
+ * `emit` returns `false` to halt the walk early — formatSource ignores the
+ * return value; isCanonical halts on the first byte mismatch.
+ */
+function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
+  const tokens = lex(src);
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -55,7 +101,7 @@ export function formatSource(src: string): string {
     if (t.kind === "eof") break;
 
     if (t.kind === "whitespace") {
-      out += emitWhitespace(t, tokens, i);
+      if (!emit(emitWhitespace(t, tokens, i))) return;
       continue;
     }
 
@@ -81,8 +127,8 @@ export function formatSource(src: string): string {
         }
         break;
       }
-      const emit = Math.min(newlineCount, 2);
-      out += "\n".repeat(emit);
+      const n = Math.min(newlineCount, 2);
+      if (!emit("\n".repeat(n))) return;
       i = j - 1; // for-loop will i++
       continue;
     }
@@ -93,7 +139,7 @@ export function formatSource(src: string): string {
       // formatter's "no trailing whitespace on any line" rule covers
       // comment-only lines too. (CR/CRLF normalization is handled by the
       // newline-token path; the `\r` in the strip is defensive.)
-      out += t.text.replace(/[ \t\r]+$/, "");
+      if (!emit(t.text.replace(/[ \t\r]+$/, ""))) return;
       continue;
     }
 
@@ -103,17 +149,17 @@ export function formatSource(src: string): string {
       // whitespace through. Re-emit the canonical form. Empty `directiveValue`
       // (e.g. `?bs\n` or `?bs   \n` with no version) emits bare `?bs` to
       // avoid a trailing space.
-      if (t.directive === "primer") out += "?primer";
-      else if (t.directive === "bs") out += t.directiveValue ? `?bs ${t.directiveValue}` : "?bs";
-      else out += t.text;
+      let chunk: string;
+      if (t.directive === "primer") chunk = "?primer";
+      else if (t.directive === "bs") chunk = t.directiveValue ? `?bs ${t.directiveValue}` : "?bs";
+      else chunk = t.text;
+      if (!emit(chunk)) return;
       continue;
     }
 
     // Every other token is emitted verbatim.
-    out += t.text;
+    if (!emit(t.text)) return;
   }
-
-  return postProcess(out);
 }
 
 function countLineBreaks(s: string): number {

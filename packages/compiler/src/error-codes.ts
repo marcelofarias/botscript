@@ -107,9 +107,9 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "every botscript program has exactly one canonical surface form (RFC #13); from `?bs 0.4` on, the compiler rejects non-canonical input rather than silently accepting whitespace variants",
     idiom:
-      "run `botscript fmt --write <file>` once; from then on the source is canonical and compiles cleanly",
+      "run `botscript fmt <file> --write` once; from then on the source is canonical and compiles cleanly",
     rewrite:
-      "botscript fmt --write <file>",
+      "botscript fmt <file> --write",
     example:
       "// before — multi-space directive, alignment padding, trailing whitespace\n" +
       "?bs   0.4\n" +
