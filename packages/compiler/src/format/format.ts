@@ -86,9 +86,11 @@ export function formatSource(src: string): string {
     if (t.kind === "directive") {
       // The lexer captures `?bs   0.4` and `?bs\t0.4` whole — including the
       // inter-word whitespace — so the catch-all path below would leak that
-      // whitespace through. Re-emit the canonical form.
+      // whitespace through. Re-emit the canonical form. Empty `directiveValue`
+      // (e.g. `?bs\n` or `?bs   \n` with no version) emits bare `?bs` to
+      // avoid a trailing space.
       if (t.directive === "primer") out += "?primer";
-      else if (t.directive === "bs") out += `?bs ${t.directiveValue ?? ""}`;
+      else if (t.directive === "bs") out += t.directiveValue ? `?bs ${t.directiveValue}` : "?bs";
       else out += t.text;
       continue;
     }

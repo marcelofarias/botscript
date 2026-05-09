@@ -95,6 +95,16 @@ describe("formatSource — directive normalization", () => {
     const src = "?primer\nfn x() -> number = 1\n";
     expect(formatSource(src)).toBe("?primer\nfn x() -> number = 1\n");
   });
+
+  it("emits bare `?bs` (no trailing space) when the version is missing", () => {
+    const src = "?bs\nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?bs\nfn x() -> number = 1\n");
+  });
+
+  it("emits bare `?bs` when only whitespace follows the directive name", () => {
+    const src = "?bs   \nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?bs\nfn x() -> number = 1\n");
+  });
 });
 
 describe("formatSource — line-ending normalization", () => {
