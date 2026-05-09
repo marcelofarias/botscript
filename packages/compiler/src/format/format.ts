@@ -318,11 +318,13 @@ function rewriteBraceToExprBody(src: string): string | null {
         });
       }
     }
-    // Walk into the body so nested fn decls get rewritten too. parseFn
-    // already advanced `i` past the outer decl by virtue of the for-loop
-    // increment, but for nested fns we want the loop to descend — so we
-    // do NOT skip ahead to `decl.tokenEnd - 1` here. The token walk will
-    // hit any inner `fn` keyword on its own.
+    // Don't skip past the outer decl's tokens. The for-loop's natural
+    // `i++` advances one token per iteration, so any nested `fn` keyword
+    // inside the body is visited and re-parsed in turn — parseFn just
+    // walks the already-lexed token array, so re-entering it on each
+    // inner keyword is cheap. Skipping ahead to `decl.tokenEnd` here
+    // would suppress those inner declarations and they'd never get
+    // rewritten.
   }
   if (patches === null) return null;
   patches.sort((a, b) => b.start - a.start);

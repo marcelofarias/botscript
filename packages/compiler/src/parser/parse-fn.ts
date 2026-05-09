@@ -44,13 +44,21 @@ export interface FnDecl {
 }
 
 /**
- * `start` / `end` are source offsets covering the whole body construct: for
- * `block`, the `{` through the matching `}` (inclusive of both braces); for
- * `expr`, the `=` through the end of the expression (and the trailing `;` if
- * `parseFn` consumed one). UTF-16 code units, end-exclusive — same coordinate
- * system as `FnDecl.start` / `FnDecl.end`. Tools that rewrite the body in
- * place (the canonical-form formatter) splice `src.slice(0, body.start) + ...
- * + src.slice(body.end)` to keep everything else verbatim.
+ * `start` / `end` are source offsets covering the whole body construct.
+ * UTF-16 code units, end-exclusive — same coordinate system as `FnDecl.start`
+ * / `FnDecl.end`. Tools that rewrite the body in place (the canonical-form
+ * formatter) splice `src.slice(0, body.start) + ... + src.slice(body.end)`
+ * to keep everything else verbatim.
+ *
+ * Per body shape, `end` lands at:
+ *   - `block`:                             just past the matching `}`.
+ *   - `expr` with `wrappedAs: "pure"|"io"`: just past the `pure`/`io` body's
+ *                                          closing `}`. parseFn does NOT
+ *                                          consume any trailing `;` here.
+ *   - `expr` with `wrappedAs: "expr"`:     just past the expression, INCLUDING
+ *                                          a trailing `;` when one is present
+ *                                          (parseFn consumes it as part of
+ *                                          the bare-expression body).
  */
 export type FnBody =
   | { kind: "block"; text: string; start: number; end: number }
