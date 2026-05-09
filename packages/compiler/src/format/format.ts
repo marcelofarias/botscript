@@ -4,8 +4,10 @@
  * Token-level whitespace tidier. Re-emits the source with normalized spacing,
  * tabs converted to 2 spaces, trailing whitespace stripped, blank-line runs
  * collapsed, and exactly one trailing newline. Content inside string,
- * template, regex, and comment tokens is emitted verbatim — the formatter
- * never touches semantics.
+ * template, regex, and block-comment tokens is emitted verbatim — the
+ * formatter never touches semantics. Line-comment (`//`) tokens are emitted
+ * verbatim except that trailing horizontal whitespace and CR are stripped,
+ * so the "no trailing whitespace on any line" rule still holds.
  *
  * What it deliberately does NOT do (yet):
  *   - Brace-style re-flow (Allman → K&R). Needs an AST to identify which
@@ -80,6 +82,15 @@ export function formatSource(src: string): string {
       const emit = Math.min(newlineCount, 2);
       out += "\n".repeat(emit);
       i = j - 1; // for-loop will i++
+      continue;
+    }
+
+    if (t.kind === "lineComment") {
+      // The lexer reads `//` up to (but not including) `\n`, so trailing
+      // spaces/tabs and a trailing `\r` (CRLF input) end up inside the
+      // comment token. Strip them so the formatter's "no trailing
+      // whitespace on any line" rule covers comment-only lines too.
+      out += t.text.replace(/[ \t\r]+$/, "");
       continue;
     }
 

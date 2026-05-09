@@ -27,6 +27,16 @@ describe("formatSource — line-level cleanup", () => {
     expect(formatSource(src)).toBe("?bs 0.4\n// hello   world\nfn x() -> number = 1\n");
   });
 
+  it("strips trailing spaces from line comments", () => {
+    const src = "?bs 0.4\n// hello   \nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?bs 0.4\n// hello\nfn x() -> number = 1\n");
+  });
+
+  it("strips trailing CR (CRLF input) from line comments", () => {
+    const src = "?bs 0.4\r\n// hello\r\nfn x() -> number = 1\r\n";
+    expect(formatSource(src)).toBe("?bs 0.4\n// hello\nfn x() -> number = 1\n");
+  });
+
   it("preserves whitespace inside strings", () => {
     const src = '?bs 0.4\nfn x() -> string = pure { "hello   world" }\n';
     expect(formatSource(src)).toBe(
