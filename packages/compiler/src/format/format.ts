@@ -30,6 +30,24 @@
  *     stripping is unconditional).
  *   - Collapses runs of mid-line whitespace to a single space (outside
  *     strings/templates/comments/regex).
+ *   - Inserts a single space between adjacent non-whitespace tokens when
+ *     canonical form requires it but the source omitted it. Rules: after
+ *     `,` (unless followed by a closing bracket); after `:`; on each side
+ *     of `->`, `=>`, and `??`. Three cases are deliberately not touched:
+ *       - `=` (declaration / assignment vs. JSX attribute, which uses
+ *         `name="value"` with no space — indistinguishable at the token
+ *         level because the lexer doesn't pair `<` / `>`).
+ *       - `;` (statement terminator vs. HTML entity end like `&rsquo;t`
+ *         in JSX text — same disambiguation problem).
+ *       - Generic `operator` tokens (`+`, `*`, etc.) — they can be unary
+ *         or binary and disambiguating needs more context than the token
+ *         walk has.
+ *
+ *     `,` and `:` *can* in principle trip JSX text content (`<p>2:30</p>`
+ *     would canonicalize to `<p>2: 30</p>`). The repo doesn't hit this
+ *     today, and the win on real `.bs` code is large; if a user hits it,
+ *     wrapping the text in an expression container (`<p>{"2:30"}</p>`)
+ *     stops the formatter from reaching into the text.
  *   - Normalizes line endings outside string / template / regex / block-
  *     comment tokens to `\n` (CR-only and CRLF inputs are accepted). The
  *     formatter does NOT touch `\r` characters embedded inside those tokens
@@ -95,6 +113,14 @@ export function isCanonical(src: string): boolean {
  */
 function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   const tokens = lex(src);
+  // Track the previous content (non-whitespace, non-newline) token actually
+  // emitted, plus whether the source had any whitespace token or newline run
+  // between it and the current position. When the source omitted a separator
+  // that canonical form requires, we inject a single space before the next
+  // content token. The flag is re-set to `false` as soon as the next content
+  // token is emitted, so we don't track injected spaces here.
+  let prevContent: Token | null = null;
+  let separatorSinceContent = true; // start-of-file behaves like a separator
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -102,7 +128,9 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     if (t.kind === "eof") break;
 
     if (t.kind === "whitespace") {
-      if (!emit(emitWhitespace(t, tokens, i))) return;
+      const ws = emitWhitespace(t, tokens, i);
+      if (ws.length > 0) separatorSinceContent = true;
+      if (!emit(ws)) return;
       continue;
     }
 
@@ -130,37 +158,77 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
       }
       const n = Math.min(newlineCount, 2);
       if (!emit("\n".repeat(n))) return;
+      separatorSinceContent = true;
       i = j - 1; // for-loop will i++
       continue;
     }
 
+    // Non-whitespace, non-newline token — possibly inject a separator first.
+    if (
+      prevContent !== null &&
+      !separatorSinceContent &&
+      wantsSpaceBetween(prevContent, t)
+    ) {
+      if (!emit(" ")) return;
+    }
+
+    let chunk: string;
     if (t.kind === "lineComment") {
       // The lexer reads `//` up to (but not including) `\n` or `\r`. Trailing
       // spaces/tabs end up inside the comment token; strip them so the
       // formatter's "no trailing whitespace on any line" rule covers
       // comment-only lines too. (CR/CRLF normalization is handled by the
       // newline-token path; the `\r` in the strip is defensive.)
-      if (!emit(t.text.replace(/[ \t\r]+$/, ""))) return;
-      continue;
-    }
-
-    if (t.kind === "directive") {
+      chunk = t.text.replace(/[ \t\r]+$/, "");
+    } else if (t.kind === "directive") {
       // The lexer captures `?bs   0.4` and `?bs\t0.4` whole — including the
-      // inter-word whitespace — so the catch-all path below would leak that
-      // whitespace through. Re-emit the canonical form. Empty `directiveValue`
-      // (e.g. `?bs\n` or `?bs   \n` with no version) emits bare `?bs` to
-      // avoid a trailing space.
-      let chunk: string;
+      // inter-word whitespace — so re-emit the canonical form. Empty
+      // `directiveValue` (e.g. `?bs\n` or `?bs   \n` with no version) emits
+      // bare `?bs` to avoid a trailing space.
       if (t.directive === "primer") chunk = "?primer";
       else if (t.directive === "bs") chunk = t.directiveValue ? `?bs ${t.directiveValue}` : "?bs";
       else chunk = t.text;
-      if (!emit(chunk)) return;
-      continue;
+    } else {
+      chunk = t.text;
     }
-
-    // Every other token is emitted verbatim.
-    if (!emit(t.text)) return;
+    if (!emit(chunk)) return;
+    prevContent = t;
+    separatorSinceContent = false;
   }
+}
+
+/**
+ * Should canonical form put a single space between these two adjacent
+ * non-whitespace tokens? Returns true ONLY for cases that are unambiguous
+ * regardless of expression vs. type vs. statement context. In particular,
+ * `+` / `-` / `*` etc. (the `operator` kind) are deliberately excluded —
+ * they can be unary or binary, and disambiguating needs more context than
+ * the token walk has.
+ */
+function wantsSpaceBetween(prev: Token, curr: Token): boolean {
+  // `->`, `=>`, `??` always want a space on each side. (`=` is excluded
+  // because JSX attributes use `name="value"` with no space and the lexer
+  // doesn't pair `<` / `>` so we can't tell JSX from a declaration here.)
+  if (
+    prev.kind === "arrow" || curr.kind === "arrow" ||
+    prev.kind === "fatArrow" || curr.kind === "fatArrow" ||
+    prev.kind === "questionQuestion" || curr.kind === "questionQuestion"
+  ) {
+    return true;
+  }
+  // `,` followed by anything except a closing bracket → space. (`;` is
+  // excluded: HTML entities like `&rsquo;t` in JSX text use `;` as the
+  // entity terminator, and the lexer can't tell that from a statement
+  // terminator. Statement-terminator `;` is followed by a newline in
+  // canonical code anyway, so this rule wouldn't fire on real code.)
+  if (prev.kind === "punct" && prev.text === ",") {
+    return curr.kind !== "close";
+  }
+  // `:` followed by anything (type annotation, ternary, object key) → space.
+  if (prev.kind === "punct" && prev.text === ":") {
+    return true;
+  }
+  return false;
 }
 
 function countLineBreaks(s: string): number {

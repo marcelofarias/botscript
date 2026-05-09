@@ -90,6 +90,59 @@ describe("formatSource — mid-line whitespace", () => {
   });
 });
 
+describe("formatSource — whitespace insertion", () => {
+  it("inserts a space after `,` between args", () => {
+    const src = "?bs 0.4\nfn add(a: number,b: number) -> number = a + b\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    );
+  });
+
+  it("inserts a space after `:` in type annotations", () => {
+    const src = "?bs 0.4\nfn add(a:number, b:number) -> number = a + b\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    );
+  });
+
+  it("inserts space on each side of `->`", () => {
+    const src = "?bs 0.4\nfn x()->number = 1\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("inserts space on each side of `=>`", () => {
+    const src = "?bs 0.4\nconst f = (x: number)=>x + 1;\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nconst f = (x: number) => x + 1;\n",
+    );
+  });
+
+  it("inserts space on each side of `??`", () => {
+    const src = "?bs 0.4\nconst y = a??b;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst y = a ?? b;\n");
+  });
+
+  it("does not add a space before a closing bracket after `,`", () => {
+    const src = "?bs 0.4\nconst xs = [1, 2, 3,];\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX attribute syntax (no space around `=` in attributes)", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any { return <a href="x">hi</a>; }\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("collapses RFC #13's three example forms together (whitespace half)", () => {
+    // The brace-vs-expression equivalence is a separate phase-2 PR; here we
+    // assert that when `=` is already in canonical form, the comma/colon/
+    // arrow insertion alone unifies the spacing variants.
+    const a = "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n";
+    const b = "?bs 0.4\nfn add(a:number,b:number) -> number = a + b\n";
+    expect(formatSource(a)).toBe(formatSource(b));
+  });
+});
+
 describe("formatSource — directive normalization", () => {
   it("collapses multiple spaces between `?bs` and the version", () => {
     const src = "?bs   0.4\nfn x() -> number = 1\n";
