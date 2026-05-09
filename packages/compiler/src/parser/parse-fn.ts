@@ -243,9 +243,13 @@ export function parseFn(
       };
       bodyEnd = open.matchedAt + 1;
     } else {
-      // `= <expression>` — read until `;` or newline at depth 0.
+      // `= <expression>` — read until `;` or newline at top level. The lexer
+      // pairs every `open` with its matching `close` via `matchedAt`, so we
+      // skip past balanced groups by jumping `open → matchedAt + 1`. That
+      // means the loop never sees a `close` that belongs to a balanced
+      // group; if one shows up here it's an unmatched stray and the body
+      // is malformed — bail rather than over-consume tokens.
       const exprStart = j;
-      let depth = 0;
       while (j < tokens.length) {
         const t = tokens[j]!;
         if (t.kind === "eof") break;
@@ -253,15 +257,9 @@ export function parseFn(
           j = t.matchedAt + 1;
           continue;
         }
-        if (t.kind === "close") {
-          depth--;
-          j++;
-          continue;
-        }
-        if (depth === 0) {
-          if (t.kind === "punct" && t.text === ";") break;
-          if (t.kind === "newline") break;
-        }
+        if (t.kind === "close") return null;
+        if (t.kind === "punct" && t.text === ";") break;
+        if (t.kind === "newline") break;
         j++;
       }
       const exprText = sliceText(tokens, exprStart, j).trim();

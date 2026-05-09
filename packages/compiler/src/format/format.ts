@@ -354,16 +354,22 @@ function rewriteBraceToExprBody(src: string): string | null {
  *     does NOT include `return` in its botscript keyword set — it lexes as
  *     a plain `ident`, just like `let` or `if`. The check below matches on
  *     `kind === "ident"` and `text === "return"`, not `kind === "keyword"`);
- *   - there's a newline between `return` and the expression start (would
- *     ASI to `return;` in the emitted TS);
- *   - there's a depth-0 newline inside the expression (potential ASI cut);
+ *   - there's a newline between `return` and the expression start (ASI in
+ *     the emitted TS would turn this into bare `return;`);
+ *   - there's a top-level newline inside the expression (potential ASI cut);
+ *   - a top-level block comment containing a `\n` / `\r` appears inside the
+ *     expression. ECMAScript treats line terminators inside multi-line block
+ *     comments as ASI hazards (spec §7.4), so rewriting around them would
+ *     change observable behaviour;
  *   - the expression is empty (`return;`);
- *   - there's any non-trivia after the optional trailing `;`;
- *   - any line/block comment sits outside the expression's range — the
- *     formatter never silently drops comments.
+ *   - any non-trivia (line/block comment, more code) sits AFTER the optional
+ *     trailing `;` — the formatter never silently drops comments;
+ *   - any leading line/block comment sits BEFORE `return`.
  *
- * Comments embedded *inside* the expression (e.g. `f(/* keep me *\/ x)`)
- * are preserved verbatim because the expression text is captured as-is.
+ * Comments INSIDE the expression's range are preserved verbatim, including
+ * an inline block comment that sits between `return` and the value (e.g.
+ * `return /* keep *\/ 1;` rewrites to `= /* keep *\/ 1`). The expression
+ * text is captured as-is and copied straight into the rewrite.
  */
 function extractSingleReturn(blockText: string): string | null {
   const tokens = lex(blockText);
@@ -385,21 +391,27 @@ function extractSingleReturn(blockText: string): string | null {
   if (i >= tokens.length) return null;
   const startTok = tokens[i]!;
   if (startTok.kind === "newline") return null;
-  if (startTok.kind === "lineComment" || startTok.kind === "blockComment") return null;
+  // A line comment between `return` and the value runs to the next `\n`,
+  // and ASI would then re-bind to bare `return;` — bail.
+  if (startTok.kind === "lineComment") return null;
   // Empty `return;` — exprText would be empty, bail explicitly so we don't
   // emit `= ` and rely on a downstream parser to reject it.
   if (startTok.kind === "punct" && startTok.text === ";") return null;
   if (startTok.kind === "eof") return null;
-  // Walk the expression to the next depth-0 `;` or end-of-block. Balanced
-  // bracket groups are skipped wholesale (their internal newlines don't
-  // count as depth-0). A depth-0 newline aborts: it's an ASI hazard
-  // because the next line could re-bind to a continuation operator.
+  // A leading block comment IS allowed and folded into the expression text
+  // (so `return /* keep */ 1;` rewrites to `= /* keep */ 1`). Multi-line
+  // block comments are still ASI hazards and are caught in the walk below.
   const exprStart = i;
   let exprEnd = i;
   while (i < tokens.length) {
     const t = tokens[i]!;
     if (t.kind === "eof") { exprEnd = i; break; }
     if (t.kind === "newline") return null;
+    // ECMAScript §7.4: a multi-line block comment counts as a line break
+    // for ASI in the emitted TS. Bail so we never rewrite around one.
+    if (t.kind === "blockComment" && (t.text.indexOf("\n") >= 0 || t.text.indexOf("\r") >= 0)) {
+      return null;
+    }
     if (t.kind === "punct" && t.text === ";") { exprEnd = i; break; }
     if (t.kind === "open" && t.matchedAt !== undefined) {
       i = t.matchedAt + 1;
@@ -409,9 +421,12 @@ function extractSingleReturn(blockText: string): string | null {
     i++;
     exprEnd = i;
   }
-  let exprText = "";
-  for (let k = exprStart; k < exprEnd; k++) exprText += tokens[k]!.text;
-  exprText = exprText.trim();
+  // Linear-time concatenation: collect token texts into an array and join
+  // once. `+=` in a tight loop on long expressions can degrade to quadratic
+  // on engines that don't rope short strings.
+  const parts: string[] = [];
+  for (let k = exprStart; k < exprEnd; k++) parts.push(tokens[k]!.text);
+  const exprText = parts.join("").trim();
   if (exprText === "") return null;
   // Past the optional trailing `;`: only whitespace/newlines. Any non-
   // trivia (comment, more code) means the block isn't a single-return.

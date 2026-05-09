@@ -197,6 +197,23 @@ describe("formatSource — brace→expression body equivalence", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("preserves a single-line block comment between `return` and the value", () => {
+    // `return /* keep */ 1;` — the comment sits inside the expression's
+    // range, no ASI hazard, and rewriting must not silently drop it.
+    const src = "?bs 0.4\nfn x() -> number { return /* keep */ 1; }\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn x() -> number = /* keep */ 1\n",
+    );
+  });
+
+  it("does NOT rewrite when a multi-line block comment sits between `return` and the value (ASI hazard)", () => {
+    // ECMAScript §7.4: a block comment containing a line terminator counts
+    // as a line break for ASI, so `return /* \n */ 1;` would emit-as
+    // `return; 1;` in TS. The rewrite must bail to keep semantics.
+    const src = "?bs 0.4\nfn x() -> number { return /* multi\nline */ 1; }\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("does NOT rewrite when there is a newline between `return` and the expression (ASI risk)", () => {
     // ASI in the emitted TypeScript would treat this as `return; 1;`, so
     // rewriting to `= 1` would change semantics.
