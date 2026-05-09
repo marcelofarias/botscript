@@ -114,9 +114,11 @@ export function isCanonical(src: string): boolean {
 function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   const tokens = lex(src);
   // Track the previous content (non-whitespace, non-newline) token actually
-  // emitted, plus whether any whitespace-equivalent (whitespace token, newline
-  // run, or inserted space) was emitted since. When the source omitted a
-  // separator that canonical form requires, we inject a single space here.
+  // emitted, plus whether the source had any whitespace token or newline run
+  // between it and the current position. When the source omitted a separator
+  // that canonical form requires, we inject a single space before the next
+  // content token. The flag is re-set to `false` as soon as the next content
+  // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
 
