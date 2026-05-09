@@ -1,6 +1,6 @@
 {
   "name": "@mbfarias/botscript-compiler",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "botscript compiler: transforms .bs source to TypeScript.",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,6 +44,6 @@
     "typescript": "^5.6.3"
   },
   "peerDependencies": {
-    "@mbfarias/botscript-runtime": "^0.4.0"
+    "@mbfarias/botscript-runtime": "^0.5.0"
   }
 }
