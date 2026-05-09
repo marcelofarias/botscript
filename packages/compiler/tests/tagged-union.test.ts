@@ -107,3 +107,83 @@ describe("tagged-union sugar (0.2)", () => {
     );
   });
 });
+
+describe("match arm with brace-block body (issue #23 probes B/C)", () => {
+  it("lowers a multi-statement block-body arm to an arrow with a brace block (probe B)", () => {
+    const src =
+      `?bs 0.4\n\n` +
+      `type Status = Idle | Done { value: string };\n\n` +
+      `fn handle(s: Status) -> string {\n` +
+      `  return match s {\n` +
+      `    Idle -> "idle"\n` +
+      `    Done { value } -> {\n` +
+      `      let prefix = "got: "\n` +
+      `      prefix + value\n` +
+      `    }\n` +
+      `  }\n` +
+      `}\n`;
+    const out = t(src);
+    // Must NOT emit `let` inside a parenthesized expression body.
+    expect(out).not.toMatch(/=>\s*\(\s*\{?\s*let\b/);
+    // Must NOT emit `return let ...`.
+    expect(out).not.toMatch(/return\s+let\b/);
+    // The arm should be emitted as an arrow with a brace block.
+    expect(out).toMatch(/\(\{\s*value\s*\}: any\)\s*=>\s*\{[\s\S]*let prefix = "got: "[\s\S]*return\s+prefix \+ value\s*;[\s\S]*\}/);
+  });
+
+  it("lowers a `return`-bearing block-body arm to an arrow with a brace block (probe C)", () => {
+    const src =
+      `?bs 0.4\n\n` +
+      `type Outcome = Ok { value: string } | Err { error: string };\n\n` +
+      `fn process(o: Outcome) -> string {\n` +
+      `  return match o {\n` +
+      `    Ok { value } -> {\n` +
+      `      return ok(value)\n` +
+      `    }\n` +
+      `    Err { error } -> error\n` +
+      `  }\n` +
+      `}\n`;
+    const out = t(src);
+    // Must NOT emit `(return ...)` — `return` inside a parenthesized expression is invalid TS.
+    expect(out).not.toMatch(/=>\s*\(\s*return\b/);
+    expect(out).not.toMatch(/\(\s*return\s+ok\(/);
+    // The Ok arm should be a brace-block arrow with the explicit return passed through.
+    expect(out).toMatch(/\(\{\s*value\s*\}: any\)\s*=>\s*\{[\s\S]*return\s+ok\(value\)\s*;?\s*\}/);
+    // The Err arm — single expression — keeps the existing parenthesized form.
+    expect(out).toMatch(/\(\{\s*error\s*\}: any\)\s*=>\s*\(error\)/);
+  });
+
+  it("single-expression arm bodies still use the parenthesized arrow form (no regression)", () => {
+    const out = t(
+      `const r = match s { Circle { r } -> Math.PI * r * r; Square { side } -> side * side };\n`,
+    );
+    expect(out).toContain(`({ r }: any) => (Math.PI * r * r)`);
+    expect(out).toContain(`({ side }: any) => (side * side)`);
+  });
+
+  it("brace-block arm body whose first child is a template with a nested template inside ${...} (probe G)", () => {
+    // Marcelo's edge case: match arm body is a brace block whose body contains
+    // a template literal with a nested template inside `${...}` whose inner
+    // content includes a literal `}` character. The body-scanner must track
+    // the nested template AND its `${...}` interpolations as opaque, so the
+    // `}` inside the inner template doesn't decrement the outer brace depth.
+    const src =
+      `?bs 0.4\n\n` +
+      `type Msg = Greet { name: string };\n\n` +
+      `fn render(m: Msg) -> string {\n` +
+      `  return match m {\n` +
+      `    Greet { name } -> {\n` +
+      `      let r = ` + "`outer ${`inner } with brace`}`" + `\n` +
+      `      r\n` +
+      `    }\n` +
+      `  }\n` +
+      `}\n`;
+    const out = t(src);
+    // The arm body must take the brace-block IIFE path, NOT the parenthesized
+    // fallback that emits `({ let x = ... })` invalid TS.
+    expect(out).not.toMatch(/=>\s*\(\s*\{?\s*let\b/);
+    expect(out).not.toMatch(/return\s+let\b/);
+    // Confirm the brace-block arrow form fired:
+    expect(out).toMatch(/\(\{\s*name\s*\}: any\)\s*=>\s*\{[\s\S]*let r =[\s\S]*return\s+r\s*;[\s\S]*\}/);
+  });
+});

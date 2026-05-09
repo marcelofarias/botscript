@@ -54,7 +54,10 @@ additions below are the entire language surface.
   unsafe "reason" { expr }  (0.3+) escape hatch around \`as\` casts and similar.
                             The justification string is mandatory and shows up
                             in the compiled output as a comment so the diff
-                            reviewer sees the *why* alongside the cast.
+                            reviewer sees the *why* alongside the cast. From
+                            ?bs 0.5, a bare \`as\` cast outside an
+                            unsafe "<reason>" { ... } block is a parse error
+                            (UNS004). Casts must be justified.
 
 == RESULT / OPTION ==
   Result<T, E>     ok(value) | err(error)

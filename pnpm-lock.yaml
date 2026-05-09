@@ -127,6 +127,9 @@ importers:
 
   packages/compiler:
     devDependencies:
+      '@mbfarias/botscript-runtime':
+        specifier: workspace:*
+        version: link:../runtime
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

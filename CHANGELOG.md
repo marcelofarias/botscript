@@ -4,6 +4,45 @@ All notable changes to botscript. Each release pins a `?bs` version; shipped
 pins do not change behaviour after release (AGENTS.md rule 4). New behaviour
 goes behind a new pin.
 
+## ?bs 0.5 — 2026-05-09
+
+### Added
+- **`UNS004` — bare `as` cast outside `unsafe "<reason>" { ... }` is a parse
+  error.** The manifesto promise that every cast carries a written reason
+  was unenforced under 0.3 and 0.4 — nothing stopped a bot from writing
+  `value as User` without justification. From `?bs 0.5`, the new `bareAs`
+  pass walks the source pre-unsafe-rewrite, finds every `unsafe "..." { }`
+  body, and flags every `as` cast outside one of those bodies as `UNS004`.
+  The fix every diagnostic suggests is the same: wrap the cast in
+  `unsafe "<short reason>" { ... }` so the *why* shows up in the diff next
+  to the *what*.
+- The pass deliberately disambiguates non-cast `as` keywords: the
+  namespace-import form `import * as ns from "..."`, named-binding renames
+  `import { foo as bar }`, `export * as ns from "..."`, and re-export
+  renames `export { foo as bar } from "..."` are not flagged. For
+  `import`, the implementation skips the entire statement (every TS-legal
+  `import` shape uses `as` only structurally). For `export`, only the
+  namespace/rename shapes (`export *…`, `export {…}`, `export default *`)
+  are skipped wholesale; value-introducing forms like `export const`,
+  `export let`, `export function`, and `export default <expr>` are walked
+  normally so a bare `as` inside an initializer or function body still
+  fires UNS004.
+- Pipeline ordering: `bareAs` is wired into `PASS_PIPELINE` BEFORE
+  `unsafe`, because `passUnsafe` rewrites the source and erases the
+  original `unsafe` keyword. The bare-`as` walk has to run on the
+  pre-rewrite token stream so it can see the original `unsafe "..." { }`
+  body ranges and skip them.
+- `examples/node-app/src/parse-json.bs` is now pinned at `?bs 0.5` and
+  uses the unsafe-with-reason form to demonstrate the new check
+  end-to-end (AGENTS.md rule 3).
+
+### Forward compatibility
+- Files pinned to `?bs 0.4` (or earlier) compile to byte-identical
+  TypeScript. The forward-compat snapshot suite at
+  `packages/compiler/tests/forward-compat.test.ts` is the gate. New
+  enforced check on previously-legal syntax → behind a new pin per
+  AGENTS.md rule 4.
+
 ## ?bs 0.4 — 2026-05-08
 
 ### Added
@@ -48,6 +87,23 @@ goes behind a new pin.
   resolved version.
 
 ### Fixed
+- Block bodies in expression position (`pure { let; expr }`,
+  `Result.try { let; expr }`, `match` arms with brace-block bodies, and
+  `fn name(args) -> T = pure { let; expr }`) now lower to valid TypeScript.
+  Previously the lowering helper tested only for top-level `;` and the literal
+  substring `return`, then unconditionally prefixed `return` to the rest, so
+  newline-separated bodies like `pure { let lower = s.toLowerCase()\n lower }`
+  emitted `return let lower = ...;` (parse error) and brace-block match arms
+  emitted `({ value }: any) => ({ let prefix = ... })` (`let` inside a
+  parenthesized expression). The new shared lowering in
+  `passes/_block-body.ts` splits the body into top-level statement segments
+  (separated by `;` or unambiguous newlines, with continuation-token
+  detection on both sides of the newline), terminates each with `;`, and
+  `return`-wraps only the tail expression. `match` arms whose body is a
+  full `{ ... }` block now emit `(...) => { ...lowered... }` instead of
+  `(...) => (...)`. Single-expression arms keep their existing
+  parenthesized-arrow form, so forward-compat snapshots are byte-identical.
+  Closes #23.
 - The fn return-type scanner now tracks `<...>` depth instead of
   case-analysing what follows each matched `{...}`. Object types nested
   inside generic args — `Result<{ name: string }, string>`,

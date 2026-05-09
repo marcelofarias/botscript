@@ -116,6 +116,103 @@ describe("blocks", () => {
     const out = t(`const x = io { fetchSomething() };\n`);
     expect(out).toMatch(/\(\(\) => \{ return fetchSomething\(\); \}\)\(\)/);
   });
+
+  it("pure { let stmt; tail expr } lowers each statement and returns the tail (probe A)", () => {
+    const src = `fn classify(s: string) -> string = pure {\n  let lower = s.toLowerCase()\n  lower\n}\n`;
+    const out = t(src);
+    // Must NOT emit `return let ...` (invalid TS).
+    expect(out).not.toMatch(/return\s+let\b/);
+    expect(out).not.toMatch(/return\s+const\b/);
+    expect(out).not.toMatch(/return\s+var\b/);
+    // The `let` declaration must remain a top-level statement,
+    // and the tail expression must be `return`-wrapped.
+    expect(out).toContain("let lower = s.toLowerCase()");
+    expect(out).toMatch(/return\s+lower\s*;/);
+  });
+
+  it("pure { let stmt; tail expr } at bare expression position lowers correctly", () => {
+    const src = `const x = pure {\n  let a = 1\n  a + 2\n};\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/return\s+let\b/);
+    expect(out).toMatch(/let a = 1\s*;/);
+    expect(out).toMatch(/return\s+a \+ 2\s*;/);
+  });
+
+  it("pure { single expr } still emits a single `return expr;` (no regression)", () => {
+    const out = t(`const x = pure { 1 + 2 };\n`);
+    expect(out).toContain("$enter([] as const, () => { return 1 + 2; })");
+  });
+
+  it("pure { let m = /regex with slashes/.test(x); m } handles regex literals (probe E)", () => {
+    const src =
+      `?bs 0.4\n\n` +
+      `fn match_url(x: string) -> boolean = pure {\n` +
+      `  let m = /https?:\\/\\//.test(x)\n` +
+      `  m\n` +
+      `}\n`;
+    const out = t(src);
+    // Must NOT emit `return let ...` (invalid TS).
+    expect(out).not.toMatch(/return\s+let\b/);
+    // The regex literal must survive intact — its inner `//` must not be
+    // mis-read as a line comment that swallows `.test(x)` and beyond.
+    expect(out).toContain("/https?:\\/\\//.test(x)");
+    // The `let` line is a top-level statement; `m` is the return.
+    expect(out).toMatch(/let m = \/https\?:\\\/\\\/\/\.test\(x\)\s*;/);
+    expect(out).toMatch(/return\s+m\s*;/);
+  });
+
+  it("pure { let p = /regex containing slashes/; tail-stmt } splits regex from next stmt (probe E2)", () => {
+    // Variant of probe E where nothing trails the regex on its line. The
+    // body-splitter must still recognize the newline as a statement
+    // boundary even though the regex's inner `//` would otherwise be
+    // mis-read as a line comment that runs to EOL (and whose last char `/`
+    // is a continuation token that suppresses the split).
+    const src =
+      `?bs 0.4\n\n` +
+      `fn ext(s: string) -> boolean = pure {\n` +
+      `  let p = /\\/\\//\n` +
+      `  p.test(s)\n` +
+      `}\n`;
+    const out = t(src);
+    // The let line and the p.test(s) line MUST be split into two
+    // statements. The tail must be return-wrapped.
+    expect(out).toMatch(/let p = \/\\\/\\\/\/\s*;/);
+    expect(out).toMatch(/return\s+p\.test\(s\)\s*;/);
+    // And the `let` keyword must not bleed into the return.
+    expect(out).not.toMatch(/return\s+let\b/);
+  });
+
+  it("pure { let total = a + // comment\\n b; total } skips trailing line comments (probe F)", () => {
+    const src =
+      `?bs 0.4\n\n` +
+      `fn add(a: number, b: number) -> number = pure {\n` +
+      `  let total = a + // running sum\n` +
+      `    b\n` +
+      `  total\n` +
+      `}\n`;
+    const out = t(src);
+    // Must NOT emit `return let ...` (invalid TS).
+    expect(out).not.toMatch(/return\s+let\b/);
+    // The `+\n    b` must be treated as a continuation, not a split:
+    // when `lastSignificantChar` walks back past a trailing line comment,
+    // it should land on `+`, recognize the line as continuing, and not
+    // split. The buggy behavior emits `b` as its own segment, producing
+    // `let total = a + // running sum; b; return total;` — invalid TS
+    // (`let total = a + ` with the rest swallowed by the line comment).
+    // The fix should produce `let total = a + b;` as a single statement.
+    expect(out).not.toMatch(/;\s*b\s*;/);
+    // The buggy splitter emitted everything on one line, putting a literal
+    // `;` immediately after the `// running sum` comment so the `;`
+    // intended to terminate the let statement got swallowed. The fix
+    // preserves the original newline so the comment ends naturally.
+    expect(out).not.toMatch(/\+ \/\/ running sum;/);
+    // The `let total = a + b` must compile as valid TS; the closing `;` of
+    // the let statement appears on a line where the line-comment scanner
+    // has already exited.
+    expect(out).toMatch(/let total = a \+[\s\S]*?\bb\b\s*;/);
+    // `total` is the tail expression and gets return-wrapped.
+    expect(out).toMatch(/return\s+total\s*;/);
+  });
 });
 
 describe("match", () => {

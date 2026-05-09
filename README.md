@@ -157,7 +157,7 @@ adding a row.
 
 Per-version release notes live in [`CHANGELOG.md`](./CHANGELOG.md). `LATEST`
 is still 0.1, so existing files compile unchanged; opt into newer behaviour
-with a `?bs 0.2` / `?bs 0.3` / `?bs 0.4` directive.
+with a `?bs 0.2` / `?bs 0.3` / `?bs 0.4` / `?bs 0.5` directive.
 
 ## MCP server (for bots)
 
@@ -177,7 +177,7 @@ claude mcp add botscript -- npx -y @mbfarias/botscript-mcp
 | ----------- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `primer`    | (no args)                              | The canonical language primer (same text the `?primer` directive emits).                            |
 | `transform` | `{ source: string, filename?: string }` | `{ ok: true, code, forms, version }` on success, or `{ ok: false, diagnostics: [...] }` on failure. |
-| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`, `CAP002`, `UNS001`–`UNS003`, `RES001`) plus a fails/passes example pair. |
+| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`, `CAP002`, `UNS001`–`UNS004`, `RES001`) plus a fails/passes example pair. |
 
 A bot's loop becomes deterministic: `transform` → if `ok=false`, read
 `diagnostics[0].code` → `explain(code)` → apply `rewrite` → `transform` again.

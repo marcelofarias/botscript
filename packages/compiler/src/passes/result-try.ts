@@ -18,6 +18,7 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
+import { lowerBlockBody } from "./_block-body.js";
 
 export function passResultTry(src: string): string {
   const tokens = lex(src);
@@ -105,29 +106,7 @@ function sliceText(tokens: Token[], from: number, to: number): string {
 }
 
 function wrapBody(body: string): string {
-  if (body === "") return "";
-  if (hasTopLevelSemicolon(body) || /\breturn\b/.test(body)) return body;
-  return `return ${body};`;
-}
-
-function hasTopLevelSemicolon(src: string): boolean {
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i]!;
-    if (c === '"' || c === "'" || c === "`") {
-      const q = c;
-      i++;
-      while (i < src.length && src[i] !== q) {
-        if (src[i] === "\\") i += 2;
-        else i++;
-      }
-      i++;
-      continue;
-    }
-    if (c === ";") return true;
-    i++;
-  }
-  return false;
+  return lowerBlockBody(body);
 }
 
 function locationOf(src: string, offset: number): { line: number; column: number } {
