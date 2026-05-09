@@ -21,6 +21,15 @@
  *     line breaks and indentation depth, only normalizing the *characters*
  *     used (tabs → spaces) and stripping trailing whitespace.
  *
+ * Structural rewrites (run as a pre-pass before the token walk):
+ *   - Brace-block → expression body. When a `fn`'s body block contains a
+ *     single `return e;` statement (and nothing else), rewrite the whole
+ *     `{ return e; }` to `= e`. ASI-safe: the rewrite bails when there's a
+ *     newline between `return` and the expression start, or any depth-0
+ *     newline inside the expression — both cases where ASI in the emitted
+ *     TypeScript would change semantics. Bails on comments outside the
+ *     expression so they're never silently dropped.
+ *
  * What it DOES do:
  *   - Replaces leading-tab characters with 2 spaces each.
  *   - Strips trailing whitespace on every line.
@@ -62,10 +71,12 @@
 
 import { lex } from "../parser/lex.js";
 import type { Token } from "../parser/lex.js";
+import { parseFn } from "../parser/parse-fn.js";
 
 export function formatSource(src: string): string {
+  const rewritten = rewriteBraceToExprBody(src) ?? src;
   let out = "";
-  emitCanonical(src, (chunk) => {
+  emitCanonical(rewritten, (chunk) => {
     out += chunk;
     return true;
   });
@@ -77,9 +88,11 @@ export function formatSource(src: string): string {
  * `formatSource(src) === src` because the walk halts at the first UTF-16
  * code unit that doesn't match — most non-canonical inputs bail out long
  * before the file ends, and canonical inputs avoid the string allocation
- * entirely.
+ * entirely. The brace→expression rewrite runs as a pre-check: any rewritable
+ * fn body short-circuits to `false` without paying for the token walk.
  */
 export function isCanonical(src: string): boolean {
+  if (rewriteBraceToExprBody(src) !== null) return false;
   let off = 0;
   let ok = true;
   emitCanonical(src, (chunk) => {
@@ -272,6 +285,160 @@ function emitWhitespace(t: Token, tokens: Token[], i: number): string {
 
   // Mid-line whitespace run — single space.
   return " ";
+}
+
+/**
+ * Source-to-source rewrite: replace each `fn` whose body is `{ return e; }`
+ * (single statement, optional trailing `;`) with the expression-body form
+ * `= e`. Returns the rewritten source, or `null` when no body matched — the
+ * `null` channel lets `isCanonical` short-circuit without allocating a copy
+ * of the source on canonical input.
+ *
+ * Rewrites are collected as (start, end, replacement) splices over the
+ * original source and applied right-to-left so earlier offsets stay valid.
+ * Splices never overlap: a single-`return` body has no nested fn declaration
+ * that could itself be a candidate.
+ */
+function rewriteBraceToExprBody(src: string): string | null {
+  // Cheap pre-check before the lex: a candidate body needs both an `fn`
+  // declaration and a `return` somewhere in the source. Substring tests are
+  // O(n) string scans without allocations, so they pay for themselves on the
+  // common already-canonical case (no fn-keyword or no return → null without
+  // ever lexing). False positives — e.g. `return` sitting inside a string
+  // literal — fall through to the lex/parse path and correctly return null
+  // there, so no rewrite is ever missed.
+  if (src.indexOf("fn") < 0 || src.indexOf("return") < 0) return null;
+  const tokens = lex(src);
+  let patches: { start: number; end: number; replacement: string }[] | null = null;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "keyword" || t.keyword !== "fn") continue;
+    const decl = parseFn(tokens, i, { allowGenerics: true });
+    if (!decl) continue;
+    if (decl.body.kind === "block") {
+      const expr = extractSingleReturn(decl.body.text);
+      if (expr !== null) {
+        if (patches === null) patches = [];
+        patches.push({
+          start: decl.body.start,
+          end: decl.body.end,
+          replacement: `= ${expr}`,
+        });
+      }
+    }
+    // Don't skip past the outer decl's tokens. The for-loop's natural
+    // `i++` advances one token per iteration, so any nested `fn` keyword
+    // inside the body is visited and re-parsed in turn — parseFn just
+    // walks the already-lexed token array, so re-entering it on each
+    // inner keyword is cheap. Skipping ahead to `decl.tokenEnd` here
+    // would suppress those inner declarations and they'd never get
+    // rewritten.
+  }
+  if (patches === null) return null;
+  patches.sort((a, b) => b.start - a.start);
+  let out = src;
+  for (const p of patches) {
+    out = out.slice(0, p.start) + p.replacement + out.slice(p.end);
+  }
+  return out;
+}
+
+/**
+ * Inspect the *content* between a fn's body braces (`body.text`) and decide
+ * whether it is a single `return EXPR;` (or `return EXPR` without the
+ * semicolon). Returns the trimmed expression text on success, or `null`
+ * when the block is not a candidate.
+ *
+ * Bails (returns null) when:
+ *   - the first significant token isn't the `return` identifier (the lexer
+ *     does NOT include `return` in its botscript keyword set — it lexes as
+ *     a plain `ident`, just like `let` or `if`. The check below matches on
+ *     `kind === "ident"` and `text === "return"`, not `kind === "keyword"`);
+ *   - there's a newline between `return` and the expression start (ASI in
+ *     the emitted TS would turn this into bare `return;`);
+ *   - there's a top-level newline inside the expression (potential ASI cut);
+ *   - a top-level block comment containing a `\n` / `\r` appears inside the
+ *     expression. ECMAScript treats line terminators inside multi-line block
+ *     comments as ASI hazards (spec §7.4), so rewriting around them would
+ *     change observable behaviour;
+ *   - the expression is empty (`return;`);
+ *   - any non-trivia (line/block comment, more code) sits AFTER the optional
+ *     trailing `;` — the formatter never silently drops comments;
+ *   - any leading line/block comment sits BEFORE `return`.
+ *
+ * Comments INSIDE the expression's range are preserved verbatim, including
+ * an inline block comment that sits between `return` and the value (e.g.
+ * `return /* keep *\/ 1;` rewrites to `= /* keep *\/ 1`). The expression
+ * text is captured as-is and copied straight into the rewrite.
+ */
+function extractSingleReturn(blockText: string): string | null {
+  const tokens = lex(blockText);
+  let i = 0;
+  // Leading trivia: whitespace + newlines only. Comments → bail.
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline") { i++; continue; }
+    if (t.kind === "lineComment" || t.kind === "blockComment") return null;
+    break;
+  }
+  if (i >= tokens.length) return null;
+  const ret = tokens[i]!;
+  if (ret.kind !== "ident" || ret.text !== "return") return null;
+  i++;
+  // Between `return` and the expression: only horizontal whitespace. A
+  // newline here would ASI to bare `return;` in JS, changing semantics.
+  while (i < tokens.length && tokens[i]!.kind === "whitespace") i++;
+  if (i >= tokens.length) return null;
+  const startTok = tokens[i]!;
+  if (startTok.kind === "newline") return null;
+  // A line comment between `return` and the value runs to the next `\n`,
+  // and ASI would then re-bind to bare `return;` — bail.
+  if (startTok.kind === "lineComment") return null;
+  // Empty `return;` — exprText would be empty, bail explicitly so we don't
+  // emit `= ` and rely on a downstream parser to reject it.
+  if (startTok.kind === "punct" && startTok.text === ";") return null;
+  if (startTok.kind === "eof") return null;
+  // A leading block comment IS allowed and folded into the expression text
+  // (so `return /* keep */ 1;` rewrites to `= /* keep */ 1`). Multi-line
+  // block comments are still ASI hazards and are caught in the walk below.
+  const exprStart = i;
+  let exprEnd = i;
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "eof") { exprEnd = i; break; }
+    if (t.kind === "newline") return null;
+    // ECMAScript §7.4: a multi-line block comment counts as a line break
+    // for ASI in the emitted TS. Bail so we never rewrite around one.
+    if (t.kind === "blockComment" && (t.text.indexOf("\n") >= 0 || t.text.indexOf("\r") >= 0)) {
+      return null;
+    }
+    if (t.kind === "punct" && t.text === ";") { exprEnd = i; break; }
+    if (t.kind === "open" && t.matchedAt !== undefined) {
+      i = t.matchedAt + 1;
+      exprEnd = i;
+      continue;
+    }
+    i++;
+    exprEnd = i;
+  }
+  // Linear-time concatenation: collect token texts into an array and join
+  // once. `+=` in a tight loop on long expressions can degrade to quadratic
+  // on engines that don't rope short strings.
+  const parts: string[] = [];
+  for (let k = exprStart; k < exprEnd; k++) parts.push(tokens[k]!.text);
+  const exprText = parts.join("").trim();
+  if (exprText === "") return null;
+  // Past the optional trailing `;`: only whitespace/newlines. Any non-
+  // trivia (comment, more code) means the block isn't a single-return.
+  let after = exprEnd;
+  if (after < tokens.length && tokens[after]!.kind === "punct" && tokens[after]!.text === ";") after++;
+  for (let k = after; k < tokens.length; k++) {
+    const t = tokens[k]!;
+    if (t.kind === "eof") break;
+    if (t.kind === "whitespace" || t.kind === "newline") continue;
+    return null;
+  }
+  return exprText;
 }
 
 function postProcess(s: string): string {

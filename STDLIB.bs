@@ -20,9 +20,7 @@ export type Shape = Circle { r: number } | Square { side: number };
 // `uses { ... }` declares the side-effect categories this function may touch.
 // Capabilities: net, fs, time, random, process, stdout, stderr.
 
-fn now() uses { time } -> number {
-  return time.now();
-}
+fn now() uses { time } -> number = time.now()
 
 // ─── 3. fn pure shorthand ───────────────────────────────────────────────────
 // `= pure { expr }` is equivalent to `uses { } { return expr; }`.

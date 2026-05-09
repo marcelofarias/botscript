@@ -10,16 +10,22 @@ describe("formatSource — line-level cleanup", () => {
   });
 
   it("converts leading tabs to two spaces", () => {
-    const src = "?bs 0.4\nfn x() -> number {\n\treturn 1;\n}\n";
+    // Multi-statement body so the brace→expr rewrite doesn't fire and we're
+    // really exercising the indent-normalization rule.
+    const src = "?bs 0.4\nfn x() -> number {\n\tconst y = 1;\n\treturn y;\n}\n";
     const out = formatSource(src);
-    expect(out).toBe("?bs 0.4\nfn x() -> number {\n  return 1;\n}\n");
+    expect(out).toBe(
+      "?bs 0.4\nfn x() -> number {\n  const y = 1;\n  return y;\n}\n",
+    );
   });
 
   it("converts mixed tabs+spaces in indentation to spaces", () => {
-    const src = "?bs 0.4\nfn x() -> number {\n\t  return 1;\n}\n";
+    const src = "?bs 0.4\nfn x() -> number {\n\t  const y = 1;\n\t  return y;\n}\n";
     const out = formatSource(src);
     // Tab → 2 spaces, plus the original 2 spaces = 4 spaces of indent.
-    expect(out).toBe("?bs 0.4\nfn x() -> number {\n    return 1;\n}\n");
+    expect(out).toBe(
+      "?bs 0.4\nfn x() -> number {\n    const y = 1;\n    return y;\n}\n",
+    );
   });
 
   it("preserves non-leading whitespace inside comments verbatim", () => {
@@ -140,6 +146,98 @@ describe("formatSource — whitespace insertion", () => {
     const a = "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n";
     const b = "?bs 0.4\nfn add(a:number,b:number) -> number = a + b\n";
     expect(formatSource(a)).toBe(formatSource(b));
+  });
+});
+
+describe("formatSource — brace→expression body equivalence", () => {
+  it("rewrites `{ return e; }` to `= e` on a single-line body", () => {
+    const src = "?bs 0.4\nfn x() -> number { return 1; }\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("rewrites `{ return e }` (no semicolon) to `= e`", () => {
+    const src = "?bs 0.4\nfn add(a: number, b: number) -> number { return a + b }\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    );
+  });
+
+  it("rewrites a multi-line block when the return is on its own line", () => {
+    const src = "?bs 0.4\nfn x() -> number {\n  return 1;\n}\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("rewrites a return whose expression is a balanced object literal", () => {
+    const src =
+      "?bs 0.4\nfn obj() -> { a: number } { return { a: 1 }; }\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn obj() -> { a: number } = { a: 1 }\n",
+    );
+  });
+
+  it("does NOT rewrite a multi-statement block", () => {
+    const src =
+      "?bs 0.4\nfn x() -> number { let y = 1; return y; }\n";
+    // Whitespace canonicalization still applies, but the body stays a block.
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT rewrite when there is more than one return", () => {
+    const src = "?bs 0.4\nfn x() -> number { return 1; return 2; }\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT rewrite an empty `return;`", () => {
+    const src = "?bs 0.4\nfn x() -> void { return; }\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT rewrite when a comment sits before the return (preserves comments)", () => {
+    const src = "?bs 0.4\nfn x() -> number {\n  // keep me\n  return 1;\n}\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves a single-line block comment between `return` and the value", () => {
+    // `return /* keep */ 1;` — the comment sits inside the expression's
+    // range, no ASI hazard, and rewriting must not silently drop it.
+    const src = "?bs 0.4\nfn x() -> number { return /* keep */ 1; }\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn x() -> number = /* keep */ 1\n",
+    );
+  });
+
+  it("does NOT rewrite when a multi-line block comment sits between `return` and the value (ASI hazard)", () => {
+    // ECMAScript §7.4: a block comment containing a line terminator counts
+    // as a line break for ASI, so `return /* \n */ 1;` would emit-as
+    // `return; 1;` in TS. The rewrite must bail to keep semantics.
+    const src = "?bs 0.4\nfn x() -> number { return /* multi\nline */ 1; }\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT rewrite when there is a newline between `return` and the expression (ASI risk)", () => {
+    // ASI in the emitted TypeScript would treat this as `return; 1;`, so
+    // rewriting to `= 1` would change semantics.
+    const src = "?bs 0.4\nfn x() -> number {\n  return\n  1;\n}\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT rewrite when the expression continues across a line break (ASI risk)", () => {
+    const src = "?bs 0.4\nfn x() -> number {\n  return f()\n    + g();\n}\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("collapses RFC #13's brace and expression forms together", () => {
+    const a = "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n";
+    const b = "?bs 0.4\nfn add(a: number, b: number) -> number { return a + b }\n";
+    expect(formatSource(a)).toBe(formatSource(b));
+  });
+
+  it("rewrites a nested fn's single-return body", () => {
+    const src =
+      "?bs 0.4\nfn outer() -> number {\n  fn inner() -> number { return 1; }\n  return inner() + 2;\n}\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn outer() -> number {\n  fn inner() -> number = 1\n  return inner() + 2;\n}\n",
+    );
   });
 });
 
@@ -308,6 +406,19 @@ describe("canonical-form gate (FMT001)", () => {
       const d = (e as { diagnostics: { code: string; line: number }[] }).diagnostics[0]!;
       expect(d.code).toBe("FMT001");
       expect(d.line).toBe(3);
+    }
+  });
+
+  it("0.4: rejects a brace-body that should be expression-form (FMT001)", () => {
+    // `{ return e; }` collapses to `= e` under RFC #13 — the gate must reject
+    // the brace form so canonical-form drift is caught at compile time.
+    const src = "?bs 0.4\nfn x() -> number { return 1; }\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
     }
   });
 });

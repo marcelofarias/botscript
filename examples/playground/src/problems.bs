@@ -78,9 +78,7 @@ const NAKED_CAST_BS = `?bs 0.4
 
 type User = { id: string; name: string };
 
-fn coerceUser(json: unknown) -> User {
-  return unsafe { json as User };
-}
+fn coerceUser(json: unknown) -> User = unsafe { json as User }
 `;
 
 const OVER_DECLARED_TS = `// the docstring claims this hits the network — it doesn't anymore.

@@ -43,9 +43,26 @@ export interface FnDecl {
   body: FnBody;
 }
 
+/**
+ * `start` / `end` are source offsets covering the whole body construct.
+ * UTF-16 code units, end-exclusive — same coordinate system as `FnDecl.start`
+ * / `FnDecl.end`. Tools that rewrite the body in place (the canonical-form
+ * formatter) splice `src.slice(0, body.start) + ... + src.slice(body.end)`
+ * to keep everything else verbatim.
+ *
+ * Per body shape, `end` lands at:
+ *   - `block`:                             just past the matching `}`.
+ *   - `expr` with `wrappedAs: "pure"|"io"`: just past the `pure`/`io` body's
+ *                                          closing `}`. parseFn does NOT
+ *                                          consume any trailing `;` here.
+ *   - `expr` with `wrappedAs: "expr"`:     just past the expression, INCLUDING
+ *                                          a trailing `;` when one is present
+ *                                          (parseFn consumes it as part of
+ *                                          the bare-expression body).
+ */
 export type FnBody =
-  | { kind: "block"; text: string }
-  | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr" };
+  | { kind: "block"; text: string; start: number; end: number }
+  | { kind: "expr"; text: string; wrappedAs: "pure" | "io" | "expr"; start: number; end: number };
 
 export interface ParseFnOptions {
   /**
@@ -199,9 +216,15 @@ export function parseFn(
   const at = tokens[typeEnd]!;
   if (at.kind === "open" && at.text === "{") {
     if (at.matchedAt === undefined) return null;
-    body = { kind: "block", text: sliceText(tokens, typeEnd + 1, at.matchedAt) };
+    body = {
+      kind: "block",
+      text: sliceText(tokens, typeEnd + 1, at.matchedAt),
+      start: at.start,
+      end: tokens[at.matchedAt]!.end,
+    };
     bodyEnd = at.matchedAt + 1;
   } else if (at.kind === "eq") {
+    const eqStart = at.start;
     let j = typeEnd + 1;
     j = skipTrivia(tokens, j);
     const head = tokens[j];
@@ -211,12 +234,22 @@ export function parseFn(
       j = skipTrivia(tokens, j);
       const open = tokens[j];
       if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) return null;
-      body = { kind: "expr", text: sliceText(tokens, j + 1, open.matchedAt), wrappedAs: tag };
+      body = {
+        kind: "expr",
+        text: sliceText(tokens, j + 1, open.matchedAt),
+        wrappedAs: tag,
+        start: eqStart,
+        end: tokens[open.matchedAt]!.end,
+      };
       bodyEnd = open.matchedAt + 1;
     } else {
-      // `= <expression>` — read until `;` or newline at depth 0.
+      // `= <expression>` — read until `;` or newline at top level. The lexer
+      // pairs every `open` with its matching `close` via `matchedAt`, so we
+      // skip past balanced groups by jumping `open → matchedAt + 1`. That
+      // means the loop never sees a `close` that belongs to a balanced
+      // group; if one shows up here it's an unmatched stray and the body
+      // is malformed — bail rather than over-consume tokens.
       const exprStart = j;
-      let depth = 0;
       while (j < tokens.length) {
         const t = tokens[j]!;
         if (t.kind === "eof") break;
@@ -224,23 +257,24 @@ export function parseFn(
           j = t.matchedAt + 1;
           continue;
         }
-        if (t.kind === "close") {
-          depth--;
-          j++;
-          continue;
-        }
-        if (depth === 0) {
-          if (t.kind === "punct" && t.text === ";") break;
-          if (t.kind === "newline") break;
-        }
+        if (t.kind === "close") return null;
+        if (t.kind === "punct" && t.text === ";") break;
+        if (t.kind === "newline") break;
         j++;
       }
       const exprText = sliceText(tokens, exprStart, j).trim();
       if (exprText === "") return null;
-      body = { kind: "expr", text: exprText, wrappedAs: "expr" };
       bodyEnd = j;
       // Consume a trailing `;` if present.
       if (tokens[bodyEnd]?.kind === "punct" && tokens[bodyEnd]?.text === ";") bodyEnd++;
+      const lastBodyTok = tokens[bodyEnd - 1] ?? at;
+      body = {
+        kind: "expr",
+        text: exprText,
+        wrappedAs: "expr",
+        start: eqStart,
+        end: lastBodyTok.end,
+      };
     }
   } else {
     return null;
