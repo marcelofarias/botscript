@@ -1,0 +1,75 @@
+?bs 0.4
+
+// Real, merged PRs in well-known TypeScript projects where the bug being
+// fixed is exactly a class of bug botscript prevents structurally. Every
+// entry here was verified by reading the actual diff — the `bs` field
+// describes what `.bs` makes parse-time impossible, not a hand-wave.
+
+export type Pull = {
+  id: string;
+  project: string;
+  number: number;
+  url: string;
+  title: string;
+  bugClass: string;
+  summary: string;
+  bs: string;
+};
+
+export const PULLS: Pull[] = [
+  {
+    id: "vscode-299235",
+    project: "microsoft/vscode",
+    number: 299235,
+    url: "https://github.com/microsoft/vscode/pull/299235",
+    title: "Freeform chat answer reloaded as [object Object]",
+    bugClass: "tagged-union drift",
+    summary:
+      "A select-or-freeform answer was stored as { selectedValue: undefined, freeformValue: \"…\" }. JSON.stringify dropped the undefined key on persist, the formatter lost its discriminator, and the chat history showed [object Object] after reload.",
+    bs: "type Answer = Selected { value } | Freeform { text } makes the tag a real field, not a key whose presence depends on undefined; match has no fallthrough to String(answer).",
+  },
+  {
+    id: "next-93134",
+    project: "vercel/next.js",
+    number: 93134,
+    url: "https://github.com/vercel/next.js/pull/93134",
+    title: "Falsy throws broke app-router error boundaries",
+    bugClass: "tagged-union drift",
+    summary:
+      "The boundary's state was error: Error | null and checked truthiness. throw undefined, throw 0, throw \"\" all read as no-error — the boundary re-rendered children that threw the same value again. The fix retypes state to null | { thrownValue: unknown }.",
+    bs: "That fix is the exact shape match enforces by default. type CatchState = NoError | Errored { thrownValue } can't be confused with truthiness — the variant is the truth.",
+  },
+  {
+    id: "next-92806",
+    project: "vercel/next.js",
+    number: 92806,
+    url: "https://github.com/vercel/next.js/pull/92806",
+    title: "Build crashed on notFound() pages",
+    bugClass: "null / undefined drift",
+    summary:
+      "Two parallel route structures usually agreed, but notFound() pages produced keys absent from the seed data. The index lookup returned undefined; downstream code expected null. The fix in the PR is literally ?? null on two index reads.",
+    bs: "There is only Option<T>. Index lookups return Option, every read unwraps via match or ? — there is no second flavor of missing to coerce against.",
+  },
+  {
+    id: "vscode-309950",
+    project: "microsoft/vscode",
+    number: 309950,
+    url: "https://github.com/microsoft/vscode/pull/309950",
+    title: "Cast lied about a possibly-absent viewlet",
+    bugClass: "load-bearing `as` cast",
+    summary:
+      "openSearch cast getViewPaneContainer() as a definite value, but the call returns undefined in the new Agents product. 36 of 56 callers were fire-and-forget — the crash surfaced as silent unhandled promise rejections.",
+    bs: "as outside an unsafe { } block is a parse error. The real return type would be Option<ViewPaneContainer>, and the call site is forced to pattern-match before reaching .search().",
+  },
+  {
+    id: "vscode-309570",
+    project: "microsoft/vscode",
+    number: 309570,
+    url: "https://github.com/microsoft/vscode/pull/309570",
+    title: "ChatModel.dispose crashed the chat list",
+    bugClass: "load-bearing `as any`",
+    summary:
+      "Dispose did (r as any)._session = undefined to break a GC back-reference, with a // eslint-disable-next-line local/code-no-any-casts comment to permit it. A live listener then crashed accessing _session.sessionResource during a model switch.",
+    bs: "as any is a parse error. The PR's actual fix is to delete the cast — botscript would have made writing it in the first place illegal.",
+  },
+];
