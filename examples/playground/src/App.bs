@@ -6,6 +6,7 @@ import { transform, formatSource } from "@mbfarias/botscript-compiler";
 import { Logo } from "./Logo";
 import { SNIPPETS } from "./snippets.bs";
 import { PROBLEMS } from "./problems.bs";
+import { PULLS } from "./pulls.bs";
 
 type Mode = "problems" | "features";
 
@@ -128,6 +129,8 @@ export function App() {
         </p>
       </section>
 
+      <Receipts />
+
       {mode === "problems" ? (
         <ProblemsView
           problem={problem}
@@ -157,6 +160,43 @@ export function App() {
         <span>compiled in your browser</span>
       </footer>
     </div>
+  );
+}
+
+function Receipts() {
+  return (
+    <section className="receipts" aria-label="real PRs that wouldn't have shipped in .bs">
+      <header className="receipts-head">
+        <span className="receipts-eyebrow">receipts</span>
+        <h2 className="receipts-title">Real merged PRs that wouldn&rsquo;t have shipped in <code>.bs</code></h2>
+        <p className="receipts-sub">
+          Five fixes from Next.js and VS Code, all merged in 2026, where the
+          bug class is <em>parse-time impossible</em> in botscript. Every entry
+          was verified against the actual diff — click through to read the
+          fix and convince yourself.
+        </p>
+      </header>
+      <ol className="receipts-list">
+        {PULLS.map((p) => (
+          <li className="receipt-card" key={p.id}>
+            <div className="receipt-meta">
+              <span className="receipt-project">{p.project}</span>
+              <a className="receipt-pr" href={p.url} target="_blank" rel="noreferrer">
+                #{p.number}
+                <span className="receipt-pr-arrow" aria-hidden>↗</span>
+              </a>
+              <span className="receipt-class">{p.bugClass}</span>
+            </div>
+            <h3 className="receipt-title">{p.title}</h3>
+            <p className="receipt-summary">{p.summary}</p>
+            <p className="receipt-bs">
+              <span className="receipt-bs-mark" aria-hidden>↦</span>
+              <span className="receipt-bs-text">{p.bs}</span>
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
