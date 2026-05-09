@@ -327,6 +327,9 @@ async function fmtCmd(args: string[]): Promise<void> {
     if (files.length !== 1) {
       throw new Error("stdout mode requires a single file; pass --check or --write");
     }
+    if (format === "json") {
+      throw new Error("--format json requires --check or --write; stdout mode prints raw source");
+    }
     const f = files[0]!;
     const src = await readFile(f, "utf8");
     stdout.write(formatSource(src));

@@ -83,6 +83,16 @@ export function formatSource(src: string): string {
       continue;
     }
 
+    if (t.kind === "directive") {
+      // The lexer captures `?bs   0.4` and `?bs\t0.4` whole — including the
+      // inter-word whitespace — so the catch-all path below would leak that
+      // whitespace through. Re-emit the canonical form.
+      if (t.directive === "primer") out += "?primer";
+      else if (t.directive === "bs") out += `?bs ${t.directiveValue ?? ""}`;
+      else out += t.text;
+      continue;
+    }
+
     // Every other token is emitted verbatim.
     out += t.text;
   }

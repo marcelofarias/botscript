@@ -80,6 +80,23 @@ describe("formatSource — mid-line whitespace", () => {
   });
 });
 
+describe("formatSource — directive normalization", () => {
+  it("collapses multiple spaces between `?bs` and the version", () => {
+    const src = "?bs   0.4\nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("converts a tab between `?bs` and the version to a single space", () => {
+    const src = "?bs\t0.4\nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 1\n");
+  });
+
+  it("emits `?primer` verbatim", () => {
+    const src = "?primer\nfn x() -> number = 1\n";
+    expect(formatSource(src)).toBe("?primer\nfn x() -> number = 1\n");
+  });
+});
+
 describe("formatSource — line-ending normalization", () => {
   it("normalizes CRLF input to LF", () => {
     const src = "?bs 0.4\r\nfn x() -> number = 1\r\n";
