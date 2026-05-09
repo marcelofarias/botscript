@@ -106,9 +106,10 @@ function withFilename(err: BotscriptError, filename: string): BotscriptError {
 }
 
 function assertCanonical(source: string): void {
-  // Cheap path first: walk tokens and bail on the first byte that differs
-  // from canonical. The full formatSource() is only paid when we already
-  // know we need it (to find the first differing line for the diagnostic).
+  // Cheap path first: walk tokens and bail on the first UTF-16 code unit
+  // that differs from canonical. The full formatSource() is only paid when
+  // we already know we need it (to find the first differing line for the
+  // diagnostic).
   if (isCanonical(source)) return;
   const canonical = formatSource(source);
   // Find the first code unit (UTF-16) that differs so the diagnostic points

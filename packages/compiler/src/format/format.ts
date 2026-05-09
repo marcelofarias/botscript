@@ -56,9 +56,10 @@ export function formatSource(src: string): string {
 
 /**
  * Returns true iff `src` is already in canonical form. Cheaper than
- * `formatSource(src) === src` because the walk halts at the first byte that
- * doesn't match — most non-canonical inputs bail out long before the file ends,
- * and canonical inputs avoid the string allocation entirely.
+ * `formatSource(src) === src` because the walk halts at the first UTF-16
+ * code unit that doesn't match — most non-canonical inputs bail out long
+ * before the file ends, and canonical inputs avoid the string allocation
+ * entirely.
  */
 export function isCanonical(src: string): boolean {
   let off = 0;
@@ -90,7 +91,7 @@ export function isCanonical(src: string): boolean {
 /**
  * Walks `src` token-by-token and yields each canonical-form chunk via `emit`.
  * `emit` returns `false` to halt the walk early — formatSource ignores the
- * return value; isCanonical halts on the first byte mismatch.
+ * return value; isCanonical halts on the first code-unit mismatch.
  */
 function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   const tokens = lex(src);
