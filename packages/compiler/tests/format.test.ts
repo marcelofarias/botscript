@@ -260,6 +260,22 @@ describe("formatSource — whitespace insertion", () => {
     );
   });
 
+  it("leaves `<` after a real regex literal as a comparison", () => {
+    // A regex literal `/re/` is NOT expression-position for the next
+    // token. `x = /re/ < y` is a comparison, NOT a JSX open. If this
+    // were misclassified, the formatter could later flip into JSX-open
+    // mode and suppress `=` spacing in unrelated assignment-form code.
+    const src = '?bs 0.4\nconst hit = /re/.test(s);\nconst ok = a < b;\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves `<` after postfix `++` / `--` as a comparison", () => {
+    // `a++ < b` and `a-- < b` are comparisons; the postfix increment
+    // ends an expression, so the next `<` is not in expression position.
+    const src = '?bs 0.4\nconst ok = a++ < b && c-- < d;\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("inserts space around `=` in a const that follows JSX (no leak)", () => {
     // The closing `</div>` must reset JSX-tag tracking so the next `=`
     // gets canonical spaces.
@@ -976,8 +992,10 @@ describe("canonical-form gate (FMT001)", () => {
 
   it("0.4: still accepts JSX `name=\"value\"` attributes", () => {
     // The `=`-whitespace rule must NOT fire inside JSX open tags.
-    const src =
-      '?bs 0.4\nfn Demo() -> any { return <a href="x">hi</a>; }\n';
+    // Use expression-body form because the brace-to-expr canonical-form
+    // rewrite (PR #21) would reject `fn ... { return <a/>; }` at FMT001
+    // for a reason unrelated to this test's intent.
+    const src = '?bs 0.4\nfn Demo() -> any = <a href="x">hi</a>\n';
     expect(transform(src).code.length).toBeGreaterThan(0);
   });
 });

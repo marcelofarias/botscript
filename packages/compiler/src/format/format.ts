@@ -230,16 +230,16 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   //   `<button onClick={a > b}>` doesn't prematurely close the tag.
   // - `prevContentWasSlash`: tracks `/` immediately before `>` so we
   //   recognize self-close `/>` and pop one nesting level.
-  // - `JSX_CLOSE_TAG_RE`: pattern for regex-token-shaped close tags
-  //   (`</Foo>` -> `/Foo>` and fragment close `</>` -> `/>`); also
-  //   accepts a trailing `}*` because the lexer sometimes munches a
-  //   surrounding expression block's brace into the regex token.
+  // - `JSX_CLOSE_TAG_RE` (module-level, shared with
+  //   `inExpressionPosition`): pattern for regex-token-shaped close
+  //   tags (`</Foo>` -> `/Foo>` and fragment close `</>` -> `/>`);
+  //   also accepts a trailing `}*` because the lexer sometimes
+  //   munches a surrounding expression block's brace into the regex.
   type JsxCtx = "jsxText" | "childExpr";
   const ctxStack: JsxCtx[] = [];
   let inJsxOpenTag = false;
   let jsxAttrBraceDepth = 0;
   let prevContentWasSlash = false;
-  const JSX_CLOSE_TAG_RE = /^\/(?:[A-Za-z_$][\w.$-]*)?\s*>\}*$/;
   const top = (): JsxCtx | undefined => ctxStack[ctxStack.length - 1];
 
   for (let i = 0; i < tokens.length; i++) {
@@ -499,6 +499,15 @@ function wantsSpaceBetween(
   return false;
 }
 
+// Pattern that signals a JSX close tag in a regex-shaped token. The
+// lexer's regex rule fires after operators, so `</Foo>` becomes `<` +
+// regex `/Foo>` (or `/Foo>}` when it eats a trailing `}` from a
+// surrounding expression block; or `/>` for fragment closes). Real
+// regex literals like `/re/` do NOT match this shape —
+// `inExpressionPosition` uses that to keep `<` after a regex literal
+// classified as comparison rather than JSX open.
+const JSX_CLOSE_TAG_RE = /^\/(?:[A-Za-z_$][\w.$-]*)?\s*>\}*$/;
+
 // JS keywords that legally precede an expression (and therefore a JSX tag).
 // The lexer's `kind === "keyword"` only covers botscript-specific reserves
 // (`fn`, `match`, `test`, ...); everyday JS keywords like `return` come
@@ -570,14 +579,18 @@ function inExpressionPosition(prev: Token | null): boolean {
     case "open":
       return true;
     case "regex":
-      // The lexer's regex-detection rule fires after operators, which
-      // means JSX close tags like `</div>` get lexed as `operator "<"`
-      // followed by a `regex` token spanning `/div>`. Treating `regex` as
-      // expression-position lets the next `<Foo` be correctly identified
-      // as a JSX open. Real regex literals also leave the parser in
-      // expression position (they're values), so this is safe in both
-      // cases.
-      return true;
+      // The lexer's regex-detection rule produces two very different
+      // shapes of `regex` token:
+      //   1. JSX close tags lexed as `<` + regex `/Foo>` (or `/>` for
+      //      fragments). After these, the next `<` legitimately opens a
+      //      sibling tag — expression position.
+      //   2. Real regex literals like `/re/`. After a regex literal the
+      //      parser is NOT in expression position; `x = /re/ < y` is a
+      //      comparison, not a JSX open.
+      // Distinguish by shape: only the close-tag form (matches
+      // JSX_CLOSE_TAG_RE) is expression-position; real regex literals
+      // are not.
+      return JSX_CLOSE_TAG_RE.test(prev.text);
     case "keyword":
       // botscript reserves: `fn`, `match`, `test`, `assert`, `pure`, `uses`,
       // `io`, `unsafe`, `async`. None of these directly precede a JSX tag
@@ -594,9 +607,10 @@ function inExpressionPosition(prev: Token | null): boolean {
       // `,`, `:`, `;` are all expression-position separators.
       return true;
     case "operator":
-      // Most operators are followed by an operand (i.e. expression position).
-      // The exception is postfix `++`/`--`, but those are rare directly
-      // before a `<`.
+      // Most operators are followed by an operand (i.e. expression
+      // position). The two exceptions are postfix `++` and `--`, which
+      // *end* an expression — `a++ < b` is a comparison, not a JSX open.
+      if (prev.text === "++" || prev.text === "--") return false;
       return true;
     default:
       return false;
