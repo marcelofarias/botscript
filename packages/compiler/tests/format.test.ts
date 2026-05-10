@@ -298,6 +298,14 @@ describe("formatSource — whitespace insertion", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("`<` after member-access `.` is a comparison, not a JSX open", () => {
+    // `a.foo < Bar` — the `.` is in `prev` position when `<` fires.
+    // `.` must NOT count as expression-position, or `< Bar` would be
+    // misclassified as a JSX open tag and leave `inJsxOpenTag` stuck.
+    const src = "?bs 0.4\nconst ok = a.foo < Bar;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("is idempotent on `=` rewrites", () => {
     const src = "?bs 0.4\nconst x=1;\nfn f() -> number=2\n";
     const once = formatSource(src);

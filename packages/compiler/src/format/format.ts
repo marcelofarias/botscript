@@ -608,8 +608,10 @@ function inExpressionPosition(prev: Token | null): boolean {
     case "ident":
       return EXPR_STARTING_IDENTS.has(prev.text);
     case "punct":
-      // `,`, `:`, `;` are all expression-position separators.
-      return true;
+      // `,`, `:`, `;` are expression-position separators. `.` is NOT:
+      // `a.foo < Bar` is a member-access chain then a comparison, not
+      // a JSX open tag. Excluding `.` prevents that misclassification.
+      return prev.text !== ".";
     case "operator":
       // Most operators are followed by an operand (i.e. expression
       // position). The two exceptions are postfix `++` and `--`, which
