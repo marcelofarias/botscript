@@ -206,6 +206,15 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
+  // JSX open-tag depth. When > 0, we're between `<Tag` and the matching
+  // `>` (or `/>`) and `=` should NOT pick up surrounding whitespace.
+  // Detection mirrors the standard JSX vs `<` disambiguation Babel/esbuild
+  // use: a `<` immediately followed by an ident is a JSX open only when
+  // the prior token is in expression position (so `Result<T>` and `a < b`
+  // stay generics/comparisons, while `return <Foo>` opens a JSX tag).
+  // The depth resets on every newline that exits an expression so a stray
+  // `<` inside e.g. a JSX text body (`<p>1<2</p>`) cannot leak.
+  let jsxOpenTagDepth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -248,11 +257,44 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
       continue;
     }
 
+    // Update JSX open-tag depth BEFORE asking wantsSpaceBetween, so the
+    // `=` rule sees the right state when we're sitting on the attr name.
+    // The transition point is the `<` itself: enter when `<` is followed
+    // (after trivia) by an ident and prevContent is in expression position;
+    // exit on the matching `>` or `/>`.
+    if (jsxOpenTagDepth > 0) {
+      // Self-close `/>` is lexed as `operator "/"` then `operator ">"`. End
+      // of the open tag fires on the `>`.
+      if (t.kind === "operator" && t.text === ">") {
+        jsxOpenTagDepth--;
+      }
+    } else if (t.kind === "operator" && t.text === "<") {
+      // Look ahead past trivia for an ident.
+      let k = i + 1;
+      while (
+        k < tokens.length &&
+        (tokens[k]!.kind === "whitespace" || tokens[k]!.kind === "newline")
+      ) {
+        k++;
+      }
+      const ahead = tokens[k];
+      // `<Foo` (open) and `</Foo` (close) both look like JSX-tag boundaries.
+      // A close-tag is `</...>`, lexed as `operator "<"`, `operator "/"`,
+      // `ident`. Either way, what follows is the inside of an open or close
+      // tag where `=` should not pick up spaces.
+      const opensJsx =
+        (ahead?.kind === "ident") ||
+        (ahead?.kind === "operator" && ahead.text === "/");
+      if (opensJsx && inExpressionPosition(prevContent)) {
+        jsxOpenTagDepth++;
+      }
+    }
+
     // Non-whitespace, non-newline token — possibly inject a separator first.
     if (
       prevContent !== null &&
       !separatorSinceContent &&
-      wantsSpaceBetween(prevContent, t)
+      wantsSpaceBetween(prevContent, t, jsxOpenTagDepth > 0)
     ) {
       if (!emit(" ")) return;
     }
@@ -289,15 +331,32 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
  * `+` / `-` / `*` etc. (the `operator` kind) are deliberately excluded —
  * they can be unary or binary, and disambiguating needs more context than
  * the token walk has.
+ *
+ * `inJsxOpenTag` is the only piece of state the caller threads in: when
+ * true, we're between `<Tag` and the `>` (or `/>`) that closes its opening,
+ * which is the one place where `name="value"` legitimately has no space
+ * around `=`. Outside of JSX open tags, `=` is always a declaration /
+ * assignment / type-alias and gets a space on each side.
  */
-function wantsSpaceBetween(prev: Token, curr: Token): boolean {
-  // `->`, `=>`, `??` always want a space on each side. (`=` is excluded
-  // because JSX attributes use `name="value"` with no space and the lexer
-  // doesn't pair `<` / `>` so we can't tell JSX from a declaration here.)
+function wantsSpaceBetween(
+  prev: Token,
+  curr: Token,
+  inJsxOpenTag: boolean,
+): boolean {
+  // `->`, `=>`, `??` always want a space on each side.
   if (
     prev.kind === "arrow" || curr.kind === "arrow" ||
     prev.kind === "fatArrow" || curr.kind === "fatArrow" ||
     prev.kind === "questionQuestion" || curr.kind === "questionQuestion"
+  ) {
+    return true;
+  }
+  // `=` (single-equals) wants a space on each side outside JSX open tags.
+  // Inside a JSX open tag we leave `name="value"` and `name={expr}` alone
+  // because canonical JSX attributes have no space around `=`.
+  if (
+    !inJsxOpenTag &&
+    (prev.kind === "eq" || curr.kind === "eq")
   ) {
     return true;
   }
@@ -314,6 +373,71 @@ function wantsSpaceBetween(prev: Token, curr: Token): boolean {
     return true;
   }
   return false;
+}
+
+// JS keywords that legally precede an expression (and therefore a JSX tag).
+// The lexer's `kind === "keyword"` only covers botscript-specific reserves
+// (`fn`, `match`, `test`, ...); everyday JS keywords like `return` come
+// through as `kind === "ident"`, so we list them by name here.
+const EXPR_STARTING_IDENTS = new Set([
+  "return",
+  "throw",
+  "yield",
+  "await",
+  "typeof",
+  "void",
+  "delete",
+  "new",
+  "in",
+  "of",
+  "do",
+  "case",
+]);
+
+/**
+ * Heuristic: is the previous content token in expression position, i.e. a
+ * JSX element could legitimately start here? This is the same
+ * disambiguation Babel and esbuild use to tell `<Foo>` from a `<` operator.
+ *
+ * Used to decide whether `<` followed by an ident opens a JSX tag (yes,
+ * after expression-position tokens) vs. a TS generic / less-than
+ * (no, after ident / number / `)` / `]`).
+ */
+function inExpressionPosition(prev: Token | null): boolean {
+  if (!prev) return true; // start of file
+  switch (prev.kind) {
+    case "eq":
+    case "arrow":
+    case "fatArrow":
+    case "questionQuestion":
+    case "questionDot":
+    case "question":
+    case "open":
+    case "newline":
+      return true;
+    case "keyword":
+      // botscript reserves: `fn`, `match`, `test`, `assert`, `pure`, `uses`,
+      // `io`, `unsafe`, `async`. None of these directly precede a JSX tag
+      // in well-formed code (e.g. `match` is followed by an expression then
+      // `{`, not by `<Tag>`), but treating them as expression-position is
+      // safe — the worst case is an unrelated `<` immediately after one of
+      // these keywords gets misclassified as JSX, which would only matter
+      // if it were followed by an ident, and that combination doesn't
+      // occur in valid botscript.
+      return true;
+    case "ident":
+      return EXPR_STARTING_IDENTS.has(prev.text);
+    case "punct":
+      // `,`, `:`, `;` are all expression-position separators.
+      return true;
+    case "operator":
+      // Most operators are followed by an operand (i.e. expression position).
+      // The exception is postfix `++`/`--`, but those are rare directly
+      // before a `<`.
+      return true;
+    default:
+      return false;
+  }
 }
 
 function countLineBreaks(s: string): number {

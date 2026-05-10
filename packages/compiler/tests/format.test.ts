@@ -139,6 +139,73 @@ describe("formatSource — whitespace insertion", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("inserts space on each side of `=` in let/const declarations", () => {
+    const src = "?bs 0.4\nconst x=1;\nlet y=2;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst x = 1;\nlet y = 2;\n");
+  });
+
+  it("inserts space on each side of `=` in `fn x() -> T = body`", () => {
+    const src = "?bs 0.4\nfn x() -> number=42\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 42\n");
+  });
+
+  it("inserts space on each side of `=` in tagged-union type aliases", () => {
+    const src =
+      "?bs 0.4\ntype Shape=Circle { r: number } | Square { side: number };\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\ntype Shape = Circle { r: number } | Square { side: number };\n",
+    );
+  });
+
+  it("inserts space around `=` in object-destructuring with default", () => {
+    const src = "?bs 0.4\nconst { a=1, b=2 } = obj;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst { a = 1, b = 2 } = obj;\n");
+  });
+
+  it("preserves JSX attribute `=` with `{expr}` value (no space)", () => {
+    // canonical: single-return body collapses to `=`-form (RFC #13, PR #21).
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <button onClick={fn}>x</button>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX attribute `=` across multiple attrs on one tag", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <a href="x" target="_blank">hi</a>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX self-closing tag attributes", () => {
+    const src = '?bs 0.4\nfn Demo() -> any = <input type="text" />\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("inserts space around `=` in a const that follows JSX (no leak)", () => {
+    // The closing `</div>` must reset JSX-tag tracking so the next `=`
+    // gets canonical spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any {\n  const x=1;\n  return <div>x</div>;\n}\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any {\n  const x = 1;\n  return <div>x</div>;\n}\n',
+    );
+  });
+
+  it("leaves TS generics alone — `Result<T, E>` is not JSX", () => {
+    const src = "?bs 0.4\nlet xs: Array<number> = [];\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nlet xs: Array<number> = [];\n");
+  });
+
+  it("leaves comparison operators alone — `a < b` is not JSX", () => {
+    const src = "?bs 0.4\nconst ok = a < b && c > d;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("is idempotent on `=` rewrites", () => {
+    const src = "?bs 0.4\nconst x=1;\nfn f() -> number=2\n";
+    const once = formatSource(src);
+    expect(formatSource(once)).toBe(once);
+  });
+
   it("collapses RFC #13's three example forms together (whitespace half)", () => {
     // The brace-vs-expression equivalence is a separate phase-2 PR; here we
     // assert that when `=` is already in canonical form, the comma/colon/
@@ -809,5 +876,28 @@ describe("canonical-form gate (FMT001)", () => {
       const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
       expect(diags?.[0]?.code).toBe("FMT001");
     }
+  });
+
+  it("0.4: rejects missing space around `=` in declarations (FMT001)", () => {
+    const src = "?bs 0.4\nconst x=1;\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.3: still accepts `const x=1` (=-whitespace gate is opt-in via the pin)", () => {
+    const src = "?bs 0.3\nconst x=1;\nfn y() -> number = 2\n";
+    expect(transform(src).code.length).toBeGreaterThan(0);
+  });
+
+  it("0.4: still accepts JSX `name=\"value\"` attributes", () => {
+    // The `=`-whitespace rule must NOT fire inside JSX open tags.
+    const src =
+      '?bs 0.4\nfn Demo() -> any { return <a href="x">hi</a>; }\n';
+    expect(transform(src).code.length).toBeGreaterThan(0);
   });
 });
