@@ -117,9 +117,18 @@ export function formatSource(src: string): string {
  * fn body short-circuits to `false` without paying for the token walk.
  */
 export function isCanonical(src: string): boolean {
-  if (rewriteImportOrder(src) !== null) return false;
-  if (rewriteTaggedUnionOrder(src) !== null) return false;
-  if (rewriteBraceToExprBody(src) !== null) return false;
+  // Lex once and share the token array across all three structural-rewrite
+  // checks. Each rewrite would otherwise lex `src` independently — three
+  // full passes over the same source for the canonical-form gate. The
+  // `emitCanonical` walk below lexes a fourth time; that one stays
+  // separate because it walks across the SAME `src` regardless of whether
+  // the rewrites would have fired (the gate already short-circuited),
+  // and threading a single shared array through both phases would couple
+  // the rewriter and the emitter to the same lex call.
+  const tokens = lex(src);
+  if (rewriteImportOrder(src, tokens) !== null) return false;
+  if (rewriteTaggedUnionOrder(src, tokens) !== null) return false;
+  if (rewriteBraceToExprBody(src, tokens) !== null) return false;
   let off = 0;
   let ok = true;
   emitCanonical(src, (chunk) => {
@@ -326,16 +335,17 @@ function emitWhitespace(t: Token, tokens: Token[], i: number): string {
  * Splices never overlap: a single-`return` body has no nested fn declaration
  * that could itself be a candidate.
  */
-function rewriteBraceToExprBody(src: string): string | null {
+function rewriteBraceToExprBody(src: string, preLexed?: Token[]): string | null {
   // Cheap pre-check before the lex: a candidate body needs both an `fn`
   // declaration and a `return` somewhere in the source. Substring tests are
   // O(n) string scans without allocations, so they pay for themselves on the
   // common already-canonical case (no fn-keyword or no return → null without
   // ever lexing). False positives — e.g. `return` sitting inside a string
   // literal — fall through to the lex/parse path and correctly return null
-  // there, so no rewrite is ever missed.
-  if (src.indexOf("fn") < 0 || src.indexOf("return") < 0) return null;
-  const tokens = lex(src);
+  // there, so no rewrite is ever missed. Skipped when the caller already
+  // lexed (the shared array is the source of truth).
+  if (preLexed === undefined && (src.indexOf("fn") < 0 || src.indexOf("return") < 0)) return null;
+  const tokens = preLexed ?? lex(src);
   let patches: { start: number; end: number; replacement: string }[] | null = null;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -480,17 +490,19 @@ function extractSingleReturn(blockText: string): string | null {
  *     inside a string template (e.g. the playground's snippet samples) are
  *     skipped automatically because the lexer emits the whole template as a
  *     single opaque `template` token.
- *   - "Contiguous run" means import statements separated only by whitespace
- *     and newlines. A blank line between two imports does NOT break the run
- *     (the gap stays put after sort) — but any non-import non-trivia token,
- *     or any line/block comment, ends the run. Comments are tied by
- *     proximity to a specific import, and reordering would split that tie;
- *     the safer rule is to bail.
- *   - The gap text between two imports stays in source position. Sorting
- *     permutes only the import bodies. Practically: if the user wrote
- *     `import a;\n\nimport b;` (blank line between), the rewritten source
- *     still has the blank line in the middle slot, regardless of which two
- *     imports landed on either side.
+ *   - "Contiguous run" means import statements separated only by a single
+ *     line break (and any horizontal whitespace). A blank line — i.e. two or
+ *     more line breaks — between two imports DOES break the run; the user's
+ *     blank-line grouping is an explicit signal (npm vs. local imports, for
+ *     example) that survives the sort. Each side of the blank line is sorted
+ *     independently. Any non-import non-trivia token, or any line/block
+ *     comment, also ends the run — comments are tied by proximity to a
+ *     specific import and reordering would split that tie.
+ *   - The gap text between two imports inside a single run stays in source
+ *     position. Sorting permutes only the import bodies. Practically: if a
+ *     run is `import a;\nimport c;\nimport b;`, the sorted run is
+ *     `import a;\nimport b;\nimport c;` — the two single newlines between
+ *     bodies stay where they were.
  *   - Side-effect imports (`import "foo";`) sort by their path string just
  *     like named-binding imports.
  *   - Sort key is the raw module-path text (between the quotes). The
@@ -503,9 +515,14 @@ function extractSingleReturn(blockText: string): string | null {
  * unterminated bracket group, etc. Downstream passes still see the original
  * source verbatim in those cases.
  */
-function rewriteImportOrder(src: string): string | null {
-  if (src.indexOf("import") < 0) return null;
-  const tokens = lex(src);
+function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
+  // Cheap pre-check: no `import` in the source at all → no rewrite. The
+  // substring scan is O(n) and avoids the lex on already-canonical input
+  // that has no imports. Skipped when the caller already lexed (the lex
+  // result is the source of truth in that case; the substring test would
+  // be redundant).
+  if (preLexed === undefined && src.indexOf("import") < 0) return null;
+  const tokens = preLexed ?? lex(src);
 
   interface Imp {
     /** Source offset of the `import` ident. */
@@ -792,12 +809,13 @@ function stripStringQuotes(s: string): string {
  * the moment any rewrite would fire, so returning `null` on a no-op keeps
  * idempotence cheap.
  */
-function rewriteTaggedUnionOrder(src: string): string | null {
+function rewriteTaggedUnionOrder(src: string, preLexed?: Token[]): string | null {
   // Cheap pre-check: a candidate decl needs both `type` and `|` somewhere
   // in the source. Substring tests are O(n) and avoid the lex on already-
-  // canonical input that has no tagged-union declarations.
-  if (src.indexOf("type") < 0 || src.indexOf("|") < 0) return null;
-  const tokens = lex(src);
+  // canonical input that has no tagged-union declarations. Skipped when
+  // the caller already lexed.
+  if (preLexed === undefined && (src.indexOf("type") < 0 || src.indexOf("|") < 0)) return null;
+  const tokens = preLexed ?? lex(src);
 
   type AltSpan = { tag: string; start: number; end: number };
   const patches: { start: number; end: number; replacement: string }[] = [];
@@ -965,7 +983,17 @@ function isFmtTrivia(t: Token): boolean {
  * `}` for body-bearing alts, end of the tag ident otherwise) and the tag
  * name itself. Returns null when the RHS isn't a tagged union — i.e. when
  * any alt is a non-ident, an ident with no following `|` or terminator,
- * or when no alt carries a `{ ... }` body.
+ * when no alt carries a `{ ... }` body, OR when a line/block comment sits
+ * between two alts (or in the leading-trivia slot before the first alt).
+ *
+ * The comment-bail rule mirrors `rewriteImportOrder`: a comment is tied
+ * to a specific alt by source proximity, and reordering would silently
+ * re-attach it to a different alt. The conservative answer is to bail —
+ * the user can `botscript fmt --write` after stripping the comment, or
+ * leave the unsorted form alone. The check uses `wsOnly` (whitespace +
+ * newlines only, no comments) instead of `isFmtTrivia` for the gap
+ * walks; the leading-trivia walk before the first alt also uses it,
+ * so a comment ABOVE the first tag (rare but possible) bails too.
  *
  * The shape rule (every alt is `Tag` or `Tag { body }`, with at least one
  * `Tag { body }`) matches `passTaggedUnion` exactly. Plain TS unions like
@@ -980,11 +1008,32 @@ function parseTaggedAlts(
   const alts: { tag: string; start: number; end: number }[] = [];
   let hasBody = false;
   let i = from;
-  while (i < to && isFmtTrivia(tokens[i]!)) i++;
+  // Strict whitespace-only walk for the leading and inter-alt gaps. Any
+  // comment in those slots bails; an alt body's interior is opaque (it's
+  // skipped via `matchedAt`) so user comments inside `{ ... }` are fine.
+  const skipWsOnly = (idx: number): { ok: boolean; idx: number } => {
+    while (idx < to) {
+      const t = tokens[idx]!;
+      if (t.kind === "whitespace" || t.kind === "newline") {
+        idx++;
+        continue;
+      }
+      if (t.kind === "lineComment" || t.kind === "blockComment") {
+        return { ok: false, idx };
+      }
+      break;
+    }
+    return { ok: true, idx };
+  };
+  let step = skipWsOnly(i);
+  if (!step.ok) return null;
+  i = step.idx;
   // Optional leading `|`.
   if (i < to && tokens[i]?.kind === "operator" && tokens[i]?.text === "|") {
     i++;
-    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+    step = skipWsOnly(i);
+    if (!step.ok) return null;
+    i = step.idx;
   }
   while (i < to) {
     const tagTok = tokens[i];
@@ -993,7 +1042,9 @@ function parseTaggedAlts(
     const start = tagTok.start;
     let end = tagTok.end;
     i++;
-    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+    step = skipWsOnly(i);
+    if (!step.ok) return null;
+    i = step.idx;
     const maybeBrace = tokens[i];
     if (
       maybeBrace?.kind === "open" &&
@@ -1007,12 +1058,16 @@ function parseTaggedAlts(
       i = closeIdx + 1;
     }
     alts.push({ tag, start, end });
-    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+    step = skipWsOnly(i);
+    if (!step.ok) return null;
+    i = step.idx;
     if (i >= to) break;
     const sep = tokens[i];
     if (sep?.kind === "operator" && sep.text === "|") {
       i++;
-      while (i < to && isFmtTrivia(tokens[i]!)) i++;
+      step = skipWsOnly(i);
+      if (!step.ok) return null;
+      i = step.idx;
       continue;
     }
     return null;

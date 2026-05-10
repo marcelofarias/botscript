@@ -452,6 +452,24 @@ describe("formatSource — tagged-union member reordering", () => {
     expect(twice).toBe(once);
   });
 
+  it("does NOT reorder when a line comment sits between two alts", () => {
+    // The comment is tied by source proximity to a specific alt;
+    // reordering would silently re-attach it to a different one. The
+    // formatter bails instead — same conservative rule as imports.
+    const src =
+      "?bs 0.5\n" +
+      "type Shape = Square { side: number }\n" +
+      "  // pick this one for round things\n" +
+      "  | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder when a block comment sits between two alts", () => {
+    const src =
+      "?bs 0.5\ntype Shape = Square { side: number } /* round next */ | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("does NOT match `type` used as an identifier inside an expression", () => {
     // `const type = "x"` — here `type` is a binding name, not the keyword.
     // Detection bails because `atTypeStmtStart` returns false when the
@@ -484,10 +502,13 @@ describe("formatSource — tagged-union member reordering", () => {
   });
 });
 
-describe("canonical-form gate — import + tagged-union reordering (?bs 0.5)", () => {
-  it("rejects unsorted top-level imports with FMT001", () => {
+describe("canonical-form gate — import + tagged-union reordering", () => {
+  // Gate is enforced from `?bs 0.4` onward (see the FMT001 tests above).
+  // Test at the real boundary so a future regression in version-gating
+  // would surface here.
+  it("0.4: rejects unsorted top-level imports with FMT001", () => {
     const src =
-      "?bs 0.5\n" +
+      "?bs 0.4\n" +
       'import { b } from "b";\n' +
       'import { a } from "a";\n';
     try {
@@ -499,9 +520,9 @@ describe("canonical-form gate — import + tagged-union reordering (?bs 0.5)", (
     }
   });
 
-  it("rejects unsorted tagged-union alternatives with FMT001", () => {
+  it("0.4: rejects unsorted tagged-union alternatives with FMT001", () => {
     const src =
-      "?bs 0.5\ntype Shape = Square { side: number } | Circle { r: number };\n";
+      "?bs 0.4\ntype Shape = Square { side: number } | Circle { r: number };\n";
     try {
       transform(src);
       expect.unreachable("expected FMT001");
