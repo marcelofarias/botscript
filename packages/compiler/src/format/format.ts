@@ -30,13 +30,17 @@
  *     TypeScript would change semantics. Bails on comments outside the
  *     expression so they're never silently dropped.
  *   - Import-order canonicalization. A contiguous run of top-level `import`
- *     statements is sorted by module-path string (lexicographic on the
- *     raw bytes between the quotes). The gap text between imports stays
- *     in place — only the import bodies are permuted — so blank lines
- *     between imports keep their position. The pass bails on a run that
- *     contains comments interleaved with the imports, since a comment is
- *     attached to one specific import and reordering would split it from
- *     its target.
+ *     statements is sorted by module-path string. The sort key is the raw
+ *     text between the quotes; the comparison is JS-string `<` / `>`
+ *     (UTF-16 code-unit order), with escape sequences left encoded — i.e.
+ *     `"a"` and `"a"` compare as different strings. The gap text
+ *     between imports stays in place — only the import bodies are
+ *     permuted — so blank lines between imports keep their position. The
+ *     pass bails on a region that contains comments interleaved with the
+ *     imports, since a comment is attached to one specific import and
+ *     reordering would split it from its target. Side-effect imports
+ *     (`import "foo";`) also bail their run, because ESM evaluates them
+ *     in source order and reordering would change runtime behaviour.
  *   - Tagged-union member reordering. When a `type X = A | B | C;`
  *     declaration matches the tagged-union shape (every alt is a bare
  *     TagIdent or `TagIdent { fields }`), the alts are sorted alphabetically
@@ -117,18 +121,26 @@ export function formatSource(src: string): string {
  * fn body short-circuits to `false` without paying for the token walk.
  */
 export function isCanonical(src: string): boolean {
-  // Lex once and share the token array across all three structural-rewrite
-  // checks. Each rewrite would otherwise lex `src` independently — three
-  // full passes over the same source for the canonical-form gate. The
-  // `emitCanonical` walk below lexes a fourth time; that one stays
-  // separate because it walks across the SAME `src` regardless of whether
-  // the rewrites would have fired (the gate already short-circuited),
-  // and threading a single shared array through both phases would couple
-  // the rewriter and the emitter to the same lex call.
-  const tokens = lex(src);
-  if (rewriteImportOrder(src, tokens) !== null) return false;
-  if (rewriteTaggedUnionOrder(src, tokens) !== null) return false;
-  if (rewriteBraceToExprBody(src, tokens) !== null) return false;
+  // Cheap path: if the source has no rewrite candidate at all (no
+  // `import`, no `type ... |`, no `fn ... return`), none of the
+  // structural rewrites can fire and we can skip the shared lex
+  // entirely. Most already-canonical files of pure expressions /
+  // declarations land here. When at least one candidate IS present,
+  // lex ONCE and thread the shared token array through every
+  // rewrite — the previous shape lexed up to three times in a row.
+  // `emitCanonical` below still lexes once on its own; threading the
+  // same array through both phases would couple the rewriter and the
+  // emitter to a single lex call, which is more entanglement than
+  // the savings warrant.
+  const maybeImports = src.indexOf("import") >= 0;
+  const maybeTypeUnion = src.indexOf("type") >= 0 && src.indexOf("|") >= 0;
+  const maybeFnReturn = src.indexOf("fn") >= 0 && src.indexOf("return") >= 0;
+  if (maybeImports || maybeTypeUnion || maybeFnReturn) {
+    const tokens = lex(src);
+    if (rewriteImportOrder(src, tokens) !== null) return false;
+    if (rewriteTaggedUnionOrder(src, tokens) !== null) return false;
+    if (rewriteBraceToExprBody(src, tokens) !== null) return false;
+  }
   let off = 0;
   let ok = true;
   emitCanonical(src, (chunk) => {
@@ -876,8 +888,18 @@ function stripStringQuotes(s: string): string {
  * with at least one body-bearing alt), sort the alts alphabetically by tag.
  * Returns the rewritten source, or `null` when no decl needed reordering.
  *
- * The detection rule mirrors `passTaggedUnion` exactly so the formatter and
- * the pass agree on what counts as a tagged union. Plain TS unions like
+ * The shape detection (every alt is `Tag` or `Tag { fields }`, with at
+ * least one body-bearing alt) mirrors `passTaggedUnion`'s `parseAlts` so
+ * the formatter and the desugarer agree on which declarations look like
+ * tagged unions. The formatter is intentionally STRICTER on one point:
+ * `passTaggedUnion` treats line/block comments between alts as trivia
+ * and proceeds to desugar the union, but the formatter bails when a
+ * comment sits anywhere between (or above) the alts — reordering across
+ * a comment would silently re-attach it to a different alt. The
+ * conservative bail keeps the formatter semantics-preserving without
+ * changing what the desugarer accepts.
+ *
+ * Plain TS unions like
  *   type X = number | string;
  *   type Mode = "open" | "closed";
  *   type T = { a: number } | { b: string };
@@ -1077,9 +1099,12 @@ function isFmtTrivia(t: Token): boolean {
  * so a comment ABOVE the first tag (rare but possible) bails too.
  *
  * The shape rule (every alt is `Tag` or `Tag { body }`, with at least one
- * `Tag { body }`) matches `passTaggedUnion` exactly. Plain TS unions like
- * `number | string` and literal-type unions like `"a" | "b"` are caught by
- * the "first token must be ident" check on the very first alt.
+ * `Tag { body }`) matches `passTaggedUnion`'s `parseAlts`. The
+ * comment-bail above is an extra constraint THIS rewrite adds — the
+ * desugarer doesn't need it (it doesn't reorder), so its `parseAlts`
+ * still treats comments as trivia. Plain TS unions like `number | string`
+ * and literal-type unions like `"a" | "b"` are caught by the "first
+ * token must be ident" check on the very first alt.
  */
 function parseTaggedAlts(
   tokens: Token[],
