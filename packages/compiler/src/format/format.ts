@@ -33,14 +33,16 @@
  *     statements is sorted by module-path string. The sort key is the raw
  *     text between the quotes; the comparison is JS-string `<` / `>`
  *     (UTF-16 code-unit order), with escape sequences left encoded — i.e.
- *     `"a"` and `"a"` compare as different strings. The gap text
- *     between imports stays in place — only the import bodies are
- *     permuted — so blank lines between imports keep their position. The
- *     pass bails on a region that contains comments interleaved with the
- *     imports, since a comment is attached to one specific import and
- *     reordering would split it from its target. Side-effect imports
- *     (`import "foo";`) also bail their run, because ESM evaluates them
- *     in source order and reordering would change runtime behaviour.
+ *     `"a"` and `"a"` compare as different strings even though they
+ *     denote the same module. The gap text between imports stays in
+ *     place — only the import bodies are permuted — so blank lines
+ *     between imports keep their position. The pass bails on a region
+ *     that contains comments interleaved with the imports OR a comment
+ *     immediately above the first import in the region, since either
+ *     would let a sort silently re-attach a comment to a different
+ *     statement. Side-effect imports (`import "foo";`) also bail their
+ *     run, because ESM evaluates them in source order and reordering
+ *     would change runtime behaviour.
  *   - Tagged-union member reordering. When a `type X = A | B | C;`
  *     declaration matches the tagged-union shape (every alt is a bare
  *     TagIdent or `TagIdent { fields }`), the alts are sorted alphabetically
@@ -572,8 +574,16 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
   // contiguous span of imports (any number of sub-runs). It's created the
   // moment we parse the first import in a span and torn down by
   // `flushRegion` when a non-import non-trivia token appears (or at EOF).
+  // `lastBarrier` is the token index just past the last region barrier
+  // (start of file, or the token that ended the previous region). When a
+  // new region begins, the trivia between `lastBarrier` and the first
+  // import is inspected for comments — so a comment immediately above
+  // the first import in a region also taints the region (without it the
+  // formatter could sort the run and silently re-attach the leading
+  // comment to a different statement).
   let region: Region | null = null;
   let run: Imp[] = [];
+  let lastBarrier = 0;
 
   const flushRun = () => {
     if (run.length === 0) return;
@@ -599,6 +609,7 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
     if (t.kind === "open" && t.matchedAt !== undefined) {
       flushRegion();
       i = t.matchedAt + 1;
+      lastBarrier = i;
       continue;
     }
 
@@ -643,13 +654,27 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
       if (!imp) {
         // Malformed import — end whatever region we had and skip this token.
         flushRegion();
+        lastBarrier = i + 1;
         i++;
         continue;
       }
       // Eagerly create the region on the first import we accept, so the
       // trivia inspection above sees a non-null `region` on the second
-      // and subsequent imports.
-      if (region === null) region = { runs: [], hasComment: false };
+      // and subsequent imports. The leading-trivia walk from `lastBarrier`
+      // to `i` taints the new region if a line/block comment sits above
+      // the first import — same conservative bail as a comment between
+      // two imports inside an existing region.
+      if (region === null) {
+        let leadingComment = false;
+        for (let k = lastBarrier; k < i; k++) {
+          const tk = tokens[k]!;
+          if (tk.kind === "lineComment" || tk.kind === "blockComment") {
+            leadingComment = true;
+            break;
+          }
+        }
+        region = { runs: [], hasComment: leadingComment };
+      }
       run.push(imp);
       i = imp.tokenEnd;
       continue;
@@ -658,7 +683,8 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
     // Trivia between imports stays in the region. Only depth-zero CODE
     // (non-import, non-trivia, non-comment) ends the region. Comments
     // outside an import's body aren't a region terminator either — they
-    // taint the region's `hasComment` flag via the trivia walk above.
+    // taint the region's `hasComment` flag via the trivia walk above
+    // (or via the leading-trivia walk when a region opens).
     if (
       t.kind !== "whitespace" &&
       t.kind !== "newline" &&
@@ -666,6 +692,7 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
       t.kind !== "blockComment"
     ) {
       flushRegion();
+      lastBarrier = i + 1;
     }
     i++;
   }

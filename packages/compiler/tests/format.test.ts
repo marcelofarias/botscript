@@ -370,6 +370,19 @@ describe("formatSource — import reordering", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("does NOT reorder when a comment sits immediately above the FIRST import (leading-comment bail)", () => {
+    // Without the leading-trivia check, the formatter would sort the run
+    // and the comment would visually attach to whichever import landed
+    // in the first slot — silently re-targeting an explanation the user
+    // wrote for a specific module.
+    const src =
+      "?bs 0.5\n" +
+      "// comment for z\n" +
+      'import { z } from "z";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("does NOT reorder ANY import in a region once a comment appears (3+ imports, region-wide bail)", () => {
     // A weaker bail — flushing only the local run and re-sorting the
     // post-comment imports — would leave `// comment for b` next to `a`
