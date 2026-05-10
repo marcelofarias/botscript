@@ -220,6 +220,34 @@ describe("formatSource — whitespace insertion", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("leaves `<` inside a JSX child expression as a comparison", () => {
+    // `<div>{a < b}</div>` — the `<` between idents inside a `{...}`
+    // child container is a comparison, NOT a sibling open tag. If it
+    // flipped JSX state, subsequent attribute `=` could get spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <div>{a < b}</div>\n  <span className="y">z</span>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("recognizes JSX inside a child expression when prev is expression position", () => {
+    // `cond ? <X/> : <Y/>` and `arr.map((p) => (<Foo />))` are both
+    // legitimate JSX opens INSIDE a `{...}` child expression. The
+    // expression-position guard (prev is `?`, `:`, `,`, `(`, ...) lets
+    // them in.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <ol>\n    {xs.map((p) => (\n      <li>\n        <a href={p.url}>\n          #{p.number}\n          <span className="x" aria-hidden>up</span>\n        </a>\n      </li>\n    ))}\n  </ol>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX fragments and their attributed children", () => {
+    // Fragment open `<>` and close `</>` must increment/decrement
+    // nesting; otherwise sibling `<div className="x" />` inside the
+    // fragment loses tag detection and `=` gets spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <>\n    {ok}\n    <div className="x" />\n  </>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("inserts space around `=` in a const that follows JSX (no leak)", () => {
     // The closing `</div>` must reset JSX-tag tracking so the next `=`
     // gets canonical spaces.
