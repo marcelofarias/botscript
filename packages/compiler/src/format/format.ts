@@ -32,17 +32,35 @@
  *   - Import-order canonicalization. A contiguous run of top-level `import`
  *     statements is sorted by module-path string. The sort key is the raw
  *     text between the quotes; the comparison is JS-string `<` / `>`
- *     (UTF-16 code-unit order), with escape sequences left encoded — i.e.
- *     `"a"` and `"a"` compare as different strings even though they
- *     denote the same module. The gap text between imports stays in
+ *     (UTF-16 code-unit order), with escape sequences left ENCODED rather
+ *     than decoded — `"a"` and `"a"` denote the same module but
+ *     compare as different strings (`a` (0x61) vs `\` (0x5C)), so the
+ *     formatter sorts them to different positions. Decoding before the
+ *     compare would mean the formatter has to evaluate JS string
+ *     escapes; we don't, both for simplicity and so the rewrite never
+ *     touches the user's literal text. The gap text between imports stays in
  *     place — only the import bodies are permuted — so blank lines
  *     between imports keep their position. The pass bails on a region
- *     that contains comments interleaved with the imports OR a comment
- *     immediately above the first import in the region, since either
- *     would let a sort silently re-attach a comment to a different
- *     statement. Side-effect imports (`import "foo";`) also bail their
- *     run, because ESM evaluates them in source order and reordering
- *     would change runtime behaviour.
+ *     whose trivia (above the first import, between any two imports, or
+ *     after the last import before the region barrier) contains a
+ *     line/block comment, since a sort would silently re-attach the
+ *     comment to a different statement. Side-effect imports
+ *     (`import "foo";`) also bail their run, because ESM evaluates them
+ *     in source order and reordering them would change observable side
+ *     effects.
+ *
+ *     A note on runtime imports more broadly: technically, reordering ANY
+ *     ESM `import` (not just bare side-effect ones) can change observable
+ *     evaluation order — `a`'s top-level side effects run before `b`'s
+ *     when `import { x } from "a"; import { y } from "b";` is the
+ *     source order. RFC #13 explicitly trades that strict ordering for a
+ *     canonical surface form: in practice most modules' top-level code is
+ *     side-effect-free, mainstream tools (prettier-plugin-organize-imports,
+ *     ESLint `import/order`) reorder runtime imports without warning, and
+ *     the canonical-form goal — "one program, one representation" — is
+ *     why this issue exists. When evaluation order matters, the user
+ *     can pin it: a blank line between two imports breaks the run, and a
+ *     comment anywhere in the region disables reordering entirely.
  *   - Tagged-union member reordering. When a `type X = A | B | C;`
  *     declaration matches the tagged-union shape (every alt is a bare
  *     TagIdent or `TagIdent { fields }`), the alts are sorted alphabetically
@@ -682,14 +700,23 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
 
     // Trivia between imports stays in the region. Only depth-zero CODE
     // (non-import, non-trivia, non-comment) ends the region. Comments
-    // outside an import's body aren't a region terminator either — they
-    // taint the region's `hasComment` flag via the trivia walk above
-    // (or via the leading-trivia walk when a region opens).
+    // outside an import's body aren't a region terminator — they taint
+    // the region's `hasComment` flag from whichever walk catches them
+    // first: the inter-import trivia walk above (between two imports),
+    // the leading-trivia walk when a region opens (above the first
+    // import), or this branch (the trailing trivia after the last
+    // import in a region, before the region barrier — without this,
+    // a same-line comment like `import { a } from "a"; // wraps lib`
+    // could survive the sort and end up next to whichever import
+    // landed in the last slot).
+    if (t.kind === "lineComment" || t.kind === "blockComment") {
+      if (region !== null) region.hasComment = true;
+      i++;
+      continue;
+    }
     if (
       t.kind !== "whitespace" &&
-      t.kind !== "newline" &&
-      t.kind !== "lineComment" &&
-      t.kind !== "blockComment"
+      t.kind !== "newline"
     ) {
       flushRegion();
       lastBarrier = i + 1;

@@ -370,6 +370,18 @@ describe("formatSource — import reordering", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("does NOT reorder when a same-line comment trails the LAST import (trailing-comment bail)", () => {
+    // Without the trailing-trivia check, the formatter would sort the run
+    // and `// wraps lib` would visually attach to whichever import landed
+    // in the last slot — silently re-targeting a comment the user wrote
+    // for the explicit lib-wrapping module.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      'import { a } from "a"; // wraps lib\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("does NOT reorder when a comment sits immediately above the FIRST import (leading-comment bail)", () => {
     // Without the leading-trivia check, the formatter would sort the run
     // and the comment would visually attach to whichever import landed
