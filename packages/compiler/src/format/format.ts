@@ -12,9 +12,9 @@
  * What it deliberately does NOT do (yet):
  *   - Brace-style re-flow (Allman → K&R). Needs an AST to identify which
  *     `{`s open a block vs. an object literal.
- *   - Declaration / import / union-member reordering. Order can be
- *     semantically meaningful (overload resolution, first-match in `match`,
- *     side-effect order in imports). Reordering needs proof per construct.
+ *   - Declaration / match-arm reordering. Declaration order can interact
+ *     with TS hoisting and `match` arms have first-match semantics, so
+ *     reordering them would change behaviour.
  *   - Quote-style normalization (`'foo'` → `"foo"`). Risky without parsing
  *     escape sequences carefully.
  *   - Re-indentation by bracket depth. The formatter preserves the user's
@@ -29,6 +29,22 @@
  *     newline inside the expression — both cases where ASI in the emitted
  *     TypeScript would change semantics. Bails on comments outside the
  *     expression so they're never silently dropped.
+ *   - Import-order canonicalization. A contiguous run of top-level `import`
+ *     statements is sorted by module-path string (lexicographic on the
+ *     raw bytes between the quotes). The gap text between imports stays
+ *     in place — only the import bodies are permuted — so blank lines
+ *     between imports keep their position. The pass bails on a run that
+ *     contains comments interleaved with the imports, since a comment is
+ *     attached to one specific import and reordering would split it from
+ *     its target.
+ *   - Tagged-union member reordering. When a `type X = A | B | C;`
+ *     declaration matches the tagged-union shape (every alt is a bare
+ *     TagIdent or `TagIdent { fields }`), the alts are sorted alphabetically
+ *     by tag name. Plain TS unions like `type X = number | string` or
+ *     `type Mode = "a" | "b"` are left alone — no tag idents, not a
+ *     tagged union. The same detection rule is used by the `passTaggedUnion`
+ *     pass that desugars these into discriminated unions, so the formatter
+ *     and the pass agree on what "tagged-union" means.
  *
  * What it DOES do:
  *   - Replaces leading-tab characters with 2 spaces each.
@@ -74,9 +90,18 @@ import type { Token } from "../parser/lex.js";
 import { parseFn } from "../parser/parse-fn.js";
 
 export function formatSource(src: string): string {
-  const rewritten = rewriteBraceToExprBody(src) ?? src;
+  // Structural rewrites stack: each runs on the output of the previous.
+  // Order is deliberate — import reordering only moves whole statements, so
+  // it is independent of the brace→expr rewrite (which only edits fn body
+  // ranges) and the tagged-union reorder (which only edits the alt list of a
+  // type decl). Running imports first means the union-rewrite walks shorter
+  // source on files dominated by unsorted imports; the result is the same
+  // either way.
+  const r1 = rewriteImportOrder(src) ?? src;
+  const r2 = rewriteTaggedUnionOrder(r1) ?? r1;
+  const r3 = rewriteBraceToExprBody(r2) ?? r2;
   let out = "";
-  emitCanonical(rewritten, (chunk) => {
+  emitCanonical(r3, (chunk) => {
     out += chunk;
     return true;
   });
@@ -92,6 +117,8 @@ export function formatSource(src: string): string {
  * fn body short-circuits to `false` without paying for the token walk.
  */
 export function isCanonical(src: string): boolean {
+  if (rewriteImportOrder(src) !== null) return false;
+  if (rewriteTaggedUnionOrder(src) !== null) return false;
   if (rewriteBraceToExprBody(src) !== null) return false;
   let off = 0;
   let ok = true;
@@ -439,6 +466,559 @@ function extractSingleReturn(blockText: string): string | null {
     return null;
   }
   return exprText;
+}
+
+/**
+ * Source-to-source rewrite: alphabetize each contiguous run of top-level
+ * `import` statements by their module-path string. Returns the rewritten
+ * source, or `null` when no run needed reordering — the `null` channel lets
+ * `isCanonical` short-circuit without allocating a copy of the source on
+ * already-canonical input.
+ *
+ * Design choices the implementation makes:
+ *   - "Top-level" means depth zero in the brace/paren/bracket grid. Imports
+ *     inside a string template (e.g. the playground's snippet samples) are
+ *     skipped automatically because the lexer emits the whole template as a
+ *     single opaque `template` token.
+ *   - "Contiguous run" means import statements separated only by whitespace
+ *     and newlines. A blank line between two imports does NOT break the run
+ *     (the gap stays put after sort) — but any non-import non-trivia token,
+ *     or any line/block comment, ends the run. Comments are tied by
+ *     proximity to a specific import, and reordering would split that tie;
+ *     the safer rule is to bail.
+ *   - The gap text between two imports stays in source position. Sorting
+ *     permutes only the import bodies. Practically: if the user wrote
+ *     `import a;\n\nimport b;` (blank line between), the rewritten source
+ *     still has the blank line in the middle slot, regardless of which two
+ *     imports landed on either side.
+ *   - Side-effect imports (`import "foo";`) sort by their path string just
+ *     like named-binding imports.
+ *   - Sort key is the raw module-path text (between the quotes). The
+ *     comparison is `<` / `>` on JS strings — UTF-16 code-unit lex order.
+ *     That's deterministic and matches what `Array.prototype.sort()` does
+ *     by default.
+ *
+ * The pass bails (returns null without changes) on malformed input — an
+ * `import` keyword with no `from "..."` and no leading string literal, an
+ * unterminated bracket group, etc. Downstream passes still see the original
+ * source verbatim in those cases.
+ */
+function rewriteImportOrder(src: string): string | null {
+  if (src.indexOf("import") < 0) return null;
+  const tokens = lex(src);
+
+  interface Imp {
+    /** Source offset of the `import` ident. */
+    start: number;
+    /** Source offset just past the import's last meaningful token (`;` or path). */
+    end: number;
+    /** Index in the token array of the `import` ident. */
+    tokenStart: number;
+    /** Index in the token array of the last meaningful token, +1. */
+    tokenEnd: number;
+    /** Module-path text (no surrounding quotes). Sort key. */
+    path: string;
+  }
+
+  const runs: Imp[][] = [];
+  let current: Imp[] = [];
+  const flush = () => {
+    if (current.length > 1) runs.push(current);
+    current = [];
+  };
+
+  let i = 0;
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "eof") break;
+
+    // Skip balanced groups so the walk only sees depth-0 tokens. An `import`
+    // ident inside a `{ ... }` object type or a function body isn't a real
+    // import statement and must not be reordered. The lexer pre-computes
+    // `matchedAt`, so the skip is a single jump.
+    if (t.kind === "open" && t.matchedAt !== undefined) {
+      flush();
+      i = t.matchedAt + 1;
+      continue;
+    }
+
+    if (t.kind === "ident" && t.text === "import") {
+      // Verify the trivia between the previous import in the run and this
+      // one is only whitespace + newlines — no comments, no other code —
+      // AND that the gap is at most one line break. A blank line (2+
+      // newlines) is an explicit grouping signal from the user; sorting
+      // across it would erase that grouping.
+      if (current.length > 0) {
+        const prev = current[current.length - 1]!;
+        let onlyTrivia = true;
+        let lineBreaks = 0;
+        for (let k = prev.tokenEnd; k < i; k++) {
+          const tk = tokens[k]!;
+          if (tk.kind === "whitespace") continue;
+          if (tk.kind === "newline") {
+            lineBreaks += countLineBreaks(tk.text);
+            continue;
+          }
+          onlyTrivia = false;
+          break;
+        }
+        if (!onlyTrivia || lineBreaks >= 2) flush();
+      }
+      const imp = parseImport(tokens, i);
+      if (!imp) {
+        // Malformed import — flush whatever run we had and skip this token.
+        flush();
+        i++;
+        continue;
+      }
+      current.push(imp);
+      i = imp.tokenEnd;
+      continue;
+    }
+
+    // Any other depth-0 non-trivia token (including a comment) ends the run.
+    if (
+      t.kind !== "whitespace" &&
+      t.kind !== "newline"
+    ) {
+      flush();
+    }
+    i++;
+  }
+  flush();
+
+  if (runs.length === 0) return null;
+
+  // Decide which runs actually need reordering. A run is "already sorted"
+  // when each import's path is <= the next one's path; only those count
+  // toward the rewrite. Skipping already-sorted runs keeps the cheap path
+  // cheap — most files are already in order on the second format.
+  const dirtyRuns = runs.filter((run) => {
+    for (let k = 1; k < run.length; k++) {
+      if (run[k - 1]!.path > run[k]!.path) return true;
+    }
+    return false;
+  });
+  if (dirtyRuns.length === 0) return null;
+
+  // Apply patches right-to-left so earlier offsets stay valid. Within a
+  // single run, the gap text between imports stays in source position
+  // (sorting permutes only the import bodies, not the gaps).
+  const patches: { start: number; end: number; replacement: string }[] = [];
+  for (const run of dirtyRuns) {
+    const sorted = [...run].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    let replacement = "";
+    for (let k = 0; k < run.length; k++) {
+      const slot = run[k]!;
+      replacement += src.slice(sorted[k]!.start, sorted[k]!.end);
+      if (k < run.length - 1) {
+        // Verbatim gap text from the original kth slot to the (k+1)th slot.
+        replacement += src.slice(slot.end, run[k + 1]!.start);
+      }
+    }
+    patches.push({ start: run[0]!.start, end: run[run.length - 1]!.end, replacement });
+  }
+  patches.sort((a, b) => b.start - a.start);
+  let out = src;
+  for (const p of patches) {
+    out = out.slice(0, p.start) + p.replacement + out.slice(p.end);
+  }
+  return out === src ? null : out;
+}
+
+/**
+ * Parse a single `import` statement starting at the `import` ident token.
+ * Returns the start/end source offsets, the module path (sort key), and
+ * the matching token-array indices. Returns null on a malformed import
+ * (unterminated bracket group, no `from "..."` and no leading path string).
+ *
+ * Forms recognised:
+ *   - `import { a, b } from "module";`           — named bindings
+ *   - `import name from "module";`               — default
+ *   - `import * as ns from "module";`            — namespace
+ *   - `import "module";`                         — side-effect
+ *   - `import name, { a, b } from "module";`     — default + named
+ *   - `import type { T } from "module";`         — type-only
+ *
+ * The path is the raw text between the quotes of the *path* string literal —
+ * i.e. the first depth-0 string after a `from` ident, or the first depth-0
+ * string when no `from` appears (side-effect import). Comparison is JS-string
+ * lex order on that raw text.
+ *
+ * The end offset lands just past the trailing `;` when one is present, or
+ * just past the path string when the user omitted it. Newlines / whitespace
+ * after that point belong to the gap between imports, not to the import
+ * itself, and are spliced verbatim by `rewriteImportOrder`.
+ */
+function parseImport(
+  tokens: Token[],
+  startIdx: number,
+): { start: number; end: number; tokenStart: number; tokenEnd: number; path: string } | null {
+  const head = tokens[startIdx];
+  if (!head || head.kind !== "ident" || head.text !== "import") return null;
+  let i = startIdx + 1;
+  let path: string | null = null;
+  let pathTokenIdx = -1;
+  let lastMeaningful = startIdx;
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "eof") break;
+    if (t.kind === "punct" && t.text === ";") {
+      // A `;` only ends the import after the path has been seen — otherwise
+      // it's a malformed input and we bail.
+      if (path === null) return null;
+      return {
+        start: head.start,
+        end: t.end,
+        tokenStart: startIdx,
+        tokenEnd: i + 1,
+        path,
+      };
+    }
+    if (t.kind === "newline") {
+      // A newline after the path ends the import (no trailing `;`). A
+      // newline before the path is fine — multi-line bracket-bound
+      // bindings are common (`import {\n  a,\n  b,\n} from "m";`); the
+      // bracket-group skip below has already jumped over the `{...}` part.
+      if (path !== null) {
+        return {
+          start: head.start,
+          end: tokens[lastMeaningful]!.end,
+          tokenStart: startIdx,
+          tokenEnd: lastMeaningful + 1,
+          path,
+        };
+      }
+      i++;
+      continue;
+    }
+    if (t.kind === "whitespace" || t.kind === "lineComment" || t.kind === "blockComment") {
+      i++;
+      continue;
+    }
+    if (t.kind === "open" && t.matchedAt !== undefined) {
+      // `{ a, b }` named-bindings — skip the whole group.
+      lastMeaningful = t.matchedAt;
+      i = t.matchedAt + 1;
+      continue;
+    }
+    if (t.kind === "ident" && t.text === "from") {
+      // The next significant token must be the path string. Skip whitespace
+      // and trivia. (Comments inside an `import` are unusual but the lexer
+      // would surface them; we let them sit in place — they don't affect
+      // the path discovery and they'll be re-emitted verbatim.)
+      let j = i + 1;
+      while (
+        j < tokens.length &&
+        (tokens[j]!.kind === "whitespace" ||
+          tokens[j]!.kind === "newline" ||
+          tokens[j]!.kind === "lineComment" ||
+          tokens[j]!.kind === "blockComment")
+      ) {
+        j++;
+      }
+      const pathTok = tokens[j];
+      if (!pathTok || pathTok.kind !== "string") return null;
+      path = stripStringQuotes(pathTok.text);
+      pathTokenIdx = j;
+      lastMeaningful = j;
+      i = j + 1;
+      continue;
+    }
+    if (t.kind === "string" && path === null) {
+      // Side-effect import: `import "module";`. The first depth-0 string is
+      // the path. (Named-binding imports always go through the bracket
+      // skip above before reaching their `from` clause, so we only land
+      // here on the side-effect form.)
+      path = stripStringQuotes(t.text);
+      pathTokenIdx = i;
+      lastMeaningful = i;
+      i++;
+      continue;
+    }
+    lastMeaningful = i;
+    i++;
+  }
+  // Reached EOF — accept if we found a path, otherwise bail.
+  if (path !== null && pathTokenIdx >= 0) {
+    return {
+      start: head.start,
+      end: tokens[lastMeaningful]!.end,
+      tokenStart: startIdx,
+      tokenEnd: lastMeaningful + 1,
+      path,
+    };
+  }
+  return null;
+}
+
+/**
+ * Strip the surrounding quote characters from a string-token's text. The
+ * lexer captures the literal verbatim including its quotes (single, double,
+ * or — though imports never use these — backtick). The path comparison key
+ * is the raw text between the quotes; we don't decode escape sequences,
+ * because two imports whose paths differ only by escape encoding are pretty
+ * clearly distinct strings and a rewrite that "decoded" them would change
+ * the source the user wrote.
+ */
+function stripStringQuotes(s: string): string {
+  if (s.length >= 2) {
+    const first = s[0]!;
+    const last = s[s.length - 1]!;
+    if ((first === '"' || first === "'" || first === "`") && first === last) {
+      return s.slice(1, -1);
+    }
+  }
+  return s;
+}
+
+/**
+ * Source-to-source rewrite: when a `type X = A | B | C;` declaration matches
+ * the tagged-union shape (every alt is `TagIdent` or `TagIdent { fields }`,
+ * with at least one body-bearing alt), sort the alts alphabetically by tag.
+ * Returns the rewritten source, or `null` when no decl needed reordering.
+ *
+ * The detection rule mirrors `passTaggedUnion` exactly so the formatter and
+ * the pass agree on what counts as a tagged union. Plain TS unions like
+ *   type X = number | string;
+ *   type Mode = "open" | "closed";
+ *   type T = { a: number } | { b: string };
+ * are left alone — they have no tag idents (or every alt is an anonymous
+ * object literal) and reordering would either be a no-op or change observable
+ * type-identity in ways that aren't safe in general.
+ *
+ * Why bail when alts are already sorted? Same reason as the import
+ * rewrite: the cheap-path check in `isCanonical` short-circuits to `false`
+ * the moment any rewrite would fire, so returning `null` on a no-op keeps
+ * idempotence cheap.
+ */
+function rewriteTaggedUnionOrder(src: string): string | null {
+  // Cheap pre-check: a candidate decl needs both `type` and `|` somewhere
+  // in the source. Substring tests are O(n) and avoid the lex on already-
+  // canonical input that has no tagged-union declarations.
+  if (src.indexOf("type") < 0 || src.indexOf("|") < 0) return null;
+  const tokens = lex(src);
+
+  type AltSpan = { tag: string; start: number; end: number };
+  const patches: { start: number; end: number; replacement: string }[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "ident" || t.text !== "type") continue;
+    if (!atTypeStmtStart(tokens, i)) continue;
+    const decl = findTypeRhs(tokens, i);
+    if (!decl) continue;
+    const alts = parseTaggedAlts(tokens, decl.rhsStart, decl.rhsEnd);
+    if (!alts) {
+      i = decl.rhsEnd;
+      continue;
+    }
+    const tags = alts.map((a) => a.tag);
+    const sorted = [...tags].sort();
+    let alreadySorted = true;
+    for (let k = 0; k < tags.length; k++) {
+      if (tags[k] !== sorted[k]) {
+        alreadySorted = false;
+        break;
+      }
+    }
+    if (alreadySorted) {
+      i = decl.rhsEnd;
+      continue;
+    }
+    // Build the replacement by sorting the alt source slices. The text
+    // between the alts (`|` plus surrounding whitespace) is captured per
+    // gap from the original source so newline / blank-line layout is
+    // preserved between sort positions.
+    const sortedAlts = [...alts].sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
+    let replacement = "";
+    for (let k = 0; k < alts.length; k++) {
+      const slot = alts[k]!;
+      replacement += src.slice(sortedAlts[k]!.start, sortedAlts[k]!.end);
+      if (k < alts.length - 1) {
+        replacement += src.slice(slot.end, alts[k + 1]!.start);
+      }
+    }
+    patches.push({
+      start: alts[0]!.start,
+      end: alts[alts.length - 1]!.end,
+      replacement,
+    });
+    i = decl.rhsEnd;
+  }
+  if (patches.length === 0) return null;
+  patches.sort((a, b) => b.start - a.start);
+  let out = src;
+  for (const p of patches) {
+    out = out.slice(0, p.start) + p.replacement + out.slice(p.end);
+  }
+  return out === src ? null : out;
+}
+
+/**
+ * Mirrors `passTaggedUnion`'s `atStatementStart`, with one difference: this
+ * walk runs on the original source (before `passVersion` has stripped the
+ * `?bs` / `?primer` directive), so the `directive` token is also treated
+ * as a valid predecessor — a `type` decl on the line after a `?bs 0.5`
+ * directive is at top-level statement start. The pass-time variant in
+ * `passTaggedUnion` doesn't need this branch because the directive has
+ * been stripped by the time the pass runs.
+ *
+ * Returns true when the `type` ident at index `idx` is the first
+ * non-trivia token of a top-level statement (file start, after `;`,
+ * after `{` / `(`, after `}`, after `export`, after a directive). Avoids
+ * matching `type` used as an identifier inside expressions
+ * (`const type = "a"`) or as a TS field-modifier (`{ type: "x" }`).
+ */
+function atTypeStmtStart(tokens: Token[], idx: number): boolean {
+  for (let k = idx - 1; k >= 0; k--) {
+    const t = tokens[k];
+    if (!t) continue;
+    if (
+      t.kind === "whitespace" ||
+      t.kind === "newline" ||
+      t.kind === "lineComment" ||
+      t.kind === "blockComment"
+    ) {
+      continue;
+    }
+    if (t.kind === "directive") return true;
+    if (t.kind === "punct" && (t.text === ";" || t.text === ":")) return true;
+    if (t.kind === "open" && (t.text === "{" || t.text === "(")) return true;
+    if (t.kind === "close" && t.text === "}") return true;
+    if (t.kind === "ident" && t.text === "export") return true;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Walk forward from a `type` ident to find the `=` and the depth-0 RHS span
+ * up to the terminator (`;` or unambiguous newline). Same rules as
+ * `passTaggedUnion`'s `parseTypeDecl` so that the formatter and the pass
+ * see the same decl boundaries — drift here would be a silent bug where
+ * the formatter and the desugarer disagreed on what counted as a single
+ * type declaration.
+ */
+function findTypeRhs(
+  tokens: Token[],
+  typeIdx: number,
+): { rhsStart: number; rhsEnd: number } | null {
+  let i = typeIdx + 1;
+  while (i < tokens.length && isFmtTrivia(tokens[i]!)) i++;
+  const nameTok = tokens[i];
+  if (!nameTok || nameTok.kind !== "ident") return null;
+  i++;
+  let eq = -1;
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t.kind === "eof") break;
+    if (t.kind === "open" && t.matchedAt !== undefined) {
+      i = t.matchedAt + 1;
+      continue;
+    }
+    if (t.kind === "eq") {
+      eq = i;
+      break;
+    }
+    i++;
+  }
+  if (eq === -1) return null;
+  let rhsStart = eq + 1;
+  while (rhsStart < tokens.length && isFmtTrivia(tokens[rhsStart]!)) rhsStart++;
+  let j = rhsStart;
+  while (j < tokens.length) {
+    const t = tokens[j]!;
+    if (t.kind === "eof") break;
+    if (t.kind === "open" && t.matchedAt !== undefined) {
+      j = t.matchedAt + 1;
+      continue;
+    }
+    if (t.kind === "punct" && t.text === ";") break;
+    if (t.kind === "newline") {
+      let next = j + 1;
+      while (next < tokens.length && isFmtTrivia(tokens[next]!)) next++;
+      const nextTok = tokens[next];
+      if (nextTok?.kind === "operator" && nextTok.text === "|") {
+        j++;
+        continue;
+      }
+      break;
+    }
+    j++;
+  }
+  return { rhsStart, rhsEnd: j };
+}
+
+function isFmtTrivia(t: Token): boolean {
+  return (
+    t.kind === "whitespace" ||
+    t.kind === "newline" ||
+    t.kind === "lineComment" ||
+    t.kind === "blockComment"
+  );
+}
+
+/**
+ * Parse the alternatives in a tagged-union RHS. Returns one entry per alt
+ * with a precise source span (start of the tag ident, end of the trailing
+ * `}` for body-bearing alts, end of the tag ident otherwise) and the tag
+ * name itself. Returns null when the RHS isn't a tagged union — i.e. when
+ * any alt is a non-ident, an ident with no following `|` or terminator,
+ * or when no alt carries a `{ ... }` body.
+ *
+ * The shape rule (every alt is `Tag` or `Tag { body }`, with at least one
+ * `Tag { body }`) matches `passTaggedUnion` exactly. Plain TS unions like
+ * `number | string` and literal-type unions like `"a" | "b"` are caught by
+ * the "first token must be ident" check on the very first alt.
+ */
+function parseTaggedAlts(
+  tokens: Token[],
+  from: number,
+  to: number,
+): { tag: string; start: number; end: number }[] | null {
+  const alts: { tag: string; start: number; end: number }[] = [];
+  let hasBody = false;
+  let i = from;
+  while (i < to && isFmtTrivia(tokens[i]!)) i++;
+  // Optional leading `|`.
+  if (i < to && tokens[i]?.kind === "operator" && tokens[i]?.text === "|") {
+    i++;
+    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+  }
+  while (i < to) {
+    const tagTok = tokens[i];
+    if (!tagTok || tagTok.kind !== "ident") return null;
+    const tag = tagTok.text;
+    const start = tagTok.start;
+    let end = tagTok.end;
+    i++;
+    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+    const maybeBrace = tokens[i];
+    if (
+      maybeBrace?.kind === "open" &&
+      maybeBrace.text === "{" &&
+      maybeBrace.matchedAt !== undefined
+    ) {
+      const closeIdx = maybeBrace.matchedAt;
+      const closeTok = tokens[closeIdx]!;
+      end = closeTok.end;
+      hasBody = true;
+      i = closeIdx + 1;
+    }
+    alts.push({ tag, start, end });
+    while (i < to && isFmtTrivia(tokens[i]!)) i++;
+    if (i >= to) break;
+    const sep = tokens[i];
+    if (sep?.kind === "operator" && sep.text === "|") {
+      i++;
+      while (i < to && isFmtTrivia(tokens[i]!)) i++;
+      continue;
+    }
+    return null;
+  }
+  if (alts.length === 0 || !hasBody) return null;
+  return alts;
 }
 
 function postProcess(s: string): string {
