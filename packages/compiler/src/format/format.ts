@@ -224,12 +224,16 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // Four scalar fields cover the rest:
   //
   // - `inJsxOpenTag`: we're between `<Tag` (or `<>` open) and the
-  //   closing `>`. While true, `=` does NOT pick up whitespace.
+  //   closing `>`. While true, the attribute-name-to-value `=` does
+  //   NOT pick up whitespace — but only when `jsxAttrBraceDepth === 0`
+  //   (outside `{...}` expressions). `=` inside attribute expressions
+  //   like `<button onClick={() => x=1}>` still gets canonical spaces.
   // - `jsxAttrBraceDepth`: `{`/`}` depth inside an open tag's
   //   attribute list, so `>` inside attribute expressions like
   //   `<button onClick={a > b}>` doesn't prematurely close the tag.
   // - `prevContentWasSlash`: tracks `/` immediately before `>` so we
-  //   recognize self-close `/>` and pop one nesting level.
+  //   recognize self-close `/>` and skip pushing a jsxText frame
+  //   (the element has no children; no nesting level is popped).
   // - `JSX_CLOSE_TAG_RE` (module-level, shared with
   //   `inExpressionPosition`): pattern for regex-token-shaped close
   //   tags (`</Foo>` -> `/Foo>` and fragment close `</>` -> `/>`);
