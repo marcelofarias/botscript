@@ -134,8 +134,10 @@ describe("formatSource — whitespace insertion", () => {
   });
 
   it("preserves JSX attribute syntax (no space around `=` in attributes)", () => {
-    const src =
-      '?bs 0.4\nfn Demo() -> any { return <a href="x">hi</a>; }\n';
+    // Use expression-body form: brace→expr rewrite (PR #21) would collapse
+    // `{ return <a...>; }` to `= <a...>` and the test would stop exercising
+    // JSX `=`-spacing; expression-body makes the intent unambiguous.
+    const src = '?bs 0.4\nfn Demo() -> any = <a href="x">hi</a>\n';
     expect(formatSource(src)).toBe(src);
   });
 
