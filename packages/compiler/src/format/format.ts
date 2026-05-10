@@ -206,6 +206,45 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
+  // JSX state. The lexer has no JSX awareness, so we track context as a
+  // stack the format walk pushes/pops:
+  //
+  //   ctx[i] === "jsxText"   — we're in a JSX element's text body
+  //                           (between an open tag's `>` and its close).
+  //                           `<Ident` is unambiguously a sibling open.
+  //                           `{` opens a child-expression frame.
+  //   ctx[i] === "childExpr" — we're inside `<Foo>{ ... }</Foo>`'s
+  //                           `{...}`. Regular JS rules: `<` is JSX only
+  //                           when prev is in expression position.
+  //                           `{` pushes another childExpr frame, `}`
+  //                           pops back to the surrounding jsxText.
+  //
+  // Top-level (no JSX yet) is represented by an empty stack.
+  //
+  // Four scalar fields cover the rest:
+  //
+  // - `inJsxOpenTag`: we're between `<Tag` (or `<>` open) and the
+  //   closing `>`. While true, the attribute-name-to-value `=` does
+  //   NOT pick up whitespace — but only when `jsxAttrBraceDepth === 0`
+  //   (outside `{...}` expressions). `=` inside attribute expressions
+  //   like `<button onClick={() => x=1}>` still gets canonical spaces.
+  // - `jsxAttrBraceDepth`: `{`/`}` depth inside an open tag's
+  //   attribute list, so `>` inside attribute expressions like
+  //   `<button onClick={a > b}>` doesn't prematurely close the tag.
+  // - `prevContentWasSlash`: tracks `/` immediately before `>` so we
+  //   recognize self-close `/>` and skip pushing a jsxText frame
+  //   (the element has no children; no nesting level is popped).
+  // - `JSX_CLOSE_TAG_RE` (module-level, shared with
+  //   `inExpressionPosition`): pattern for regex-token-shaped close
+  //   tags (`</Foo>` -> `/Foo>` and fragment close `</>` -> `/>`);
+  //   also accepts a trailing `}*` because the lexer sometimes
+  //   munches a surrounding expression block's brace into the regex.
+  type JsxCtx = "jsxText" | "childExpr";
+  const ctxStack: JsxCtx[] = [];
+  let inJsxOpenTag = false;
+  let jsxAttrBraceDepth = 0;
+  let prevContentWasSlash = false;
+  const top = (): JsxCtx | undefined => ctxStack[ctxStack.length - 1];
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -248,11 +287,142 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
       continue;
     }
 
-    // Non-whitespace, non-newline token — possibly inject a separator first.
+    // Snapshot the JSX-attr-eq predicate BEFORE the per-token JSX state
+    // update below. The `=` between attr name and `{...}` value sits at
+    // brace depth 0 looking forward; if we updated state first, the `{`
+    // would already have incremented `jsxAttrBraceDepth` and the
+    // condition `inJsxOpenTag && jsxAttrBraceDepth === 0` would flip
+    // off, causing wantsSpaceBetween to add a space before the `{`.
+    // Snapshotting pre-update preserves the attribute-zone meaning.
+    const inJsxAttrEqSnapshot = inJsxOpenTag && jsxAttrBraceDepth === 0;
+
+    // Update JSX state BEFORE asking wantsSpaceBetween, so the `=` rule
+    // sees the right state when we're sitting on an attribute name.
+    if (inJsxOpenTag) {
+      // Track `{...}` depth inside the open tag's attributes so `>`
+      // operators inside attribute expressions like
+      // `<button onClick={a > b ? x : y}>` don't prematurely close the
+      // tag.
+      if (t.kind === "open" && t.text === "{") {
+        jsxAttrBraceDepth++;
+      } else if (
+        t.kind === "close" &&
+        t.text === "}" &&
+        jsxAttrBraceDepth > 0
+      ) {
+        jsxAttrBraceDepth--;
+      } else if (
+        t.kind === "operator" &&
+        t.text === ">" &&
+        jsxAttrBraceDepth === 0
+      ) {
+        // The literal `>` that closes the open tag.
+        inJsxOpenTag = false;
+        if (prevContentWasSlash) {
+          // Self-close `/>` — don't push a jsxText frame, the element
+          // closed itself in one step.
+        } else {
+          // Open tag `<Foo ...>` — we're now in this element's text body.
+          ctxStack.push("jsxText");
+        }
+      }
+    } else if (top() === "childExpr") {
+      // Inside `<Foo>{ ... }</Foo>`'s `{...}`. Regular JS rules: `<`
+      // is JSX only when prev is expression-position. Track nested
+      // braces and pop back to surrounding jsxText on the matching `}`.
+      if (t.kind === "open" && t.text === "{") {
+        ctxStack.push("childExpr");
+      } else if (t.kind === "close" && t.text === "}") {
+        ctxStack.pop();
+      } else if (
+        t.kind === "operator" &&
+        t.text === "<" &&
+        inExpressionPosition(prevContent)
+      ) {
+        const ahead = lookAheadContent(tokens, i + 1);
+        const isFragmentOpen =
+          ahead?.kind === "operator" && ahead.text === ">";
+        const isNamedOpen = ahead?.kind === "ident";
+        if (isNamedOpen) {
+          inJsxOpenTag = true;
+          jsxAttrBraceDepth = 0;
+        } else if (isFragmentOpen) {
+          // Fragment open: push jsxText immediately; the `>` will be
+          // emitted as a normal token and we're already in the body.
+          ctxStack.push("jsxText");
+        }
+      } else if (
+        t.kind === "regex" &&
+        JSX_CLOSE_TAG_RE.test(t.text) &&
+        ctxStack.length > 0
+      ) {
+        // Defensive: a regex-shaped close tag inside a child expr
+        // shouldn't normally appear (close tags terminate a JSX element
+        // we'd have entered as jsxText). If we ever land here it's a
+        // recovery path — pop the nearest jsxText frame.
+        popThroughJsxText(ctxStack);
+      }
+    } else if (top() === "jsxText") {
+      // JSX text body: `<Ident` and `<>` are sibling opens, no
+      // expression-position guard needed. `{` opens a child-expression
+      // frame. Close tags pop our jsxText frame.
+      if (t.kind === "operator" && t.text === "<") {
+        const ahead = lookAheadContent(tokens, i + 1);
+        const isFragmentOpen =
+          ahead?.kind === "operator" && ahead.text === ">";
+        const isNamedOpen = ahead?.kind === "ident";
+        if (isNamedOpen) {
+          inJsxOpenTag = true;
+          jsxAttrBraceDepth = 0;
+        } else if (isFragmentOpen) {
+          ctxStack.push("jsxText");
+        }
+      } else if (
+        t.kind === "regex" &&
+        JSX_CLOSE_TAG_RE.test(t.text)
+      ) {
+        // Named close `</Foo>` or fragment close `</>` — pops this
+        // element's jsxText frame.
+        ctxStack.pop();
+      } else if (t.kind === "open" && t.text === "{") {
+        ctxStack.push("childExpr");
+      }
+    } else {
+      // Top level (empty stack): `<Ident` or `<>` is a JSX open only
+      // when prev is in expression position. Anything else is regular
+      // code we leave alone.
+      if (
+        t.kind === "operator" &&
+        t.text === "<" &&
+        inExpressionPosition(prevContent)
+      ) {
+        const ahead = lookAheadContent(tokens, i + 1);
+        const isFragmentOpen =
+          ahead?.kind === "operator" && ahead.text === ">";
+        const isNamedOpen = ahead?.kind === "ident";
+        if (isNamedOpen) {
+          inJsxOpenTag = true;
+          jsxAttrBraceDepth = 0;
+        } else if (isFragmentOpen) {
+          ctxStack.push("jsxText");
+        }
+      }
+    }
+    // Update slash-tracking for `/>` self-close detection on the next
+    // iteration. Only meaningful inside an open tag.
+    prevContentWasSlash =
+      inJsxOpenTag && t.kind === "operator" && t.text === "/";
+
+    // Non-whitespace, non-newline token — possibly inject a separator
+    // first. `=` whitespace is suppressed only when we're between an
+    // attribute name and its value (the JSX-attribute `=`). The
+    // boundary uses the PRE-update snapshot so that the `=` -> `{`
+    // transition (where the current `{` is what increments brace
+    // depth) is still recognized as inside the attribute-eq zone.
     if (
       prevContent !== null &&
       !separatorSinceContent &&
-      wantsSpaceBetween(prevContent, t)
+      wantsSpaceBetween(prevContent, t, inJsxAttrEqSnapshot)
     ) {
       if (!emit(" ")) return;
     }
@@ -289,15 +459,32 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
  * `+` / `-` / `*` etc. (the `operator` kind) are deliberately excluded —
  * they can be unary or binary, and disambiguating needs more context than
  * the token walk has.
+ *
+ * `inJsxAttrEq` is the only piece of state the caller threads in: true
+ * iff this `=` (if there is one) sits between an attribute name and its
+ * value in a JSX open tag, where canonical form is `name="value"` with no
+ * space. Anywhere else — declarations, assignments, destructuring
+ * defaults, AND `=` inside an attribute's `{expr}` (e.g. `onClick={()
+ * => a = b}`) — gets a space on each side.
  */
-function wantsSpaceBetween(prev: Token, curr: Token): boolean {
-  // `->`, `=>`, `??` always want a space on each side. (`=` is excluded
-  // because JSX attributes use `name="value"` with no space and the lexer
-  // doesn't pair `<` / `>` so we can't tell JSX from a declaration here.)
+function wantsSpaceBetween(
+  prev: Token,
+  curr: Token,
+  inJsxAttrEq: boolean,
+): boolean {
+  // `->`, `=>`, `??` always want a space on each side.
   if (
     prev.kind === "arrow" || curr.kind === "arrow" ||
     prev.kind === "fatArrow" || curr.kind === "fatArrow" ||
     prev.kind === "questionQuestion" || curr.kind === "questionQuestion"
+  ) {
+    return true;
+  }
+  // `=` (single-equals) wants a space on each side, except when it's
+  // the `=` between a JSX attribute name and its value.
+  if (
+    !inJsxAttrEq &&
+    (prev.kind === "eq" || curr.kind === "eq")
   ) {
     return true;
   }
@@ -314,6 +501,126 @@ function wantsSpaceBetween(prev: Token, curr: Token): boolean {
     return true;
   }
   return false;
+}
+
+// Pattern that signals a JSX close tag in a regex-shaped token. The
+// lexer's regex rule fires after operators, so `</Foo>` becomes `<` +
+// regex `/Foo>` (or `/Foo>}` when it eats a trailing `}` from a
+// surrounding expression block; or `/>` for fragment closes). Real
+// regex literals like `/re/` do NOT match this shape —
+// `inExpressionPosition` uses that to keep `<` after a regex literal
+// classified as comparison rather than JSX open.
+const JSX_CLOSE_TAG_RE = /^\/(?:[A-Za-z_$][\w.$-]*)?\s*>\}*$/;
+
+// JS keywords that legally precede an expression (and therefore a JSX tag).
+// The lexer's `kind === "keyword"` only covers botscript-specific reserves
+// (`fn`, `match`, `test`, ...); everyday JS keywords like `return` come
+// through as `kind === "ident"`, so we list them by name here.
+const EXPR_STARTING_IDENTS = new Set([
+  "return",
+  "throw",
+  "yield",
+  "await",
+  "typeof",
+  "void",
+  "delete",
+  "new",
+  "in",
+  "of",
+  "do",
+  "case",
+]);
+
+/**
+ * Look ahead from index `start` past whitespace/newline tokens and return
+ * the next content token (or `undefined` at EOF).
+ */
+function lookAheadContent(tokens: Token[], start: number): Token | undefined {
+  let k = start;
+  while (
+    k < tokens.length &&
+    (tokens[k]!.kind === "whitespace" || tokens[k]!.kind === "newline")
+  ) {
+    k++;
+  }
+  return tokens[k];
+}
+
+/**
+ * Recovery path: pop the JSX context stack down to (and including) the
+ * nearest `"jsxText"` frame. Used when the lexer's regex-close-tag
+ * heuristic fires in a context where we wouldn't normally expect it.
+ */
+function popThroughJsxText(stack: ("jsxText" | "childExpr")[]): void {
+  while (stack.length > 0) {
+    const top = stack.pop();
+    if (top === "jsxText") return;
+  }
+}
+
+/**
+ * Heuristic: is the previous content token in expression position, i.e. a
+ * JSX element could legitimately start here? This is the same
+ * disambiguation Babel and esbuild use to tell `<Foo>` from a `<` operator.
+ *
+ * Used to decide whether `<` followed by an ident opens a JSX tag (yes,
+ * after expression-position tokens) vs. a TS generic / less-than
+ * (no, after ident / number / `)` / `]`).
+ *
+ * Only takes content tokens — the caller (`prevContent`) skips whitespace
+ * and newlines, so kinds like `"whitespace"` / `"newline"` are
+ * deliberately not in this switch.
+ */
+function inExpressionPosition(prev: Token | null): boolean {
+  if (!prev) return true; // start of file
+  switch (prev.kind) {
+    case "eq":
+    case "arrow":
+    case "fatArrow":
+    case "questionQuestion":
+    case "questionDot":
+    case "question":
+    case "open":
+      return true;
+    case "regex":
+      // The lexer's regex-detection rule produces two very different
+      // shapes of `regex` token:
+      //   1. JSX close tags lexed as `<` + regex `/Foo>` (or `/>` for
+      //      fragments). After these, the next `<` legitimately opens a
+      //      sibling tag — expression position.
+      //   2. Real regex literals like `/re/`. After a regex literal the
+      //      parser is NOT in expression position; `x = /re/ < y` is a
+      //      comparison, not a JSX open.
+      // Distinguish by shape: only the close-tag form (matches
+      // JSX_CLOSE_TAG_RE) is expression-position; real regex literals
+      // are not.
+      return JSX_CLOSE_TAG_RE.test(prev.text);
+    case "keyword":
+      // botscript reserves: `fn`, `match`, `test`, `assert`, `pure`, `uses`,
+      // `io`, `unsafe`, `async`. None of these directly precede a JSX tag
+      // in well-formed code (e.g. `match` is followed by an expression then
+      // `{`, not by `<Tag>`), but treating them as expression-position is
+      // safe — the worst case is an unrelated `<` immediately after one of
+      // these keywords gets misclassified as JSX, which would only matter
+      // if it were followed by an ident, and that combination doesn't
+      // occur in valid botscript.
+      return true;
+    case "ident":
+      return EXPR_STARTING_IDENTS.has(prev.text);
+    case "punct":
+      // `,`, `:`, `;` are expression-position separators. `.` is NOT:
+      // `a.foo < Bar` is a member-access chain then a comparison, not
+      // a JSX open tag. Excluding `.` prevents that misclassification.
+      return prev.text !== ".";
+    case "operator":
+      // Most operators are followed by an operand (i.e. expression
+      // position). The two exceptions are postfix `++` and `--`, which
+      // *end* an expression — `a++ < b` is a comparison, not a JSX open.
+      if (prev.text === "++" || prev.text === "--") return false;
+      return true;
+    default:
+      return false;
+  }
 }
 
 function countLineBreaks(s: string): number {

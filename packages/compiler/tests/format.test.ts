@@ -134,9 +134,182 @@ describe("formatSource — whitespace insertion", () => {
   });
 
   it("preserves JSX attribute syntax (no space around `=` in attributes)", () => {
-    const src =
-      '?bs 0.4\nfn Demo() -> any { return <a href="x">hi</a>; }\n';
+    // Use expression-body form: brace→expr rewrite (PR #21) would collapse
+    // `{ return <a...>; }` to `= <a...>` and the test would stop exercising
+    // JSX `=`-spacing; expression-body makes the intent unambiguous.
+    const src = '?bs 0.4\nfn Demo() -> any = <a href="x">hi</a>\n';
     expect(formatSource(src)).toBe(src);
+  });
+
+  it("inserts space on each side of `=` in let/const declarations", () => {
+    const src = "?bs 0.4\nconst x=1;\nlet y=2;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst x = 1;\nlet y = 2;\n");
+  });
+
+  it("inserts space on each side of `=` in `fn x() -> T = body`", () => {
+    const src = "?bs 0.4\nfn x() -> number=42\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nfn x() -> number = 42\n");
+  });
+
+  it("inserts space on each side of `=` in tagged-union type aliases", () => {
+    const src =
+      "?bs 0.4\ntype Shape=Circle { r: number } | Square { side: number };\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\ntype Shape = Circle { r: number } | Square { side: number };\n",
+    );
+  });
+
+  it("inserts space around `=` in object-destructuring with default", () => {
+    const src = "?bs 0.4\nconst { a=1, b=2 } = obj;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst { a = 1, b = 2 } = obj;\n");
+  });
+
+  it("preserves JSX attribute `=` with `{expr}` value (no space)", () => {
+    // canonical: single-return body collapses to `=`-form (RFC #13, PR #21).
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <button onClick={fn}>x</button>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX attribute `=` across multiple attrs on one tag", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <a href="x" target="_blank">hi</a>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX self-closing tag attributes", () => {
+    const src = '?bs 0.4\nfn Demo() -> any = <input type="text" />\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX `=` when an earlier attr's `{expr}` contains `>`", () => {
+    // Regression: `>` inside `onClick={a > b ? x : y}` must NOT close the
+    // JSX open-tag state, or the second attribute's `=` gets spaces.
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div onClick={a > b ? x : y} title="hi">x</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX `=` when an earlier attr's `{expr}` contains `<`", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div data-cmp={a < b} role="x">y</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX `=` when `{expr}` contains nested braces", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div style={{ color: "red" }} title="hi">x</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("closes JSX open-tag state on the outer `>` after a `{expr}` attr", () => {
+    // After the open tag closes, an `=` outside JSX must get spaces again.
+    // The `}` of `onClick={fn}` resolves brace depth to 0; the next `>`
+    // closes the tag; the `; const x=1` after the JSX must be normalized.
+    const src =
+      '?bs 0.4\nfn f() -> any {\n  const x=1;\n  return <button onClick={fn} disabled={!ok}>go</button>;\n}\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any {\n  const x = 1;\n  return <button onClick={fn} disabled={!ok}>go</button>;\n}\n',
+    );
+  });
+
+  it("handles a sibling JSX element after a closing tag (no leak)", () => {
+    // The lexer munches `</div>` into `<` + regex token `/div>`; the next
+    // `<div className=...>` must still be detected as a JSX open. Mirrors
+    // the playground regression CI caught.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <header>\n    <div>x</div>\n    <div className="y">z</div>\n  </header>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves `<` inside a JSX child expression as a comparison", () => {
+    // `<div>{a < b}</div>` — the `<` between idents inside a `{...}`
+    // child container is a comparison, NOT a sibling open tag. If it
+    // flipped JSX state, subsequent attribute `=` could get spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <div>{a < b}</div>\n  <span className="y">z</span>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("recognizes JSX inside a child expression when prev is expression position", () => {
+    // `cond ? <X/> : <Y/>` and `arr.map((p) => (<Foo />))` are both
+    // legitimate JSX opens INSIDE a `{...}` child expression. The
+    // expression-position guard (prev is `?`, `:`, `,`, `(`, ...) lets
+    // them in.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <ol>\n    {xs.map((p) => (\n      <li>\n        <a href={p.url}>\n          #{p.number}\n          <span className="x" aria-hidden>up</span>\n        </a>\n      </li>\n    ))}\n  </ol>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX fragments and their attributed children", () => {
+    // Fragment open `<>` and close `</>` must increment/decrement
+    // nesting; otherwise sibling `<div className="x" />` inside the
+    // fragment loses tag detection and `=` gets spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <>\n    {ok}\n    <div className="x" />\n  </>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("applies normal `=` spacing inside a JSX attribute `{expr}`", () => {
+    // The attribute `=` (between attr name and `{...}`) has no space.
+    // But inside the `{...}`, regular JS rules apply — a stray
+    // assignment-shaped `=` gets canonical spacing. Same for any other
+    // `=` token that lands inside an attribute expression.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <button onClick={() => x=1}>go</button>\n)\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any = (\n  <button onClick={() => x = 1}>go</button>\n)\n',
+    );
+  });
+
+  it("leaves `<` after a real regex literal as a comparison", () => {
+    // A regex literal `/re/` is NOT expression-position for the next
+    // token. `x = /re/ < y` is a comparison, NOT a JSX open. If this
+    // were misclassified, the formatter could later flip into JSX-open
+    // mode and suppress `=` spacing in unrelated assignment-form code.
+    const src = '?bs 0.4\nconst hit = /re/.test(s);\nconst ok = a < b;\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves `<` after postfix `++` / `--` as a comparison", () => {
+    // `a++ < b` and `a-- < b` are comparisons; the postfix increment
+    // ends an expression, so the next `<` is not in expression position.
+    const src = '?bs 0.4\nconst ok = a++ < b && c-- < d;\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("inserts space around `=` in a const that follows JSX (no leak)", () => {
+    // The closing `</div>` must reset JSX-tag tracking so the next `=`
+    // gets canonical spaces.
+    const src =
+      '?bs 0.4\nfn f() -> any {\n  const x=1;\n  return <div>x</div>;\n}\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any {\n  const x = 1;\n  return <div>x</div>;\n}\n',
+    );
+  });
+
+  it("leaves TS generics alone — `Result<T, E>` is not JSX", () => {
+    const src = "?bs 0.4\nlet xs: Array<number> = [];\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nlet xs: Array<number> = [];\n");
+  });
+
+  it("leaves comparison operators alone — `a < b` is not JSX", () => {
+    const src = "?bs 0.4\nconst ok = a < b && c > d;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("`<` after member-access `.` is a comparison, not a JSX open", () => {
+    // `a.foo < Bar` — the `.` is in `prev` position when `<` fires.
+    // `.` must NOT count as expression-position, or `< Bar` would be
+    // misclassified as a JSX open tag and leave `inJsxOpenTag` stuck.
+    const src = "?bs 0.4\nconst ok = a.foo < Bar;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("is idempotent on `=` rewrites", () => {
+    const src = "?bs 0.4\nconst x=1;\nfn f() -> number=2\n";
+    const once = formatSource(src);
+    expect(formatSource(once)).toBe(once);
   });
 
   it("collapses RFC #13's three example forms together (whitespace half)", () => {
@@ -809,5 +982,30 @@ describe("canonical-form gate (FMT001)", () => {
       const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
       expect(diags?.[0]?.code).toBe("FMT001");
     }
+  });
+
+  it("0.4: rejects missing space around `=` in declarations (FMT001)", () => {
+    const src = "?bs 0.4\nconst x=1;\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.3: still accepts `const x=1` (=-whitespace gate is opt-in via the pin)", () => {
+    const src = "?bs 0.3\nconst x=1;\nfn y() -> number = 2\n";
+    expect(transform(src).code.length).toBeGreaterThan(0);
+  });
+
+  it("0.4: still accepts JSX `name=\"value\"` attributes", () => {
+    // The `=`-whitespace rule must NOT fire inside JSX open tags.
+    // Use expression-body form because the brace-to-expr canonical-form
+    // rewrite (PR #21) would reject `fn ... { return <a/>; }` at FMT001
+    // for a reason unrelated to this test's intent.
+    const src = '?bs 0.4\nfn Demo() -> any = <a href="x">hi</a>\n';
+    expect(transform(src).code.length).toBeGreaterThan(0);
   });
 });
