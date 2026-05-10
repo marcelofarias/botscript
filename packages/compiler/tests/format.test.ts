@@ -248,6 +248,18 @@ describe("formatSource — whitespace insertion", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("applies normal `=` spacing inside a JSX attribute `{expr}`", () => {
+    // The attribute `=` (between attr name and `{...}`) has no space.
+    // But inside the `{...}`, regular JS rules apply — a stray
+    // assignment-shaped `=` gets canonical spacing. Same for any other
+    // `=` token that lands inside an attribute expression.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <button onClick={() => x=1}>go</button>\n)\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any = (\n  <button onClick={() => x = 1}>go</button>\n)\n',
+    );
+  });
+
   it("inserts space around `=` in a const that follows JSX (no leak)", () => {
     // The closing `</div>` must reset JSX-tag tracking so the next `=`
     // gets canonical spaces.

@@ -283,6 +283,15 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
       continue;
     }
 
+    // Snapshot the JSX-attr-eq predicate BEFORE the per-token JSX state
+    // update below. The `=` between attr name and `{...}` value sits at
+    // brace depth 0 looking forward; if we updated state first, the `{`
+    // would already have incremented `jsxAttrBraceDepth` and the
+    // condition `inJsxOpenTag && jsxAttrBraceDepth === 0` would flip
+    // off, causing wantsSpaceBetween to add a space before the `{`.
+    // Snapshotting pre-update preserves the attribute-zone meaning.
+    const inJsxAttrEqSnapshot = inJsxOpenTag && jsxAttrBraceDepth === 0;
+
     // Update JSX state BEFORE asking wantsSpaceBetween, so the `=` rule
     // sees the right state when we're sitting on an attribute name.
     if (inJsxOpenTag) {
@@ -400,11 +409,16 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     prevContentWasSlash =
       inJsxOpenTag && t.kind === "operator" && t.text === "/";
 
-    // Non-whitespace, non-newline token — possibly inject a separator first.
+    // Non-whitespace, non-newline token — possibly inject a separator
+    // first. `=` whitespace is suppressed only when we're between an
+    // attribute name and its value (the JSX-attribute `=`). The
+    // boundary uses the PRE-update snapshot so that the `=` -> `{`
+    // transition (where the current `{` is what increments brace
+    // depth) is still recognized as inside the attribute-eq zone.
     if (
       prevContent !== null &&
       !separatorSinceContent &&
-      wantsSpaceBetween(prevContent, t, inJsxOpenTag)
+      wantsSpaceBetween(prevContent, t, inJsxAttrEqSnapshot)
     ) {
       if (!emit(" ")) return;
     }
@@ -442,16 +456,17 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
  * they can be unary or binary, and disambiguating needs more context than
  * the token walk has.
  *
- * `inJsxOpenTag` is the only piece of state the caller threads in: when
- * true, we're between `<Tag` and the `>` (or `/>`) that closes its opening,
- * which is the one place where `name="value"` legitimately has no space
- * around `=`. Outside of JSX open tags, `=` is always a declaration /
- * assignment / type-alias and gets a space on each side.
+ * `inJsxAttrEq` is the only piece of state the caller threads in: true
+ * iff this `=` (if there is one) sits between an attribute name and its
+ * value in a JSX open tag, where canonical form is `name="value"` with no
+ * space. Anywhere else — declarations, assignments, destructuring
+ * defaults, AND `=` inside an attribute's `{expr}` (e.g. `onClick={()
+ * => a = b}`) — gets a space on each side.
  */
 function wantsSpaceBetween(
   prev: Token,
   curr: Token,
-  inJsxOpenTag: boolean,
+  inJsxAttrEq: boolean,
 ): boolean {
   // `->`, `=>`, `??` always want a space on each side.
   if (
@@ -461,11 +476,10 @@ function wantsSpaceBetween(
   ) {
     return true;
   }
-  // `=` (single-equals) wants a space on each side outside JSX open tags.
-  // Inside a JSX open tag we leave `name="value"` and `name={expr}` alone
-  // because canonical JSX attributes have no space around `=`.
+  // `=` (single-equals) wants a space on each side, except when it's
+  // the `=` between a JSX attribute name and its value.
   if (
-    !inJsxOpenTag &&
+    !inJsxAttrEq &&
     (prev.kind === "eq" || curr.kind === "eq")
   ) {
     return true;
@@ -505,15 +519,6 @@ const EXPR_STARTING_IDENTS = new Set([
 ]);
 
 /**
- * Heuristic: is the previous content token in expression position, i.e. a
- * JSX element could legitimately start here? This is the same
- * disambiguation Babel and esbuild use to tell `<Foo>` from a `<` operator.
- *
- * Used to decide whether `<` followed by an ident opens a JSX tag (yes,
- * after expression-position tokens) vs. a TS generic / less-than
- * (no, after ident / number / `)` / `]`).
- */
-/**
  * Look ahead from index `start` past whitespace/newline tokens and return
  * the next content token (or `undefined` at EOF).
  */
@@ -540,6 +545,19 @@ function popThroughJsxText(stack: ("jsxText" | "childExpr")[]): void {
   }
 }
 
+/**
+ * Heuristic: is the previous content token in expression position, i.e. a
+ * JSX element could legitimately start here? This is the same
+ * disambiguation Babel and esbuild use to tell `<Foo>` from a `<` operator.
+ *
+ * Used to decide whether `<` followed by an ident opens a JSX tag (yes,
+ * after expression-position tokens) vs. a TS generic / less-than
+ * (no, after ident / number / `)` / `]`).
+ *
+ * Only takes content tokens — the caller (`prevContent`) skips whitespace
+ * and newlines, so kinds like `"whitespace"` / `"newline"` are
+ * deliberately not in this switch.
+ */
 function inExpressionPosition(prev: Token | null): boolean {
   if (!prev) return true; // start of file
   switch (prev.kind) {
@@ -550,7 +568,6 @@ function inExpressionPosition(prev: Token | null): boolean {
     case "questionDot":
     case "question":
     case "open":
-    case "newline":
       return true;
     case "regex":
       // The lexer's regex-detection rule fires after operators, which
