@@ -278,13 +278,46 @@ describe("formatSource — import reordering", () => {
     );
   });
 
-  it("sorts side-effect imports by their path string", () => {
+  it("does NOT sort a run that contains a side-effect import (`import \"x\";` evaluation order is observable)", () => {
+    // ESM evaluates side-effect imports in source order — a polyfill that
+    // patches a global has to load before the module that uses it.
+    // Reordering would break that contract, so the run bails entirely.
     const src =
       "?bs 0.5\n" +
       'import "z-side";\n' +
       'import "a-side";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT sort a run that mixes a side-effect import with named-binding imports", () => {
+    // Even one side-effect import in a run is enough to bail the whole
+    // run — the named-binding imports' evaluation order is also locked
+    // relative to the side-effect import.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      'import "polyfill";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("sorts a named-binding-only run while leaving a side-effect run alone (separate by blank line)", () => {
+    // The side-effect concern is local to a run. A different run, separated
+    // by a blank line, can still sort if it's all named-binding imports.
+    const src =
+      "?bs 0.5\n" +
+      'import "z-side";\n' +
+      'import "a-side";\n' +
+      "\n" +
+      'import { c } from "c";\n' +
+      'import { a } from "a";\n';
     expect(formatSource(src)).toBe(
-      "?bs 0.5\n" + 'import "a-side";\n' + 'import "z-side";\n',
+      "?bs 0.5\n" +
+        'import "z-side";\n' +
+        'import "a-side";\n' +
+        "\n" +
+        'import { a } from "a";\n' +
+        'import { c } from "c";\n',
     );
   });
 
@@ -333,6 +366,37 @@ describe("formatSource — import reordering", () => {
       "?bs 0.5\n" +
       'import { z } from "z";\n' +
       "// comment for a\n" +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder ANY import in a region once a comment appears (3+ imports, region-wide bail)", () => {
+    // A weaker bail — flushing only the local run and re-sorting the
+    // post-comment imports — would leave `// comment for b` next to `a`
+    // (the new first item in the post-comment sub-run). The conservative
+    // rule is: any inter-import comment in the region taints the whole
+    // region, none of its sub-runs reorder.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "// comment for b\n" +
+      'import { b } from "b";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder across blank-line groups when a comment taints the region", () => {
+    // The blank-line gap normally splits a region into two independent
+    // sub-runs. But the region-wide comment bail wins: even the post-
+    // blank-line run stays put because the region (the whole contiguous
+    // import block separated only by trivia) is tainted by the comment.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "// note\n" +
+      'import { y } from "y";\n' +
+      "\n" +
+      'import { c } from "c";\n' +
       'import { a } from "a";\n';
     expect(formatSource(src)).toBe(src);
   });

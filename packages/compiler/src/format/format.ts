@@ -490,21 +490,31 @@ function extractSingleReturn(blockText: string): string | null {
  *     inside a string template (e.g. the playground's snippet samples) are
  *     skipped automatically because the lexer emits the whole template as a
  *     single opaque `template` token.
- *   - "Contiguous run" means import statements separated only by a single
- *     line break (and any horizontal whitespace). A blank line — i.e. two or
- *     more line breaks — between two imports DOES break the run; the user's
- *     blank-line grouping is an explicit signal (npm vs. local imports, for
- *     example) that survives the sort. Each side of the blank line is sorted
- *     independently. Any non-import non-trivia token, or any line/block
- *     comment, also ends the run — comments are tied by proximity to a
- *     specific import and reordering would split that tie.
- *   - The gap text between two imports inside a single run stays in source
- *     position. Sorting permutes only the import bodies. Practically: if a
- *     run is `import a;\nimport c;\nimport b;`, the sorted run is
- *     `import a;\nimport b;\nimport c;` — the two single newlines between
- *     bodies stay where they were.
- *   - Side-effect imports (`import "foo";`) sort by their path string just
- *     like named-binding imports.
+ *   - The walk groups imports into two scopes: a "region" is a contiguous
+ *     span of imports separated only by trivia (whitespace, newlines, and
+ *     comments) — it ends when any non-import code appears at depth zero.
+ *     A "run" is a region sub-span separated by blank lines (2+ line
+ *     breaks). Each run sorts independently; the user's blank-line
+ *     grouping (npm vs. local imports, for example) is preserved.
+ *   - If ANY comment sits in the trivia between two imports inside a
+ *     region, the WHOLE region bails — every run inside it. A weaker
+ *     bail (only the local run) would still let the formatter reorder
+ *     post-comment imports and silently re-attach the comment to a
+ *     different statement (`// for a` ending up next to `b`). The full-
+ *     region bail is the conservative answer; once any comment is seen,
+ *     all attachment relationships in the region are uncertain.
+ *   - If any run contains a side-effect import (`import "foo";`), the
+ *     whole run bails. Side-effect imports have observable evaluation
+ *     order — a runtime polyfill has to load before the consumer that
+ *     uses it, for example — so reordering them can change behaviour.
+ *     Other runs in the same region (separated by a blank line) sort
+ *     normally; the side-effect concern is local to whichever run
+ *     contains the bare `import "..."`.
+ *   - The gap text between two imports inside a single sortable run
+ *     stays in source position. Sorting permutes only the import
+ *     bodies. Practically: if a run is `import a;\nimport c;\nimport b;`,
+ *     the sorted run is `import a;\nimport b;\nimport c;` — the two
+ *     single newlines between bodies stay where they were.
  *   - Sort key is the raw module-path text (between the quotes). The
  *     comparison is `<` / `>` on JS strings — UTF-16 code-unit lex order.
  *     That's deterministic and matches what `Array.prototype.sort()` does
@@ -535,13 +545,34 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
     tokenEnd: number;
     /** Module-path text (no surrounding quotes). Sort key. */
     path: string;
+    /** True iff this is a side-effect import (`import "foo";` with no `from`). */
+    sideEffect: boolean;
   }
 
-  const runs: Imp[][] = [];
-  let current: Imp[] = [];
-  const flush = () => {
-    if (current.length > 1) runs.push(current);
-    current = [];
+  interface Region {
+    runs: Imp[][];
+    /** Set when any line/block comment sits in the trivia between two imports in this region. */
+    hasComment: boolean;
+  }
+
+  const regions: Region[] = [];
+  // Region tracking. `region` is non-null exactly when we are inside a
+  // contiguous span of imports (any number of sub-runs). It's created the
+  // moment we parse the first import in a span and torn down by
+  // `flushRegion` when a non-import non-trivia token appears (or at EOF).
+  let region: Region | null = null;
+  let run: Imp[] = [];
+
+  const flushRun = () => {
+    if (run.length === 0) return;
+    region!.runs.push(run);
+    run = [];
+  };
+  const flushRegion = () => {
+    if (region === null) return;
+    flushRun();
+    regions.push(region);
+    region = null;
   };
 
   let i = 0;
@@ -554,86 +585,122 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
     // import statement and must not be reordered. The lexer pre-computes
     // `matchedAt`, so the skip is a single jump.
     if (t.kind === "open" && t.matchedAt !== undefined) {
-      flush();
+      flushRegion();
       i = t.matchedAt + 1;
       continue;
     }
 
     if (t.kind === "ident" && t.text === "import") {
-      // Verify the trivia between the previous import in the run and this
-      // one is only whitespace + newlines — no comments, no other code —
-      // AND that the gap is at most one line break. A blank line (2+
-      // newlines) is an explicit grouping signal from the user; sorting
-      // across it would erase that grouping.
-      if (current.length > 0) {
-        const prev = current[current.length - 1]!;
-        let onlyTrivia = true;
+      // Inspect trivia between the previous import (anywhere in the
+      // current region) and this one. Two flags drive the decision:
+      //   - `lineBreaks >= 2` (blank line between) splits this import into
+      //     a new run inside the same region. The blank line is the user's
+      //     grouping signal; it survives the sort.
+      //   - any line/block comment in the trivia taints the whole region;
+      //     all of its runs bail. Reordering across a comment would
+      //     silently re-attach it to a different statement.
+      if (region !== null) {
+        // The previous import is the last entry of the current `run` if
+        // we have one, otherwise the last entry of the last completed run
+        // in the region.
+        const prevTokenEnd =
+          run.length > 0
+            ? run[run.length - 1]!.tokenEnd
+            : region.runs[region.runs.length - 1]!.at(-1)!.tokenEnd;
         let lineBreaks = 0;
-        for (let k = prev.tokenEnd; k < i; k++) {
+        for (let k = prevTokenEnd; k < i; k++) {
           const tk = tokens[k]!;
           if (tk.kind === "whitespace") continue;
           if (tk.kind === "newline") {
             lineBreaks += countLineBreaks(tk.text);
             continue;
           }
-          onlyTrivia = false;
+          if (tk.kind === "lineComment" || tk.kind === "blockComment") {
+            region.hasComment = true;
+            continue;
+          }
+          // Anything else at depth zero shouldn't appear here (`open` was
+          // skipped, non-import-non-trivia would have ended the region in
+          // the branch below). Defensive end-region just in case.
+          flushRegion();
           break;
         }
-        if (!onlyTrivia || lineBreaks >= 2) flush();
+        if (region !== null && lineBreaks >= 2) flushRun();
       }
       const imp = parseImport(tokens, i);
       if (!imp) {
-        // Malformed import — flush whatever run we had and skip this token.
-        flush();
+        // Malformed import — end whatever region we had and skip this token.
+        flushRegion();
         i++;
         continue;
       }
-      current.push(imp);
+      // Eagerly create the region on the first import we accept, so the
+      // trivia inspection above sees a non-null `region` on the second
+      // and subsequent imports.
+      if (region === null) region = { runs: [], hasComment: false };
+      run.push(imp);
       i = imp.tokenEnd;
       continue;
     }
 
-    // Any other depth-0 non-trivia token (including a comment) ends the run.
+    // Trivia between imports stays in the region. Only depth-zero CODE
+    // (non-import, non-trivia, non-comment) ends the region. Comments
+    // outside an import's body aren't a region terminator either — they
+    // taint the region's `hasComment` flag via the trivia walk above.
     if (
       t.kind !== "whitespace" &&
-      t.kind !== "newline"
+      t.kind !== "newline" &&
+      t.kind !== "lineComment" &&
+      t.kind !== "blockComment"
     ) {
-      flush();
+      flushRegion();
     }
     i++;
   }
-  flush();
+  flushRegion();
 
-  if (runs.length === 0) return null;
+  if (regions.length === 0) return null;
 
-  // Decide which runs actually need reordering. A run is "already sorted"
-  // when each import's path is <= the next one's path; only those count
-  // toward the rewrite. Skipping already-sorted runs keeps the cheap path
-  // cheap — most files are already in order on the second format.
-  const dirtyRuns = runs.filter((run) => {
-    for (let k = 1; k < run.length; k++) {
-      if (run[k - 1]!.path > run[k]!.path) return true;
+  // Decide which runs actually need reordering. A run is sortable when:
+  //   - its parent region has no interleaved comment (full-region bail);
+  //   - it contains no side-effect import (per-run bail);
+  //   - it has 2+ imports;
+  //   - its current order isn't already sorted.
+  // Already-sorted runs are skipped so the cheap path stays cheap — most
+  // files are already in order on the second format.
+  const dirtyRuns: Imp[][] = [];
+  for (const reg of regions) {
+    if (reg.hasComment) continue;
+    for (const r of reg.runs) {
+      if (r.length < 2) continue;
+      if (r.some((imp) => imp.sideEffect)) continue;
+      let alreadySorted = true;
+      for (let k = 1; k < r.length; k++) {
+        if (r[k - 1]!.path > r[k]!.path) {
+          alreadySorted = false;
+          break;
+        }
+      }
+      if (!alreadySorted) dirtyRuns.push(r);
     }
-    return false;
-  });
+  }
   if (dirtyRuns.length === 0) return null;
 
   // Apply patches right-to-left so earlier offsets stay valid. Within a
   // single run, the gap text between imports stays in source position
   // (sorting permutes only the import bodies, not the gaps).
   const patches: { start: number; end: number; replacement: string }[] = [];
-  for (const run of dirtyRuns) {
-    const sorted = [...run].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  for (const r of dirtyRuns) {
+    const sorted = [...r].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     let replacement = "";
-    for (let k = 0; k < run.length; k++) {
-      const slot = run[k]!;
+    for (let k = 0; k < r.length; k++) {
+      const slot = r[k]!;
       replacement += src.slice(sorted[k]!.start, sorted[k]!.end);
-      if (k < run.length - 1) {
-        // Verbatim gap text from the original kth slot to the (k+1)th slot.
-        replacement += src.slice(slot.end, run[k + 1]!.start);
+      if (k < r.length - 1) {
+        replacement += src.slice(slot.end, r[k + 1]!.start);
       }
     }
-    patches.push({ start: run[0]!.start, end: run[run.length - 1]!.end, replacement });
+    patches.push({ start: r[0]!.start, end: r[r.length - 1]!.end, replacement });
   }
   patches.sort((a, b) => b.start - a.start);
   let out = src;
@@ -670,12 +737,20 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
 function parseImport(
   tokens: Token[],
   startIdx: number,
-): { start: number; end: number; tokenStart: number; tokenEnd: number; path: string } | null {
+): {
+  start: number;
+  end: number;
+  tokenStart: number;
+  tokenEnd: number;
+  path: string;
+  sideEffect: boolean;
+} | null {
   const head = tokens[startIdx];
   if (!head || head.kind !== "ident" || head.text !== "import") return null;
   let i = startIdx + 1;
   let path: string | null = null;
   let pathTokenIdx = -1;
+  let viaFrom = false;
   let lastMeaningful = startIdx;
   while (i < tokens.length) {
     const t = tokens[i]!;
@@ -690,6 +765,7 @@ function parseImport(
         tokenStart: startIdx,
         tokenEnd: i + 1,
         path,
+        sideEffect: !viaFrom,
       };
     }
     if (t.kind === "newline") {
@@ -704,6 +780,7 @@ function parseImport(
           tokenStart: startIdx,
           tokenEnd: lastMeaningful + 1,
           path,
+          sideEffect: !viaFrom,
         };
       }
       i++;
@@ -738,6 +815,7 @@ function parseImport(
       if (!pathTok || pathTok.kind !== "string") return null;
       path = stripStringQuotes(pathTok.text);
       pathTokenIdx = j;
+      viaFrom = true;
       lastMeaningful = j;
       i = j + 1;
       continue;
@@ -746,7 +824,9 @@ function parseImport(
       // Side-effect import: `import "module";`. The first depth-0 string is
       // the path. (Named-binding imports always go through the bracket
       // skip above before reaching their `from` clause, so we only land
-      // here on the side-effect form.)
+      // here on the side-effect form.) `viaFrom` stays false — the caller
+      // uses that flag to bail entire runs that contain a side-effect
+      // import, since their evaluation order is observable.
       path = stripStringQuotes(t.text);
       pathTokenIdx = i;
       lastMeaningful = i;
@@ -764,6 +844,7 @@ function parseImport(
       tokenStart: startIdx,
       tokenEnd: lastMeaningful + 1,
       path,
+      sideEffect: !viaFrom,
     };
   }
   return null;
