@@ -1,12 +1,12 @@
 ?bs 0.4
 
-import { useEffect, useMemo, useState } from "react";
 import { transform, formatSource } from "@mbfarias/botscript-compiler";
+import { useEffect, useMemo, useState } from "react";
 
 import { Logo } from "./Logo";
-import { SNIPPETS } from "./snippets.bs";
 import { PROBLEMS } from "./problems.bs";
 import { PULLS } from "./pulls.bs";
+import { SNIPPETS } from "./snippets.bs";
 
 type Mode = "problems" | "features";
 

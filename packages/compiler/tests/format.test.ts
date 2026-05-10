@@ -241,6 +241,395 @@ describe("formatSource — brace→expression body equivalence", () => {
   });
 });
 
+describe("formatSource — import reordering", () => {
+  it("alphabetizes a contiguous run of top-level imports by module path", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import { c } from "c-mod";\n' +
+      'import { a } from "a-mod";\n' +
+      'import { b } from "b-mod";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        'import { a } from "a-mod";\n' +
+        'import { b } from "b-mod";\n' +
+        'import { c } from "c-mod";\n',
+    );
+  });
+
+  it("preserves a blank-line gap between two import groups", () => {
+    // The user split imports into two groups (npm vs. local) with a blank
+    // line. Each group sorts independently; the blank line stays between
+    // them. The gap text is captured from the original source so the
+    // separator survives the rewrite.
+    const src =
+      "?bs 0.5\n" +
+      'import { useState } from "react";\n' +
+      'import { transform } from "@mbfarias/botscript-compiler";\n' +
+      "\n" +
+      'import { Logo } from "./Logo";\n' +
+      'import { snippets } from "./snippets.bs";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        'import { transform } from "@mbfarias/botscript-compiler";\n' +
+        'import { useState } from "react";\n' +
+        "\n" +
+        'import { Logo } from "./Logo";\n' +
+        'import { snippets } from "./snippets.bs";\n',
+    );
+  });
+
+  it("does NOT sort a run that contains a side-effect import (`import \"x\";` evaluation order is observable)", () => {
+    // ESM evaluates side-effect imports in source order — a polyfill that
+    // patches a global has to load before the module that uses it.
+    // Reordering would break that contract, so the run bails entirely.
+    const src =
+      "?bs 0.5\n" +
+      'import "z-side";\n' +
+      'import "a-side";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT sort a run that mixes a side-effect import with named-binding imports", () => {
+    // Even one side-effect import in a run is enough to bail the whole
+    // run — the named-binding imports' evaluation order is also locked
+    // relative to the side-effect import.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      'import "polyfill";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("sorts a named-binding-only run while leaving a side-effect run alone (separate by blank line)", () => {
+    // The side-effect concern is local to a run. A different run, separated
+    // by a blank line, can still sort if it's all named-binding imports.
+    const src =
+      "?bs 0.5\n" +
+      'import "z-side";\n' +
+      'import "a-side";\n' +
+      "\n" +
+      'import { c } from "c";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        'import "z-side";\n' +
+        'import "a-side";\n' +
+        "\n" +
+        'import { a } from "a";\n' +
+        'import { c } from "c";\n',
+    );
+  });
+
+  it("handles `import * as ns from \"...\"` namespace imports", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import * as fs from "node:fs";\n' +
+      'import * as a from "a-mod";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        'import * as a from "a-mod";\n' +
+        'import * as fs from "node:fs";\n',
+    );
+  });
+
+  it("handles `import type { T } from \"...\"` (TS type-only imports)", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import type { B } from "b";\n' +
+      'import type { A } from "a";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" + 'import type { A } from "a";\n' + 'import type { B } from "b";\n',
+    );
+  });
+
+  it("preserves multi-line bracket-bound bindings during reordering", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "import {\n" +
+      "  a,\n" +
+      "  b,\n" +
+      '} from "ab";\n';
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        "import {\n" +
+        "  a,\n" +
+        "  b,\n" +
+        '} from "ab";\n' +
+        'import { z } from "z";\n',
+    );
+  });
+
+  it("does NOT reorder when comments sit between two imports (comment-attachment is ambiguous)", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "// comment for a\n" +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder when a same-line comment trails the LAST import (trailing-comment bail)", () => {
+    // Without the trailing-trivia check, the formatter would sort the run
+    // and `// wraps lib` would visually attach to whichever import landed
+    // in the last slot — silently re-targeting a comment the user wrote
+    // for the explicit lib-wrapping module.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      'import { a } from "a"; // wraps lib\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder when a comment sits immediately above the FIRST import (leading-comment bail)", () => {
+    // Without the leading-trivia check, the formatter would sort the run
+    // and the comment would visually attach to whichever import landed
+    // in the first slot — silently re-targeting an explanation the user
+    // wrote for a specific module.
+    const src =
+      "?bs 0.5\n" +
+      "// comment for z\n" +
+      'import { z } from "z";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder ANY import in a region once a comment appears (3+ imports, region-wide bail)", () => {
+    // A weaker bail — flushing only the local run and re-sorting the
+    // post-comment imports — would leave `// comment for b` next to `a`
+    // (the new first item in the post-comment sub-run). The conservative
+    // rule is: any inter-import comment in the region taints the whole
+    // region, none of its sub-runs reorder.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "// comment for b\n" +
+      'import { b } from "b";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder across blank-line groups when a comment taints the region", () => {
+    // The blank-line gap normally splits a region into two independent
+    // sub-runs. But the region-wide comment bail wins: even the post-
+    // blank-line run stays put because the region (the whole contiguous
+    // import block separated only by trivia) is tainted by the comment.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "// note\n" +
+      'import { y } from "y";\n' +
+      "\n" +
+      'import { c } from "c";\n' +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder a single import (no run to reorder)", () => {
+    const src = "?bs 0.5\n" + 'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder when a non-import statement sits between two imports", () => {
+    // The user wrote a top-level statement between two imports; treating
+    // them as a single run would cross-cut that statement. Each side ends
+    // up as a single-import "run" (length-1, no reorder).
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "const x = 1;\n" +
+      'import { a } from "a";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reach into an import nested inside a string template", () => {
+    // The lexer captures the whole template as one opaque token, so the
+    // formatter never sees the inner `import` ident. The outer `z`
+    // import stays put because there's no other top-level import to
+    // pair with.
+    const src =
+      "?bs 0.5\n" +
+      'import { z } from "z";\n' +
+      "const sample = `?bs 0.5\nimport { a } from \"a\";\n`;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves an already-sorted run untouched (no-op)", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import { a } from "a";\n' +
+      'import { b } from "b";\n' +
+      'import { c } from "c";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("reordering is idempotent", () => {
+    const src =
+      "?bs 0.5\n" +
+      'import { c } from "c";\n' +
+      'import { a } from "a";\n' +
+      'import { b } from "b";\n';
+    const once = formatSource(src);
+    const twice = formatSource(once);
+    expect(twice).toBe(once);
+  });
+});
+
+describe("formatSource — tagged-union member reordering", () => {
+  it("alphabetizes tagged-union alternatives by tag name", () => {
+    const src = "?bs 0.5\ntype Shape = Square { side: number } | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\ntype Shape = Circle { r: number } | Square { side: number };\n",
+    );
+  });
+
+  it("sorts mixed bare and body-bearing alternatives", () => {
+    const src =
+      "?bs 0.5\ntype Status = Loading | Done { value: string } | Idle | Failed { error: string };\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\ntype Status = Done { value: string } | Failed { error: string } | Idle | Loading;\n",
+    );
+  });
+
+  it("preserves the leading-`|` multi-line shape during reorder", () => {
+    const src =
+      "?bs 0.5\n" +
+      "type Shape =\n" +
+      "  | Square { side: number }\n" +
+      "  | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.5\n" +
+        "type Shape =\n" +
+        "  | Circle { r: number }\n" +
+        "  | Square { side: number };\n",
+    );
+  });
+
+  it("does NOT reorder a plain TS union with no tag idents", () => {
+    // `number | string` has no TagIdent, so the rule "every alt is a
+    // TagIdent or TagIdent { fields }" fails on the first alt. Left alone.
+    const src = "?bs 0.5\ntype N = number | string;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder a literal-type union (\"open\" | \"closed\")", () => {
+    // The first alt is a string literal, not an ident. Detection fails.
+    const src = '?bs 0.5\ntype Mode = "open" | "closed";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder a tagged-union when no alt has a body", () => {
+    // The detection rule requires at least one body-bearing alt. A pure
+    // bare-tag union (`Idle | Loading | Done`) would re-order in alpha
+    // order if we let it, but it's also indistinguishable from a TS
+    // `enum`-as-union pattern where the user is using order to encode
+    // priority. Conservative: bail.
+    const src = "?bs 0.5\ntype Status = Loading | Idle | Done;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves an already-sorted tagged union untouched", () => {
+    const src = "?bs 0.5\ntype Shape = Circle { r: number } | Square { side: number };\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("reorder is idempotent", () => {
+    const src = "?bs 0.5\ntype Shape = Square { side: number } | Circle { r: number };\n";
+    const once = formatSource(src);
+    const twice = formatSource(once);
+    expect(twice).toBe(once);
+  });
+
+  it("does NOT reorder when a line comment sits between two alts", () => {
+    // The comment is tied by source proximity to a specific alt;
+    // reordering would silently re-attach it to a different one. The
+    // formatter bails instead — same conservative rule as imports.
+    const src =
+      "?bs 0.5\n" +
+      "type Shape = Square { side: number }\n" +
+      "  // pick this one for round things\n" +
+      "  | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT reorder when a block comment sits between two alts", () => {
+    const src =
+      "?bs 0.5\ntype Shape = Square { side: number } /* round next */ | Circle { r: number };\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does NOT match `type` used as an identifier inside an expression", () => {
+    // `const type = "x"` — here `type` is a binding name, not the keyword.
+    // Detection bails because `atTypeStmtStart` returns false when the
+    // preceding non-trivia token is `const`.
+    const src = '?bs 0.5\nconst type = "x";\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("collapses two surface forms (whitespace + tagged-union order) together", () => {
+    // RFC #13's "one program, one representation" promise: equivalent
+    // surface variants of the same logic produce the same canonical form.
+    // (The `=` token is intentionally not whitespace-canonicalized — it's
+    // ambiguous with JSX attributes — so this test deliberately keeps the
+    // `=` spacing identical between the two inputs.)
+    const a =
+      "?bs 0.5\n" +
+      "type Shape = Circle { r: number } | Square { side: number };\n" +
+      "fn area(s: Shape) -> number = match s {\n" +
+      "  Circle { r } -> Math.PI * r * r\n" +
+      "  Square { side } -> side * side\n" +
+      "}\n";
+    const b =
+      "?bs 0.5\n" +
+      "type Shape = Square { side:number } | Circle { r:number };\n" +
+      "fn area(s:Shape)->number = match s {\n" +
+      "  Circle { r } -> Math.PI * r * r\n" +
+      "  Square { side } -> side * side\n" +
+      "}\n";
+    expect(formatSource(a)).toBe(formatSource(b));
+  });
+});
+
+describe("canonical-form gate — import + tagged-union reordering", () => {
+  // Gate is enforced from `?bs 0.4` onward (see the FMT001 tests above).
+  // Test at the real boundary so a future regression in version-gating
+  // would surface here.
+  it("0.4: rejects unsorted top-level imports with FMT001", () => {
+    const src =
+      "?bs 0.4\n" +
+      'import { b } from "b";\n' +
+      'import { a } from "a";\n';
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.4: rejects unsorted tagged-union alternatives with FMT001", () => {
+    const src =
+      "?bs 0.4\ntype Shape = Square { side: number } | Circle { r: number };\n";
+    try {
+      transform(src);
+      expect.unreachable("expected FMT001");
+    } catch (e) {
+      const diags = (e as { diagnostics?: { code: string }[] }).diagnostics;
+      expect(diags?.[0]?.code).toBe("FMT001");
+    }
+  });
+
+  it("0.3: still accepts unsorted imports (gate is opt-in via the pin)", () => {
+    const src =
+      "?bs 0.3\n" +
+      'import { b } from "b";\n' +
+      'import { a } from "a";\n';
+    expect(transform(src).code.length).toBeGreaterThan(0);
+  });
+});
+
 describe("formatSource — directive normalization", () => {
   it("collapses multiple spaces between `?bs` and the version", () => {
     const src = "?bs   0.4\nfn x() -> number = 1\n";

@@ -112,7 +112,7 @@ describe("match arm with brace-block body (issue #23 probes B/C)", () => {
   it("lowers a multi-statement block-body arm to an arrow with a brace block (probe B)", () => {
     const src =
       `?bs 0.4\n\n` +
-      `type Status = Idle | Done { value: string };\n\n` +
+      `type Status = Done { value: string } | Idle;\n\n` +
       `fn handle(s: Status) -> string {\n` +
       `  return match s {\n` +
       `    Idle -> "idle"\n` +
@@ -134,7 +134,7 @@ describe("match arm with brace-block body (issue #23 probes B/C)", () => {
   it("lowers a `return`-bearing block-body arm to an arrow with a brace block (probe C)", () => {
     const src =
       `?bs 0.4\n\n` +
-      `type Outcome = Ok { value: string } | Err { error: string };\n\n` +
+      `type Outcome = Err { error: string } | Ok { value: string };\n\n` +
       `fn process(o: Outcome) -> string {\n` +
       `  return match o {\n` +
       `    Ok { value } -> {\n` +
