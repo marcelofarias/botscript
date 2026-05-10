@@ -33,12 +33,16 @@
  *     statements is sorted by module-path string. The sort key is the raw
  *     text between the quotes; the comparison is JS-string `<` / `>`
  *     (UTF-16 code-unit order), with escape sequences left ENCODED rather
- *     than decoded — `"a"` and `"a"` denote the same module but
- *     compare as different strings (`a` (0x61) vs `\` (0x5C)), so the
- *     formatter sorts them to different positions. Decoding before the
- *     compare would mean the formatter has to evaluate JS string
- *     escapes; we don't, both for simplicity and so the rewrite never
- *     touches the user's literal text. The gap text between imports stays in
+ *     than decoded — that is, two import paths that resolve to the same
+ *     module at runtime but spell that module differently at the source
+ *     level (one with a literal `a` character, the other with a unicode
+ *     or hex escape sequence whose decoded value is `a`) compare as
+ *     different strings here, because the formatter compares the raw
+ *     between-the-quotes text rather than the post-decode value.
+ *     Decoding before the compare would mean the formatter has to
+ *     evaluate JS string escapes; we don't, both for simplicity and so
+ *     the rewrite never touches the user's literal text. The gap text
+ *     between imports stays in
  *     place — only the import bodies are permuted — so blank lines
  *     between imports keep their position. The pass bails on a region
  *     whose trivia (above the first import, between any two imports, or
@@ -795,10 +799,16 @@ function rewriteImportOrder(src: string, preLexed?: Token[]): string | null {
  * string when no `from` appears (side-effect import). Comparison is JS-string
  * lex order on that raw text.
  *
- * The end offset lands just past the trailing `;` when one is present, or
- * just past the path string when the user omitted it. Newlines / whitespace
- * after that point belong to the gap between imports, not to the import
- * itself, and are spliced verbatim by `rewriteImportOrder`.
+ * The end offset lands just past the trailing `;` when one is present.
+ * Without a `;`, the parser walks until the next newline or EOF and
+ * stops at the LAST meaningful token consumed before that — usually
+ * the path string itself, but TS forms with trailing tokens after the
+ * path (an import attributes / assertions clause like
+ * `import x from "p" with { type: "json" }`, or a renamed default
+ * binding with an inline expression) extend the end past the path to
+ * cover those tokens. Whitespace and newlines past the last meaningful
+ * token belong to the gap between imports, not to the import itself,
+ * and are spliced verbatim by `rewriteImportOrder`.
  */
 function parseImport(
   tokens: Token[],
@@ -1040,9 +1050,14 @@ function rewriteTaggedUnionOrder(src: string, preLexed?: Token[]): string | null
  * been stripped by the time the pass runs.
  *
  * Returns true when the `type` ident at index `idx` is the first
- * non-trivia token of a top-level statement (file start, after `;`,
- * after `{` / `(`, after `}`, after `export`, after a directive). Avoids
- * matching `type` used as an identifier inside expressions
+ * non-trivia token of a top-level statement (file start, after `;` or
+ * `:`, after `{` / `(`, after `}`, after `export`, after a directive).
+ * `:` is in the predicate to mirror `passTaggedUnion`'s `atStatementStart`
+ * — practically it covers `case "x":` / labeled-statement starts and TS
+ * conditional-type RHS positions; the `type` decl wouldn't actually parse
+ * in those positions, but the formatter and the desugarer agree on what
+ * counts as "statement start" so they decide on the same set of decls.
+ * Avoids matching `type` used as an identifier inside expressions
  * (`const type = "a"`) or as a TS field-modifier (`{ type: "x" }`).
  */
 function atTypeStmtStart(tokens: Token[], idx: number): boolean {
