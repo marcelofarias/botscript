@@ -360,11 +360,12 @@ describe("?bs version directive", () => {
 
 describe("integration", () => {
   it("transforms a full example end-to-end", () => {
+    // Uses async fn + await so http.get (Promise<Result>) composes with ?.
     const src = `?primer
 fn slug(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }
 
-fn loadUser(id: string) uses { net } -> Result<{name: string}, string> {
-  let res = http.get(\`/u/\${id}\`)?
+async fn loadUser(id: string) uses { net } -> Promise<Result<{name: string}, Error>> {
+  let res = await http.get(\`/u/\${id}\`)?
   ok({ name: id })
 }
 
@@ -375,10 +376,25 @@ test "slug works" {
     const out = t(src);
     expect(out).toMatch(/botscript v0\.1 — primer/);
     expect(out).toContain("function slug(s: string): string");
-    expect(out).toContain("function loadUser(id: string)");
+    expect(out).toMatch(/async function loadUser/);
     expect(out).toContain("$enter");
     expect(out).toContain("$test");
     expect(out).toContain("$assert");
     expect(out).toContain("__r1");
+  });
+
+  it("await expr? correctly desugars await before unwrap", () => {
+    // Verifies that `let x = await someAsyncResult()?` emits `await` as
+    // part of the captured expression so it executes inside the async arrow.
+    const src =
+      `async fn fetch(url: string) uses { net } -> Promise<Result<string, Error>> {\n` +
+      `  let res = await http.get(url)?\n` +
+      `  ok("done")\n` +
+      `}\n`;
+    const out = t(src);
+    // The `await` must be part of the captured expression, not silently dropped.
+    expect(out).toContain("const __r1 = await http.get(url);");
+    expect(out).toMatch(/if \(__r1\.kind === "err"\) return __r1;/);
+    expect(out).toContain("let res = __r1.value;");
   });
 });

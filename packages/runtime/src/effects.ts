@@ -1,4 +1,5 @@
 import { $require } from "./capabilities.js";
+import { ok, err, type Result } from "./result.js";
 
 /**
  * Capability-checked wrappers around the few side effects botscript blesses
@@ -13,13 +14,34 @@ import { $require } from "./capabilities.js";
  */
 
 export const http = {
-  get: async (url: string, init?: RequestInit): Promise<Response> => {
+  /**
+   * Perform a GET request. Returns `Promise<Result<Response, Error>>` so the
+   * `?` unwrap operator can be used directly after `await`:
+   *
+   *   let res = await http.get(url)?
+   *
+   * Network-level errors (connection refused, DNS failure, etc.) are caught
+   * and lifted into `Err`. HTTP error status codes are NOT automatically
+   * converted — callers that care should check `res.value.ok` or `.status`.
+   */
+  get: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");
-    return fetch(url, init);
+    try {
+      return ok(await fetch(url, init));
+    } catch (e) {
+      return err(e instanceof Error ? e : new Error(String(e)));
+    }
   },
-  post: async (url: string, init?: RequestInit): Promise<Response> => {
+  /**
+   * Perform a POST request. Same `Result` semantics as `http.get`.
+   */
+  post: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");
-    return fetch(url, { method: "POST", ...init });
+    try {
+      return ok(await fetch(url, { method: "POST", ...init }));
+    } catch (e) {
+      return err(e instanceof Error ? e : new Error(String(e)));
+    }
   },
 };
 
