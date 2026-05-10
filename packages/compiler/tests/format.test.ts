@@ -180,6 +180,46 @@ describe("formatSource — whitespace insertion", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("preserves JSX `=` when an earlier attr's `{expr}` contains `>`", () => {
+    // Regression: `>` inside `onClick={a > b ? x : y}` must NOT close the
+    // JSX open-tag state, or the second attribute's `=` gets spaces.
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div onClick={a > b ? x : y} title="hi">x</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX `=` when an earlier attr's `{expr}` contains `<`", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div data-cmp={a < b} role="x">y</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("preserves JSX `=` when `{expr}` contains nested braces", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div style={{ color: "red" }} title="hi">x</div>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("closes JSX open-tag state on the outer `>` after a `{expr}` attr", () => {
+    // After the open tag closes, an `=` outside JSX must get spaces again.
+    // The `}` of `onClick={fn}` resolves brace depth to 0; the next `>`
+    // closes the tag; the `; const x=1` after the JSX must be normalized.
+    const src =
+      '?bs 0.4\nfn f() -> any {\n  const x=1;\n  return <button onClick={fn} disabled={!ok}>go</button>;\n}\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn f() -> any {\n  const x = 1;\n  return <button onClick={fn} disabled={!ok}>go</button>;\n}\n',
+    );
+  });
+
+  it("handles a sibling JSX element after a closing tag (no leak)", () => {
+    // The lexer munches `</div>` into `<` + regex token `/div>`; the next
+    // `<div className=...>` must still be detected as a JSX open. Mirrors
+    // the playground regression CI caught.
+    const src =
+      '?bs 0.4\nfn f() -> any = (\n  <header>\n    <div>x</div>\n    <div className="y">z</div>\n  </header>\n)\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
   it("inserts space around `=` in a const that follows JSX (no leak)", () => {
     // The closing `</div>` must reset JSX-tag tracking so the next `=`
     // gets canonical spaces.

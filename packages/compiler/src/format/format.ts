@@ -206,15 +206,38 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
-  // JSX open-tag depth. When > 0, we're between `<Tag` and the matching
-  // `>` (or `/>`) and `=` should NOT pick up surrounding whitespace.
-  // Detection mirrors the standard JSX vs `<` disambiguation Babel/esbuild
-  // use: a `<` immediately followed by an ident is a JSX open only when
-  // the prior token is in expression position (so `Result<T>` and `a < b`
-  // stay generics/comparisons, while `return <Foo>` opens a JSX tag).
-  // The depth resets on every newline that exits an expression so a stray
-  // `<` inside e.g. a JSX text body (`<p>1<2</p>`) cannot leak.
-  let jsxOpenTagDepth = 0;
+  // JSX state. Three things to track because the lexer has no JSX
+  // awareness:
+  //
+  // - `inJsxOpenTag`: we're between `<Tag` and the closing `>` of that
+  //   tag's opening. While this is true, `=` does NOT pick up whitespace
+  //   (JSX attributes are `name="value"`, no space).
+  //
+  // - `jsxNestingDepth`: number of unclosed JSX elements. When > 0, a
+  //   stray `<Ident` is a sibling open tag (not a comparison or generic),
+  //   even when the prev token isn't in expression position — e.g.
+  //   after a `regex` token that ate a sibling's close (`</p>}`) or a `}`
+  //   that ended an expression block. The tag-vs-comparison
+  //   disambiguation only needs the expression-position rule at depth 0.
+  //
+  // - `jsxAttrBraceDepth`: `{`/`}` depth inside an open tag, so `>`
+  //   operators inside attribute expressions like
+  //   `<button onClick={a > b ? x : y}>` don't prematurely close the
+  //   open-tag state.
+  let inJsxOpenTag = false;
+  let jsxNestingDepth = 0;
+  let jsxAttrBraceDepth = 0;
+  // Tracks the previous *content* token kind/text only for `/>`
+  // self-close detection. `/>` is lexed as `operator "/"` then
+  // `operator ">"`; when we see `>` and the immediately previous content
+  // was `/`, the tag self-closed and we decrement nesting depth.
+  let prevContentWasSlash = false;
+  // Pattern that signals a JSX close tag. The lexer's regex rule fires
+  // after operators, so `</Foo>` becomes `<` + regex token spanning
+  // `/Foo>` (or `/Foo>}` when it eats a trailing `}` too). Any regex
+  // token starting with `/`, containing letters, ending in `>` (possibly
+  // followed by `}`) is a close tag, and pops one nesting level.
+  const JSX_CLOSE_TAG_RE = /^\/[A-Za-z_$][\w.$-]*\s*>\}*$/;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -257,44 +280,83 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
       continue;
     }
 
-    // Update JSX open-tag depth BEFORE asking wantsSpaceBetween, so the
-    // `=` rule sees the right state when we're sitting on the attr name.
-    // The transition point is the `<` itself: enter when `<` is followed
-    // (after trivia) by an ident and prevContent is in expression position;
-    // exit on the matching `>` or `/>`.
-    if (jsxOpenTagDepth > 0) {
-      // Self-close `/>` is lexed as `operator "/"` then `operator ">"`. End
-      // of the open tag fires on the `>`.
-      if (t.kind === "operator" && t.text === ">") {
-        jsxOpenTagDepth--;
-      }
-    } else if (t.kind === "operator" && t.text === "<") {
-      // Look ahead past trivia for an ident.
-      let k = i + 1;
-      while (
-        k < tokens.length &&
-        (tokens[k]!.kind === "whitespace" || tokens[k]!.kind === "newline")
+    // Update JSX state BEFORE asking wantsSpaceBetween, so the `=` rule
+    // sees the right state when we're sitting on an attribute name.
+    if (inJsxOpenTag) {
+      // Track `{...}` depth inside the open tag so `>` operators inside
+      // attribute expressions (`onClick={a > b ? x : y}`) don't
+      // prematurely close the tag.
+      if (t.kind === "open" && t.text === "{") {
+        jsxAttrBraceDepth++;
+      } else if (
+        t.kind === "close" &&
+        t.text === "}" &&
+        jsxAttrBraceDepth > 0
       ) {
-        k++;
+        jsxAttrBraceDepth--;
+      } else if (
+        t.kind === "operator" &&
+        t.text === ">" &&
+        jsxAttrBraceDepth === 0
+      ) {
+        // The literal `>` that closes the open tag.
+        inJsxOpenTag = false;
+        // If this `>` was preceded by a `/`, the tag self-closed and
+        // its element nesting also pops.
+        if (prevContentWasSlash && jsxNestingDepth > 0) {
+          jsxNestingDepth--;
+        }
       }
-      const ahead = tokens[k];
-      // `<Foo` (open) and `</Foo` (close) both look like JSX-tag boundaries.
-      // A close-tag is `</...>`, lexed as `operator "<"`, `operator "/"`,
-      // `ident`. Either way, what follows is the inside of an open or close
-      // tag where `=` should not pick up spaces.
-      const opensJsx =
-        (ahead?.kind === "ident") ||
-        (ahead?.kind === "operator" && ahead.text === "/");
-      if (opensJsx && inExpressionPosition(prevContent)) {
-        jsxOpenTagDepth++;
+    } else {
+      // Outside an open tag: the `<Ident` pattern starts a new one. The
+      // disambiguation rule has two parts: at top level (no nesting),
+      // require the prev token to be in expression position so that
+      // `Result<T>` and `a < b` are not misclassified. Inside an
+      // existing JSX context (depth > 0), the lexer has often produced
+      // tokens (regex close tags, `}` ending expression blocks) that
+      // *aren't* in expression position by the strict rule, but `<Ident`
+      // there is unambiguously a sibling element — valid JS / botscript
+      // never has a free-standing `<Ident` after `}` outside JSX.
+      if (t.kind === "operator" && t.text === "<") {
+        let k = i + 1;
+        while (
+          k < tokens.length &&
+          (tokens[k]!.kind === "whitespace" || tokens[k]!.kind === "newline")
+        ) {
+          k++;
+        }
+        const ahead = tokens[k];
+        const opensTag = ahead?.kind === "ident";
+        if (
+          opensTag &&
+          (jsxNestingDepth > 0 || inExpressionPosition(prevContent))
+        ) {
+          inJsxOpenTag = true;
+          jsxAttrBraceDepth = 0;
+          jsxNestingDepth++;
+        }
+      } else if (
+        t.kind === "regex" &&
+        JSX_CLOSE_TAG_RE.test(t.text) &&
+        jsxNestingDepth > 0
+      ) {
+        // The lexer's regex-detection rule munches `</Foo>` (and
+        // sometimes a trailing `}` from a surrounding expression block)
+        // into a single `regex` token. That token marks the close of one
+        // JSX element — pop the nesting depth.
+        jsxNestingDepth--;
       }
     }
+    // Update slash-tracking for `/>` self-close detection on the next
+    // iteration. Only meaningful inside an open tag.
+    prevContentWasSlash =
+      inJsxOpenTag && t.kind === "operator" && t.text === "/";
 
     // Non-whitespace, non-newline token — possibly inject a separator first.
     if (
       prevContent !== null &&
       !separatorSinceContent &&
-      wantsSpaceBetween(prevContent, t, jsxOpenTagDepth > 0)
+      wantsSpaceBetween(prevContent, t, inJsxOpenTag)
     ) {
       if (!emit(" ")) return;
     }
@@ -414,6 +476,15 @@ function inExpressionPosition(prev: Token | null): boolean {
     case "question":
     case "open":
     case "newline":
+      return true;
+    case "regex":
+      // The lexer's regex-detection rule fires after operators, which
+      // means JSX close tags like `</div>` get lexed as `operator "<"`
+      // followed by a `regex` token spanning `/div>`. Treating `regex` as
+      // expression-position lets the next `<Foo` be correctly identified
+      // as a JSX open. Real regex literals also leave the parser in
+      // expression position (they're values), so this is safe in both
+      // cases.
       return true;
     case "keyword":
       // botscript reserves: `fn`, `match`, `test`, `assert`, `pure`, `uses`,
