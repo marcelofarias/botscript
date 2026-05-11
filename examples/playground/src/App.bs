@@ -129,8 +129,6 @@ export function App() {
         </p>
       </section>
 
-      <Receipts />
-
       {mode === "problems" ? (
         <ProblemsView
           problem={problem}
@@ -149,6 +147,8 @@ export function App() {
           snippetCompiled={snippetCompiled}
         />
       )}
+
+      <Receipts />
 
       <footer className="footer">
         <span>v0.4.0</span>
