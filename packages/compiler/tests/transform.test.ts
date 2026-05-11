@@ -315,10 +315,21 @@ describe("imports", () => {
     expect(out).toMatch(/^import \{ \$enter \} from "@mbfarias\/botscript-runtime";/m);
   });
 
-  it("does not auto-import user-facing names like `ok`", () => {
+  it("auto-imports user-facing value names like `ok` and `http`", () => {
     const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
-    // `ok` is a user-facing name — the compiler does not import it for you.
-    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // `ok` is a stdlib value — the compiler now imports it automatically.
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("auto-imports type symbols with the `type` modifier", () => {
+    const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
+    // Result is a type — it must be imported with the inline `type` modifier.
+    expect(out).toMatch(/import \{[^}]*type Result[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("auto-imports http when used", () => {
+    const out = t(`fn x() uses { net } -> void { http.get("/ping"); }\n`);
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
   it("does not double-import when user already imports compiler helpers explicitly", () => {
@@ -380,5 +391,9 @@ test "slug works" {
     expect(out).toContain("$test");
     expect(out).toContain("$assert");
     expect(out).toContain("__r1");
+    // stdlib auto-imports
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*type Result[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 });

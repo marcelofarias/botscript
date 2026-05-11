@@ -1,7 +1,8 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`const\` position 1`] = `
-"
+"import { err } from "@mbfarias/botscript-runtime";
+
 const __r1 = g();
 if (__r1.kind === "err") return __r1;
 const b = __r1.value;
@@ -9,7 +10,8 @@ const b = __r1.value;
 `;
 
 exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`let\` position 1`] = `
-"
+"import { err } from "@mbfarias/botscript-runtime";
+
 const __r1 = f();
 if (__r1.kind === "err") return __r1;
 let a = __r1.value;
@@ -17,7 +19,8 @@ let a = __r1.value;
 `;
 
 exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in \`return\` position 1`] = `
-"
+"import { err } from "@mbfarias/botscript-runtime";
+
 const __r1 = h();
 if (__r1.kind === "err") return __r1;
 return __r1.value;
@@ -25,7 +28,8 @@ return __r1.value;
 `;
 
 exports[`forward-compat: ?bs 0.1 output is frozen > ? unwrap in bare-statement position 1`] = `
-"const __r1 = i();
+"import { err } from "@mbfarias/botscript-runtime";
+const __r1 = i();
 if (__r1.kind === "err") return __r1;
 "
 `;
@@ -136,7 +140,7 @@ function x(): void {
 `;
 
 exports[`forward-compat: ?bs 0.1 output is frozen > integration: multiple fns + test + ? + assert 1`] = `
-"import { $assert, $enter, $test } from "@mbfarias/botscript-runtime";
+"import { $assert, $enter, $test, err, http, ok, type Result } from "@mbfarias/botscript-runtime";
 
 function slug(s: string): string {
   return $enter([] as const, () => {
@@ -193,14 +197,14 @@ const x = $enter([] as const, () => { return 1 + 2; });
 `;
 
 exports[`forward-compat: ?bs 0.1 output is frozen > test "name" { body } rewrites to $test 1`] = `
-"import { $assert, $test } from "@mbfarias/botscript-runtime";
+"import { $assert, $test, ok } from "@mbfarias/botscript-runtime";
 
 $test("ok", async () => { $assert(1 === 1); });
 "
 `;
 
 exports[`forward-compat: ?bs 0.2 output is frozen > fn that declares a capability it uses (cap-check passes) 1`] = `
-"import { $enter } from "@mbfarias/botscript-runtime";
+"import { $enter, time } from "@mbfarias/botscript-runtime";
 
 function now(): number {
   return $enter(["time"] as const, () => {
@@ -213,7 +217,7 @@ function now(): number {
 `;
 
 exports[`forward-compat: ?bs 0.2 output is frozen > integration: tagged union + match + cap-check + test with mocks 1`] = `
-"import { $assert, $enter, $match, $tagMatch, $test, $withMocks } from "@mbfarias/botscript-runtime";
+"import { $assert, $enter, $match, $tagMatch, $test, $withMocks, http, time } from "@mbfarias/botscript-runtime";
 
 type Status = { kind: "Idle" } | { kind: "Done"; value: string };
 
@@ -253,7 +257,7 @@ type Shape = { kind: "Circle"; r: number } | { kind: "Square"; side: number };
 `;
 
 exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time } 1`] = `
-"import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
+"import { $assert, $test, $withMocks, time } from "@mbfarias/botscript-runtime";
 
 $test("deterministic clock", async () => { await $withMocks(["time"] as const, async () => {
   $assert(time.now() === 0);
@@ -263,7 +267,7 @@ $test("deterministic clock", async () => { await $withMocks(["time"] as const, a
 `;
 
 exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time, random } 1`] = `
-"import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
+"import { $assert, $test, $withMocks, random, time } from "@mbfarias/botscript-runtime";
 
 $test("deterministic both", async () => { await $withMocks(["time", "random"] as const, async () => {
   $assert(time.now() === 0);
@@ -305,7 +309,7 @@ function outer(s: string): string {
 `;
 
 exports[`forward-compat: ?bs 0.3 output is frozen > integration: unsafe + Result.try + cap inference 1`] = `
-"import { $enter, $resultTry } from "@mbfarias/botscript-runtime";
+"import { $enter, $resultTry, err, ok, type Result } from "@mbfarias/botscript-runtime";
 
 function parseConfig(raw: string): Result<Config, string> {
   return $enter([] as const, () => {
@@ -322,7 +326,7 @@ function parseConfig(raw: string): Result<Config, string> {
 `;
 
 exports[`forward-compat: ?bs 0.3 output is frozen > transitive capability inference passes when callees match 1`] = `
-"import { $enter } from "@mbfarias/botscript-runtime";
+"import { $enter, http } from "@mbfarias/botscript-runtime";
 
 function doFetch(url: string): string {
   return $enter(["net"] as const, () => {
@@ -360,7 +364,7 @@ function slug(s: string): string {
 `;
 
 exports[`forward-compat: ?bs 0.4 output is frozen > async generic fn 1`] = `
-"import { $enter } from "@mbfarias/botscript-runtime";
+"import { $enter, http } from "@mbfarias/botscript-runtime";
 
 async function fetchOne<T>(url: string): Promise<T> {
   return $enter(["net"] as const, async () => {
