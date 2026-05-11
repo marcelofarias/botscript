@@ -315,10 +315,65 @@ describe("imports", () => {
     expect(out).toMatch(/^import \{ \$enter \} from "@mbfarias\/botscript-runtime";/m);
   });
 
-  it("does not auto-import user-facing names like `ok`", () => {
-    const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
-    // `ok` is a user-facing name — the compiler does not import it for you.
+  it("auto-imports user-facing names like `ok` and `Result` (0.5+)", () => {
+    // Fixes #25: stdlib symbols auto-imported from ?bs 0.5 onward so primer
+    // examples work without a manual import preamble.
+    // Canonical form for 0.5+: single-expression fn uses `= expr` syntax.
+    const out = t(`?bs 0.5\nfn x() -> Result<number, string> = ok(1)\n`);
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("does NOT auto-import stdlib names for pins below 0.5 (forward-compat)", () => {
+    // Pre-0.5 pins must produce identical output forever — no new imports.
+    const out = t(`?bs 0.4\nfn x() -> Result<number, string> = ok(1)\n`);
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("auto-imports http and err when referenced (0.5+)", () => {
+    // http.get and err() should both appear in a single merged import line.
+    const out = t(
+      `?bs 0.5\n` +
+      `fn fetch(url: string) uses { net } -> Result<string, string> {\n` +
+      `  const r = http.get(url);\n` +
+      `  return err("not implemented");\n` +
+      `}\n`,
+    );
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\berr\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Only one import statement for the runtime package.
+    const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it("auto-imports Option, some, none when referenced (0.5+)", () => {
+    const out = t(`?bs 0.5\nfn wrap(x: string) -> Option<string> = some(x)\n`);
+    expect(out).toMatch(/import \{[^}]*\bOption\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bsome\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("merges stdlib and compiler-helper symbols into one import (0.5+)", () => {
+    // A fn with uses {} emits $enter; returning ok() needs ok — both must land
+    // in a single import { $enter, ok, ... } from "@mbfarias/botscript-runtime".
+    const out = t(`?bs 0.5\nfn answer() -> Result<number, string> = ok(42)\n`);
+    const importMatch = out.match(
+      /import \{([^}]*)\} from "@mbfarias\/botscript-runtime"/,
+    );
+    expect(importMatch).not.toBeNull();
+    const names = (importMatch![1] ?? "").split(",").map((s) => s.trim());
+    expect(names).toContain("$enter");
+    expect(names).toContain("ok");
+    expect(names).toContain("Result");
+    // Still only one import line.
+    const allMatches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(allMatches.length).toBe(1);
+  });
+
+  it("does not spuriously import `err` from the `?` operator lowering (0.5+)", () => {
+    // The ? operator emits `kind === "err"` as a string — must NOT trigger an
+    // import of the `err` constructor from the runtime.
+    const out = t(`?bs 0.5\nlet a = f()?\n`);
+    expect(out).not.toMatch(/import \{[^}]*\berr\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
   it("does not double-import when user already imports compiler helpers explicitly", () => {
