@@ -360,7 +360,7 @@ function slug(s: string): string {
 `;
 
 exports[`forward-compat: ?bs 0.4 output is frozen > async generic fn 1`] = `
-"import { $enter } from "@mbfarias/botscript-runtime";
+"import { $enter, http } from "@mbfarias/botscript-runtime";
 
 async function fetchOne<T>(url: string): Promise<T> {
   return $enter(["net"] as const, async () => {

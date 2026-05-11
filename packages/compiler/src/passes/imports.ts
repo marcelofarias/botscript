@@ -1,14 +1,18 @@
+import { atLeast, type VersionInfo } from "./version.js";
+
 /**
- * Final pass. Scans the rewritten output for the `$`-prefixed helpers the
- * compiler itself emits and prepends a single import from
- * `@mbfarias/botscript-runtime` when any are used and not already imported.
+ * Final pass. Scans the rewritten output for runtime symbols the compiler
+ * emits (the `$`-prefixed helpers) and, from `?bs 0.4` onwards, also for the
+ * user-facing stdlib names documented in the primer (`ok`, `err`, `Result`,
+ * `http`, etc.). When any are found and not already imported, a single import
+ * from `@mbfarias/botscript-runtime` is prepended (or merged into the
+ * existing one).
  *
- * The compiler only auto-imports its own emissions. User-facing names (`ok`,
- * `err`, `some`, `none`, `http`, `time`, `random`, `stdout`, `stderr`) must
- * be imported explicitly — this is intentional. It keeps the magic narrow,
- * avoids shadowing surprises, and means agents reading a botscript file see
- * real imports for real symbols.
+ * Pre-0.4 files keep the old behaviour: only `$`-prefixed helpers are
+ * auto-imported. User-facing names must be imported explicitly in those files.
  */
+
+/** Internal helpers emitted by the compiler itself. Always auto-imported. */
 const RUNTIME_SYMBOLS = [
   "$enter",
   "$require",
@@ -23,15 +27,64 @@ const RUNTIME_SYMBOLS = [
   "$resultTryAsync",
 ] as const;
 
-export function passImports(src: string): string {
+/**
+ * User-facing stdlib symbols auto-imported from `?bs 0.4` onwards. This
+ * covers every name that the primer documents and that the runtime exports.
+ * Ordered so the merged import list sorts cleanly.
+ */
+const STDLIB_SYMBOLS = [
+  // Result
+  "Err",
+  "Ok",
+  "Result",
+  "err",
+  "isErr",
+  "isOk",
+  "mapErr",
+  "mapResult",
+  "ok",
+  "unwrap",
+  // Option
+  "None",
+  "Option",
+  "Some",
+  "isSome",
+  "isNone",
+  "mapOption",
+  "none",
+  "optionFromNullable",
+  "some",
+  "unwrapOption",
+  "unwrapOr",
+  // Effects
+  "http",
+  "random",
+  "stderr",
+  "stdout",
+  "time",
+] as const;
+
+export function passImports(src: string, version: VersionInfo): string {
   const used = new Set<string>();
+
+  // Always detect compiler-emitted helpers.
   for (const sym of RUNTIME_SYMBOLS) {
     const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
     if (re.test(src)) used.add(sym);
   }
+
+  // From 0.4 onwards, also detect user-facing stdlib names so that primer
+  // examples compile without manual import preambles.
+  if (atLeast(version.resolved, "0.4")) {
+    for (const sym of STDLIB_SYMBOLS) {
+      const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
+      if (re.test(src)) used.add(sym);
+    }
+  }
+
   if (used.size === 0) return src;
 
-  // Don't double-import. If user already has `from "@mbfarias/botscript-runtime"`, append.
+  // Don't double-import. If user already has `from "@mbfarias/botscript-runtime"`, merge.
   const existingImport = src.match(
     /^\s*import\s+\{([^}]*)\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/m,
   );

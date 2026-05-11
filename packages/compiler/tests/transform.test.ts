@@ -315,10 +315,42 @@ describe("imports", () => {
     expect(out).toMatch(/^import \{ \$enter \} from "@mbfarias\/botscript-runtime";/m);
   });
 
-  it("does not auto-import user-facing names like `ok`", () => {
+  it("does not auto-import user-facing names like `ok` (pre-0.4 behaviour)", () => {
+    // No version pin -> resolved to 0.1; stdlib auto-import only kicks in at 0.4+.
     const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
-    // `ok` is a user-facing name — the compiler does not import it for you.
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("auto-imports Result and ok at ?bs 0.4", () => {
+    const out = t(`?bs 0.4\nfn x() -> Result<number, string> = ok(1)\n`);
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("auto-imports http, Result, and ok together at ?bs 0.4", () => {
+    const src =
+      `?bs 0.4\n` +
+      `async fn loadUser(id: string) uses { net } -> Promise<Result<{name: string}, Error>> {\n` +
+      `  let res = await http.get(\`/u/\${id}\`)?\n` +
+      `  ok({ name: id })\n` +
+      `}\n`;
+    const out = t(src);
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // All in one import statement.
+    const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it("does not double-import stdlib symbols when user already has a runtime import at 0.4", () => {
+    const src =
+      `?bs 0.4\n` +
+      `import { ok, Result } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(matches.length).toBe(1);
   });
 
   it("does not double-import when user already imports compiler helpers explicitly", () => {
