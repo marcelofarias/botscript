@@ -97,10 +97,10 @@ additions below are the entire language surface.
   stdout.println(s) / stderr.println(s)
 
 == IDIOMS (the canonical way to do common things) ==
-  // fail fast on a fetch (http.get returns Promise<Result> — always await first)
-  async fn loadUser(id: string) uses { net } -> Promise<Result<Response, Error>> {
-    let res = await http.get(\`/users/\${id}\`)?
-    ok(res)
+  // fail fast on a fetch — await, unwrap the Result, then parse the body
+  async fn loadUser(id: string) uses { net } -> Promise<Result<User, Error>> {
+    let res = (await http.get(\`/users/\${id}\`))?
+    ok(unsafe "shape validated upstream" { await res.json() as User })
   }
 
   // pure helper
