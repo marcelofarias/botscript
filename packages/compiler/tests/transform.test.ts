@@ -509,6 +509,18 @@ describe("imports", () => {
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("top-level destructuring binding a stdlib name suppresses the auto-import", () => {
+    // `const { ok } = something` binds a local `ok` at module scope.
+    // Auto-importing `ok` would duplicate the binding.
+    const src =
+      `?bs 0.6\n` +
+      `const obj = pure { { ok: 1 } }\n` +
+      `const { ok } = obj\n` +
+      `fn use_it() -> number = pure { ok + 1 }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("local declaration shadowing a stdlib name is NOT auto-imported", () => {
     // `fn ok(x: number) -> number` becomes `function ok(x: number): number`
     // in the emitted TS. Auto-importing `ok` would clash with the local

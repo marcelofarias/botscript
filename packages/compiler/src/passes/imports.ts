@@ -580,12 +580,17 @@ function mergeOrPrepend(
   }
   const keyword = typeOnly ? "import type" : "import";
   const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
-  // Anchor: place new imports right AFTER the last existing runtime
-  // import line (if any). This keeps any value/type pair clustered
-  // together rather than scattering them across the file when the user's
-  // runtime import wasn't at the very top (e.g. preceded by other
-  // imports). When no runtime import exists yet we fall back to
-  // prepending at the top of the file.
+  // Pre-0.6 keeps the legacy "prepend at the very top of the file"
+  // behaviour: that's what shipped, and our forward-compat rule says
+  // emitted TS for 0.1–0.5 must stay byte-identical. The 0.6+ path
+  // uses the smarter "anchor after the last existing runtime import"
+  // logic so value/type pairs stay clustered with any pre-existing
+  // runtime import.
+  if (!options.aliasAware) {
+    return `${importLine}\n${src}`;
+  }
+
+  // 0.6+: anchor after the last existing runtime import line (if any).
   // Match up to the trailing semicolon (if any). Crucially, do NOT consume
   // the line-terminating newline — we splice `\n + newLine` right after
   // \`lastEnd\`, so eating the newline here would inject a blank line
@@ -640,6 +645,24 @@ function collectLocallyDeclared(blanked: string): Set<string> {
   let m: RegExpExecArray | null;
   while ((m = DECL_RE.exec(blanked)) !== null) {
     decls.add(m[1]!);
+  }
+  // Top-level destructuring: \`const { ok, http: myHttp } = obj\` binds
+  // \`ok\` and \`myHttp\` locally and would shadow the stdlib auto-import
+  // of \`ok\`. Walk each top-level destructuring binding-list and harvest
+  // the local names (renames respected via \`:\`).
+  const DESTRUCT_RE = /^(?:export\s+)?(?:const|let|var)\s*\{([^}]*)\}/gm;
+  while ((m = DESTRUCT_RE.exec(blanked)) !== null) {
+    for (const raw of m[1]!.split(",")) {
+      const piece = raw.trim();
+      if (!piece) continue;
+      // \`name\`, \`name: alias\`, or \`name = default\`. Pick the local name
+      // (the alias if present, otherwise the bare name).
+      const colonIdx = piece.indexOf(":");
+      const local = colonIdx >= 0 ? piece.slice(colonIdx + 1) : piece;
+      const trimmed = local.split("=")[0]!.trim();
+      const id = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
+      if (id) decls.add(id);
+    }
   }
   return decls;
 }
