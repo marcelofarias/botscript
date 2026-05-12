@@ -34,7 +34,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=16.4.0"
+    "node": ">=18.0.0"
   },
   "peerDependencies": {
     "@types/node": "*"

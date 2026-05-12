@@ -7,10 +7,15 @@ import { ok, err, type Result } from "./result.js";
  * that call `$require(...)` themselves.
  *
  * The `fs` wrappers live in a separate entry — `@mbfarias/botscript-runtime/fs`
- * — so importing this module is safe in the browser. Server-only code that
- * needs filesystem access imports both:
+ * — so the surface here is the non-filesystem subset of effects:
  *   import { http } from "@mbfarias/botscript-runtime";
  *   import { fs }   from "@mbfarias/botscript-runtime/fs";
+ *
+ * Note: the whole `@mbfarias/botscript-runtime` package is Node-only. This
+ * module imports `./capabilities.js`, which uses `node:async_hooks` for
+ * per-async-context capability frames, and the `http` wrappers themselves
+ * rely on the global Fetch API (Node 18+, or any Bun/Deno). See the
+ * package's `engines.node` field for the supported runtime range.
  */
 
 export const http = {
@@ -26,7 +31,8 @@ export const http = {
    * and lifted into `Err`. HTTP error status codes are NOT automatically
    * converted — the resolved `Response` is always wrapped in `Ok`. After
    * unwrapping with `?` you hold a plain `Response`; check `res.ok` or
-   * `res.status` directly. (Without unwrapping, use `res.value.ok`.)
+   * `res.status` directly. Without unwrapping, narrow on the Result first
+   * (`isOk(res)` or `if (res.kind === "ok")`) before reading `res.value`.
    */
   get: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");
