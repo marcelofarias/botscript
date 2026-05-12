@@ -39,7 +39,7 @@ const RUNTIME_SYMBOLS = [
 ] as const;
 
 /**
- * User-facing stdlib value exports auto-imported from `?bs 0.4` onwards.
+ * User-facing stdlib value exports auto-imported from `?bs 0.6` onwards.
  * These are `export const` / runtime values \u2014 importing them as values is
  * always correct.
  */
@@ -70,7 +70,7 @@ const STDLIB_VALUE_SYMBOLS = [
 ] as const;
 
 /**
- * User-facing stdlib type exports auto-imported from `?bs 0.4` onwards.
+ * User-facing stdlib type exports auto-imported from `?bs 0.6` onwards.
  * Emitted via `import type { ... }` so consumers using
  * `verbatimModuleSyntax` (TS 5.0+) don't get a runtime reference to a name
  * the runtime never exported as a value.
@@ -262,7 +262,7 @@ export function passImports(src: string, version: VersionInfo): string {
     if (re.test(src)) usedValues.add(sym);
   }
 
-  // From 0.4 onwards, also detect user-facing stdlib names so that primer
+  // From 0.6 onwards, also detect user-facing stdlib names so that primer
   // examples compile without manual import preambles. Scan a blanked copy
   // so that compiler-emitted string literals like `kind === "err"` don't
   // cause spurious imports of `err` or `ok`.
