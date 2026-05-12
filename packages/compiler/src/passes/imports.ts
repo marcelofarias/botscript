@@ -293,27 +293,30 @@ function blankStringsAndComments(src: string): string {
         if (src[j] === "\\") j++;
         j++;
       }
-      // Clamp on unterminated strings: when we ran off the end without
-      // finding the closing quote, `j - i + 1` would overcount the closing
-      // quote that doesn't exist, breaking the same-byte-count invariant.
-      const len = j < src.length ? j - i + 1 : src.length - i;
-      out.push(" ".repeat(len));
-      i += len;
+      // Clamp on unterminated strings.
+      const end = j < src.length ? j + 1 : src.length;
+      // Preserve every LineTerminator (line-continuation \` \\\\n\` inside the
+      // string still contains a real newline that needs to survive).
+      for (let k = i; k < end; k++) {
+        out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
+      }
+      i = end;
       lastCode = "x";
       lastIdent = "";
       continue;
     }
-    // Single-quoted string. Same treatment as double-quoted, including
-    // the unterminated-string clamp.
+    // Single-quoted string. Same treatment as double-quoted.
     if (ch === "'") {
       let j = i + 1;
       while (j < src.length && src[j] !== "'") {
         if (src[j] === "\\") j++;
         j++;
       }
-      const len = j < src.length ? j - i + 1 : src.length - i;
-      out.push(" ".repeat(len));
-      i += len;
+      const end = j < src.length ? j + 1 : src.length;
+      for (let k = i; k < end; k++) {
+        out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
+      }
+      i = end;
       lastCode = "x";
       lastIdent = "";
       continue;
@@ -763,7 +766,12 @@ function collectLocallyDeclared(blanked: string): Set<string> {
   // Top-level declarations only. Anchor at start-of-line without any
   // leading whitespace so an INDENTED \`let ok = ...\` inside a function
   // body (a different scope from the module top level) doesn't suppress
-  // auto-importing \`ok\` for code elsewhere in the file.
+  // auto-importing \`ok\` for code elsewhere in the file. The trade-off
+  // is the rare case of an indented module-level decl (e.g. inside an
+  // IIFE wrapper or a top-level block) being missed; for that file the
+  // auto-import would shadow the local name. We prefer the false-positive
+  // import (which TS will then flag) over the false-negative (which would
+  // silently break the file).
   const DECL_RE =
     /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
   let m: RegExpExecArray | null;
