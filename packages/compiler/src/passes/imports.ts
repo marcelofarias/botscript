@@ -130,13 +130,6 @@ function blankStringsAndComments(src: string): string {
   ]);
 
   const top = (): Ctx => stack[stack.length - 1]!;
-  const emit = (ch: string): void => {
-    out.push(ch);
-  };
-  const emitBlank = (ch: string): void => {
-    out.push(ch === "\n" ? "\n" : " ");
-  };
-  // Note: `emitBlank` for `\n` is set up via a sentinel below; this comment  // exists in case the helpers are extracted later.
 
   const canStartRegex = (last: string, ident: string): boolean => {
     if (last === "") return true;
@@ -409,9 +402,15 @@ export function passImports(src: string, version: VersionInfo): string {
   const commentAware = atLeast(version.resolved, "0.6");
   const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false, { commentAware });
   const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true, { commentAware });
+  // Skip-set behaviour: legacy versions used the export NAME (so
+  // `import { ok as myOk }` would suppress an auto-import of `ok` even
+  // though `ok` isn't actually in scope). 0.6+ switched to the LOCAL
+  // binding (alias if any). Keeping the legacy behaviour for pre-0.6 pins
+  // preserves byte-identical output for files pinned to 0.1–0.5.
+  const useAliasAware = atLeast(version.resolved, "0.6");
   const boundLocally = new Set<string>();
   for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
-    boundLocally.add(spec.alias ?? spec.name);
+    boundLocally.add(useAliasAware ? (spec.alias ?? spec.name) : spec.name);
   }
   for (const name of boundLocally) {
     usedValues.delete(name);
@@ -425,13 +424,13 @@ export function passImports(src: string, version: VersionInfo): string {
   // VALUE IMPORT. Merge into existing `import { ... } from "..."` if present,
   // otherwise emit a fresh line.
   if (usedValues.size > 0) {
-    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware });
+    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware, aliasAware: useAliasAware });
   }
   // TYPE IMPORT. Same treatment for `import type { ... } from "..."`. We
   // never collapse types into a value import (or vice versa) \u2014 callers
   // using `verbatimModuleSyntax` need them separate.
   if (usedTypes.size > 0) {
-    out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes, { commentAware });
+    out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes, { commentAware, aliasAware: useAliasAware });
   }
   return out;
 }
@@ -440,18 +439,27 @@ function mergeOrPrepend(
   src: string,
   typeOnly: boolean,
   toAdd: Set<string>,
-  options: { commentAware: boolean } = { commentAware: false },
+  options: { commentAware: boolean; aliasAware: boolean } =
+    { commentAware: false, aliasAware: false },
 ): string {
   const existing = findExistingRuntimeImport(src, typeOnly, options);
   if (existing) {
-    // Compare against the LOCAL binding (alias if present, else the export
-    // name). `import { ok as myOk }` binds `myOk`, not `ok`, so `ok` is NOT
-    // "already in this import" — we can still add an unaliased `ok` to it.
-    const have = new Set(existing.specs.map((s) => s.alias ?? s.name));
+    // Compare against the LOCAL binding under 0.6+ semantics (alias if any).
+    // Pre-0.6 keeps the legacy name-based comparison so the merged output
+    // stays byte-identical with the shipped behaviour.
+    const have = new Set(
+      existing.specs.map((s) =>
+        options.aliasAware ? (s.alias ?? s.name) : s.name,
+      ),
+    );
     const additions = [...toAdd].filter((s) => !have.has(s));
     if (additions.length === 0) return src;
     const merged = [...existing.specs, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
-      .sort((a, b) => (a.alias ?? a.name).localeCompare(b.alias ?? b.name))
+      .sort((a, b) => {
+        const ka = options.aliasAware ? (a.alias ?? a.name) : a.name;
+        const kb = options.aliasAware ? (b.alias ?? b.name) : b.name;
+        return ka.localeCompare(kb);
+      })
       .map(renderSpec)
       .join(", ");
     const keyword = typeOnly ? "import type" : "import";
