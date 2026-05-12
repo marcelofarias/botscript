@@ -266,7 +266,7 @@ function blankStringsAndComments(src: string): string {
           while (j < src.length && /[A-Za-z]/.test(src[j]!)) j++;
           break;
         }
-        else if (rc === "\n") break; // unterminated regex — bail
+        else if (isLineTerminatorAt(src, j)) break; // unterminated regex — bail on any LineTerminator (LF/CR/LS/PS)
         j++;
       }
       out.push("/".padEnd(j - i, " "));
@@ -589,40 +589,48 @@ export function passImports(src: string, version: VersionInfo): string {
  * alone.
  */
 function normalizeRuntimeImportOrder(src: string): string {
+  // Walk the file line by line and find any contiguous run of runtime
+  // imports (regardless of where it sits). Within each run, re-emit value
+  // imports first, then type imports. Leaves the surrounding lines
+  // untouched so a leading file-level comment, a `"use strict"`, or other
+  // imports keep their original positions.
   const lines = src.split("\n");
   const valueRe = /^import\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
   const typeRe = /^import\s+type\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
+  const classify = (line: string): "value" | "type" | null => {
+    if (typeRe.test(line)) return "type";
+    if (valueRe.test(line)) return "value";
+    return null;
+  };
+
+  let touched = false;
   let i = 0;
-  const leading: { line: string; isType: boolean }[] = [];
   while (i < lines.length) {
-    const l = lines[i]!;
-    if (typeRe.test(l)) {
-      leading.push({ line: l, isType: true });
+    const here = classify(lines[i]!);
+    if (here === null) {
       i++;
       continue;
     }
-    if (valueRe.test(l)) {
-      leading.push({ line: l, isType: false });
-      i++;
-      continue;
+    // Walk forward as long as we're on runtime-import lines.
+    let j = i;
+    while (j < lines.length && classify(lines[j]!) !== null) j++;
+    // [i, j) is a run of runtime imports. Reorder if needed.
+    const run = lines.slice(i, j);
+    let needsReorder = false;
+    let sawType = false;
+    for (const l of run) {
+      if (classify(l) === "type") sawType = true;
+      else if (sawType) { needsReorder = true; break; }
     }
-    break;
-  }
-  if (leading.length < 2) return src;
-  // Already in canonical order? Then no-op.
-  let needsReorder = false;
-  let sawType = false;
-  for (const ent of leading) {
-    if (ent.isType) sawType = true;
-    else if (sawType) {
-      needsReorder = true;
-      break;
+    if (needsReorder) {
+      const values = run.filter((l) => classify(l) === "value");
+      const types = run.filter((l) => classify(l) === "type");
+      lines.splice(i, run.length, ...values, ...types);
+      touched = true;
     }
+    i = j;
   }
-  if (!needsReorder) return src;
-  const values = leading.filter((e) => !e.isType).map((e) => e.line);
-  const types = leading.filter((e) => e.isType).map((e) => e.line);
-  return [...values, ...types, ...lines.slice(i)].join("\n");
+  return touched ? lines.join("\n") : src;
 }
 
 function mergeOrPrepend(
