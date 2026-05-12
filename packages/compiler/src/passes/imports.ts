@@ -453,14 +453,21 @@ export function passImports(src: string, version: VersionInfo): string {
     // same name (e.g. `fn ok(...) {}` becomes `function ok(...) {}` in the
     // emitted TS — importing `ok` would clash with the user's binding).
     // Skip any stdlib name that appears as the head of a top-level decl.
-    const locallyDeclared = collectLocallyDeclared(scanSrc);
+    const { values: declValue, types: declType } = collectLocallyDeclared(scanSrc);
     for (const sym of STDLIB_VALUE_SYMBOLS) {
-      if (locallyDeclared.has(sym)) continue;
+      // Only a VALUE-namespace declaration of this name shadows the
+      // stdlib value (e.g. `function ok` or `const ok = ...`). A pure
+      // type decl like `type ok = ...` doesn't create a runtime
+      // binding, so don't suppress here.
+      if (declValue.has(sym)) continue;
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
       if (re.test(scanSrc)) usedValues.add(sym);
     }
     for (const sym of STDLIB_TYPE_SYMBOLS) {
-      if (locallyDeclared.has(sym)) continue;
+      // Both value- and type-namespace decls shadow a type use because
+      // `class Foo` / `enum Foo` bind a type too. Conservatively skip if
+      // EITHER namespace declares the name.
+      if (declValue.has(sym) || declType.has(sym)) continue;
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
       if (re.test(scanSrc)) usedTypes.add(sym);
     }
@@ -486,9 +493,29 @@ export function passImports(src: string, version: VersionInfo): string {
   // binding (alias if any). Keeping the legacy behaviour for pre-0.6 pins
   // preserves byte-identical output for files pinned to 0.1–0.5.
   const useAliasAware = atLeast(version.resolved, "0.6");
-  const boundLocally = new Set<string>();
-  for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
-    boundLocally.add(useAliasAware ? (spec.alias ?? spec.name) : spec.name);
+  // Track value vs type bindings separately. TS has disjoint value and
+  // type namespaces — a type-only import (\`import type { X }\`) doesn't
+  // create a runtime binding for \`X\`, so it must NOT suppress an
+  // auto-imported value \`X\` (and vice versa). Pre-0.6 keeps the single
+  // \`boundLocally\` Set for byte-identical legacy behaviour.
+  const boundValue = new Set<string>();
+  const boundType = new Set<string>();
+  const boundLocally = new Set<string>(); // pre-0.6 only
+  // Existing-runtime value import: a plain `import { X }` binds X in
+  // BOTH namespaces in TS (you can use the same name as a value or a
+  // type — TS picks the right meaning per use site). Only a per-spec
+  // \`type\` prefix narrows it to type-only.
+  for (const spec of existingValue?.specs ?? []) {
+    const key = useAliasAware ? (spec.alias ?? spec.name) : spec.name;
+    boundLocally.add(key);
+    boundType.add(key);
+    if (!spec.typePrefix) boundValue.add(key);
+  }
+  // Existing-runtime `import type { ... }`: type-only bindings.
+  for (const spec of existingType?.specs ?? []) {
+    const key = useAliasAware ? (spec.alias ?? spec.name) : spec.name;
+    boundLocally.add(key);
+    boundType.add(key);
   }
   // 0.6+: also harvest names bound by imports from OTHER modules. If the
   // user wrote \`import { ok } from "./util"\`, our auto-import of \`ok\`
@@ -509,49 +536,79 @@ export function passImports(src: string, version: VersionInfo): string {
     // with multiple runtime imports of the same kind picks up bindings
     // from every one of them, not just the first that the regex-match
     // path saw.
+    // Match the entire import statement and capture (1) whether it's an
+    // \`import type\` line (so the whole line binds in the type namespace)
+    // and (2) the head before \`from\`. We then peel off the head’s
+    // bindings and record them in the appropriate namespace (value vs
+    // type), respecting per-spec \`type\` modifiers in named-binding
+    // lists.
     const IMPORT_LINE_RE =
-      /^import(?:\s+type)?\s+([^;]*?)\s+from\s+["']([^"']+)["']/gm;
+      /^import(\s+type)?\s+([^;]*?)\s+from\s+["']([^"']+)["']/gm;
+    // A non-type binding lives in BOTH namespaces (same rule as the
+    // existing-runtime branch above): TS picks the meaning per use
+    // site. \`import type { X }\` or \`{ type X }\` is type-only.
+    const addBinding = (name: string, isTypeOnly: boolean): void => {
+      boundLocally.add(name);
+      boundType.add(name);
+      if (!isTypeOnly) boundValue.add(name);
+    };
     for (let m: RegExpExecArray | null; (m = IMPORT_LINE_RE.exec(scanned)) !== null; ) {
-      const head = m[1]!.trim();
+      const wholeTypeOnly = m[1] !== undefined;
+      const head = m[2]!.trim();
       // Strip an optional `Default,` prefix if a comma-separated named
       // bindings list follows; record the default name first.
       let rest = head;
       const defaultMatch = rest.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(.*)$/s);
       if (defaultMatch && (defaultMatch[2]!.startsWith("{") || defaultMatch[2]!.startsWith("*"))) {
-        boundLocally.add(defaultMatch[1]!);
+        addBinding(defaultMatch[1]!, wholeTypeOnly);
         rest = defaultMatch[2]!.trim();
       }
       // Namespace: `* as ns`
       const nsMatch = rest.match(/^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)$/);
       if (nsMatch) {
-        boundLocally.add(nsMatch[1]!);
+        addBinding(nsMatch[1]!, wholeTypeOnly);
         continue;
       }
       // Named bindings: `{ a, b as c, type d }`
       const namedMatch = rest.match(/^\{([^}]*)\}$/);
       if (namedMatch) {
         for (const raw of namedMatch[1]!.split(",")) {
-          const piece = raw.trim().replace(/^type\s+/, "");
+          let piece = raw.trim();
           if (!piece) continue;
+          let specTypeOnly = wholeTypeOnly;
+          if (/^type\s+/.test(piece)) {
+            specTypeOnly = true;
+            piece = piece.replace(/^type\s+/, "");
+          }
           const asIdx = piece.search(/\s+as\s+/);
           const local = asIdx >= 0
             ? piece.slice(asIdx).replace(/^\s+as\s+/, "").trim()
             : piece;
           const id = local.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
-          if (id) boundLocally.add(id);
+          if (id) addBinding(id, specTypeOnly);
         }
         continue;
       }
       // Bare default-only: `import Default from "..."`
       const bareDefault = rest.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
       if (bareDefault) {
-        boundLocally.add(bareDefault[1]!);
+        addBinding(bareDefault[1]!, wholeTypeOnly);
       }
     }
   }
-  for (const name of boundLocally) {
-    usedValues.delete(name);
-    usedTypes.delete(name);
+  if (useAliasAware) {
+    // 0.6+: respect TS's value/type namespace separation. A value binding
+    // suppresses value auto-imports; a type-only binding suppresses
+    // type-only auto-imports. The two don't cross.
+    for (const name of boundValue) usedValues.delete(name);
+    for (const name of boundType) usedTypes.delete(name);
+  } else {
+    // Pre-0.6: legacy behaviour suppressed both bags from any binding.
+    // Kept for byte-identical 0.1–0.5 output.
+    for (const name of boundLocally) {
+      usedValues.delete(name);
+      usedTypes.delete(name);
+    }
   }
 
   if (usedValues.size === 0 && usedTypes.size === 0) return src;
@@ -766,8 +823,9 @@ function mergeOrPrepend(
  * "declaration" pattern hiding inside a string literal doesn't fool us.
  * Returns the set of names we'd shadow if we auto-imported.
  */
-function collectLocallyDeclared(blanked: string): Set<string> {
-  const decls = new Set<string>();
+function collectLocallyDeclared(blanked: string): { values: Set<string>; types: Set<string> } {
+  const values = new Set<string>();
+  const types = new Set<string>();
   // Top-level declarations only. Anchor at start-of-line without any
   // leading whitespace so an INDENTED \`let ok = ...\` inside a function
   // body (a different scope from the module top level) doesn't suppress
@@ -777,31 +835,42 @@ function collectLocallyDeclared(blanked: string): Set<string> {
   // auto-import would shadow the local name. We prefer the false-positive
   // import (which TS will then flag) over the false-negative (which would
   // silently break the file).
+  // Capture group 1 names the declaration KEYWORD so we can route the
+  // binding into the value or type bag. \`function\`/\`const\`/\`let\`/
+  // \`var\` bind values only; \`interface\`/\`type\` bind types only;
+  // \`class\`/\`enum\` bind BOTH.
   const DECL_RE =
-    /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
+    /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
   let m: RegExpExecArray | null;
   while ((m = DECL_RE.exec(blanked)) !== null) {
-    decls.add(m[1]!);
+    const keyword = m[1]!;
+    const name = m[2]!;
+    if (keyword === "interface" || keyword === "type") {
+      types.add(name);
+    } else if (keyword === "class" || keyword === "enum") {
+      values.add(name);
+      types.add(name);
+    } else {
+      values.add(name);
+    }
   }
   // Top-level destructuring: \`const { ok, http: myHttp } = obj\` binds
   // \`ok\` and \`myHttp\` locally and would shadow the stdlib auto-import
-  // of \`ok\`. Walk each top-level destructuring binding-list and harvest
-  // the local names (renames respected via \`:\`).
+  // of \`ok\`. Destructuring is value-only (TS doesn't have type-level
+  // destructuring at module top level in any meaningful way).
   const DESTRUCT_RE = /^(?:export\s+)?(?:const|let|var)\s*\{([^}]*)\}/gm;
   while ((m = DESTRUCT_RE.exec(blanked)) !== null) {
     for (const raw of m[1]!.split(",")) {
       const piece = raw.trim();
       if (!piece) continue;
-      // \`name\`, \`name: alias\`, or \`name = default\`. Pick the local name
-      // (the alias if present, otherwise the bare name).
       const colonIdx = piece.indexOf(":");
       const local = colonIdx >= 0 ? piece.slice(colonIdx + 1) : piece;
       const trimmed = local.split("=")[0]!.trim();
       const id = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
-      if (id) decls.add(id);
+      if (id) values.add(id);
     }
   }
-  return decls;
+  return { values, types };
 }
 
 function escapeRegex(s: string): string {

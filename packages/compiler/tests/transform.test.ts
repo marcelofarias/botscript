@@ -509,6 +509,19 @@ describe("imports", () => {
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("`import type { ok }` does NOT suppress auto-importing the VALUE ok", () => {
+    // TS value vs type namespaces: a pure `import type` only binds the
+    // name in the type namespace. A subsequent value reference to `ok`
+    // is unbound and must still get auto-imported.
+    const src =
+      `?bs 0.6\n` +
+      `import type { ok as okType } from "./types";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    // The value `ok` must land in the runtime value import.
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("top-level destructuring binding a stdlib name suppresses the auto-import", () => {
     // `const { ok } = something` binds a local `ok` at module scope.
     // Auto-importing `ok` would duplicate the binding.
