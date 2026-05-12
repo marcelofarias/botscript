@@ -255,7 +255,11 @@ function blankStringsAndComments(src: string): string {
       while (j < src.length) {
         const rc = src[j]!;
         if (rc === "\\") {
-          j += 2;
+          // Skip the escape, but never walk past end-of-input. A trailing
+          // \`\\\` would otherwise advance \`j\` to src.length + 1 and
+          // make \`padEnd(j - i)\` emit one extra character, breaking the
+          // same-byte-count invariant.
+          j = Math.min(src.length, j + 2);
           continue;
         }
         if (rc === "[") inClass = true;
@@ -588,15 +592,22 @@ export function passImports(src: string, version: VersionInfo): string {
  * fresh-prepended ones can land). Existing non-leading imports are left
  * alone.
  */
+/**
+ * Walk the whole file and find any contiguous run of runtime imports
+ * (anywhere in the file, not just at byte 0). Within each run, re-emit
+ * value imports first, then type imports. Surrounding lines are left in
+ * place so a leading file-level comment, a `"use strict"` pragma, or
+ * other imports keep their original positions. This is the post-pass
+ * that fixes type-then-value orderings produced by the prepend-then-merge
+ * sequence in `passImports`.
+ */
 function normalizeRuntimeImportOrder(src: string): string {
-  // Walk the file line by line and find any contiguous run of runtime
-  // imports (regardless of where it sits). Within each run, re-emit value
-  // imports first, then type imports. Leaves the surrounding lines
-  // untouched so a leading file-level comment, a `"use strict"`, or other
-  // imports keep their original positions.
   const lines = src.split("\n");
   const valueRe = /^import\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
   const typeRe = /^import\s+type\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
+  // (Note: \`split("\\n")\` is fine here because the upstream pipeline
+  // emits LF-only output; CR/LS/PS only matter for the blanker scanning
+  // input source.)
   const classify = (line: string): "value" | "type" | null => {
     if (typeRe.test(line)) return "type";
     if (valueRe.test(line)) return "value";
