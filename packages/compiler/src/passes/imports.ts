@@ -2,11 +2,14 @@ import { atLeast, type VersionInfo } from "./version.js";
 
 /**
  * Final pass. Scans the rewritten output for runtime symbols the compiler
- * emits (the `$`-prefixed helpers) and, from `?bs 0.6` onwards, also for the
- * user-facing stdlib names documented in the primer (`ok`, `err`, `Result`,
- * `http`, etc.). When any are found and not already imported, a single
- * import from `@mbfarias/botscript-runtime` is prepended (or merged into
- * the existing one).
+ * emits (the `$`-prefixed helpers) and, from `?bs 0.6` onwards, also for
+ * the user-facing stdlib names documented in the primer (`ok`, `err`,
+ * `Result`, `http`, etc.). When any are found and not already imported,
+ * the missing names are prepended as up to TWO `from
+ * "@mbfarias/botscript-runtime"` statements — a regular value import for
+ * runtime values and a separate `import type { … }` line for type-only
+ * exports (`Ok`, `Err`, `Result`, `Some`, `None`, `Option`). Pre-existing
+ * runtime imports are merged into rather than duplicated.
  *
  * Pre-0.6 files keep the old behaviour: only `$`-prefixed helpers are
  * auto-imported. User-facing names must be imported explicitly in those
@@ -326,11 +329,11 @@ function findExistingRuntimeImport(
     // with already-shipped pins.)
   } else {
     // Make sure the match isn't inside a comment or string literal — e.g. a
-  // commented-out `// import { ok } from "@mbfarias/botscript-runtime";`
-  // line would otherwise look like a real import to the regex. We re-scan a
-  // blanked copy of `src` and require the `import` keyword to still appear
-  // at the same offset; blanked regions become whitespace, so a match
-  // hidden inside a comment/string will fail this check.
+    // commented-out `// import { ok } from "@mbfarias/botscript-runtime";`
+    // line would otherwise look like a real import to the regex. We re-scan
+    // a blanked copy of `src` and require the `import` keyword to still
+    // appear at the same offset; blanked regions become whitespace, so a
+    // match hidden inside a comment/string will fail this check.
     const blanked = blankStringsAndComments(src);
     const probe = blanked.slice(m.index, m.index + m[0].length);
     if (!probe.trimStart().startsWith("import")) return null;
@@ -421,16 +424,22 @@ export function passImports(src: string, version: VersionInfo): string {
 
   let out = src;
 
-  // VALUE IMPORT. Merge into existing `import { ... } from "..."` if present,
-  // otherwise emit a fresh line.
-  if (usedValues.size > 0) {
-    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware, aliasAware: useAliasAware });
-  }
-  // TYPE IMPORT. Same treatment for `import type { ... } from "..."`. We
-  // never collapse types into a value import (or vice versa) \u2014 callers
-  // using `verbatimModuleSyntax` need them separate.
+  // ORDER matters when both lines are fresh prepends. mergeOrPrepend's
+  // "prepend" path puts the new line at the top of the file, so to end up
+  // with the value import ABOVE the type import (the convention used in
+  // the PR description and the rest of the codebase) we add the TYPE line
+  // first — it ends up below the subsequently-prepended value line.
+  // Existing-import merges aren't affected by ordering.
+
+  // TYPE IMPORT. We never collapse types into a value import (or vice
+  // versa) — callers using `verbatimModuleSyntax` need them separate.
   if (usedTypes.size > 0) {
     out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes, { commentAware, aliasAware: useAliasAware });
+  }
+  // VALUE IMPORT. Merge into an existing `import { ... } from "..."` if
+  // present, otherwise emit a fresh line on top.
+  if (usedValues.size > 0) {
+    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware, aliasAware: useAliasAware });
   }
   return out;
 }

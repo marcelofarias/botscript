@@ -349,6 +349,14 @@ describe("imports", () => {
     // Two import statements: one value, one type.
     const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(matches.length).toBe(2);
+    // Value import comes ABOVE the type import. (Convention used across
+    // the codebase and the PR description.) The two lines are the only
+    // runtime imports in the file, so positional comparison is unambiguous.
+    const valuePos = out.search(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+    const typePos = out.search(/^import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+    expect(valuePos).toBeGreaterThan(-1);
+    expect(typePos).toBeGreaterThan(-1);
+    expect(valuePos).toBeLessThan(typePos);
   });
 
   it("does not double-import stdlib symbols when user already has a runtime import at 0.6", () => {
