@@ -84,7 +84,8 @@ additions below are the entire language surface.
   assert expr                                         throws on falsy
 
 == STDLIB CALLS ==
-  http.get(url) / http.post(url)       requires uses { net }
+  http.get(url) -> Promise<Result<Response, Error>>   requires uses { net }
+  http.post(url) -> Promise<Result<Response, Error>>  requires uses { net }
   time.now() / time.iso()              requires uses { time }
   random.next() / random.int(a, b)     requires uses { random }
   // import { fs } from "@mbfarias/botscript-runtime/fs"; (Node only)
@@ -96,10 +97,11 @@ additions below are the entire language surface.
   stdout.println(s) / stderr.println(s)
 
 == IDIOMS (the canonical way to do common things) ==
-  // fail fast on a fetch
-  fn loadUser(id: string) uses { net } -> Result<User, Error> {
-    let res = http.get(\`/users/\${id}\`)?
-    ok(res as User)
+  // fail fast on a fetch — await, unwrap the Result, then parse the body
+  async fn loadUser(id: string) uses { net } -> Promise<Result<User, Error>> {
+    let res = (await http.get(\`/users/\${id}\`))?
+    let json = await res.json()
+    return ok(unsafe "shape validated upstream" { json as User })
   }
 
   // pure helper

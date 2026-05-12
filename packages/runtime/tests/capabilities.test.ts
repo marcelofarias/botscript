@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { $current, $enter, $require, $reset, CapabilityViolation } from "../src/capabilities.js";
 
 describe("capabilities", () => {
+  // Clear the module-level capability stack between tests so a thrown
+  // assertion in one test doesn't leave a frame visible to the next.
   afterEach(() => {
     $reset();
   });
@@ -57,6 +59,57 @@ describe("capabilities", () => {
         throw new Error("boom");
       }),
     ).toThrow("boom");
+    expect($current()).toBeUndefined();
+  });
+
+  it("async callback: frame outlives awaits, then pops after settle", async () => {
+    let duringAwait: readonly string[] | undefined;
+    const result = await $enter(["net"], async () => {
+      // Yield to the microtask queue, then re-check the frame.
+      await Promise.resolve();
+      duringAwait = $current();
+      // A second $require after the await must still see the frame.
+      expect(() => $require("net")).not.toThrow();
+      return 42;
+    });
+    expect(result).toBe(42);
+    expect(duringAwait).toEqual(["net"]);
+    // After the promise settles the frame is gone.
+    expect($current()).toBeUndefined();
+  });
+
+  it("async callback: frame pops even when the promise rejects", async () => {
+    await expect(
+      $enter(["net"], async () => {
+        await Promise.resolve();
+        throw new Error("async boom");
+      }),
+    ).rejects.toThrow("async boom");
+    expect($current()).toBeUndefined();
+  });
+
+  it("sequential async $enter calls keep their frames isolated", async () => {
+    // The common case: two effectful fns run one after the other. Each
+    // $enter pushes, the async body awaits, the frame stays alive, the
+    // promise settles, the frame pops, the next $enter sees an empty
+    // stack. The module-level array is fine for this pattern — the
+    // concurrent-Promise.all corner case documented in capabilities.ts
+    // is the only ordering this implementation gets wrong.
+    const a = await $enter(["net"], async () => {
+      await Promise.resolve();
+      expect(() => $require("net")).not.toThrow();
+      expect(() => $require("fs")).toThrow(CapabilityViolation);
+      return $current();
+    });
+    expect(a).toEqual(["net"]);
+    expect($current()).toBeUndefined();
+    const b = await $enter(["fs"], async () => {
+      await Promise.resolve();
+      expect(() => $require("fs")).not.toThrow();
+      expect(() => $require("net")).toThrow(CapabilityViolation);
+      return $current();
+    });
+    expect(b).toEqual(["fs"]);
     expect($current()).toBeUndefined();
   });
 });
