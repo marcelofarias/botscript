@@ -149,12 +149,13 @@ function blankStringsAndComments(src: string): string {
     // is alphabetic. Trust those keywords explicitly.
     if (/[A-Za-z_$]/.test(last) && REGEX_PRECEDENT_KEYWORDS.has(ident)) return true;
     // Identifier / number / `)` / `]` / `}` otherwise means `/` is divide.
-    // Including `}` is a pragmatic call: it correctly handles `({...}) /
-    // 2` (object literal followed by divide) at the cost of mis-classifying
-    // `if (x) {} /regex/.test(y)` (block followed by regex). Compiled
-    // botscript output — the only input this scanner sees — doesn't
-    // produce the block-then-regex pattern, so the trade-off favours the
-    // object-literal case.
+    // Including `}` is a pragmatic call. It correctly handles
+    // `({a:1}) / 2` (object literal followed by divide) but mis-classifies
+    // valid TS shapes like `if (x) {} /a/.test(y)` (a regex literal right
+    // after a block-statement `}`), reading the `/` there as divide. The
+    // worst-case downstream effect for that input is a false-positive
+    // stdlib import for whichever identifier sits inside the regex body —
+    // a noise import in an already-suspect file, never a typecheck break.
     return !/[A-Za-z0-9_$)\]}]/.test(last);
   };
 
@@ -585,13 +586,6 @@ export function passImports(src: string, version: VersionInfo): string {
   return out;
 }
 
-/**
- * Move any leading runtime-import lines into canonical order:
- * value imports first, then type-only imports. Only touches contiguous
- * runtime-import lines starting at byte 0 of the file (the only place
- * fresh-prepended ones can land). Existing non-leading imports are left
- * alone.
- */
 /**
  * Walk the whole file and find any contiguous run of runtime imports
  * (anywhere in the file, not just at byte 0). Within each run, re-emit
