@@ -223,6 +223,14 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // content token. The flag is re-set to `false` as soon as the next content
   // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
+  // Like `prevContent` but skipping line/block comments. Used ONLY by
+  // `isBinaryOperator`'s context-dependent classification (`+ - * / %`):
+  // the lexer hands comments back as content tokens, but `inExpressionPosition`
+  // defaults to `false` for them, which would (wrongly) classify a unary
+  // operator after a comment as binary — `const x = /*c*/-1` would become
+  // `const x = /*c*/ - 1`. The pre-binary lookback must skip trivia so the
+  // `-1` here is still recognized as unary.
+  let prevContentNonComment: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
   // Whether the previous content token was an operator emitted in BINARY
   // position (e.g. `*` in `a * b`, not the unary `*` in `import *`). The
@@ -470,6 +478,7 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
         inJsxAttrEqSnapshot,
         prevOpBinary,
         inJsxNoOpSpace,
+        prevContentNonComment,
       )
     ) {
       if (!emit(" ")) return;
@@ -478,10 +487,14 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     // Compute whether THIS token, if it's an operator, is binary. Stored
     // for the next iteration to decide post-operator spacing. Not-an-
     // operator resets the flag — only operator tokens carry it forward.
+    //
+    // Uses `prevContentNonComment` (not `prevContent`) for the
+    // context-dependent classification — a comment between `=` and `-1`
+    // shouldn't reclassify the `-` as binary.
     const currOpBinary =
       !inJsxNoOpSpace &&
       t.kind === "operator" &&
-      isBinaryOperator(t, prevContent);
+      isBinaryOperator(t, prevContentNonComment);
 
     let chunk: string;
     if (t.kind === "lineComment") {
@@ -506,6 +519,9 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     prevContent = t;
     separatorSinceContent = false;
     prevOpBinary = currOpBinary;
+    if (t.kind !== "lineComment" && t.kind !== "blockComment") {
+      prevContentNonComment = t;
+    }
   }
 }
 
@@ -527,8 +543,10 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
  * Single-char `<` and `>` are deliberately NOT spaced. They overlap with
  * JSX open / fragment open / TS generics (`Array<number>`, `Result<T, E>`)
  * which the token walk can't disambiguate from a binary comparison. The
- * two-char comparisons (`<=`, `>=`) and the bit-shifts (`<<`, `>>`, `>>>`)
- * are safe — none of those forms have a JSX/generics interpretation.
+ * two-char comparisons (`<=`, `>=`) are safe, as is left-shift `<<`. The
+ * right-shifts `>>` and `>>>` are NOT spaced — they appear as nested
+ * generic closes in `Promise<Result<X, E>>` / `Array<Map<K, V>>` which
+ * the token walk also can't disambiguate from a real right-shift.
  */
 function wantsSpaceBetween(
   prev: Token,
@@ -536,6 +554,7 @@ function wantsSpaceBetween(
   inJsxAttrEq: boolean,
   prevOpBinary: boolean,
   inJsxNoOpSpace: boolean,
+  prevForBinary: Token | null,
 ): boolean {
   // `->`, `=>`, `??` always want a space on each side.
   if (
@@ -570,8 +589,14 @@ function wantsSpaceBetween(
   // `inJsxNoOpSpace` and its rationale at the emit site) and passes it
   // in. The two rules below are gated symmetrically.
   if (!inJsxNoOpSpace) {
-    // Space before a binary operator. `prev` is the left operand.
-    if (curr.kind === "operator" && isBinaryOperator(curr, prev)) {
+    // Space before a binary operator. `prevForBinary` (= last
+    // non-comment, non-trivia content) is the real left operand. Using
+    // `prev` directly would misclassify cases where a comment sits
+    // between the operand and the operator (e.g. `a /*c*/ - 1`).
+    if (
+      curr.kind === "operator" &&
+      isBinaryOperator(curr, prevForBinary)
+    ) {
       return true;
     }
     // Space after a binary operator. `prevOpBinary` is set only when the

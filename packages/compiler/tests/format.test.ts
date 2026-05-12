@@ -473,6 +473,28 @@ describe("formatSource — binary operator spacing", () => {
     );
   });
 
+  it("treats `/*comment*/-1` as unary (comment before operator is trivia)", () => {
+    // Regression for Copilot review on PR #45: `prevContent` includes
+    // comment tokens, which default to "ends expression" in
+    // `inExpressionPosition`. That used to misclassify the `-` here as
+    // binary. The walk now skips comments via `prevContentNonComment`.
+    const src = "?bs 0.4\nconst x = /*c*/-1;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("treats `// line\\n-1` as unary (line comment before operator is trivia)", () => {
+    const src = "?bs 0.4\nconst x = // c\n  -1;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("still classifies `a /*c*/ + b` correctly (binary on real operand, even with intervening comment)", () => {
+    // The non-comment lookback finds `a` even with a comment in between,
+    // so `+` is correctly binary and gets canonical spacing where the
+    // source omitted it.
+    const src = "?bs 0.4\nconst x = a /*c*/+b;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst x = a /*c*/ + b;\n");
+  });
+
   it("is idempotent on binary-operator insertions", () => {
     const src =
       "?bs 0.4\nfn f() -> number {\n  const a=1+2*3;\n  const b=a||0;\n  return a+b;\n}\n";
