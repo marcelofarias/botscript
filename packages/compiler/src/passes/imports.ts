@@ -224,10 +224,17 @@ function blankStringsAndComments(src: string): string {
       }
       out.push("/".padEnd(j - i, " "));
       i = j;
-      lastCode = "x"; // an "identifier-like" sentinel so the next `/` is divide
+      // A regex literal ends with an identifier-like primary value, so a
+      // subsequent `/` is divide. Reset lastIdent as well so a trailing
+      // keyword from BEFORE the regex (e.g. `return /x/ / 2`) doesn't
+      // re-trigger the regex heuristic.
+      lastCode = "x";
+      lastIdent = "";
       continue;
     }
-    // Double-quoted string.
+    // Double-quoted string. After the closing quote we have a primary
+    // value ("a"), so a following `/` is divide. Clear lastIdent for the
+    // same reason as regex literals above.
     if (ch === '"') {
       let j = i + 1;
       while (j < src.length && src[j] !== '"') {
@@ -238,9 +245,10 @@ function blankStringsAndComments(src: string): string {
       out.push(" ".repeat(len));
       i += len;
       lastCode = "x";
+      lastIdent = "";
       continue;
     }
-    // Single-quoted string.
+    // Single-quoted string. Same treatment as double-quoted.
     if (ch === "'") {
       let j = i + 1;
       while (j < src.length && src[j] !== "'") {
@@ -251,6 +259,7 @@ function blankStringsAndComments(src: string): string {
       out.push(" ".repeat(len));
       i += len;
       lastCode = "x";
+      lastIdent = "";
       continue;
     }
     // Template literal opener — push a template ctx onto the stack.
@@ -521,15 +530,15 @@ function mergeOrPrepend(
     );
     const additions = [...toAdd].filter((s) => !have.has(s));
     if (additions.length === 0) return src;
-    // In pre-0.6 (not aliasAware) mode, mimic the legacy rewrite exactly:
-    // drop any `as` alias and any per-spec `type` prefix on the existing
-    // specs. The original byte-identical output collapsed every spec down
-    // to its bare export name. Preserving aliases would be the smarter
-    // thing to do but would change shipped 0.1–0.5 output for files that
-    // already have aliased runtime imports.
+    // In pre-0.6 (not aliasAware) mode, mimic the legacy rewrite: drop
+    // any \`as\` alias on existing specs but PRESERVE the per-spec
+    // \`type\` prefix — the legacy code split on \`as\` and kept whatever
+    // was on the left, including any leading \`type \` keyword, so the
+    // textual prefix survived a rewrite. The 0.6+ path uses the smarter
+    // alias-preserving rendering.
     const normalisedExisting = options.aliasAware
       ? existing.specs
-      : existing.specs.map((s) => ({ name: s.name, alias: null, typePrefix: false }));
+      : existing.specs.map((s) => ({ name: s.name, alias: null, typePrefix: s.typePrefix }));
     const merged = [...normalisedExisting, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
       .sort((a, b) => {
         const ka = options.aliasAware ? (a.alias ?? a.name) : a.name;
@@ -550,6 +559,26 @@ function mergeOrPrepend(
   }
   const keyword = typeOnly ? "import type" : "import";
   const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
+  // Anchor: place new imports right AFTER the last existing runtime
+  // import line (if any). This keeps any value/type pair clustered
+  // together rather than scattering them across the file when the user's
+  // runtime import wasn't at the very top (e.g. preceded by other
+  // imports). When no runtime import exists yet we fall back to
+  // prepending at the top of the file.
+  // Match up to the trailing semicolon (if any). Crucially, do NOT consume
+  // the line-terminating newline — we splice `\n + newLine` right after
+  // \`lastEnd\`, so eating the newline here would inject a blank line
+  // between the existing import and the new one (which would also break
+  // \`normalizeRuntimeImportOrder\`'s leading-line scan).
+  const runtimeImportRe =
+    /^import(?:\s+type)?\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/gm;
+  let lastEnd = -1;
+  for (let m: RegExpExecArray | null; (m = runtimeImportRe.exec(src)) !== null; ) {
+    lastEnd = m.index + m[0].length;
+  }
+  if (lastEnd >= 0) {
+    return src.slice(0, lastEnd) + "\n" + importLine + src.slice(lastEnd);
+  }
   return `${importLine}\n${src}`;
 }
 
