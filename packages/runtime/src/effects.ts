@@ -38,6 +38,11 @@ export const http = {
   },
   /**
    * Perform a POST request. Same `Result` semantics as `http.get`.
+   *
+   * The HTTP method is always `POST` — `init.method` (if supplied) is
+   * spread in first and then overwritten, so callers cannot accidentally
+   * (or intentionally) downgrade this to GET / upgrade to PUT through the
+   * init bag. Use a different wrapper for other verbs.
    */
   post: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");

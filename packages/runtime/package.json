@@ -33,6 +33,17 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=16.4.0"
+  },
+  "peerDependencies": {
+    "@types/node": "*"
+  },
+  "peerDependenciesMeta": {
+    "@types/node": {
+      "optional": true
+    }
+  },
   "files": [
     "dist",
     "src"

@@ -42,6 +42,14 @@ export class CapabilityViolation extends Error {
 // a fresh snapshot per call to `als.run`, so concurrent and nested frames
 // stay isolated. Sync callers behave identically to the previous array-based
 // implementation because `als.run` is a synchronous wrapper.
+//
+// Runtime requirement: this module pulls in `node:async_hooks`, which makes
+// the entire `@mbfarias/botscript-runtime` package Node-only at module-
+// resolution time (Node 16.4+ for stable AsyncLocalStorage; package.json
+// declares `engines.node` and a peer-dep on `@types/node`). The `./fs`
+// subpath was already Node-only via `node:fs`; the package never targeted
+// browsers and we don't try to fake browser support here. Bun and Deno both
+// implement `node:async_hooks` and work unmodified.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 type Frame = ReadonlyArray<Capability>;
@@ -73,12 +81,16 @@ export const $current = (): ReadonlyArray<Capability> | undefined => {
 };
 
 /**
- * Test-only: enter a pristine empty store. Don't call this in app code.
- * No-op outside an `als.run` context (the prior array-based reset would
- * clear module state; AsyncLocalStorage is per-context, so the global
- * "reset" notion no longer applies). Kept for test compatibility.
+ * Test-only: no-op kept for source compatibility with the previous
+ * array-based implementation.
+ *
+ * The old `$reset` cleared a module-level mutable stack. AsyncLocalStorage
+ * has no equivalent — contexts are scoped to `als.run` callbacks and end
+ * automatically when those return. There is no module-level state to clear,
+ * and you cannot "reset" an active outer store from inside one of its child
+ * scopes. Callers that need a clean frame should wrap the test body in
+ * `$enter([], () => { ... })` (or an `als.run` they manage themselves).
  */
 export const $reset = (): void => {
-  // Intentionally empty. AsyncLocalStorage scopes naturally end when their
-  // run() returns; there is no global state to clear.
+  // No-op. See JSDoc above.
 };
