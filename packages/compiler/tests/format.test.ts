@@ -469,6 +469,18 @@ describe("formatSource — binary operator spacing", () => {
     );
   });
 
+  it("applies operator spacing inside attribute `{...}` of a NESTED element", () => {
+    // The parent `<div>` pushes a `jsxText` frame onto the context stack
+    // that never gets popped before we scan the inner `<input>`. Without
+    // the `!inJsxOpenTag` gate on the `jsxText` suppression, the inner
+    // `{a-b}` would inherit the suppression and stay unformatted.
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <div><input data-cmp={a-b} /></div>\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn Demo() -> any = <div><input data-cmp={a - b} /></div>\n',
+    );
+  });
+
   it("does not touch HTML entities (`&rsquo;`, `&amp;`) inside JSX text content", () => {
     // The `&` in HTML entities is a single-char operator at the token
     // level. If binary-operator spacing fired in JSX text, `&rsquo;t`

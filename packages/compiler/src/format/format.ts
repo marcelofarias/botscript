@@ -465,9 +465,16 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     //
     // `childExpr` (the `{...}` interpolations inside JSX text) is NOT
     // suppressed — that's regular JS code where canonical spacing applies.
+    // The `top() === "jsxText"` suppression is gated on `!inJsxOpenTag`
+    // because nested elements still see the parent's `jsxText` frame at
+    // the top of the stack — e.g. `<div><input data-cmp={a-b} /></div>`
+    // pushes one `jsxText` for the `<div>` and never pops it while we
+    // scan the inner `<input ...>`. Without the gate, attribute `{...}`
+    // interpolations inside any nested element would be wrongly
+    // suppressed.
     const inJsxNoOpSpace =
       (inJsxOpenTag && jsxAttrBraceDepth === 0) ||
-      top() === "jsxText";
+      (top() === "jsxText" && !inJsxOpenTag);
 
     // Non-whitespace, non-newline token — possibly inject a separator
     // first. `=` whitespace is suppressed only when we're between an
