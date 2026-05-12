@@ -141,6 +141,45 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "const u = unsafe \"third-party Response.json() returns any\" { data as User };\n",
     },
   },
+  FMT001: {
+    code: "FMT001",
+    title: "source is not in canonical form",
+    body:
+      "Botscript collapses a defined set of non-semantic surface variations to a single " +
+      "canonical form (RFC #13). The current rules cover indentation (tabs become 2 " +
+      "spaces), trailing whitespace, blank-line runs, line endings, mid-line whitespace, " +
+      "spacing around `,` `:` `->` `=>` `??` and `=`, import-statement order within a " +
+      "contiguous run, tagged-union member order, and brace-block-vs-expression-body for " +
+      "single-`return` `fn` bodies. From `?bs 0.4` on, the compiler rejects non-canonical " +
+      "input rather than silently accepting it.\n\n" +
+      "The point is to kill diff noise. A bot writing botscript will produce five " +
+      "stylistically-different versions of the same logic across five PRs — none wrong, " +
+      "all dominated by formatting drift in the diff. Sources that differ ONLY by the " +
+      "variations above canonicalize to byte-identical text, so review can focus on the " +
+      "semantic change. Sources that are merely equivalent in deeper ways (different " +
+      "identifier names, different control-flow shapes, different operator choices) are " +
+      "NOT collapsed — RFC #13's full vision (\"two semantically equivalent programs " +
+      "lower to byte-identical TypeScript\") is still in flight; this rule covers the " +
+      "surface-level slice that landed in `?bs 0.4`.\n\n" +
+      "The fix is mechanical: `botscript fmt <file> --write`. The formatter is " +
+      "idempotent. It preserves observable behavior in all common cases, with one " +
+      "documented carve-out: reordering ESM imports within a contiguous run CAN " +
+      "change observable top-level evaluation order if any imported module has " +
+      "top-level side effects. The repo trades that strict ordering for a canonical " +
+      "surface form, mirroring `prettier-plugin-organize-imports` / ESLint " +
+      "`import/order`. To pin a specific evaluation order, separate the imports with " +
+      "a blank line (the run breaks) or add a comment in the region (reordering " +
+      "disables). Side-effect imports (`import \"foo\";`) bail their run " +
+      "unconditionally. The diagnostic points at the first UTF-16 code unit that " +
+      "diverges from canonical, so you can also fix small drifts by hand.\n\n" +
+      "FMT001 is gated on the version pin: files pinned to `?bs 0.3` or earlier keep " +
+      "accepting whitespace variants. Opt into the check by bumping the file to `?bs " +
+      "0.4` (and run `botscript fmt <file> --write` once to clear the existing drift).",
+    example: {
+      fails: "?bs 0.4\nfn add(a: number, b: number) -> number   =   a + b\n",
+      passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
