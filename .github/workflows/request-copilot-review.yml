@@ -13,7 +13,57 @@ jobs:
       - name: Request Copilot review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Best-effort — we never want a flaky CI to block a PR's pipeline
+        # just because the Copilot reviewer request failed. The old workflow
+        # used `gh pr edit ... || true` for the same reason; we preserve
+        # that posture explicitly below.
+        continue-on-error: true
         run: |
-          gh pr edit "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --add-reviewer "Copilot" || true
+          set +e
+          # Use the REST API directly — gh CLI resolves reviewers via GraphQL
+          # which can't find the Copilot bot; the REST endpoint handles it.
+          # curl notes:
+          #   -H "Content-Type: application/json": required — without it curl
+          #     sends `application/x-www-form-urlencoded` and GitHub returns
+          #     415 / 400.
+          #   -w "%{http_code}" + check below: curl exits 0 on 4xx/5xx (no
+          #     --fail), so we read the status code ourselves and treat the
+          #     happy outcomes (201 Created, 422 already-requested) as
+          #     success. Anything else is logged but does not fail the job
+          #     (continue-on-error covers transient network issues too).
+          STATUS=$(curl -s -o /tmp/copilot-review-response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers" \
+            -d '{"reviewers":["Copilot"]}')
+          echo "Review request status: $STATUS"
+          BODY=$(cat /tmp/copilot-review-response.json 2>/dev/null || echo "")
+          case "$STATUS" in
+            200|201|204)
+              # GitHub's docs say 201 Created for a fresh request; 200 / 204
+              # are accepted defensively for any response shape they might
+              # adopt for idempotent re-requests.
+              echo "Copilot review requested (status $STATUS)."
+              ;;
+            422)
+              # 422 is overloaded: it covers "reviewer already requested"
+              # (the happy idempotent path) AND validation failures
+              # ("Reviewer is not a collaborator", missing permissions,
+              # etc.). Sniff the response body for the already-requested
+              # marker; treat anything else as a real warning.
+              if printf '%s' "$BODY" | grep -qiE 'already (been )?requested|already added'; then
+                echo "Copilot already on the reviewer list — nothing to do."
+              else
+                echo "::warning::Got 422 from requested_reviewers but body doesn't look like 'already requested':"
+                printf '%s\n' "$BODY"
+              fi
+              ;;
+            *)
+              echo "::warning::Unexpected status $STATUS from requested_reviewers endpoint."
+              printf '%s\n' "$BODY"
+              ;;
+          esac
+          exit 0
