@@ -145,18 +145,22 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "FMT001",
     title: "source is not in canonical form",
     body:
-      "Every botscript program has exactly one canonical surface form (RFC #13). Two " +
-      "programs that mean the same thing must look the same in source. From `?bs 0.4` " +
-      "on, the compiler enforces this: non-canonical input is rejected rather than " +
-      "silently accepted.\n\n" +
+      "Botscript collapses a defined set of non-semantic surface variations to a single " +
+      "canonical form (RFC #13). The current rules cover indentation (tabs become 2 " +
+      "spaces), trailing whitespace, blank-line runs, line endings, mid-line whitespace, " +
+      "spacing around `,` `:` `->` `=>` `??` `=` and binary operators, import-statement " +
+      "order within a contiguous run, tagged-union member order, and brace-block-vs-" +
+      "expression-body for single-`return` `fn` bodies. From `?bs 0.4` on, the compiler " +
+      "rejects non-canonical input rather than silently accepting it.\n\n" +
       "The point is to kill diff noise. A bot writing botscript will produce five " +
       "stylistically-different versions of the same logic across five PRs — none wrong, " +
-      "all dominated by formatting drift in the diff. Canonical form collapses those " +
-      "variants to one, so review can focus on the semantic change. It also makes the " +
-      "output of equivalent programs stable up to canonicalization — two `.bs` sources " +
-      "that compute the same thing produce byte-identical canonical text. That's a " +
-      "property you can grep for; it does not extend to claims about LLM determinism, " +
-      "which depends on sampling, naming choices, and seed.\n\n" +
+      "all dominated by formatting drift in the diff. Sources that differ ONLY by the " +
+      "variations above canonicalize to byte-identical text, so review can focus on the " +
+      "semantic change. Sources that are merely equivalent in deeper ways (different " +
+      "identifier names, different control-flow shapes, different operator choices) are " +
+      "NOT collapsed — RFC #13's full vision (\"two semantically equivalent programs " +
+      "lower to byte-identical TypeScript\") is still in flight; this rule covers the " +
+      "surface-level slice that landed in `?bs 0.4`.\n\n" +
       "The fix is mechanical: `botscript fmt <file> --write`. The formatter is " +
       "idempotent and semantics-preserving — running it never changes what your code " +
       "does, only how it looks. The diagnostic points at the first UTF-16 code unit " +
