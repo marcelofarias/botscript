@@ -19,7 +19,7 @@
  */
 import { BotscriptError } from "../diagnostics.js";
 
-export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3", "0.4", "0.5"];
+export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"];
 export const LATEST_VERSION = "0.1";
 
 const DIRECTIVE_RE = /^\s*\?bs\s+(\d+\.\d+(?:\.\d+)?)\s*$/m;
