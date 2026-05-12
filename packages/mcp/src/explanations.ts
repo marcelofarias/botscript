@@ -161,7 +161,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "that diverges from canonical, so you can also fix small drifts by hand.\n\n" +
       "FMT001 is gated on the version pin: files pinned to `?bs 0.3` or earlier keep " +
       "accepting whitespace variants. Opt into the check by bumping the file to `?bs " +
-      "0.4` (and run `botscript fmt --write` once to clear the existing drift).",
+      "0.4` (and run `botscript fmt <file> --write` once to clear the existing drift).",
     example: {
       fails: "?bs 0.4\nfn add(a: number, b: number) -> number   =   a + b\n",
       passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
