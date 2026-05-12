@@ -86,21 +86,39 @@
  *   - Inserts a single space between adjacent non-whitespace tokens when
  *     canonical form requires it but the source omitted it. Rules: after
  *     `,` (unless followed by a closing bracket); after `:`; on each side
- *     of `->`, `=>`, and `??`. Three cases are deliberately not touched:
- *       - `=` (declaration / assignment vs. JSX attribute, which uses
- *         `name="value"` with no space — indistinguishable at the token
- *         level because the lexer doesn't pair `<` / `>`).
- *       - `;` (statement terminator vs. HTML entity end like `&rsquo;t`
- *         in JSX text — same disambiguation problem).
- *       - Generic `operator` tokens (`+`, `*`, etc.) — they can be unary
- *         or binary and disambiguating needs more context than the token
- *         walk has.
+ *     of `->`, `=>`, and `??`; on each side of `=` (except the JSX
+ *     attribute-eq form, which is `name="value"` with no space); on each
+ *     side of a binary operator. Binary classification is split in two:
+ *     a set of always-binary multi-char operators (`==`, `===`, `&&`,
+ *     `**`, `<=`, compound-assignment, ...) plus the context-dependent
+ *     ones (`+`, `-`, `*`, `/`, `%`) which are binary iff `prev` ends an
+ *     expression — the same predicate `inExpressionPosition` already uses
+ *     (inverted) for JSX-tag detection. See `isBinaryOperator` for the
+ *     full table and exclusions.
  *
- *     `,` and `:` *can* in principle trip JSX text content (`<p>2:30</p>`
- *     would canonicalize to `<p>2: 30</p>`). The repo doesn't hit this
- *     today, and the win on real `.bs` code is large; if a user hits it,
- *     wrapping the text in an expression container (`<p>{"2:30"}</p>`)
- *     stops the formatter from reaching into the text.
+ *     Three cases are deliberately not touched:
+ *       - `;` (statement terminator vs. HTML entity end like `&rsquo;t`
+ *         in JSX text — same disambiguation problem the formatter has
+ *         elsewhere).
+ *       - Single-char `<` and `>` (JSX open / fragment / TS generics:
+ *         `Array<number>` and `<Foo>` both rely on `<`/`>` carrying
+ *         non-comparison meaning; without an AST the formatter can't
+ *         tell them apart from binary comparisons).
+ *       - `>>` and `>>>` (lexed as single tokens, but appear as nested
+ *         generic closes in `Promise<Result<X, E>>` and `Array<Map<K, V>>`).
+ *
+ *     `,` and `:` *can* in principle trip JSX text content
+ *     (`<p>2:30</p>` would canonicalize to `<p>2: 30</p>`). The repo
+ *     doesn't hit this today, and the win on real `.bs` code is large;
+ *     if a user hits it, wrapping the text in an expression container
+ *     (`<p>{"2:30"}</p>`) stops the formatter from reaching into the
+ *     text. Binary-operator spacing has the stricter guarantee: it is
+ *     suppressed inside JSX open tags (so `/` self-close and hyphenated
+ *     attribute names like `data-cmp` / `aria-hidden` stay intact) AND
+ *     inside JSX text content (so HTML entities like `&rsquo;` and `&amp;`
+ *     keep their `&...;` shape). Only JSX `{...}` child-expression
+ *     interpolations still get full canonical operator spacing — they're
+ *     regular JS code.
  *   - Normalizes line endings outside string / template / regex / block-
  *     comment tokens to `\n` (CR-only and CRLF inputs are accepted). The
  *     formatter does NOT touch `\r` characters embedded inside those tokens
@@ -205,7 +223,22 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
   // content token. The flag is re-set to `false` as soon as the next content
   // token is emitted, so we don't track injected spaces here.
   let prevContent: Token | null = null;
+  // Like `prevContent` but skipping line/block comments. Used ONLY by
+  // `isBinaryOperator`'s context-dependent classification (`+ - * / %`):
+  // the lexer hands comments back as content tokens, but `inExpressionPosition`
+  // defaults to `false` for them, which would (wrongly) classify a unary
+  // operator after a comment as binary — `const x = /*c*/-1` would become
+  // `const x = /*c*/ - 1`. The pre-binary lookback must skip trivia so the
+  // `-1` here is still recognized as unary.
+  let prevContentNonComment: Token | null = null;
   let separatorSinceContent = true; // start-of-file behaves like a separator
+  // Whether the previous content token was an operator emitted in BINARY
+  // position (e.g. `*` in `a * b`, not the unary `*` in `import *`). The
+  // walk computes this when emitting an operator and uses it on the NEXT
+  // iteration to decide whether to inject a space AFTER the operator. The
+  // pre-operator side is handled directly in `wantsSpaceBetween`, where
+  // we still have both `prev` and the operator-as-`curr` in hand.
+  let prevOpBinary = false;
   // JSX state. The lexer has no JSX awareness, so we track context as a
   // stack the format walk pushes/pops:
   //
@@ -413,6 +446,36 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     prevContentWasSlash =
       inJsxOpenTag && t.kind === "operator" && t.text === "/";
 
+    // JSX-context flag for binary-operator spacing. Computed BEFORE the
+    // `wantsSpaceBetween` call below because that call needs to suppress
+    // operator-spacing rules inside JSX. Two suppression contexts:
+    //
+    //   1. JSX open tag at brace depth 0 (`<Foo ... />` between `<Foo`
+    //      and the closing `>`). Operators there are tag syntax — `/` is
+    //      the self-close marker (not division), `-` joins attribute
+    //      names like `data-cmp` / `aria-hidden`. Attribute `{...}`
+    //      interpolations (depth > 0) are regular JS and DO get
+    //      operator spacing — mirroring how `=` already canonicalizes
+    //      inside attribute `{...}` but not at the `name="value"` slot.
+    //   2. JSX text content (`<p>...</p>` body). HTML entities like
+    //      `&rsquo;` and `&amp;` contain `&` / `;` characters that would
+    //      get spaced (`& rsquo;`) and break the entity. The text is
+    //      opaque to the formatter — the user can wrap interpolations in
+    //      `{...}` to opt back into formatting.
+    //
+    // `childExpr` (the `{...}` interpolations inside JSX text) is NOT
+    // suppressed — that's regular JS code where canonical spacing applies.
+    // The `top() === "jsxText"` suppression is gated on `!inJsxOpenTag`
+    // because nested elements still see the parent's `jsxText` frame at
+    // the top of the stack — e.g. `<div><input data-cmp={a-b} /></div>`
+    // pushes one `jsxText` for the `<div>` and never pops it while we
+    // scan the inner `<input ...>`. Without the gate, attribute `{...}`
+    // interpolations inside any nested element would be wrongly
+    // suppressed.
+    const inJsxNoOpSpace =
+      (inJsxOpenTag && jsxAttrBraceDepth === 0) ||
+      (top() === "jsxText" && !inJsxOpenTag);
+
     // Non-whitespace, non-newline token — possibly inject a separator
     // first. `=` whitespace is suppressed only when we're between an
     // attribute name and its value (the JSX-attribute `=`). The
@@ -422,10 +485,29 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     if (
       prevContent !== null &&
       !separatorSinceContent &&
-      wantsSpaceBetween(prevContent, t, inJsxAttrEqSnapshot)
+      wantsSpaceBetween(
+        prevContent,
+        t,
+        inJsxAttrEqSnapshot,
+        prevOpBinary,
+        inJsxNoOpSpace,
+        prevContentNonComment,
+      )
     ) {
       if (!emit(" ")) return;
     }
+
+    // Compute whether THIS token, if it's an operator, is binary. Stored
+    // for the next iteration to decide post-operator spacing. Not-an-
+    // operator resets the flag — only operator tokens carry it forward.
+    //
+    // Uses `prevContentNonComment` (not `prevContent`) for the
+    // context-dependent classification — a comment between `=` and `-1`
+    // shouldn't reclassify the `-` as binary.
+    const currOpBinary =
+      !inJsxNoOpSpace &&
+      t.kind === "operator" &&
+      isBinaryOperator(t, prevContentNonComment);
 
     let chunk: string;
     if (t.kind === "lineComment") {
@@ -449,28 +531,43 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     if (!emit(chunk)) return;
     prevContent = t;
     separatorSinceContent = false;
+    prevOpBinary = currOpBinary;
+    if (t.kind !== "lineComment" && t.kind !== "blockComment") {
+      prevContentNonComment = t;
+    }
   }
 }
 
 /**
  * Should canonical form put a single space between these two adjacent
- * non-whitespace tokens? Returns true ONLY for cases that are unambiguous
- * regardless of expression vs. type vs. statement context. In particular,
- * `+` / `-` / `*` etc. (the `operator` kind) are deliberately excluded —
- * they can be unary or binary, and disambiguating needs more context than
- * the token walk has.
+ * non-whitespace tokens?
  *
- * `inJsxAttrEq` is the only piece of state the caller threads in: true
- * iff this `=` (if there is one) sits between an attribute name and its
- * value in a JSX open tag, where canonical form is `name="value"` with no
- * space. Anywhere else — declarations, assignments, destructuring
- * defaults, AND `=` inside an attribute's `{expr}` (e.g. `onClick={()
- * => a = b}`) — gets a space on each side.
+ * `inJsxAttrEq` is true iff this `=` (if there is one) sits between an
+ * attribute name and its value in a JSX open tag, where canonical form is
+ * `name="value"` with no space. Anywhere else — declarations,
+ * assignments, destructuring defaults, AND `=` inside an attribute's
+ * `{expr}` (e.g. `onClick={() => a = b}`) — gets a space on each side.
+ *
+ * `prevOpBinary` is true iff `prev` is an operator token that was emitted
+ * in binary position (e.g. `*` in `a * b`). When set, this function adds
+ * a space AFTER the operator. The pre-operator side is handled by the
+ * `curr.kind === "operator"` branch below, which inspects `prev` directly.
+ *
+ * Single-char `<` and `>` are deliberately NOT spaced. They overlap with
+ * JSX open / fragment open / TS generics (`Array<number>`, `Result<T, E>`)
+ * which the token walk can't disambiguate from a binary comparison. The
+ * two-char comparisons (`<=`, `>=`) are safe, as is left-shift `<<`. The
+ * right-shifts `>>` and `>>>` are NOT spaced — they appear as nested
+ * generic closes in `Promise<Result<X, E>>` / `Array<Map<K, V>>` which
+ * the token walk also can't disambiguate from a real right-shift.
  */
 function wantsSpaceBetween(
   prev: Token,
   curr: Token,
   inJsxAttrEq: boolean,
+  prevOpBinary: boolean,
+  inJsxNoOpSpace: boolean,
+  prevForBinary: Token | null,
 ): boolean {
   // `->`, `=>`, `??` always want a space on each side.
   if (
@@ -499,6 +596,107 @@ function wantsSpaceBetween(
   // `:` followed by anything (type annotation, ternary, object key) → space.
   if (prev.kind === "punct" && prev.text === ":") {
     return true;
+  }
+  // Binary-operator spacing is disabled inside JSX open tags AND inside
+  // JSX text content. The walk computes the combined flag (see
+  // `inJsxNoOpSpace` and its rationale at the emit site) and passes it
+  // in. The two rules below are gated symmetrically.
+  if (!inJsxNoOpSpace) {
+    // Space before a binary operator. `prevForBinary` (= last
+    // non-comment, non-trivia content) is the real left operand. Using
+    // `prev` directly would misclassify cases where a comment sits
+    // between the operand and the operator (e.g. `a /*c*/ - 1`).
+    if (
+      curr.kind === "operator" &&
+      isBinaryOperator(curr, prevForBinary)
+    ) {
+      return true;
+    }
+    // Space after a binary operator. `prevOpBinary` is set only when the
+    // previous content token was an operator AND the same
+    // `isBinaryOperator` check classified it as binary at emit time.
+    if (prev.kind === "operator" && prevOpBinary) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Operators that are unambiguously binary regardless of surrounding
+ * context. Adding a space on each side is always correct for these — none
+ * of them have a unary, prefix, postfix, or JSX/generics interpretation in
+ * any valid program.
+ *
+ * Notably absent: single-char `<` and `>` (JSX/generics ambiguity),
+ * `!` / `~` (prefix-only), `++` / `--` (prefix or postfix, never binary),
+ * `...` (spread/rest, never spaced).
+ */
+const ALWAYS_BINARY_OPERATORS = new Set([
+  // equality / comparison (multi-char only — `<` and `>` excluded)
+  "==",
+  "===",
+  "!=",
+  "!==",
+  "<=",
+  ">=",
+  // logical
+  "&&",
+  "||",
+  // bitwise — `&` / `|` / `^` are also always binary in JS/TS (no prefix
+  // form exists; `|` doubles as TS union, which canonical form already
+  // spaces)
+  "&",
+  "|",
+  "^",
+  // bit-shift (left only — `>>` and `>>>` overlap with nested TS generic
+  // closes like `Array<Map<string, T>>`, which the token walk can't tell
+  // apart from a real right-shift)
+  "<<",
+  // exponent
+  "**",
+  // compound assignment
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+  "**=",
+  "&=",
+  "|=",
+  "^=",
+]);
+
+/**
+ * Operators whose binary-vs-unary classification depends on `prev`. Each
+ * of these has a legitimate prefix form (`-x`, `+x`) or a non-binary use
+ * after a keyword (`import *`, `export *`). The walk classifies them as
+ * binary iff `prev` ends an expression — the same predicate the formatter
+ * already uses (inverted) for JSX `<Tag>` detection in
+ * `inExpressionPosition`.
+ */
+const CONTEXT_DEPENDENT_BINARY_OPERATORS = new Set([
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+]);
+
+function isBinaryOperator(op: Token, prev: Token | null): boolean {
+  if (op.kind !== "operator") return false;
+  if (ALWAYS_BINARY_OPERATORS.has(op.text)) return true;
+  if (CONTEXT_DEPENDENT_BINARY_OPERATORS.has(op.text)) {
+    if (!prev) return false;
+    // JS generator marker: `function * name` (and `async function * name`).
+    // `function` lexes as a plain ident in botscript — it isn't in the
+    // botscript keyword set — so the generic "prev ends expression"
+    // heuristic would (wrongly) classify the `*` as binary. Bail.
+    if (op.text === "*" && prev.kind === "ident" && prev.text === "function") {
+      return false;
+    }
+    // Binary iff the left side is an expression-ending token.
+    return !inExpressionPosition(prev);
   }
   return false;
 }

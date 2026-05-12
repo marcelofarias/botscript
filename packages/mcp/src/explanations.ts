@@ -148,7 +148,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Botscript collapses a defined set of non-semantic surface variations to a single " +
       "canonical form (RFC #13). The current rules cover indentation (tabs become 2 " +
       "spaces), trailing whitespace, blank-line runs, line endings, mid-line whitespace, " +
-      "spacing around `,` `:` `->` `=>` `??` and `=`, import-statement order within a " +
+      "spacing around `,` `:` `->` `=>` `??` `=` and binary operators (`+`, `-`, `*`, " +
+      "`/`, `%`, `==`, `===`, `!=`, `!==`, `<=`, `>=`, `&&`, `||`, `&`, `|`, `^`, `<<`, " +
+      "`**`, plus the compound-assignment family), import-statement order within a " +
       "contiguous run, tagged-union member order, and brace-block-vs-expression-body for " +
       "single-`return` `fn` bodies. From `?bs 0.4` on, the compiler rejects non-canonical " +
       "input rather than silently accepting it.\n\n" +
