@@ -40,7 +40,7 @@ export const http = {
   post: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");
     try {
-      return ok(await fetch(url, { method: "POST", ...init }));
+      return ok(await fetch(url, { ...init, method: "POST" }));
     } catch (e) {
       return err(e instanceof Error ? e : new Error(String(e)));
     }

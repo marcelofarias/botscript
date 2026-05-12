@@ -41,6 +41,13 @@ describe("http wrappers", () => {
     if (isErr(r)) expect(r.error.message).toBe("dns failed");
   });
 
+  it("post always uses method POST even when init.method is provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", mockFetch);
+    await $enter(["net"], () => http.post("https://example.com", { method: "PUT" as string }));
+    expect(mockFetch).toHaveBeenCalledWith("https://example.com", expect.objectContaining({ method: "POST" }));
+  });
+
   it("post wraps a successful response in Ok", async () => {
     const mockResponse = new Response("{}", { status: 201 });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));

@@ -100,7 +100,8 @@ additions below are the entire language surface.
   // fail fast on a fetch — await, unwrap the Result, then parse the body
   async fn loadUser(id: string) uses { net } -> Promise<Result<User, Error>> {
     let res = (await http.get(\`/users/\${id}\`))?
-    ok(unsafe "shape validated upstream" { await res.json() as User })
+    let json = await res.json()
+    ok(unsafe "shape validated upstream" { json as User })
   }
 
   // pure helper
