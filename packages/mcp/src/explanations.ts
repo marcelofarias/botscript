@@ -152,9 +152,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "The point is to kill diff noise. A bot writing botscript will produce five " +
       "stylistically-different versions of the same logic across five PRs — none wrong, " +
       "all dominated by formatting drift in the diff. Canonical form collapses those " +
-      "variants to one, so review can focus on the semantic change. It also means the " +
-      "same prompt and the same model produce the same bytes; that reproducibility is " +
-      "a property you can grep for.\n\n" +
+      "variants to one, so review can focus on the semantic change. It also makes the " +
+      "output of equivalent programs stable up to canonicalization — two `.bs` sources " +
+      "that compute the same thing produce byte-identical canonical text. That's a " +
+      "property you can grep for; it does not extend to claims about LLM determinism, " +
+      "which depends on sampling, naming choices, and seed.\n\n" +
       "The fix is mechanical: `botscript fmt <file> --write`. The formatter is " +
       "idempotent and semantics-preserving — running it never changes what your code " +
       "does, only how it looks. The diagnostic points at the first UTF-16 code unit " +
