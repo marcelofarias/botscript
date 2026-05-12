@@ -381,11 +381,18 @@ export function passImports(src: string, version: VersionInfo): string {
   // cause spurious imports of `err` or `ok`.
   if (atLeast(version.resolved, "0.6")) {
     const scanSrc = blankStringsAndComments(src);
+    // Names locally declared in the file shadow the stdlib export of the
+    // same name (e.g. `fn ok(...) {}` becomes `function ok(...) {}` in the
+    // emitted TS — importing `ok` would clash with the user's binding).
+    // Skip any stdlib name that appears as the head of a top-level decl.
+    const locallyDeclared = collectLocallyDeclared(scanSrc);
     for (const sym of STDLIB_VALUE_SYMBOLS) {
+      if (locallyDeclared.has(sym)) continue;
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
       if (re.test(scanSrc)) usedValues.add(sym);
     }
     for (const sym of STDLIB_TYPE_SYMBOLS) {
+      if (locallyDeclared.has(sym)) continue;
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
       if (re.test(scanSrc)) usedTypes.add(sym);
     }
@@ -484,6 +491,27 @@ function mergeOrPrepend(
   const keyword = typeOnly ? "import type" : "import";
   const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
   return `${importLine}\n${src}`;
+}
+
+/**
+ * Scan for top-level declarations whose declared name collides with one
+ * of the stdlib symbols. We don't bother building a full AST — the
+ * compiled output is shaped TS, so a regex that looks for the canonical
+ * decl heads (`function NAME`, `const NAME`, `let NAME`, `var NAME`,
+ * `class NAME`, `interface NAME`, `type NAME`, `enum NAME`) anchored at
+ * the start of a line is enough. Caller passes the BLANKED source so a
+ * "declaration" pattern hiding inside a string literal doesn't fool us.
+ * Returns the set of names we'd shadow if we auto-imported.
+ */
+function collectLocallyDeclared(blanked: string): Set<string> {
+  const decls = new Set<string>();
+  const DECL_RE =
+    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = DECL_RE.exec(blanked)) !== null) {
+    decls.add(m[1]!);
+  }
+  return decls;
 }
 
 function escapeRegex(s: string): string {

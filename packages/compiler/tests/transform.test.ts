@@ -477,6 +477,18 @@ describe("imports", () => {
     expect(out).not.toMatch(/\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("local declaration shadowing a stdlib name is NOT auto-imported", () => {
+    // `fn ok(x: number) -> number` becomes `function ok(x: number): number`
+    // in the emitted TS. Auto-importing `ok` would clash with the local
+    // declaration and produce a TS2451 duplicate-binding error.
+    const src =
+      `?bs 0.6\n` +
+      `fn ok(n: number) -> number = pure { n + 1 }\n` +
+      `fn use_it() -> number = pure { ok(2) }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("aliased import does NOT suppress auto-importing the unaliased name", () => {
     // `import { ok as myOk } ...` binds `myOk`, not `ok`. A later use of
     // `ok(…)` is therefore unbound and must be auto-imported, not skipped.
@@ -486,20 +498,30 @@ describe("imports", () => {
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
     // The merged import should contain both `myOk` (preserving the alias)
-    // and a fresh `ok` so `ok(...)` resolves at runtime.
+    // and a fresh, unaliased `ok` so `ok(...)` resolves at runtime. The
+    // second matcher excludes the `ok` in `ok as myOk` by requiring the
+    // identifier to be followed by either `,` or `}` and NOT `as`.
     expect(out).toMatch(/import \{[^}]*\bok\s+as\s+myOk\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
-    expect(out).toMatch(/import \{[^}]*(?<![\w])ok(?![\w])[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Look for `ok` that is NOT immediately followed by ` as ` (i.e. not
+    // the aliased entry). The negative lookahead is the only thing
+    // distinguishing this from the `ok as myOk` match above.
+    expect(out).toMatch(/import \{[^}]*\bok\b(?!\s+as\b)[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
-  it("a commented-out runtime import is NOT mistaken for a real one", () => {
-    // A user comment that mentions `import { ok } from "..."` must not
-    // suppress the real auto-import. Without filtering comments out of the
-    // existing-import probe, the regex would match and skip emitting.
+  it("a runtime import buried in a block comment is NOT mistaken for a real one", () => {
+    // The existing-import matcher is anchored at the start of a line with
+    // \`^\\s*import\`. Line comments (`// import ...`) don't match anyway
+    // because of the leading `//`. The case that DOES need defending is a
+    // block comment that wraps a real-looking import — the regex's `m`
+    // flag finds the inner `import { ... }` line. The 0.6+ comment-aware
+    // guard catches this by blanking the comment first.
     const src =
       `?bs 0.6\n` +
-      `// example: import { ok } from "@mbfarias/botscript-runtime";\n` +
+      `/*\nimport { ok } from "@mbfarias/botscript-runtime";\n*/\n` +
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
+    // The comment is preserved verbatim (we never rewrite comments), but a
+    // real auto-import for `ok` should be prepended on top.
     expect(out).toMatch(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
   });
 
