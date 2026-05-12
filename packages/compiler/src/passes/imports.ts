@@ -200,8 +200,17 @@ function blankStringsAndComments(src: string): string {
     // before the comment. Otherwise `x /* y */ / 2` (divide) would look like
     // `<no-token> / 2` (start of regex).
     if (ch === "/" && next === "/") {
-      const end = src.indexOf("\n", i + 2);
-      const len = end === -1 ? src.length - i : end - i;
+      // Find the next ECMAScript LineTerminator: \u000A (LF), \u000D (CR),
+      // \u2028 (LS), \u2029 (PS). `indexOf("\\n")` only handles LF, so CR-only
+      // files would blank all the way to EOF and hide later code from the
+      // scanner. Walk forward looking for any of the four.
+      let end = i + 2;
+      while (end < src.length) {
+        const c = src.charCodeAt(end);
+        if (c === 0x0a || c === 0x0d || c === 0x2028 || c === 0x2029) break;
+        end++;
+      }
+      const len = end >= src.length ? src.length - i : end - i;
       out.push(" ".repeat(len));
       i += len;
       continue;
@@ -448,6 +457,36 @@ export function passImports(src: string, version: VersionInfo): string {
   const boundLocally = new Set<string>();
   for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
     boundLocally.add(useAliasAware ? (spec.alias ?? spec.name) : spec.name);
+  }
+  // 0.6+: also harvest names bound by imports from OTHER modules. If the
+  // user wrote \`import { ok } from "./util"\`, our auto-import of \`ok\`
+  // from \`@mbfarias/botscript-runtime\` would clash with their existing
+  // binding. Pre-0.6 keeps the legacy narrower scan (which never tried to
+  // detect non-runtime imports either).
+  if (useAliasAware) {
+    const scanned = blankStringsAndComments(src);
+    const OTHER_IMPORT_RE =
+      /^import(?:\s+type)?\s+(?:\{([^}]*)\}|([A-Za-z_$][A-Za-z0-9_$]*))\s+from\s+["']([^"']+)["']/gm;
+    for (let m: RegExpExecArray | null; (m = OTHER_IMPORT_RE.exec(scanned)) !== null; ) {
+      // Skip our own runtime import (already accounted for above).
+      if (m[3] === "@mbfarias/botscript-runtime") continue;
+      // Default import binding (e.g. `import React from "react"`).
+      if (m[2]) {
+        boundLocally.add(m[2]);
+        continue;
+      }
+      // Named-binding list. Use the LOCAL name (alias if any) for each spec.
+      for (const raw of (m[1] ?? "").split(",")) {
+        const piece = raw.trim().replace(/^type\s+/, "");
+        if (!piece) continue;
+        const asIdx = piece.search(/\s+as\s+/);
+        const local = asIdx >= 0
+          ? piece.slice(asIdx).replace(/^\s+as\s+/, "").trim()
+          : piece;
+        const id = local.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
+        if (id) boundLocally.add(id);
+      }
+    }
   }
   for (const name of boundLocally) {
     usedValues.delete(name);
