@@ -600,8 +600,13 @@ export function passImports(src: string, version: VersionInfo): string {
  */
 function normalizeRuntimeImportOrder(src: string): string {
   const lines = src.split("\n");
-  const valueRe = /^import\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
-  const typeRe = /^import\s+type\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
+  // Tolerate trailing content on the same line — inline comments,
+  // optional whitespace, etc. — by dropping the `$` end-of-line anchor.
+  // The regex still has to match the start of an import line (via `^`)
+  // and the canonical \`from "@mbfarias/botscript-runtime";?\` shape, so
+  // we don't accidentally classify some unrelated line.
+  const valueRe = /^import\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/;
+  const typeRe = /^import\s+type\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/;
   // (Note: \`split("\\n")\` is fine here because the upstream pipeline
   // emits LF-only output; CR/LS/PS only matter for the blanker scanning
   // input source.)
