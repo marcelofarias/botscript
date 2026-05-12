@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { $current, $enter, $require, $reset, CapabilityViolation } from "../src/capabilities.js";
+import { $current, $enter, $require, CapabilityViolation } from "../src/capabilities.js";
 
+// No afterEach reset: each `$enter` runs the test body in its own
+// AsyncLocalStorage scope, so the store ends naturally when the
+// callback returns.
 describe("capabilities", () => {
-  afterEach(() => {
-    $reset();
-  });
 
   it("$enter installs a frame and $require checks it", () => {
     $enter(["net"], () => {

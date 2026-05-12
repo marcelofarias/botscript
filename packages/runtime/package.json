@@ -39,11 +39,6 @@
   "peerDependencies": {
     "@types/node": "*"
   },
-  "peerDependenciesMeta": {
-    "@types/node": {
-      "optional": true
-    }
-  },
   "files": [
     "dist",
     "src"

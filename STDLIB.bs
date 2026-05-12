@@ -126,6 +126,10 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
 // (These exist only to make the examples compile in isolation.)
 
 async fn doFetch(url: string) uses { net } -> Result<string, string> {
-  let res = Result.tryAsync { (await http.get(url)).text() }?
-  return ok(res);
+  // http.get returns Result<Response, Error>. Project the Error message into
+  // a string to keep this example's `Result<string, string>` return shape,
+  // then let Result.tryAsync lift any decoding throw from `.text()` into Err.
+  let getRes = await http.get(url)
+  if (getRes.kind === "err") return err(getRes.error.message);
+  return Result.tryAsync { await getRes.value.text() }
 }

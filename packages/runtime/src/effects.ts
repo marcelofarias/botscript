@@ -2,6 +2,20 @@ import { $require } from "./capabilities.js";
 import { ok, err, type Result } from "./result.js";
 
 /**
+ * Coerce an unknown throwable into a real `Error`. If the value is already an
+ * `Error` it's returned as-is so the original stack and properties survive.
+ * Otherwise we wrap it: the message comes from `String(value)` (best-effort
+ * human-readable) and the original value goes into `cause` so debuggers and
+ * error reporters can still see the unboxed payload (typed as `unknown` per
+ * ES2022 Error cause semantics).
+ */
+const toError = (e: unknown): Error => {
+  if (e instanceof Error) return e;
+  return new Error(String(e), { cause: e });
+};
+
+
+/**
  * Capability-checked wrappers around the few side effects botscript blesses
  * with built-in syntax. App code can extend this set by writing thin wrappers
  * that call `$require(...)` themselves.
@@ -39,7 +53,7 @@ export const http = {
     try {
       return ok(await fetch(url, init));
     } catch (e) {
-      return err(e instanceof Error ? e : new Error(String(e)));
+      return err(toError(e));
     }
   },
   /**
@@ -55,7 +69,7 @@ export const http = {
     try {
       return ok(await fetch(url, { ...init, method: "POST" }));
     } catch (e) {
-      return err(e instanceof Error ? e : new Error(String(e)));
+      return err(toError(e));
     }
   },
 };

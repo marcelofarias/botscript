@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { $enter, $reset, CapabilityViolation } from "../src/capabilities.js";
+import { $enter, CapabilityViolation } from "../src/capabilities.js";
 import { http } from "../src/effects.js";
 import { fs } from "../src/fs.js";
 import { isErr, isOk } from "../src/result.js";
@@ -16,14 +16,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  $reset();
+  // No capability reset needed: AsyncLocalStorage scopes end when each
+  // test's `$enter` callback returns, so there is no module-level state
+  // to clear between tests.
   if (tmp) await rm(tmp, { recursive: true, force: true });
 });
 
 describe("http wrappers", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    $reset();
   });
 
   it("get wraps a successful response in Ok", async () => {
@@ -56,11 +57,25 @@ describe("http wrappers", () => {
     if (isOk(r)) expect(r.value).toBe(mockResponse);
   });
 
-  it("get wraps a non-Error rejection in Err", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("network timeout"));
+  it("get wraps a non-Error rejection in Err and preserves the original via cause", async () => {
+    const thrown = { code: "NETWORK_TIMEOUT", retryAfter: 30 };
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(thrown));
     const r = await $enter(["net"], () => http.get("https://example.com"));
     expect(isErr(r)).toBe(true);
-    if (isErr(r)) expect(r.error).toBeInstanceOf(Error);
+    if (isErr(r)) {
+      expect(r.error).toBeInstanceOf(Error);
+      // The wrapped Error must keep the original throw on `cause` so callers
+      // (and debugger / error-reporting surfaces) can inspect it.
+      expect((r.error as Error & { cause?: unknown }).cause).toBe(thrown);
+    }
+  });
+
+  it("get does NOT re-wrap a thrown Error — same instance flows through to Err", async () => {
+    const thrown = new Error("dns failed");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(thrown));
+    const r = await $enter(["net"], () => http.get("https://example.com"));
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error).toBe(thrown);
   });
 
   it("get returns Ok for HTTP error status (non-2xx does not become Err)", async () => {
