@@ -2,14 +2,18 @@ import { atLeast, type VersionInfo } from "./version.js";
 
 /**
  * Final pass. Scans the rewritten output for runtime symbols the compiler
- * emits (the `$`-prefixed helpers) and, from `?bs 0.4` onwards, also for the
+ * emits (the `$`-prefixed helpers) and, from `?bs 0.6` onwards, also for the
  * user-facing stdlib names documented in the primer (`ok`, `err`, `Result`,
- * `http`, etc.). When any are found and not already imported, a single import
- * from `@mbfarias/botscript-runtime` is prepended (or merged into the
- * existing one).
+ * `http`, etc.). When any are found and not already imported, a single
+ * import from `@mbfarias/botscript-runtime` is prepended (or merged into
+ * the existing one).
  *
- * Pre-0.4 files keep the old behaviour: only `$`-prefixed helpers are
- * auto-imported. User-facing names must be imported explicitly in those files.
+ * Pre-0.6 files keep the old behaviour: only `$`-prefixed helpers are
+ * auto-imported. User-facing names must be imported explicitly in those
+ * files. 0.1–0.5 are SHIPPED — their emitted TS is frozen by the
+ * forward-compat rule in AGENTS.md ("Never modify a shipped version's
+ * behaviour in place"). The new auto-import lives behind 0.6 so existing
+ * pinned files keep producing byte-identical output.
  *
  * Value-vs-type split: stdlib symbols that the runtime exports as types
  * only (`Ok`, `Err`, `Result`, `Some`, `None`, `Option`) are emitted via a
@@ -163,9 +167,13 @@ function blankStringsAndComments(src: string): string {
         }
         // In literal-text mode.
         if (ch === "\\") {
-          // Drop the escape sequence (two chars), preserve newlines if any.
+          // Drop the escape sequence (two chars). The backslash itself is
+          // always non-newline (we only enter this branch on `\\`). The
+          // following character can be a real newline (line-continuation
+          // in a template), in which case we preserve it so line counts
+          // stay accurate — we never emit an extra synthetic newline.
           const next = src[j + 1] ?? "";
-          out += ch === "\n" || next === "\n" ? "\n" : " ";
+          out += " ";
           out += next === "\n" ? "\n" : " ";
           j += 2;
           continue;
@@ -251,7 +259,7 @@ export function passImports(src: string, version: VersionInfo): string {
   // examples compile without manual import preambles. Scan a blanked copy
   // so that compiler-emitted string literals like `kind === "err"` don't
   // cause spurious imports of `err` or `ok`.
-  if (atLeast(version.resolved, "0.4")) {
+  if (atLeast(version.resolved, "0.6")) {
     const scanSrc = blankStringsAndComments(src);
     for (const sym of STDLIB_VALUE_SYMBOLS) {
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);

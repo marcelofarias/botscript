@@ -315,26 +315,26 @@ describe("imports", () => {
     expect(out).toMatch(/^import \{ \$enter \} from "@mbfarias\/botscript-runtime";/m);
   });
 
-  it("does not auto-import user-facing names like `ok` (pre-0.4 behaviour)", () => {
+  it("does not auto-import user-facing names like `ok` (pre-0.6 behaviour)", () => {
     // No version pin -> resolved to 0.1; stdlib auto-import only kicks in at 0.4+.
     const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
-  it("auto-imports Result (as type) and ok (as value) at ?bs 0.4", () => {
+  it("auto-imports Result (as type) and ok (as value) at ?bs 0.6", () => {
     // `Result` is a runtime-exported TS type — it must land in an
     // `import type { ... }` so the output is safe under verbatimModuleSyntax.
     // `ok` is a value, so it sits in the regular value import.
-    const out = t(`?bs 0.4\nfn x() -> Result<number, string> = ok(1)\n`);
+    const out = t(`?bs 0.6\nfn x() -> Result<number, string> = ok(1)\n`);
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
     expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
     // Result must NOT appear in the value-import bag.
     expect(out).not.toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
-  it("auto-imports http, Result, and ok together at ?bs 0.4 — types and values split", () => {
+  it("auto-imports http, Result, and ok together at ?bs 0.6 — types and values split", () => {
     const src =
-      `?bs 0.4\n` +
+      `?bs 0.6\n` +
       `async fn loadUser(id: string) uses { net } -> Promise<Result<{name: string}, Error>> {\n` +
       `  let res = (await http.get(\`/u/\${id}\`))?\n` +
       `  return ok({ name: id })\n` +
@@ -351,9 +351,9 @@ describe("imports", () => {
     expect(matches.length).toBe(2);
   });
 
-  it("does not double-import stdlib symbols when user already has a runtime import at 0.4", () => {
+  it("does not double-import stdlib symbols when user already has a runtime import at 0.6", () => {
     const src =
-      `?bs 0.4\n` +
+      `?bs 0.6\n` +
       `import { ok, Result } from "@mbfarias/botscript-runtime";\n` +
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
@@ -379,7 +379,7 @@ describe("imports", () => {
     // scanning, those would cause `err` and `ok` to be auto-imported even when
     // the user never referenced them directly.
     const src =
-      `?bs 0.4\n` +
+      `?bs 0.6\n` +
       `async fn check(id: string) uses { net } -> Promise<Result<boolean, Error>> {\n` +
       `  let res = await http.get(\`/u/\${id}\`)?\n` +
       `  ok(true)\n` +
@@ -404,7 +404,7 @@ describe("imports", () => {
     // Here `ok(1)` lives only inside an interpolation; auto-import must
     // still pick `ok` up.
     const out = t(
-      `?bs 0.4\nfn x() -> string = pure { \`r=\${ok(1).kind}\` }\n`,
+      `?bs 0.6\nfn x() -> string = pure { \`r=\${ok(1).kind}\` }\n`,
     );
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
@@ -415,7 +415,7 @@ describe("imports", () => {
     // `import type { Result }` line rather than appending Result to the
     // user's value bag (which would break verbatimModuleSyntax).
     const src =
-      `?bs 0.4\n` +
+      `?bs 0.6\n` +
       `import { ok } from "@mbfarias/botscript-runtime";\n` +
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
@@ -427,7 +427,7 @@ describe("imports", () => {
     // User already imports Result via `import type` — the matcher must
     // see that and skip re-adding it.
     const src =
-      `?bs 0.4\n` +
+      `?bs 0.6\n` +
       `import type { Result } from "@mbfarias/botscript-runtime";\n` +
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
@@ -436,6 +436,41 @@ describe("imports", () => {
     const typeImports = out.match(/import type \{[^}]*\} from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(typeImports.length).toBe(1);
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("identifier suffixes like `ok_value` do NOT trigger a spurious stdlib import", () => {
+    // The scanner uses `(?<![A-Za-z0-9_$.])sym(?![A-Za-z0-9_$])` for both
+    // boundaries. `_` is part of the negated class, so `ok_value` and
+    // `Result_t` must not look like uses of `ok` / `Result`.
+    const src =
+      `?bs 0.6\n` +
+      `fn x() -> number = pure {\n` +
+      `  let ok_value = 1\n` +
+      `  let Result_t = 2\n` +
+      `  ok_value + Result_t\n` +
+      `}\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).not.toMatch(/\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("is gated at ?bs 0.6 — 0.4 / 0.5 files keep their frozen, narrower import", () => {
+    // 0.1 … 0.5 are SHIPPED; their emitted TS must not change because of
+    // the stdlib auto-import. Only $-prefixed helpers are auto-imported
+    // for those pins; stdlib names stay user-managed.
+    // 0.4 still allows bare `as`; 0.5 requires `unsafe { ... }` for casts.
+    // Use a 0.4-shaped source for 0.4 and an unsafe-wrapped form for 0.5
+    // so both versions actually parse.
+    const src04 =
+      `?bs 0.4\nasync fn fetchOne(url: string) uses { net } -> Promise<string> {\n  return await http.get(url) as unknown as string\n}\n`;
+    const src05 =
+      `?bs 0.5\nasync fn fetchOne(url: string) uses { net } -> Promise<string> {\n  return unsafe "caller validated" { (await http.get(url)) as unknown as string }\n}\n`;
+    for (const src of [src04, src05]) {
+      const out = t(src);
+      expect(out).not.toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+      // $enter still auto-imports as before.
+      expect(out).toMatch(/import \{[^}]*\$enter[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    }
   });
 });
 
