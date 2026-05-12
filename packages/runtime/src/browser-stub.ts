@@ -1,15 +1,25 @@
 /**
- * Browser-stub entry. Re-exported under the `"browser"` conditional in
- * package.json so that Webpack / Vite / Rollup / esbuild / Metro / etc.
- * resolve THIS file when building for the browser, instead of pulling in
- * the real entry (which imports `node:async_hooks` and would explode).
+ * Browser-stub entry. Wired in package.json via the `"browser"` condition
+ * in `exports[".".]` and `exports["./fs"]`, so Webpack / Vite / Rollup /
+ * esbuild / Metro resolve THIS file when building for the browser instead
+ * of pulling in the real entries (which import `node:async_hooks` and
+ * `node:fs` and would explode).
  *
- * Why throw at import time: a silent stub would let app code call `$enter`
- * / `$require` / `http.get` and get cryptic runtime errors in production.
- * A loud throw at first import is much easier to debug than "fetch is
- * undefined" or "stack frame missing". If you actually want a browser-safe
- * subset of botscript-runtime, file an issue describing the use case and
- * we'll carve out a no-effects entry.
+ * This stub deliberately has NO `export * from "./index.js"`. A re-export
+ * would force bundlers to statically resolve `./index.js` (and its
+ * transitive `node:async_hooks` import) into the browser graph — the
+ * exact failure mode the stub is meant to prevent. Bundlers that perform
+ * dead-code elimination still walk the import graph before deciding what
+ * to drop, so the `throw` below would never run early enough to save us.
+ *
+ * Trade-off: TypeScript consumers building under the `browser` condition
+ * see a module with no named exports. Their build won't typecheck against
+ * `ok`, `err`, `http`, `$enter`, etc. That's intentional: this package
+ * doesn't work in the browser, and a TS error at build time is a louder,
+ * earlier signal than a `node:async_hooks` resolution failure deep in a
+ * bundler graph. If you actually want a browser-safe subset of
+ * botscript-runtime, file an issue and we'll carve out a no-effects
+ * entrypoint.
  */
 const MESSAGE =
   "@mbfarias/botscript-runtime is Node-only. It imports `node:async_hooks` " +
@@ -18,8 +28,3 @@ const MESSAGE =
   "field for the supported runtime range.";
 
 throw new Error(MESSAGE);
-
-// Re-export the surface so TS resolution doesn't fail for downstream code
-// that does `import { ok } from "@mbfarias/botscript-runtime"`. The throw
-// above runs at module-eval time before any consumer can read these.
-export * from "./index.js";
