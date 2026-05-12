@@ -190,11 +190,13 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | UNS002 | (0.3+) `unsafe "" { … }` — empty justification. | Replace `""` with a one-sentence reason. |
 | UNS003 | (0.3+) `unsafe "reason"` with no following body. | `unsafe "reason" { <body> }`. |
 | UNS004 | (0.5+) Bare `as` cast outside an `unsafe "<reason>" { ... }` block. Every cast must live inside an unsafe block so the diff carries a written reason. `import * as ns`, `import { foo as bar }`, and `export * as ns` are not flagged. | `unsafe "<short reason>" { <expr> as <type> }`. |
+| FMT001 | (0.4+) Source is not in canonical form (RFC #13). Every program has exactly one canonical surface form; from `?bs 0.4` on, the compiler rejects whitespace / ordering variants rather than silently accepting them. The diagnostic points at the first UTF-16 code unit that differs from canonical. | `botscript fmt <file> --write`. |
 | RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
 
 When you add a new compiler error, allocate the next free code in the same
 range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
-`UNSnnn` for unsafe-block checks, `RESnnn` for Result-block checks). The
+`UNSnnn` for unsafe-block checks, `RESnnn` for Result-block checks,
+`FMTnnn` for canonical-form / formatter checks). The
 single source of truth is `packages/compiler/src/error-codes.ts` — passes
 read rule/idiom/rewrite from that registry. When you add a code:
 

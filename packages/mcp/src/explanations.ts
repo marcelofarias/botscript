@@ -141,6 +141,32 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "const u = unsafe \"third-party Response.json() returns any\" { data as User };\n",
     },
   },
+  FMT001: {
+    code: "FMT001",
+    title: "source is not in canonical form",
+    body:
+      "Every botscript program has exactly one canonical surface form (RFC #13). Two " +
+      "programs that mean the same thing must look the same in source. From `?bs 0.4` " +
+      "on, the compiler enforces this: non-canonical input is rejected rather than " +
+      "silently accepted.\n\n" +
+      "The point is to kill diff noise. A bot writing botscript will produce five " +
+      "stylistically-different versions of the same logic across five PRs — none wrong, " +
+      "all dominated by formatting drift in the diff. Canonical form collapses those " +
+      "variants to one, so review can focus on the semantic change. It also means the " +
+      "same prompt and the same model produce the same bytes; that reproducibility is " +
+      "a property you can grep for.\n\n" +
+      "The fix is mechanical: `botscript fmt <file> --write`. The formatter is " +
+      "idempotent and semantics-preserving — running it never changes what your code " +
+      "does, only how it looks. The diagnostic points at the first UTF-16 code unit " +
+      "that diverges from canonical, so you can also fix small drifts by hand.\n\n" +
+      "FMT001 is gated on the version pin: files pinned to `?bs 0.3` or earlier keep " +
+      "accepting whitespace variants. Opt into the check by bumping the file to `?bs " +
+      "0.4` (and run `botscript fmt --write` once to clear the existing drift).",
+    example: {
+      fails: "?bs 0.4\nfn add(a: number, b: number) -> number   =   a + b\n",
+      passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
