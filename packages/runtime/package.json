@@ -36,9 +36,6 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "peerDependencies": {
-    "@types/node": "*"
-  },
   "files": [
     "dist",
     "src"
@@ -48,6 +45,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "^5.6.3"
   }
 }

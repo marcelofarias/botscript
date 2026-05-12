@@ -50,8 +50,8 @@ fn first<T>(xs: Array<T>) -> Option<T> = pure {
 // On a Result-returning expression at end of a `let`/`const`/`return` line,
 // `?` unwraps the Ok or short-circuits the enclosing fn with the Err.
 
-async fn loadFirstLine(url: string) uses { net } -> Result<string, string> {
-  let res = doFetch(url)?
+async fn loadFirstLine(url: string) uses { net } -> Promise<Result<string, string>> {
+  let res = (await doFetch(url))?
   return ok(res.split("\n")[0] ?? "");
 }
 
@@ -125,10 +125,13 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)
 
-async fn doFetch(url: string) uses { net } -> Result<string, string> {
-  // http.get returns Result<Response, Error>. Project the Error message into
-  // a string to keep this example's `Result<string, string>` return shape,
-  // then let Result.tryAsync lift any decoding throw from `.text()` into Err.
+async fn doFetch(url: string) uses { net } -> Promise<Result<string, string>> {
+  // http.get returns Promise<Result<Response, Error>>. Project the Error
+  // message into a string to keep this example's `Result<string, string>`
+  // success channel, then let Result.tryAsync lift any decoding throw from
+  // `.text()` into Err. The function is `async`, so its return type is
+  // wrapped in Promise<...> at the type level — botscript doesn't
+  // auto-promote, the annotation must spell it out.
   let getRes = await http.get(url)
   if (getRes.kind === "err") return err(getRes.error.message);
   return Result.tryAsync { await getRes.value.text() }

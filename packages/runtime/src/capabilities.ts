@@ -46,11 +46,13 @@ export class CapabilityViolation extends Error {
 // Runtime requirement: this module pulls in `node:async_hooks`, which makes
 // the entire `@mbfarias/botscript-runtime` package Node-only at module-
 // resolution time. The package's `engines.node` is pinned to `>=18.0.0`
-// (matching the global Fetch API used by `effects.ts`); `@types/node` is
-// declared as an optional peer-dep. The `./fs` subpath was already Node-
-// only via `node:fs`; the package never targeted browsers and we don't try
-// to fake browser support here. Bun and Deno both implement
-// `node:async_hooks` and work unmodified.
+// (matching the global Fetch API used by `effects.ts`). TS consumers will
+// pull in `@types/node` themselves through their own tsconfig (`types: ["node"]`)
+// or as a transitive dev dep — the runtime package keeps `@types/node` only
+// in its own `devDependencies` so it doesn't force a phantom install on JS
+// consumers. The `./fs` subpath was already Node-only via `node:fs`; the
+// package never targeted browsers and we don't fake browser support here.
+// Bun and Deno both implement `node:async_hooks` and work unmodified.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 type Frame = ReadonlyArray<Capability>;
