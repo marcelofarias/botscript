@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { $enter, CapabilityViolation } from "../src/capabilities.js";
+import { $enter, $reset, CapabilityViolation } from "../src/capabilities.js";
 import { http } from "../src/effects.js";
 import { fs } from "../src/fs.js";
 import { isErr, isOk } from "../src/result.js";
@@ -16,18 +16,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // No capability reset needed: capability frames are per-async-chain via
-  // AsyncLocalStorage, not module-level mutable state. Each test's
-  // `$enter` callback runs inside its own ALS scope; there is no global
-  // stack to clear between tests. (Note: ALS can still propagate into
-  // un-awaited timers/promises spawned inside the callback. The tests
-  // here don't leak those, so this is a non-issue in practice.)
+  $reset();
   if (tmp) await rm(tmp, { recursive: true, force: true });
 });
 
 describe("http wrappers", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    $reset();
   });
 
   it("get wraps a successful response in Ok", async () => {

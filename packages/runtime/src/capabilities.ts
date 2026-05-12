@@ -34,78 +34,87 @@ export class CapabilityViolation extends Error {
   }
 }
 
-// Capability frames are stored in an AsyncLocalStorage so each async chain
-// carries its own stack. A naive module-level array would interleave under
-// concurrent async `$enter` calls (e.g. via `Promise.all`): one task's pop
-// would tear down another task's frame and `$require` would consult the
-// wrong top. AsyncLocalStorage propagates the store across awaits and forks
-// a fresh snapshot per call to `als.run`, so concurrent and nested frames
-// stay isolated. Sync callers behave identically to the previous array-based
-// implementation because `als.run` is a synchronous wrapper.
+// Capability frames live on a module-level stack. `$enter` pushes a frame
+// before running its callback and pops it when the callback settles. For
+// async callbacks the pop is deferred to the promise's settle handlers so
+// the frame outlives all of the async body's awaits.
 //
-// Runtime requirement: this module imports `node:async_hooks`, which makes
-// `@mbfarias/botscript-runtime` Node-only at module-resolution time.
+// Why not AsyncLocalStorage:
+//   1. This package targets browsers as well as Node — every compiled
+//      botscript program imports `$enter` from here, including browser
+//      apps (see `examples/react-app`). A static `import` of
+//      `node:async_hooks` would force every browser bundler to fail at
+//      resolve time, breaking the entire browser story.
+//   2. With a single-threaded JS runtime, the array sees the same
+//      ordering as a per-context store for nested and sequential calls.
+//      The only case it gets wrong is two concurrent async `$enter`
+//      calls with DISJOINT capability sets (e.g. `Promise.all([
+//      $enter(["net"], ...), $enter(["fs"], ...)])` where one async
+//      body's first awaited effect runs AFTER the other has already
+//      pushed its own frame). In practice botscript compiles each
+//      `fn ... uses { ... }` into its own `$enter([...], async () =>
+//      { ... })`, so this only matters if a caller fans out concurrent
+//      effectful fns with non-overlapping caps. We accept that edge case
+//      in exchange for keeping browser builds working.
 //
-// How that's exposed in package.json:
-//   - `engines.node`: `>=18.0.0` (covers stable AsyncLocalStorage AND the
-//     global Fetch API the http effects depend on).
-//   - `exports["."]["browser"]` and `exports["./fs"]["browser"]` route any
-//     browser-conditional bundler (Webpack/Vite/Rollup/esbuild/Metro) to
-//     `./dist/browser-stub.js`. The stub has no named exports and throws
-//     at module-eval time, so browser builds fail loud and early — either
-//     at ESM link time ("does not provide an export named 'http'", etc.)
-//     or at first eval — instead of erroring deep in the bundler graph
-//     with a confusing `node:*` resolution failure.
-//   - `@types/node` is declared as an OPTIONAL peer-dep: TS consumers need
-//     it for the published `.d.ts` to typecheck (the types here reference
-//     `node:async_hooks`), but JS consumers don't, so the dependency is
-//     signalled without being mandatory. Modern package managers won't
-//     warn when an optional peer is missing.
-//
-// The `./fs` subpath was already Node-only via `node:fs`; this package
-// never targeted browsers and we don't fake browser support here. Bun and
-// Deno both implement `node:async_hooks` and work unmodified.
-import { AsyncLocalStorage } from "node:async_hooks";
+// The `./fs` subpath is still Node-only via `node:fs`; that's a separate
+// entry point. The main `.` entry stays browser-safe.
 
-type Frame = ReadonlyArray<Capability>;
-const als = new AsyncLocalStorage<Frame[]>();
+const stack: ReadonlyArray<Capability>[] = [];
 
 export const $enter = <T>(caps: ReadonlyArray<Capability>, fn: () => T): T => {
-  const parent = als.getStore() ?? [];
-  const next: Frame[] = [...parent, Object.freeze([...caps])];
-  return als.run(next, fn);
+  // Capability frames must outlive async bodies. If `fn` is async its body
+  // suspends at the first `await` and the call returns a Promise immediately;
+  // a naive synchronous `finally { stack.pop() }` would tear the frame down
+  // before any awaited effect runs, so a downstream `$require` would see an
+  // empty (or wrong) frame. Detect a thenable return value and defer the pop
+  // until the promise settles. Sync callers stay byte-identical with the old
+  // synchronous behaviour.
+  stack.push(Object.freeze([...caps]));
+  let popped = false;
+  const pop = (): void => {
+    if (popped) return;
+    popped = true;
+    stack.pop();
+  };
+  try {
+    const result = fn();
+    if (
+      result !== null &&
+      typeof result === "object" &&
+      typeof (result as { then?: unknown }).then === "function"
+    ) {
+      return (result as unknown as Promise<unknown>).then(
+        (v) => { pop(); return v; },
+        (e) => { pop(); throw e; },
+      ) as unknown as T;
+    }
+    pop();
+    return result;
+  } catch (e) {
+    pop();
+    throw e;
+  }
 };
 
 export const $require = (cap: Capability): void => {
-  const stack = als.getStore();
-  if (stack === undefined || stack.length === 0) {
+  const top = stack[stack.length - 1];
+  if (top === undefined) {
     // No frame — direct top-level call. Conservative default: allow, since
     // top-level is module init. Tests opt-in via $enter([]) for pure assertions.
     return;
   }
-  const top = stack[stack.length - 1]!;
   if (!top.includes(cap)) {
     throw new CapabilityViolation(cap, top);
   }
 };
 
 export const $current = (): ReadonlyArray<Capability> | undefined => {
-  const stack = als.getStore();
-  if (stack === undefined || stack.length === 0) return undefined;
-  return [...stack[stack.length - 1]!];
+  const top = stack[stack.length - 1];
+  return top === undefined ? undefined : [...top];
 };
 
-/**
- * Test-only: no-op kept for source compatibility with the previous
- * array-based implementation.
- *
- * The old `$reset` cleared a module-level mutable stack. AsyncLocalStorage
- * has no equivalent — contexts are scoped to `als.run` callbacks and end
- * automatically when those return. There is no module-level state to clear,
- * and you cannot "reset" an active outer store from inside one of its child
- * scopes. Callers that need a clean frame should wrap the test body in
- * `$enter([], () => { ... })` (or an `als.run` they manage themselves).
- */
+/** Test-only: clear the capability stack. Don't call this in app code. */
 export const $reset = (): void => {
-  // No-op. See JSDoc above.
+  stack.length = 0;
 };

@@ -8,12 +8,10 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "browser": "./dist/browser-stub.js",
       "import": "./dist/index.js"
     },
     "./fs": {
       "types": "./dist/fs.d.ts",
-      "browser": "./dist/browser-stub.js",
       "import": "./dist/fs.js"
     }
   },
@@ -38,14 +36,6 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "peerDependencies": {
-    "@types/node": ">=18"
-  },
-  "peerDependenciesMeta": {
-    "@types/node": {
-      "optional": true
-    }
-  },
   "files": [
     "dist",
     "src"
@@ -55,7 +45,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
     "typescript": "^5.6.3"
   }
 }
