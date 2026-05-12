@@ -448,7 +448,58 @@ export function passImports(src: string, version: VersionInfo): string {
   if (usedValues.size > 0) {
     out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware, aliasAware: useAliasAware });
   }
+  // Post-pass: when we have both kinds of runtime imports at the very top
+  // of the file, ensure the value line precedes the type line. The two
+  // earlier steps can land in the wrong order when only one of them was a
+  // fresh prepend (e.g. value already existed, type was newly added — the
+  // type line gets prepended ABOVE the existing value line). Re-emit them
+  // in canonical order.
+  out = normalizeRuntimeImportOrder(out);
   return out;
+}
+
+/**
+ * Move any leading runtime-import lines into canonical order:
+ * value imports first, then type-only imports. Only touches contiguous
+ * runtime-import lines starting at byte 0 of the file (the only place
+ * fresh-prepended ones can land). Existing non-leading imports are left
+ * alone.
+ */
+function normalizeRuntimeImportOrder(src: string): string {
+  const lines = src.split("\n");
+  const valueRe = /^import\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
+  const typeRe = /^import\s+type\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?$/;
+  let i = 0;
+  const leading: { line: string; isType: boolean }[] = [];
+  while (i < lines.length) {
+    const l = lines[i]!;
+    if (typeRe.test(l)) {
+      leading.push({ line: l, isType: true });
+      i++;
+      continue;
+    }
+    if (valueRe.test(l)) {
+      leading.push({ line: l, isType: false });
+      i++;
+      continue;
+    }
+    break;
+  }
+  if (leading.length < 2) return src;
+  // Already in canonical order? Then no-op.
+  let needsReorder = false;
+  let sawType = false;
+  for (const ent of leading) {
+    if (ent.isType) sawType = true;
+    else if (sawType) {
+      needsReorder = true;
+      break;
+    }
+  }
+  if (!needsReorder) return src;
+  const values = leading.filter((e) => !e.isType).map((e) => e.line);
+  const types = leading.filter((e) => e.isType).map((e) => e.line);
+  return [...values, ...types, ...lines.slice(i)].join("\n");
 }
 
 function mergeOrPrepend(
@@ -470,7 +521,16 @@ function mergeOrPrepend(
     );
     const additions = [...toAdd].filter((s) => !have.has(s));
     if (additions.length === 0) return src;
-    const merged = [...existing.specs, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
+    // In pre-0.6 (not aliasAware) mode, mimic the legacy rewrite exactly:
+    // drop any `as` alias and any per-spec `type` prefix on the existing
+    // specs. The original byte-identical output collapsed every spec down
+    // to its bare export name. Preserving aliases would be the smarter
+    // thing to do but would change shipped 0.1–0.5 output for files that
+    // already have aliased runtime imports.
+    const normalisedExisting = options.aliasAware
+      ? existing.specs
+      : existing.specs.map((s) => ({ name: s.name, alias: null, typePrefix: false }));
+    const merged = [...normalisedExisting, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
       .sort((a, b) => {
         const ka = options.aliasAware ? (a.alias ?? a.name) : a.name;
         const kb = options.aliasAware ? (b.alias ?? b.name) : b.name;
@@ -505,8 +565,12 @@ function mergeOrPrepend(
  */
 function collectLocallyDeclared(blanked: string): Set<string> {
   const decls = new Set<string>();
+  // Top-level declarations only. Anchor at start-of-line without any
+  // leading whitespace so an INDENTED \`let ok = ...\` inside a function
+  // body (a different scope from the module top level) doesn't suppress
+  // auto-importing \`ok\` for code elsewhere in the file.
   const DECL_RE =
-    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
+    /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
   let m: RegExpExecArray | null;
   while ((m = DECL_RE.exec(blanked)) !== null) {
     decls.add(m[1]!);

@@ -477,6 +477,38 @@ describe("imports", () => {
     expect(out).not.toMatch(/\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("value import stays above a freshly-added type import even when value was pre-existing", () => {
+    // Existing value import + brand-new type usage: the type line is
+    // prepended fresh; the value line is left in place. Without the
+    // post-pass the type line would land ABOVE the existing value line.
+    const src =
+      `?bs 0.6\n` +
+      `import { ok } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    const valuePos = out.search(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+    const typePos = out.search(/^import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+    expect(valuePos).toBeGreaterThan(-1);
+    expect(typePos).toBeGreaterThan(-1);
+    expect(valuePos).toBeLessThan(typePos);
+  });
+
+  it("nested ident declaration inside a fn body does NOT suppress stdlib auto-import", () => {
+    // A local \`let ok = ...\` inside one function body should not block
+    // auto-importing \`ok\` for use elsewhere in the file. Top-level
+    // decl detection must be anchored to column 0.
+    const src =
+      `?bs 0.6\n` +
+      `fn shadow() -> number = pure {\n` +
+      `  let ok = 1\n` +
+      `  ok + 1\n` +
+      `}\n` +
+      `fn use_real_ok() -> Result<number, string> = ok(2)\n`;
+    const out = t(src);
+    // The TOP-LEVEL use of \`ok\` (the stdlib one) still gets auto-imported.
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("local declaration shadowing a stdlib name is NOT auto-imported", () => {
     // `fn ok(x: number) -> number` becomes `function ok(x: number): number`
     // in the emitted TS. Auto-importing `ok` would clash with the local
