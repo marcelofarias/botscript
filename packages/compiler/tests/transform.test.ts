@@ -321,26 +321,34 @@ describe("imports", () => {
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
-  it("auto-imports Result and ok at ?bs 0.4", () => {
+  it("auto-imports Result (as type) and ok (as value) at ?bs 0.4", () => {
+    // `Result` is a runtime-exported TS type — it must land in an
+    // `import type { ... }` so the output is safe under verbatimModuleSyntax.
+    // `ok` is a value, so it sits in the regular value import.
     const out = t(`?bs 0.4\nfn x() -> Result<number, string> = ok(1)\n`);
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
-    expect(out).toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Result must NOT appear in the value-import bag.
+    expect(out).not.toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
-  it("auto-imports http, Result, and ok together at ?bs 0.4", () => {
+  it("auto-imports http, Result, and ok together at ?bs 0.4 — types and values split", () => {
     const src =
       `?bs 0.4\n` +
       `async fn loadUser(id: string) uses { net } -> Promise<Result<{name: string}, Error>> {\n` +
-      `  let res = await http.get(\`/u/\${id}\`)?\n` +
-      `  ok({ name: id })\n` +
+      `  let res = (await http.get(\`/u/\${id}\`))?\n` +
+      `  return ok({ name: id })\n` +
       `}\n`;
     const out = t(src);
+    // Values land in the value import.
     expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
-    expect(out).toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
-    // All in one import statement.
+    // Result lands in the type import — not in the value import.
+    expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).not.toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Two import statements: one value, one type.
     const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
-    expect(matches.length).toBe(1);
+    expect(matches.length).toBe(2);
   });
 
   it("does not double-import stdlib symbols when user already has a runtime import at 0.4", () => {
@@ -349,6 +357,10 @@ describe("imports", () => {
       `import { ok, Result } from "@mbfarias/botscript-runtime";\n` +
       `fn x() -> Result<number, string> = ok(1)\n`;
     const out = t(src);
+    // The user's pre-existing import is preserved as-is (we merge into it but
+    // do not split their existing entries). Auto-import only adds NEW
+    // missing symbols; in this snippet `ok` and `Result` are both present in
+    // the user's import so nothing new is added.
     const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(matches.length).toBe(1);
   });
@@ -379,9 +391,51 @@ describe("imports", () => {
     // `err` should NOT be imported — it only appears in the compiler-emitted
     // `kind === "err"` check string, not in the user's source.
     expect(out).not.toMatch(/import \{[^}]*\berr\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
-    // Single import statement.
+    // The source references the `Result` type, so we expect ONE value import
+    // ($enter, http, ok) plus ONE type import (Result).
+    expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
     const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
-    expect(matches.length).toBe(1);
+    expect(matches.length).toBe(2);
+  });
+
+  it("detects stdlib symbols used inside template-literal ${} interpolations", () => {
+    // The scanner blanks the literal-text segments of templates but keeps
+    // the contents of `${...}` interpolations — those are real expressions.
+    // Here `ok(1)` lives only inside an interpolation; auto-import must
+    // still pick `ok` up.
+    const out = t(
+      `?bs 0.4\nfn x() -> string = pure { \`r=\${ok(1).kind}\` }\n`,
+    );
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("does not collapse a type-only symbol into the user's existing value import", () => {
+    // The user has only `ok` imported (a value). The source introduces a
+    // new use of the `Result` type. Auto-import must emit a SEPARATE
+    // `import type { Result }` line rather than appending Result to the
+    // user's value bag (which would break verbatimModuleSyntax).
+    const src =
+      `?bs 0.4\n` +
+      `import { ok } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).not.toMatch(/import \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("recognises a pre-existing `import type` line and does not duplicate it", () => {
+    // User already imports Result via `import type` — the matcher must
+    // see that and skip re-adding it.
+    const src =
+      `?bs 0.4\n` +
+      `import type { Result } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    // Exactly one type-import line for Result (the user's), plus one value
+    // import for the newly-needed `ok`.
+    const typeImports = out.match(/import type \{[^}]*\} from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(typeImports.length).toBe(1);
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 });
 

@@ -10,6 +10,13 @@ import { atLeast, type VersionInfo } from "./version.js";
  *
  * Pre-0.4 files keep the old behaviour: only `$`-prefixed helpers are
  * auto-imported. User-facing names must be imported explicitly in those files.
+ *
+ * Value-vs-type split: stdlib symbols that the runtime exports as types
+ * only (`Ok`, `Err`, `Result`, `Some`, `None`, `Option`) are emitted via a
+ * dedicated `import type { ... } from "@mbfarias/botscript-runtime";` line.
+ * This keeps the output safe under TS `verbatimModuleSyntax` and similar
+ * preserve-imports settings — without the split, the emitted value import
+ * would reference names that don't exist at runtime.
  */
 
 /** Internal helpers emitted by the compiler itself. Always auto-imported. */
@@ -28,15 +35,12 @@ const RUNTIME_SYMBOLS = [
 ] as const;
 
 /**
- * User-facing stdlib symbols auto-imported from `?bs 0.4` onwards. This
- * covers every name that the primer documents and that the runtime exports.
- * Ordered so the merged import list sorts cleanly.
+ * User-facing stdlib value exports auto-imported from `?bs 0.4` onwards.
+ * These are `export const` / runtime values \u2014 importing them as values is
+ * always correct.
  */
-const STDLIB_SYMBOLS = [
-  // Result
-  "Err",
-  "Ok",
-  "Result",
+const STDLIB_VALUE_SYMBOLS = [
+  // Result helpers
   "err",
   "isErr",
   "isOk",
@@ -44,12 +48,9 @@ const STDLIB_SYMBOLS = [
   "mapResult",
   "ok",
   "unwrap",
-  // Option
-  "None",
-  "Option",
-  "Some",
-  "isSome",
+  // Option helpers
   "isNone",
+  "isSome",
   "mapOption",
   "none",
   "optionFromNullable",
@@ -65,10 +66,32 @@ const STDLIB_SYMBOLS = [
 ] as const;
 
 /**
- * Return a copy of `src` with the content of string literals, template
+ * User-facing stdlib type exports auto-imported from `?bs 0.4` onwards.
+ * Emitted via `import type { ... }` so consumers using
+ * `verbatimModuleSyntax` (TS 5.0+) don't get a runtime reference to a name
+ * the runtime never exported as a value.
+ */
+const STDLIB_TYPE_SYMBOLS = [
+  // Result
+  "Err",
+  "Ok",
+  "Result",
+  // Option
+  "None",
+  "Option",
+  "Some",
+] as const;
+
+/**
+ * Return a copy of `src` with the literal text of string literals, template
  * literals, and line/block comments replaced by spaces (same byte count,
- * newlines preserved). This lets the symbol scanner ignore names that appear
- * only inside string values — e.g. the compiler emits `kind === "err"` and
+ * newlines preserved). The contents of template-literal `${...}`
+ * interpolations are PRESERVED \u2014 those are real expressions that can
+ * reference stdlib symbols (e.g. `` `x=${ok(1)}` ``) and need to be seen
+ * by the scanner.
+ *
+ * The blanking lets the symbol scanner ignore names that appear only inside
+ * string values \u2014 e.g. the compiler emits `kind === "err"` and
  * `kind === "ok"`, so without blanking, `err` and `ok` would be spuriously
  * detected and auto-imported even when the user never referenced them.
  */
@@ -113,20 +136,55 @@ function blankStringsAndComments(src: string): string {
       out += " ".repeat(len);
       i += len;
     }
-    // Template literals (backtick) — blank everything inside
+    // Template literals (backtick) \u2014 blank the literal text segments but
+    // PRESERVE the contents of `${...}` interpolations (they're real
+    // expressions the scanner needs to see).
     else if (src[i] === "`") {
+      out += "`";
       let j = i + 1;
       let depth = 0;
       while (j < src.length) {
-        if (src[j] === "\\") { j += 2; continue; }
-        if (src[j] === "$" && src[j + 1] === "{") { depth++; j += 2; continue; }
-        if (src[j] === "}" && depth > 0) { depth--; j++; continue; }
-        if (src[j] === "`" && depth === 0) break;
+        const ch = src[j]!;
+        if (depth > 0) {
+          // Inside `${...}` \u2014 keep characters verbatim, but balance braces
+          // so we know when to drop back into literal-text mode.
+          if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            // The `}` that closes the outermost `${` is structural; emit it
+            // and fall back to literal-text mode without further inspection.
+            out += ch;
+            j++;
+            continue;
+          }
+          out += ch;
+          j++;
+          continue;
+        }
+        // In literal-text mode.
+        if (ch === "\\") {
+          // Drop the escape sequence (two chars), preserve newlines if any.
+          const next = src[j + 1] ?? "";
+          out += ch === "\n" || next === "\n" ? "\n" : " ";
+          out += next === "\n" ? "\n" : " ";
+          j += 2;
+          continue;
+        }
+        if (ch === "$" && src[j + 1] === "{") {
+          out += "${";
+          depth = 1;
+          j += 2;
+          continue;
+        }
+        if (ch === "`") break;
+        out += ch === "\n" ? "\n" : " ";
         j++;
       }
-      const len = j - i + 1;
-      out += src.slice(i, i + len).replace(/[^\n]/g, " ");
-      i += len;
+      if (src[j] === "`") {
+        out += "`";
+        j++;
+      }
+      i = j;
     } else {
       out += src[i];
       i++;
@@ -135,13 +193,58 @@ function blankStringsAndComments(src: string): string {
   return out;
 }
 
+/**
+ * Match an existing runtime import (value or type-only) and return its
+ * specifier list and the slice to replace. Returns null if no such import
+ * exists. Each specifier is split into `{ name, alias }` so callers can
+ * preserve aliases when merging new symbols in.
+ */
+interface ExistingImport {
+  match: string;
+  isTypeOnly: boolean;
+  specs: { name: string; alias: string | null; typePrefix: boolean }[];
+}
+
+function findExistingRuntimeImport(src: string, typeOnly: boolean): ExistingImport | null {
+  const prefix = typeOnly ? String.raw`import\s+type\s+\{` : String.raw`import\s+\{`;
+  const re = new RegExp(`^\\s*${prefix}([^}]*)\\}\\s+from\\s+["']@mbfarias\\/botscript-runtime["'];?`, "m");
+  const m = src.match(re);
+  if (!m) return null;
+  const specs = (m[1] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((raw) => {
+      let typePrefix = false;
+      let body = raw;
+      if (/^type\s+/.test(body)) {
+        typePrefix = true;
+        body = body.replace(/^type\s+/, "");
+      }
+      const asIdx = body.search(/\s+as\s+/);
+      if (asIdx >= 0) {
+        const name = body.slice(0, asIdx).trim();
+        const alias = body.slice(asIdx).replace(/^\s+as\s+/, "").trim();
+        return { name, alias, typePrefix };
+      }
+      return { name: body, alias: null, typePrefix };
+    });
+  return { match: m[0], isTypeOnly: typeOnly, specs };
+}
+
+function renderSpec(spec: { name: string; alias: string | null; typePrefix: boolean }): string {
+  const head = spec.typePrefix ? `type ${spec.name}` : spec.name;
+  return spec.alias ? `${head} as ${spec.alias}` : head;
+}
+
 export function passImports(src: string, version: VersionInfo): string {
-  const used = new Set<string>();
+  const usedValues = new Set<string>();
+  const usedTypes = new Set<string>();
 
   // Always detect compiler-emitted helpers ($ prefix; safe to scan raw src).
   for (const sym of RUNTIME_SYMBOLS) {
     const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
-    if (re.test(src)) used.add(sym);
+    if (re.test(src)) usedValues.add(sym);
   }
 
   // From 0.4 onwards, also detect user-facing stdlib names so that primer
@@ -150,33 +253,64 @@ export function passImports(src: string, version: VersionInfo): string {
   // cause spurious imports of `err` or `ok`.
   if (atLeast(version.resolved, "0.4")) {
     const scanSrc = blankStringsAndComments(src);
-    for (const sym of STDLIB_SYMBOLS) {
+    for (const sym of STDLIB_VALUE_SYMBOLS) {
       const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
-      if (re.test(scanSrc)) used.add(sym);
+      if (re.test(scanSrc)) usedValues.add(sym);
+    }
+    for (const sym of STDLIB_TYPE_SYMBOLS) {
+      const re = new RegExp(`(?<![A-Za-z0-9_$.])${escapeRegex(sym)}(?![A-Za-z0-9_$])`);
+      if (re.test(scanSrc)) usedTypes.add(sym);
     }
   }
 
-  if (used.size === 0) return src;
+  if (usedValues.size === 0 && usedTypes.size === 0) return src;
 
-  // Don't double-import. If user already has `from "@mbfarias/botscript-runtime"`, merge.
-  const existingImport = src.match(
-    /^\s*import\s+\{([^}]*)\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/m,
-  );
-  if (existingImport) {
-    const already = new Set(
-      (existingImport[1] ?? "")
-        .split(",")
-        .map((s) => s.trim().split(/\s+as\s+/)[0]?.trim() ?? "")
-        .filter(Boolean),
-    );
-    const toAdd = [...used].filter((s) => !already.has(s));
-    if (toAdd.length === 0) return src;
-    const merged = [...already, ...toAdd].sort();
-    const newImport = `import { ${merged.join(", ")} } from "@mbfarias/botscript-runtime";`;
-    return src.replace(existingImport[0], newImport);
+  // Drop any symbol the user has ALREADY imported (in either bag, regardless
+  // of value-vs-type strictness). Respect their existing line: even if a
+  // type-only symbol lives in their value import, we don't second-guess
+  // them — that's a stylistic choice for them to make. Auto-import only
+  // fills genuine gaps.
+  const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false);
+  const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true);
+  for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
+    usedValues.delete(spec.name);
+    usedTypes.delete(spec.name);
   }
 
-  const importLine = `import { ${[...used].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
+  if (usedValues.size === 0 && usedTypes.size === 0) return src;
+
+  let out = src;
+
+  // VALUE IMPORT. Merge into existing `import { ... } from "..."` if present,
+  // otherwise emit a fresh line.
+  if (usedValues.size > 0) {
+    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues);
+  }
+  // TYPE IMPORT. Same treatment for `import type { ... } from "..."`. We
+  // never collapse types into a value import (or vice versa) \u2014 callers
+  // using `verbatimModuleSyntax` need them separate.
+  if (usedTypes.size > 0) {
+    out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes);
+  }
+  return out;
+}
+
+function mergeOrPrepend(src: string, typeOnly: boolean, toAdd: Set<string>): string {
+  const existing = findExistingRuntimeImport(src, typeOnly);
+  if (existing) {
+    const have = new Set(existing.specs.map((s) => s.name));
+    const additions = [...toAdd].filter((s) => !have.has(s));
+    if (additions.length === 0) return src;
+    const merged = [...existing.specs, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(renderSpec)
+      .join(", ");
+    const keyword = typeOnly ? "import type" : "import";
+    const replacement = `${keyword} { ${merged} } from "@mbfarias/botscript-runtime";`;
+    return src.replace(existing.match, replacement);
+  }
+  const keyword = typeOnly ? "import type" : "import";
+  const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
   return `${importLine}\n${src}`;
 }
 
