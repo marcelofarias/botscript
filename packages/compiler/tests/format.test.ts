@@ -448,10 +448,25 @@ describe("formatSource — binary operator spacing", () => {
     expect(formatSource(src)).toBe(src);
   });
 
-  it("does not touch operators inside JSX open tags (self-close `/>`, attr-name `data-cmp`)", () => {
+  it("does not touch operators in JSX open-tag SYNTAX (self-close `/>`, attr-name `data-cmp`, `aria-hidden`)", () => {
+    // Suppression applies at brace depth 0 inside the open tag — attribute
+    // names (`data-cmp`, `aria-hidden`) and the self-close `/`. Attribute
+    // `{...}` interpolations are regular JS and DO get operator spacing
+    // (next test).
     const src =
-      '?bs 0.4\nfn Demo() -> any = <input type="text" data-cmp={a-b} aria-hidden />\n';
+      '?bs 0.4\nfn Demo() -> any = <input type="text" data-cmp={a - b} aria-hidden />\n';
     expect(formatSource(src)).toBe(src);
+  });
+
+  it("DOES apply operator spacing inside JSX attribute `{...}` interpolations", () => {
+    // Inside an attribute's `{...}`, we're back in regular JS — same as a
+    // JSX child interpolation. Mirrors how `=` already canonicalizes
+    // inside `{...}` but stays bare in the `name="value"` slot.
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <input data-cmp={a-b} aria-hidden />\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn Demo() -> any = <input data-cmp={a - b} aria-hidden />\n',
+    );
   });
 
   it("does not touch HTML entities (`&rsquo;`, `&amp;`) inside JSX text content", () => {

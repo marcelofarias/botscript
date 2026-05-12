@@ -450,9 +450,13 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     // `wantsSpaceBetween` call below because that call needs to suppress
     // operator-spacing rules inside JSX. Two suppression contexts:
     //
-    //   1. JSX open tag (`<Foo ... />`). Operators there are tag syntax —
-    //      `/` is the self-close marker (not division), `-` joins
-    //      attribute names like `data-cmp` / `aria-hidden`.
+    //   1. JSX open tag at brace depth 0 (`<Foo ... />` between `<Foo`
+    //      and the closing `>`). Operators there are tag syntax — `/` is
+    //      the self-close marker (not division), `-` joins attribute
+    //      names like `data-cmp` / `aria-hidden`. Attribute `{...}`
+    //      interpolations (depth > 0) are regular JS and DO get
+    //      operator spacing — mirroring how `=` already canonicalizes
+    //      inside attribute `{...}` but not at the `name="value"` slot.
     //   2. JSX text content (`<p>...</p>` body). HTML entities like
     //      `&rsquo;` and `&amp;` contain `&` / `;` characters that would
     //      get spaced (`& rsquo;`) and break the entity. The text is
@@ -461,7 +465,9 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     //
     // `childExpr` (the `{...}` interpolations inside JSX text) is NOT
     // suppressed — that's regular JS code where canonical spacing applies.
-    const inJsxNoOpSpace = inJsxOpenTag || top() === "jsxText";
+    const inJsxNoOpSpace =
+      (inJsxOpenTag && jsxAttrBraceDepth === 0) ||
+      top() === "jsxText";
 
     // Non-whitespace, non-newline token — possibly inject a separator
     // first. `=` whitespace is suppressed only when we're between an
