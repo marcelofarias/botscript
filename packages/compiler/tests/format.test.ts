@@ -454,6 +454,25 @@ describe("formatSource — binary operator spacing", () => {
     expect(formatSource(src)).toBe(src);
   });
 
+  it("does not touch HTML entities (`&rsquo;`, `&amp;`) inside JSX text content", () => {
+    // The `&` in HTML entities is a single-char operator at the token
+    // level. If binary-operator spacing fired in JSX text, `&rsquo;t`
+    // would become `& rsquo;t` and break the entity. The walk suppresses
+    // operator spacing inside `top() === "jsxText"`.
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <p>aren&rsquo;t fish &amp; chips</p>\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("still applies operator spacing inside JSX `{...}` child interpolations", () => {
+    // Child-expr `{...}` blocks are regular JS, not JSX content.
+    // Operator spacing applies normally.
+    const src = '?bs 0.4\nfn Demo() -> any = <p>{a+b}</p>\n';
+    expect(formatSource(src)).toBe(
+      '?bs 0.4\nfn Demo() -> any = <p>{a + b}</p>\n',
+    );
+  });
+
   it("is idempotent on binary-operator insertions", () => {
     const src =
       "?bs 0.4\nfn f() -> number {\n  const a=1+2*3;\n  const b=a||0;\n  return a+b;\n}\n";

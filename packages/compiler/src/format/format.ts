@@ -107,15 +107,18 @@
  *       - `>>` and `>>>` (lexed as single tokens, but appear as nested
  *         generic closes in `Promise<Result<X, E>>` and `Array<Map<K, V>>`).
  *
- *     `,`, `:`, and binary-operator spacing *can* in principle trip JSX
- *     text content (`<p>2:30</p>` would canonicalize to `<p>2: 30</p>`;
- *     `<p>2+3</p>` would canonicalize to `<p>2 + 3</p>`). The repo
+ *     `,` and `:` *can* in principle trip JSX text content
+ *     (`<p>2:30</p>` would canonicalize to `<p>2: 30</p>`). The repo
  *     doesn't hit this today, and the win on real `.bs` code is large;
  *     if a user hits it, wrapping the text in an expression container
  *     (`<p>{"2:30"}</p>`) stops the formatter from reaching into the
- *     text. Inside JSX OPEN tags, binary-operator spacing is suppressed
- *     unconditionally so `/`-self-close and hyphenated attribute names
- *     (`data-cmp`, `aria-hidden`) stay intact.
+ *     text. Binary-operator spacing has the stricter guarantee: it is
+ *     suppressed inside JSX open tags (so `/` self-close and hyphenated
+ *     attribute names like `data-cmp` / `aria-hidden` stay intact) AND
+ *     inside JSX text content (so HTML entities like `&rsquo;` and `&amp;`
+ *     keep their `&...;` shape). Only JSX `{...}` child-expression
+ *     interpolations still get full canonical operator spacing — they're
+ *     regular JS code.
  *   - Normalizes line endings outside string / template / regex / block-
  *     comment tokens to `\n` (CR-only and CRLF inputs are accepted). The
  *     formatter does NOT touch `\r` characters embedded inside those tokens
@@ -435,6 +438,23 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     prevContentWasSlash =
       inJsxOpenTag && t.kind === "operator" && t.text === "/";
 
+    // JSX-context flag for binary-operator spacing. Computed BEFORE the
+    // `wantsSpaceBetween` call below because that call needs to suppress
+    // operator-spacing rules inside JSX. Two suppression contexts:
+    //
+    //   1. JSX open tag (`<Foo ... />`). Operators there are tag syntax —
+    //      `/` is the self-close marker (not division), `-` joins
+    //      attribute names like `data-cmp` / `aria-hidden`.
+    //   2. JSX text content (`<p>...</p>` body). HTML entities like
+    //      `&rsquo;` and `&amp;` contain `&` / `;` characters that would
+    //      get spaced (`& rsquo;`) and break the entity. The text is
+    //      opaque to the formatter — the user can wrap interpolations in
+    //      `{...}` to opt back into formatting.
+    //
+    // `childExpr` (the `{...}` interpolations inside JSX text) is NOT
+    // suppressed — that's regular JS code where canonical spacing applies.
+    const inJsxNoOpSpace = inJsxOpenTag || top() === "jsxText";
+
     // Non-whitespace, non-newline token — possibly inject a separator
     // first. `=` whitespace is suppressed only when we're between an
     // attribute name and its value (the JSX-attribute `=`). The
@@ -449,7 +469,7 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
         t,
         inJsxAttrEqSnapshot,
         prevOpBinary,
-        inJsxOpenTag,
+        inJsxNoOpSpace,
       )
     ) {
       if (!emit(" ")) return;
@@ -458,15 +478,8 @@ function emitCanonical(src: string, emit: (chunk: string) => boolean): void {
     // Compute whether THIS token, if it's an operator, is binary. Stored
     // for the next iteration to decide post-operator spacing. Not-an-
     // operator resets the flag — only operator tokens carry it forward.
-    //
-    // Inside a JSX open tag (`<Foo ... />`), operator tokens are part of
-    // tag syntax (`/` self-close, `-` inside attribute names like
-    // `data-cmp` / `aria-hidden`), not JS operators — suppress the binary
-    // classification entirely while `inJsxOpenTag` is set. The same
-    // suppression applies on the `wantsSpaceBetween` side below via the
-    // `inJsxOpenTag` check.
     const currOpBinary =
-      !inJsxOpenTag &&
+      !inJsxNoOpSpace &&
       t.kind === "operator" &&
       isBinaryOperator(t, prevContent);
 
@@ -522,7 +535,7 @@ function wantsSpaceBetween(
   curr: Token,
   inJsxAttrEq: boolean,
   prevOpBinary: boolean,
-  inJsxOpenTag: boolean,
+  inJsxNoOpSpace: boolean,
 ): boolean {
   // `->`, `=>`, `??` always want a space on each side.
   if (
@@ -552,20 +565,12 @@ function wantsSpaceBetween(
   if (prev.kind === "punct" && prev.text === ":") {
     return true;
   }
-  // Binary-operator spacing is disabled inside JSX open tags. Operators
-  // there are tag syntax — `/` is the self-close marker (not division),
-  // `-` joins attribute names like `data-cmp` / `aria-hidden`, `=` is the
-  // attribute-eq form (handled above). The walk pairs this with a matching
-  // suppression on the post-operator side (see `currOpBinary`).
-  if (!inJsxOpenTag) {
-    // Space before a binary operator. `prev` is the left operand — we add
-    // the space on this side when the operator is unambiguously binary OR
-    // when the heuristic (`prev` ends an expression) classifies it that
-    // way. Same JSX-text caveat that applies to `,` and `:` applies here:
-    // `<p>2+3</p>` would canonicalize to `<p>2 + 3</p>`. The repo doesn't
-    // hit this today; if a user does, wrapping the text in an expression
-    // container (`<p>{"2+3"}</p>`) stops the formatter from reaching into
-    // the text.
+  // Binary-operator spacing is disabled inside JSX open tags AND inside
+  // JSX text content. The walk computes the combined flag (see
+  // `inJsxNoOpSpace` and its rationale at the emit site) and passes it
+  // in. The two rules below are gated symmetrically.
+  if (!inJsxNoOpSpace) {
+    // Space before a binary operator. `prev` is the left operand.
     if (curr.kind === "operator" && isBinaryOperator(curr, prev)) {
       return true;
     }
