@@ -388,24 +388,21 @@ function findExistingRuntimeImport(
   options: { commentAware: boolean } = { commentAware: false },
 ): ExistingImport | null {
   const prefix = typeOnly ? String.raw`import\s+type\s+\{` : String.raw`import\s+\{`;
-  const re = new RegExp(`^\\s*${prefix}([^}]*)\\}\\s+from\\s+["']@mbfarias\\/botscript-runtime["'];?`, "m");
-  const m = src.match(re);
-  if (!m || m.index === undefined) return null;
-  if (!options.commentAware) {
-    // Pre-0.6 callers keep the legacy behaviour: no comment/string filtering.
-    // (Skipping the blanked-probe path entirely preserves bug-for-bug compat
-    // with already-shipped pins.)
-  } else {
-    // Make sure the match isn't inside a comment or string literal — e.g. a
-    // commented-out `// import { ok } from "@mbfarias/botscript-runtime";`
-    // line would otherwise look like a real import to the regex. We re-scan
-    // a blanked copy of `src` and require the `import` keyword to still
-    // appear at the same offset; blanked regions become whitespace, so a
-    // match hidden inside a comment/string will fail this check.
-    const blanked = blankStringsAndComments(src);
+  // Global flag: under commentAware mode we may need to skip past a match
+  // that turns out to be inside a comment or string. Pre-0.6 still picks
+  // the first match (legacy behaviour) since the loop below stops on the
+  // first hit when the guard is off.
+  const re = new RegExp(`^\\s*${prefix}([^}]*)\\}\\s+from\\s+["']@mbfarias\\/botscript-runtime["'];?`, "gm");
+  const blanked = options.commentAware ? blankStringsAndComments(src) : null;
+  let m: RegExpExecArray | null = null;
+  while ((m = re.exec(src)) !== null) {
+    if (blanked === null) break;
     const probe = blanked.slice(m.index, m.index + m[0].length);
-    if (!probe.trimStart().startsWith("import")) return null;
+    if (probe.trimStart().startsWith("import")) break;
+    // First match was hidden inside a comment/string; keep scanning so a
+    // real runtime import LATER in the file can still be picked up.
   }
+  if (!m || m.index === undefined) return null;
   const specs = (m[1] ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -485,14 +482,20 @@ export function passImports(src: string, version: VersionInfo): string {
   // Older pins keep the legacy behaviour to honour the forward-compat rule
   // ("Never modify a shipped version's emitted TS").
   const commentAware = atLeast(version.resolved, "0.6");
+  const useAliasAware = atLeast(version.resolved, "0.6");
   const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false, { commentAware });
-  const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true, { commentAware });
+  // Pre-0.6 didn't recognise `import type { ... }` lines at all (the
+  // legacy regex only matched `import { ... }`). Honour that for
+  // shipped pins so a user-written `import type` line doesn't shift the
+  // emitted output.
+  const existingType = useAliasAware
+    ? findExistingRuntimeImport(src, /*typeOnly=*/ true, { commentAware })
+    : null;
   // Skip-set behaviour: legacy versions used the export NAME (so
   // `import { ok as myOk }` would suppress an auto-import of `ok` even
   // though `ok` isn't actually in scope). 0.6+ switched to the LOCAL
   // binding (alias if any). Keeping the legacy behaviour for pre-0.6 pins
   // preserves byte-identical output for files pinned to 0.1–0.5.
-  const useAliasAware = atLeast(version.resolved, "0.6");
   // Track value vs type bindings separately. TS has disjoint value and
   // type namespaces — a type-only import (\`import type { X }\`) doesn't
   // create a runtime binding for \`X\`, so it must NOT suppress an
