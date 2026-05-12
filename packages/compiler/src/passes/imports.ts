@@ -465,26 +465,55 @@ export function passImports(src: string, version: VersionInfo): string {
   // detect non-runtime imports either).
   if (useAliasAware) {
     const scanned = blankStringsAndComments(src);
-    const OTHER_IMPORT_RE =
-      /^import(?:\s+type)?\s+(?:\{([^}]*)\}|([A-Za-z_$][A-Za-z0-9_$]*))\s+from\s+["']([^"']+)["']/gm;
-    for (let m: RegExpExecArray | null; (m = OTHER_IMPORT_RE.exec(scanned)) !== null; ) {
-      // Skip our own runtime import (already accounted for above).
-      if (m[3] === "@mbfarias/botscript-runtime") continue;
-      // Default import binding (e.g. `import React from "react"`).
-      if (m[2]) {
-        boundLocally.add(m[2]);
+    // Two-step scan: first match the entire `import ... from "..."` line
+    // (any shape), then peel off the bindings from the head. Handles:
+    //   - `import { a, b as c } from "..."`            (named bindings)
+    //   - `import Default from "..."`                  (default only)
+    //   - `import Default, { a } from "..."`           (default + named)
+    //   - `import * as ns from "..."`                  (namespace)
+    //   - `import type { ... } from "..."`             (type-only)
+    //   - `import "..."`                               (side-effect; no bindings)
+    // Also includes ALSO our own \`@mbfarias/botscript-runtime\` so a file
+    // with multiple runtime imports of the same kind picks up bindings
+    // from every one of them, not just the first that the regex-match
+    // path saw.
+    const IMPORT_LINE_RE =
+      /^import(?:\s+type)?\s+([^;]*?)\s+from\s+["']([^"']+)["']/gm;
+    for (let m: RegExpExecArray | null; (m = IMPORT_LINE_RE.exec(scanned)) !== null; ) {
+      const head = m[1]!.trim();
+      // Strip an optional `Default,` prefix if a comma-separated named
+      // bindings list follows; record the default name first.
+      let rest = head;
+      const defaultMatch = rest.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(.*)$/s);
+      if (defaultMatch && (defaultMatch[2]!.startsWith("{") || defaultMatch[2]!.startsWith("*"))) {
+        boundLocally.add(defaultMatch[1]!);
+        rest = defaultMatch[2]!.trim();
+      }
+      // Namespace: `* as ns`
+      const nsMatch = rest.match(/^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)$/);
+      if (nsMatch) {
+        boundLocally.add(nsMatch[1]!);
         continue;
       }
-      // Named-binding list. Use the LOCAL name (alias if any) for each spec.
-      for (const raw of (m[1] ?? "").split(",")) {
-        const piece = raw.trim().replace(/^type\s+/, "");
-        if (!piece) continue;
-        const asIdx = piece.search(/\s+as\s+/);
-        const local = asIdx >= 0
-          ? piece.slice(asIdx).replace(/^\s+as\s+/, "").trim()
-          : piece;
-        const id = local.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
-        if (id) boundLocally.add(id);
+      // Named bindings: `{ a, b as c, type d }`
+      const namedMatch = rest.match(/^\{([^}]*)\}$/);
+      if (namedMatch) {
+        for (const raw of namedMatch[1]!.split(",")) {
+          const piece = raw.trim().replace(/^type\s+/, "");
+          if (!piece) continue;
+          const asIdx = piece.search(/\s+as\s+/);
+          const local = asIdx >= 0
+            ? piece.slice(asIdx).replace(/^\s+as\s+/, "").trim()
+            : piece;
+          const id = local.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1];
+          if (id) boundLocally.add(id);
+        }
+        continue;
+      }
+      // Bare default-only: `import Default from "..."`
+      const bareDefault = rest.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
+      if (bareDefault) {
+        boundLocally.add(bareDefault[1]!);
       }
     }
   }
