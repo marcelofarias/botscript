@@ -127,11 +127,11 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
 
 async fn doFetch(url: string) uses { net } -> Promise<Result<string, string>> {
   // http.get returns Promise<Result<Response, Error>>. Project the Error
-  // message into a string to keep this example's `Result<string, string>`
-  // success channel, then let Result.tryAsync lift any decoding throw from
-  // `.text()` into Err. The function is `async`, so its return type is
-  // wrapped in Promise<...> at the type level — botscript doesn't
-  // auto-promote, the annotation must spell it out.
+  // payload from `Error` to `string` so this example fits its declared
+  // `Result<string, string>` error channel, then let Result.tryAsync lift
+  // any decoding throw from `.text()` into Err. The function is `async`,
+  // so its return type is wrapped in Promise<…> at the type level —
+  // botscript doesn't auto-promote, the annotation must spell it out.
   let getRes = await http.get(url)
   if (getRes.kind === "err") return err(getRes.error.message);
   return Result.tryAsync { await getRes.value.text() }

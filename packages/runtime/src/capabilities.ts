@@ -46,13 +46,21 @@ export class CapabilityViolation extends Error {
 // Runtime requirement: this module pulls in `node:async_hooks`, which makes
 // the entire `@mbfarias/botscript-runtime` package Node-only at module-
 // resolution time. The package's `engines.node` is pinned to `>=18.0.0`
-// (matching the global Fetch API used by `effects.ts`). TS consumers will
-// pull in `@types/node` themselves through their own tsconfig (`types: ["node"]`)
-// or as a transitive dev dep — the runtime package keeps `@types/node` only
-// in its own `devDependencies` so it doesn't force a phantom install on JS
-// consumers. The `./fs` subpath was already Node-only via `node:fs`; the
-// package never targeted browsers and we don't fake browser support here.
-// Bun and Deno both implement `node:async_hooks` and work unmodified.
+// (matching the global Fetch API used by `effects.ts`) and `package.json`
+// sets `"browser": false` so Webpack/Vite/Rollup-class bundlers fail fast
+// instead of trying to resolve `node:async_hooks` in a browser graph.
+//
+// TypeScript consumers need `@types/node` available in their own project
+// for the published `.d.ts` files to typecheck against `node:async_hooks`.
+// We do NOT ship `@types/node` as a dep or peer-dep — devDependencies don't
+// flow to consumers, and forcing a peer-dep on JS consumers (who never see
+// the types) felt wrong. Almost every TS project already has `@types/node`
+// transitively or via `tsconfig.json`'s `types`; projects that don't can
+// add it explicitly. If this pattern bites real users we'll revisit.
+//
+// The `./fs` subpath was already Node-only via `node:fs`; the package never
+// targeted browsers and we don't fake browser support here. Bun and Deno
+// both implement `node:async_hooks` and work unmodified.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 type Frame = ReadonlyArray<Capability>;
