@@ -43,24 +43,26 @@ export class CapabilityViolation extends Error {
 // stay isolated. Sync callers behave identically to the previous array-based
 // implementation because `als.run` is a synchronous wrapper.
 //
-// Runtime requirement: this module pulls in `node:async_hooks`, which makes
-// the entire `@mbfarias/botscript-runtime` package Node-only at module-
-// resolution time. The package's `engines.node` is pinned to `>=18.0.0`
-// (matching the global Fetch API used by `effects.ts`) and `package.json`
-// sets `"browser": false` so Webpack/Vite/Rollup-class bundlers fail fast
-// instead of trying to resolve `node:async_hooks` in a browser graph.
+// Runtime requirement: this module imports `node:async_hooks`, which makes
+// `@mbfarias/botscript-runtime` Node-only at module-resolution time.
 //
-// TypeScript consumers need `@types/node` available in their own project
-// for the published `.d.ts` files to typecheck against `node:async_hooks`.
-// We do NOT ship `@types/node` as a dep or peer-dep — devDependencies don't
-// flow to consumers, and forcing a peer-dep on JS consumers (who never see
-// the types) felt wrong. Almost every TS project already has `@types/node`
-// transitively or via `tsconfig.json`'s `types`; projects that don't can
-// add it explicitly. If this pattern bites real users we'll revisit.
+// How that's exposed in package.json:
+//   - `engines.node`: `>=18.0.0` (covers stable AsyncLocalStorage AND the
+//     global Fetch API the http effects depend on).
+//   - `exports["."]["browser"]` and `exports["./fs"]["browser"]` route any
+//     browser-conditional bundler (Webpack/Vite/Rollup/esbuild/Metro) to
+//     `./dist/browser-stub.js`, which throws a clear, descriptive error at
+//     module-eval time instead of failing with a confusing `node:*`
+//     resolution error deep in the build graph.
+//   - `@types/node` is declared as an OPTIONAL peer-dep: TS consumers need
+//     it for the published `.d.ts` to typecheck (the types here reference
+//     `node:async_hooks`), but JS consumers don't, so the dependency is
+//     signalled without being mandatory. Modern package managers won't
+//     warn when an optional peer is missing.
 //
-// The `./fs` subpath was already Node-only via `node:fs`; the package never
-// targeted browsers and we don't fake browser support here. Bun and Deno
-// both implement `node:async_hooks` and work unmodified.
+// The `./fs` subpath was already Node-only via `node:fs`; this package
+// never targeted browsers and we don't fake browser support here. Bun and
+// Deno both implement `node:async_hooks` and work unmodified.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 type Frame = ReadonlyArray<Capability>;
