@@ -595,6 +595,26 @@ describe("imports", () => {
     expect(out).toMatch(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
   });
 
+  it("import pair in a block comment is NOT reordered by the order normalizer", () => {
+    // normalizeRuntimeImportOrder used to classify lines from raw text only,
+    // which meant a block comment containing both import shapes (type before
+    // value — wrong canonical order) would get its contents rewritten.
+    // The comment-aware guard must leave those lines untouched.
+    const src =
+      `?bs 0.6\n` +
+      `/*\n` +
+      `import type { Result } from "@mbfarias/botscript-runtime";\n` +
+      `import { ok } from "@mbfarias/botscript-runtime";\n` +
+      `*/\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    // The block comment body must survive verbatim.
+    expect(out).toContain('import type { Result } from "@mbfarias/botscript-runtime";\nimport { ok } from "@mbfarias/botscript-runtime";');
+    // Real auto-imports are emitted above the comment (not the other way around).
+    expect(out).toMatch(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+    expect(out).toMatch(/^import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+  });
+
   it("strings hidden inside regex literals don't leak stdlib names", () => {
     // The blanker recognises `/.../` regex literals heuristically so an
     // identifier-looking sequence inside a regex body doesn't trigger

@@ -675,6 +675,11 @@ export function passImports(src: string, version: VersionInfo): string {
  */
 function normalizeRuntimeImportOrder(src: string): string {
   const lines = src.split("\n");
+  // Blank strings and comments once so we can distinguish real import lines
+  // from the same text appearing inside a block comment or string literal
+  // (e.g. a doc-comment example that shows a runtime import). The blanker
+  // preserves newlines, so blankedLines[i] corresponds to lines[i].
+  const blankedLines = blankStringsAndComments(src).split("\n");
   // Tolerate trailing content on the same line — inline comments,
   // optional whitespace, etc. — by dropping the `$` end-of-line anchor.
   // The regex still has to match the start of an import line (via `^`)
@@ -685,7 +690,10 @@ function normalizeRuntimeImportOrder(src: string): string {
   // (Note: \`split("\\n")\` is fine here because the upstream pipeline
   // emits LF-only output; CR/LS/PS only matter for the blanker scanning
   // input source.)
-  const classify = (line: string): "value" | "type" | null => {
+  const classify = (line: string, blankedLine: string): "value" | "type" | null => {
+    // Guard: if the blanked counterpart doesn't start with `import`, this
+    // line is inside a comment or string literal — do not reorder it.
+    if (!blankedLine.trimStart().startsWith("import")) return null;
     if (typeRe.test(line)) return "type";
     if (valueRe.test(line)) return "value";
     return null;
@@ -694,25 +702,27 @@ function normalizeRuntimeImportOrder(src: string): string {
   let touched = false;
   let i = 0;
   while (i < lines.length) {
-    const here = classify(lines[i]!);
+    const here = classify(lines[i]!, blankedLines[i]!);
     if (here === null) {
       i++;
       continue;
     }
     // Walk forward as long as we're on runtime-import lines.
     let j = i;
-    while (j < lines.length && classify(lines[j]!) !== null) j++;
+    while (j < lines.length && classify(lines[j]!, blankedLines[j]!) !== null) j++;
     // [i, j) is a run of runtime imports. Reorder if needed.
     const run = lines.slice(i, j);
+    const blankedRun = blankedLines.slice(i, j);
     let needsReorder = false;
     let sawType = false;
-    for (const l of run) {
-      if (classify(l) === "type") sawType = true;
-      else if (sawType) { needsReorder = true; break; }
+    for (let k = 0; k < run.length; k++) {
+      const kind = classify(run[k]!, blankedRun[k]!);
+      if (kind === "type") sawType = true;
+      else if (kind === "value" && sawType) { needsReorder = true; break; }
     }
     if (needsReorder) {
-      const values = run.filter((l) => classify(l) === "value");
-      const types = run.filter((l) => classify(l) === "type");
+      const values = run.filter((l, k) => classify(l, blankedRun[k]!) === "value");
+      const types = run.filter((l, k) => classify(l, blankedRun[k]!) === "type");
       lines.splice(i, run.length, ...values, ...types);
       touched = true;
     }
