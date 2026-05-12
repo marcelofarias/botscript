@@ -141,6 +141,32 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "const u = unsafe \"third-party Response.json() returns any\" { data as User };\n",
     },
   },
+  INT001: {
+    code: "INT001",
+    title: "intent declares 'pure' but function has capability declarations",
+    body:
+      "An `intent: \"pure\"` clause is a machine-checkable claim that the function is " +
+      "deterministic, side-effect-free, and accesses no external resources. A function " +
+      "with a non-empty `uses { ... }` clause contradicts that claim — the declaration " +
+      "says it can reach the network, file system, or clock while the intent says it " +
+      "cannot. Botscript treats this as an error rather than a warning because the " +
+      "mismatch is always a mistake: either the intent is wrong, or the `uses` clause " +
+      "is wrong.\n\n" +
+      "The word 'pure' is matched as a whole word inside the intent string — " +
+      "`\"impure\"` does not match, but `\"pure\"`, `\"pure function\"`, and " +
+      "`\"idempotent and pure\"` all do.\n\n" +
+      "INT001 is gated on `?bs 0.7`. Files pinned to earlier versions may use " +
+      "`intent:` declarations without triggering any check.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn greet(name: string) uses { net } intent: \"pure\" -> string = name\n",
+      passes:
+        "// option A — remove the uses clause\n" +
+        "?bs 0.7\n" +
+        "fn greet(name: string) intent: \"pure\" -> string = pure { name.toUpperCase() }\n",
+    },
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

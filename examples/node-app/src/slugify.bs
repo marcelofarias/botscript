@@ -1,0 +1,16 @@
+?bs 0.7
+
+// Pure string helpers with machine-checkable intent declarations.
+// The compiler (INT001) verifies that functions claiming "pure" have
+// no capability declarations — the spec and the body can't diverge.
+
+fn slugify(s: string) intent: "pure, idempotent" -> string =
+  pure { s.trim().toLowerCase().replaceAll(" ", "-") }
+
+fn truncate(s: string, max: number) intent: "pure" -> string =
+  pure { s.length <= max ? s : s.slice(0, max - 1) + "\u2026" }
+
+fn slugTruncate(s: string, max: number) intent: "pure" -> string =
+  pure { truncate(slugify(s), max) }
+
+export { slugify, truncate, slugTruncate };
