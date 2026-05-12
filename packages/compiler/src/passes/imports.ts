@@ -140,38 +140,23 @@ function blankStringsAndComments(src: string): string {
       out += " ".repeat(len);
       i += len;
     }
-    // Template literals (backtick) \u2014 blank the literal text segments but
-    // PRESERVE the contents of `${...}` interpolations (they're real
-    // expressions the scanner needs to see).
+    // Template literals (backtick) — blank the literal text segments, and
+    // for each `${...}` interpolation recursively blank the strings/comments
+    // *inside* the interpolation body before emitting it. Without this, a
+    // string literal inside an interpolation (e.g. `${foo("err")}`) could
+    // trip a stdlib symbol detector because the inner literal text would
+    // be visible to the scanner.
     else if (src[i] === "`") {
       out += "`";
       let j = i + 1;
-      let depth = 0;
       while (j < src.length) {
         const ch = src[j]!;
-        if (depth > 0) {
-          // Inside `${...}` \u2014 keep characters verbatim, but balance braces
-          // so we know when to drop back into literal-text mode.
-          if (ch === "{") depth++;
-          else if (ch === "}") {
-            depth--;
-            // The `}` that closes the outermost `${` is structural; emit it
-            // and fall back to literal-text mode without further inspection.
-            out += ch;
-            j++;
-            continue;
-          }
-          out += ch;
-          j++;
-          continue;
-        }
-        // In literal-text mode.
         if (ch === "\\") {
-          // Drop the escape sequence (two chars). The backslash itself is
-          // always non-newline (we only enter this branch on `\\`). The
-          // following character can be a real newline (line-continuation
-          // in a template), in which case we preserve it so line counts
-          // stay accurate — we never emit an extra synthetic newline.
+          // Drop the escape sequence (two chars). The backslash is always
+          // non-newline (we only enter this branch on `\\`). The following
+          // character can be a real newline (line-continuation in a
+          // template), in which case we preserve it so line counts stay
+          // accurate — we never emit an extra synthetic newline.
           const next = src[j + 1] ?? "";
           out += " ";
           out += next === "\n" ? "\n" : " ";
@@ -179,9 +164,31 @@ function blankStringsAndComments(src: string): string {
           continue;
         }
         if (ch === "$" && src[j + 1] === "{") {
+          // Scan forward to the matching `}` (balancing nested braces).
+          // Strings/templates/regex inside the interpolation can contain
+          // `{` / `}` chars that we must NOT count as brace pairs; the
+          // safe move is to recurse: blanking the slice first replaces
+          // those literals with spaces, then a flat brace-counter on the
+          // blanked output reliably finds the closing `}`. Newlines inside
+          // the expression are preserved (blanking keeps them).
           out += "${";
-          depth = 1;
-          j += 2;
+          const exprStart = j + 2;
+          const restBlanked = blankStringsAndComments(src.slice(exprStart));
+          let depth = 1;
+          let k = 0;
+          while (k < restBlanked.length && depth > 0) {
+            const rc = restBlanked[k]!;
+            if (rc === "{") depth++;
+            else if (rc === "}") depth--;
+            if (depth > 0) k++;
+          }
+          // `k` now points at the matching `}` in the blanked slice; the
+          // same offset applies to the original because blanking preserves
+          // byte positions. Emit the blanked expression (so any inner
+          // strings/comments stay blanked) followed by the closing `}`.
+          out += restBlanked.slice(0, k);
+          out += "}";
+          j = exprStart + k + 1;
           continue;
         }
         if (ch === "`") break;

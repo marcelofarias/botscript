@@ -316,7 +316,7 @@ describe("imports", () => {
   });
 
   it("does not auto-import user-facing names like `ok` (pre-0.6 behaviour)", () => {
-    // No version pin -> resolved to 0.1; stdlib auto-import only kicks in at 0.4+.
+    // No version pin -> resolved to 0.1; stdlib auto-import only kicks in at 0.6+.
     const out = t(`fn x() -> Result<number, string> { return ok(1); }\n`);
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
@@ -436,6 +436,21 @@ describe("imports", () => {
     const typeImports = out.match(/import type \{[^}]*\} from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(typeImports.length).toBe(1);
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("strings nested inside template ${} interpolations don't leak stdlib names", () => {
+    // The scanner recursively blanks strings/comments inside `${...}`, so
+    // `${"err"}` should NOT trigger an `err` auto-import — the literal
+    // "err" never reaches the symbol scan. The user-written `ok(1)` outside
+    // the interpolation, plus the interpolated `some(2)`, are still seen.
+    const out = t(
+      `?bs 0.6\nfn x() -> string = pure { \`hint=\${"err"} v=\${some(2).kind} \${ok(1).kind}\` }\n`,
+    );
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bsome\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // `err` only appears as a string literal inside an interpolation; it
+    // must not be auto-imported.
+    expect(out).not.toMatch(/import \{[^}]*\berr\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
   it("identifier suffixes like `ok_value` do NOT trigger a spurious stdlib import", () => {
