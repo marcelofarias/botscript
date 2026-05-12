@@ -12,12 +12,21 @@
  * dead-code elimination still walk the import graph before deciding what
  * to drop, so the `throw` below would never run early enough to save us.
  *
+ * Failure mode under the `browser` condition (intentional, all loud):
+ *  - For bare `import "@mbfarias/botscript-runtime"` the module loads and
+ *    the `throw` fires at first eval.
+ *  - For `import { http } from "@mbfarias/botscript-runtime"` (the common
+ *    case) ESM linking fails first with a "does not provide an export
+ *    named 'http'" error from the bundler / runtime, BEFORE this module's
+ *    body runs. The error is still loud and happens at build/link time,
+ *    which is the point.
+ *
  * Trade-off: TypeScript consumers building under the `browser` condition
  * see a module with no named exports. Their build won't typecheck against
  * `ok`, `err`, `http`, `$enter`, etc. That's intentional: this package
- * doesn't work in the browser, and a TS error at build time is a louder,
- * earlier signal than a `node:async_hooks` resolution failure deep in a
- * bundler graph. If you actually want a browser-safe subset of
+ * doesn't work in the browser, and a TS / linker error at build time is a
+ * louder, earlier signal than a `node:async_hooks` resolution failure
+ * deep in a bundler graph. If you actually want a browser-safe subset of
  * botscript-runtime, file an issue and we'll carve out a no-effects
  * entrypoint.
  */

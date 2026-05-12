@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { $current, $enter, $require, CapabilityViolation } from "../src/capabilities.js";
 
-// No afterEach reset: each `$enter` runs the test body in its own
-// AsyncLocalStorage scope, so the store ends naturally when the
-// callback returns.
+// No afterEach reset: capability frames are per-async-chain via
+// AsyncLocalStorage rather than module-level mutable state. Each test's
+// `$enter` callback runs in its own ALS scope, so there is no shared
+// stack to clear between tests. (ALS can persist for async resources
+// spawned inside the callback — timers, un-awaited promises — but the
+// tests below don't leak those.)
 describe("capabilities", () => {
 
   it("$enter installs a frame and $require checks it", () => {

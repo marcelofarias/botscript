@@ -16,9 +16,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // No capability reset needed: AsyncLocalStorage scopes end when each
-  // test's `$enter` callback returns, so there is no module-level state
-  // to clear between tests.
+  // No capability reset needed: capability frames are per-async-chain via
+  // AsyncLocalStorage, not module-level mutable state. Each test's
+  // `$enter` callback runs inside its own ALS scope; there is no global
+  // stack to clear between tests. (Note: ALS can still propagate into
+  // un-awaited timers/promises spawned inside the callback. The tests
+  // here don't leak those, so this is a non-issue in practice.)
   if (tmp) await rm(tmp, { recursive: true, force: true });
 });
 

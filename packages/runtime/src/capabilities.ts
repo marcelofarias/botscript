@@ -51,9 +51,11 @@ export class CapabilityViolation extends Error {
 //     global Fetch API the http effects depend on).
 //   - `exports["."]["browser"]` and `exports["./fs"]["browser"]` route any
 //     browser-conditional bundler (Webpack/Vite/Rollup/esbuild/Metro) to
-//     `./dist/browser-stub.js`, which throws a clear, descriptive error at
-//     module-eval time instead of failing with a confusing `node:*`
-//     resolution error deep in the build graph.
+//     `./dist/browser-stub.js`. The stub has no named exports and throws
+//     at module-eval time, so browser builds fail loud and early — either
+//     at ESM link time ("does not provide an export named 'http'", etc.)
+//     or at first eval — instead of erroring deep in the bundler graph
+//     with a confusing `node:*` resolution failure.
 //   - `@types/node` is declared as an OPTIONAL peer-dep: TS consumers need
 //     it for the published `.d.ts` to typecheck (the types here reference
 //     `node:async_hooks`), but JS consumers don't, so the dependency is
