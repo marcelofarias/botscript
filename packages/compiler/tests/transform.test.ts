@@ -360,6 +360,29 @@ describe("imports", () => {
     const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
     expect(matches.length).toBe(1);
   });
+
+  it("does not spuriously import `err`/`ok` from compiler-emitted string literals (false-positive guard)", () => {
+    // The `?` desugaring emits `kind === "err"` and `kind === "ok"` as string
+    // literals in the compiled TS. Without blanking string content before
+    // scanning, those would cause `err` and `ok` to be auto-imported even when
+    // the user never referenced them directly.
+    const src =
+      `?bs 0.4\n` +
+      `async fn check(id: string) uses { net } -> Promise<Result<boolean, Error>> {\n` +
+      `  let res = await http.get(\`/u/\${id}\`)?\n` +
+      `  ok(true)\n` +
+      `}\n`;
+    const out = t(src);
+    // `ok` and `http` should be imported because the USER wrote them.
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // `err` should NOT be imported — it only appears in the compiler-emitted
+    // `kind === "err"` check string, not in the user's source.
+    expect(out).not.toMatch(/import \{[^}]*\berr\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Single import statement.
+    const matches = out.match(/from "@mbfarias\/botscript-runtime"/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
 });
 
 describe("?bs version directive", () => {
