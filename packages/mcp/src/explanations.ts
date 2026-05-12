@@ -148,10 +148,10 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Botscript collapses a defined set of non-semantic surface variations to a single " +
       "canonical form (RFC #13). The current rules cover indentation (tabs become 2 " +
       "spaces), trailing whitespace, blank-line runs, line endings, mid-line whitespace, " +
-      "spacing around `,` `:` `->` `=>` `??` `=` and binary operators, import-statement " +
-      "order within a contiguous run, tagged-union member order, and brace-block-vs-" +
-      "expression-body for single-`return` `fn` bodies. From `?bs 0.4` on, the compiler " +
-      "rejects non-canonical input rather than silently accepting it.\n\n" +
+      "spacing around `,` `:` `->` `=>` `??` and `=`, import-statement order within a " +
+      "contiguous run, tagged-union member order, and brace-block-vs-expression-body for " +
+      "single-`return` `fn` bodies. From `?bs 0.4` on, the compiler rejects non-canonical " +
+      "input rather than silently accepting it.\n\n" +
       "The point is to kill diff noise. A bot writing botscript will produce five " +
       "stylistically-different versions of the same logic across five PRs — none wrong, " +
       "all dominated by formatting drift in the diff. Sources that differ ONLY by the " +
@@ -162,9 +162,16 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "lower to byte-identical TypeScript\") is still in flight; this rule covers the " +
       "surface-level slice that landed in `?bs 0.4`.\n\n" +
       "The fix is mechanical: `botscript fmt <file> --write`. The formatter is " +
-      "idempotent and semantics-preserving — running it never changes what your code " +
-      "does, only how it looks. The diagnostic points at the first UTF-16 code unit " +
-      "that diverges from canonical, so you can also fix small drifts by hand.\n\n" +
+      "idempotent. It preserves observable behavior in all common cases, with one " +
+      "documented carve-out: reordering ESM imports within a contiguous run CAN " +
+      "change observable top-level evaluation order if any imported module has " +
+      "top-level side effects. The repo trades that strict ordering for a canonical " +
+      "surface form, mirroring `prettier-plugin-organize-imports` / ESLint " +
+      "`import/order`. To pin a specific evaluation order, separate the imports with " +
+      "a blank line (the run breaks) or add a comment in the region (reordering " +
+      "disables). Side-effect imports (`import \"foo\";`) bail their run " +
+      "unconditionally. The diagnostic points at the first UTF-16 code unit that " +
+      "diverges from canonical, so you can also fix small drifts by hand.\n\n" +
       "FMT001 is gated on the version pin: files pinned to `?bs 0.3` or earlier keep " +
       "accepting whitespace variants. Opt into the check by bumping the file to `?bs " +
       "0.4` (and run `botscript fmt <file> --write` once to clear the existing drift).",
