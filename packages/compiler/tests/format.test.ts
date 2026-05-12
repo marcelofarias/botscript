@@ -322,6 +322,159 @@ describe("formatSource — whitespace insertion", () => {
   });
 });
 
+describe("formatSource — binary operator spacing", () => {
+  // Context-dependent operators (could be unary or binary; classification
+  // depends on whether `prev` ends an expression).
+
+  it("inserts a space on each side of binary `+`", () => {
+    const src = "?bs 0.4\nfn add(a: number, b: number) -> number = a+b\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
+    );
+  });
+
+  it("inserts a space on each side of binary `-`", () => {
+    const src = "?bs 0.4\nfn sub(a: number, b: number) -> number = a-b\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn sub(a: number, b: number) -> number = a - b\n",
+    );
+  });
+
+  it("inserts a space on each side of binary `*` `/` `%`", () => {
+    const src =
+      "?bs 0.4\nfn mix(a: number, b: number, c: number) -> number = a*b/c%a\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn mix(a: number, b: number, c: number) -> number = a * b / c % a\n",
+    );
+  });
+
+  it("leaves unary `-` alone (prev is `=`, expression position)", () => {
+    const src = "?bs 0.4\nconst x = -1;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves unary `+` alone after a binary operator", () => {
+    const src = "?bs 0.4\nconst x = a + +b;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves unary `!` and `~` alone", () => {
+    const src = "?bs 0.4\nconst y = !a;\nconst z = ~b;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  // Always-binary operators: classification is unconditional, no
+  // dependence on `prev`.
+
+  it("inserts spaces around `==`, `===`, `!=`, `!==`", () => {
+    const src =
+      "?bs 0.4\nconst a = x==y;\nconst b = x===y;\nconst c = x!=y;\nconst d = x!==y;\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nconst a = x == y;\nconst b = x === y;\nconst c = x != y;\nconst d = x !== y;\n",
+    );
+  });
+
+  it("inserts spaces around `<=` and `>=`", () => {
+    const src = "?bs 0.4\nconst a = x<=y;\nconst b = x>=y;\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nconst a = x <= y;\nconst b = x >= y;\n",
+    );
+  });
+
+  it("inserts spaces around `&&` and `||`", () => {
+    const src = "?bs 0.4\nconst a = x&&y||z;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst a = x && y || z;\n");
+  });
+
+  it("inserts spaces around bitwise `&`, `|`, `^`", () => {
+    const src = "?bs 0.4\nconst a = x&y|z^w;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst a = x & y | z ^ w;\n");
+  });
+
+  it("inserts spaces around `<<` (bit-shift left)", () => {
+    const src = "?bs 0.4\nconst a = x<<1;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst a = x << 1;\n");
+  });
+
+  it("leaves `>>` and `>>>` alone — they overlap with nested TS generics", () => {
+    // `>>` and `>>>` are lexed as single tokens, but they also appear as
+    // closing brackets of nested generics like `Array<Map<string, T>>` and
+    // `Promise<Result<X, E>>`. Adding canonical spacing would corrupt
+    // those. The trade-off is documented in the formatter.
+    const src = "?bs 0.4\nlet xs: Array<Map<string, number>> = new Map();\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("inserts spaces around `**` (exponent)", () => {
+    const src = "?bs 0.4\nconst a = x**2;\n";
+    expect(formatSource(src)).toBe("?bs 0.4\nconst a = x ** 2;\n");
+  });
+
+  it("inserts spaces around compound-assignment operators", () => {
+    const src =
+      "?bs 0.4\nfn f() -> number {\n  let x = 0;\n  x+=1; x-=1; x*=2; x/=2; x%=2;\n  return x;\n}\n";
+    expect(formatSource(src)).toBe(
+      "?bs 0.4\nfn f() -> number {\n  let x = 0;\n  x += 1; x -= 1; x *= 2; x /= 2; x %= 2;\n  return x;\n}\n",
+    );
+  });
+
+  // Excluded operators — `<`, `>`, `++`, `--`, `...`, `~`, `!`.
+
+  it("leaves single-char `<` and `>` alone (JSX / TS-generics ambiguity)", () => {
+    const src = "?bs 0.4\nconst ok = a<b && c>d;\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves postfix `++` and `--` alone", () => {
+    const src = "?bs 0.4\nfn f() -> number {\n  let x = 0;\n  x++; --x;\n  return x;\n}\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves `...` (spread / rest) alone", () => {
+    const src = "?bs 0.4\nconst xs = [...ys];\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  // Special cases.
+
+  it("leaves `function* gen()` alone — generator marker, not binary", () => {
+    const src =
+      "?bs 0.4\nfn f() -> any = pure {\n  function* gen(): Generator<number> { yield 1; }\n  return gen;\n}\n";
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("leaves `import * as ns` alone — namespace import, not binary `*`", () => {
+    const src = '?bs 0.4\nimport * as ns from "x";\nconst y = ns.f();\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("does not touch operators inside JSX open tags (self-close `/>`, attr-name `data-cmp`)", () => {
+    const src =
+      '?bs 0.4\nfn Demo() -> any = <input type="text" data-cmp={a-b} aria-hidden />\n';
+    expect(formatSource(src)).toBe(src);
+  });
+
+  it("is idempotent on binary-operator insertions", () => {
+    const src =
+      "?bs 0.4\nfn f() -> number {\n  const a=1+2*3;\n  const b=a||0;\n  return a+b;\n}\n";
+    const once = formatSource(src);
+    expect(formatSource(once)).toBe(once);
+  });
+
+  it("collapses RFC #13's three example forms together (with binary `+`)", () => {
+    // Phase 2: with binary-`+` spacing in place, the no-space form now
+    // canonicalizes to the same output as the spaced form. The
+    // brace-vs-expression equivalence (PR #21, merged) closes the third
+    // form. All three lower to identical canonical .bs.
+    const a = "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n";
+    const b = "?bs 0.4\nfn add(a:number,b:number)->number{return a+b}\n";
+    const c =
+      "?bs 0.4\nfn add(a: number, b: number) -> number { return a + b }\n";
+    expect(formatSource(a)).toBe(formatSource(b));
+    expect(formatSource(b)).toBe(formatSource(c));
+  });
+});
+
 describe("formatSource — brace→expression body equivalence", () => {
   it("rewrites `{ return e; }` to `= e` on a single-line body", () => {
     const src = "?bs 0.4\nfn x() -> number { return 1; }\n";
