@@ -185,23 +185,24 @@ function blankStringsAndComments(src: string): string {
     }
 
     // ctx.kind === "code"
-    // Line comment.
+    // Line comment. Comments are trivia: do NOT update lastCode / lastIdent,
+    // so the regex-vs-divide decision keeps looking at the last real token
+    // before the comment. Otherwise `x /* y */ / 2` (divide) would look like
+    // `<no-token> / 2` (start of regex).
     if (ch === "/" && next === "/") {
       const end = src.indexOf("\n", i + 2);
       const len = end === -1 ? src.length - i : end - i;
       out.push(" ".repeat(len));
       i += len;
-      lastCode = " ";
       continue;
     }
-    // Block comment.
+    // Block comment. Same trivia treatment as line comments.
     if (ch === "/" && next === "*") {
       const end = src.indexOf("*/", i + 2);
       const len = end === -1 ? src.length - i : end - i + 2;
       // Preserve newlines so line numbers stay accurate.
       out.push(src.slice(i, i + len).replace(/[^\n]/g, " "));
       i += len;
-      lastCode = " ";
       continue;
     }
     // Regex literal (heuristic: `/` after a token that can't precede divide).
@@ -317,21 +318,30 @@ interface ExistingImport {
   specs: { name: string; alias: string | null; typePrefix: boolean }[];
 }
 
-function findExistingRuntimeImport(src: string, typeOnly: boolean): ExistingImport | null {
+function findExistingRuntimeImport(
+  src: string,
+  typeOnly: boolean,
+  options: { commentAware: boolean } = { commentAware: false },
+): ExistingImport | null {
   const prefix = typeOnly ? String.raw`import\s+type\s+\{` : String.raw`import\s+\{`;
   const re = new RegExp(`^\\s*${prefix}([^}]*)\\}\\s+from\\s+["']@mbfarias\\/botscript-runtime["'];?`, "m");
   const m = src.match(re);
   if (!m || m.index === undefined) return null;
-  // Make sure the match isn't inside a comment or string literal — e.g. a
+  if (!options.commentAware) {
+    // Pre-0.6 callers keep the legacy behaviour: no comment/string filtering.
+    // (Skipping the blanked-probe path entirely preserves bug-for-bug compat
+    // with already-shipped pins.)
+  } else {
+    // Make sure the match isn't inside a comment or string literal — e.g. a
   // commented-out `// import { ok } from "@mbfarias/botscript-runtime";`
   // line would otherwise look like a real import to the regex. We re-scan a
   // blanked copy of `src` and require the `import` keyword to still appear
   // at the same offset; blanked regions become whitespace, so a match
   // hidden inside a comment/string will fail this check.
-  const blanked = blankStringsAndComments(src);
-  const probe = blanked.slice(m.index, m.index + m[0].length);
-  const expectKeyword = typeOnly ? "import" : "import";
-  if (!probe.trimStart().startsWith(expectKeyword)) return null;
+    const blanked = blankStringsAndComments(src);
+    const probe = blanked.slice(m.index, m.index + m[0].length);
+    if (!probe.trimStart().startsWith("import")) return null;
+  }
   const specs = (m[1] ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -426,8 +436,13 @@ export function passImports(src: string, version: VersionInfo): string {
   return out;
 }
 
-function mergeOrPrepend(src: string, typeOnly: boolean, toAdd: Set<string>): string {
-  const existing = findExistingRuntimeImport(src, typeOnly);
+function mergeOrPrepend(
+  src: string,
+  typeOnly: boolean,
+  toAdd: Set<string>,
+  options: { commentAware: boolean } = { commentAware: false },
+): string {
+  const existing = findExistingRuntimeImport(src, typeOnly, options);
   if (existing) {
     // Compare against the LOCAL binding (alias if present, else the export
     // name). `import { ok as myOk }` binds `myOk`, not `ok`, so `ok` is NOT
