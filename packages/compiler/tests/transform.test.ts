@@ -469,6 +469,29 @@ describe("imports", () => {
     expect(out).not.toMatch(/\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("a commented-out runtime import is NOT mistaken for a real one", () => {
+    // A user comment that mentions `import { ok } from "..."` must not
+    // suppress the real auto-import. Without filtering comments out of the
+    // existing-import probe, the regex would match and skip emitting.
+    const src =
+      `?bs 0.6\n` +
+      `// example: import { ok } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    expect(out).toMatch(/^import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/m);
+  });
+
+  it("strings hidden inside regex literals don't leak stdlib names", () => {
+    // The blanker recognises `/.../` regex literals heuristically so an
+    // identifier-looking sequence inside a regex body doesn't trigger
+    // auto-import. (`http` inside `/http:/` should NOT be detected.)
+    const src =
+      `?bs 0.6\n` +
+      `fn x() -> boolean = pure { /http:\\/.+/.test("a") }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("is gated at ?bs 0.6 — 0.4 / 0.5 files keep their frozen, narrower import", () => {
     // 0.1 … 0.5 are SHIPPED; their emitted TS must not change because of
     // the stdlib auto-import. Only $-prefixed helpers are auto-imported

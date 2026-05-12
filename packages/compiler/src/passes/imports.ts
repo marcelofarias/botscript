@@ -88,124 +88,219 @@ const STDLIB_TYPE_SYMBOLS = [
 
 /**
  * Return a copy of `src` with the literal text of string literals, template
- * literals, and line/block comments replaced by spaces (same byte count,
- * newlines preserved). The contents of template-literal `${...}`
- * interpolations are PRESERVED \u2014 those are real expressions that can
- * reference stdlib symbols (e.g. `` `x=${ok(1)}` ``) and need to be seen
- * by the scanner.
+ * literals, regex literals, and line/block comments replaced by spaces (same
+ * byte count, newlines preserved). The CODE bodies of template-literal
+ * `${...}` interpolations are kept as-is so the scanner can still see real
+ * expressions there, but any strings/comments NESTED inside those bodies
+ * also get blanked.
  *
- * The blanking lets the symbol scanner ignore names that appear only inside
- * string values \u2014 e.g. the compiler emits `kind === "err"` and
- * `kind === "ok"`, so without blanking, `err` and `ok` would be spuriously
- * detected and auto-imported even when the user never referenced them.
+ * Implementation is a single-pass state machine with an explicit stack:
+ *   ctx[]: stack of contexts. Each context is either
+ *     - { kind: "template" }: we're inside backticks; literal-text chars
+ *       blank, `${` pushes a "code" context for the interpolation body.
+ *     - { kind: "code" }: regular JS/TS scanning. `}` pops back to the
+ *       enclosing template if it matches an open `${`. This is what makes
+ *       arbitrarily-nested templates safe — `\`a${`b${c}d`}e\`` works.
+ *
+ * O(n): every character is visited exactly once. Earlier versions recursed
+ * into `${...}` by re-blanking the rest of the source, which made the
+ * scanner O(n²) in the number of interpolations.
+ *
+ * Caveat: regex literals are parsed heuristically — a `/` is treated as the
+ * start of a regex iff the previous non-whitespace token is one that cannot
+ * directly precede a divide operator (the same heuristic JavaScript itself
+ * uses). This is good enough for compiled botscript output, which is shaped
+ * code rather than minified expression soup. If the heuristic misfires, the
+ * worst case is a false-positive stdlib import in a file that wasn't going
+ * to typecheck anyway.
  */
 function blankStringsAndComments(src: string): string {
-  let out = "";
+  type Ctx = { kind: "template" } | { kind: "code"; braceDepth: number };
+  const stack: Ctx[] = [{ kind: "code", braceDepth: 0 }];
+  const out: string[] = [];
+
+  // Track the last meaningful character emitted in "code" mode AND the last
+  // identifier-shaped token, so the regex-vs-divide decision can see
+  // keywords like `return` / `typeof` immediately preceding a `/`.
+  let lastCode = "";
+  let lastIdent = "";
+  const REGEX_PRECEDENT_KEYWORDS = new Set([
+    "return", "typeof", "void", "delete", "in", "of", "instanceof",
+    "new", "throw", "yield", "await", "case", "do", "else", "if",
+  ]);
+
+  const top = (): Ctx => stack[stack.length - 1]!;
+  const emit = (ch: string): void => {
+    out.push(ch);
+  };
+  const emitBlank = (ch: string): void => {
+    out.push(ch === "\n" ? "\n" : " ");
+  };
+  // Note: `emitBlank` for `\n` is set up via a sentinel below; this comment  // exists in case the helpers are extracted later.
+
+  const canStartRegex = (last: string, ident: string): boolean => {
+    if (last === "") return true;
+    // A keyword like `return /x/` allows a regex even though the last char
+    // is alphabetic. Trust those keywords explicitly.
+    if (/[A-Za-z_$]/.test(last) && REGEX_PRECEDENT_KEYWORDS.has(ident)) return true;
+    // Identifier / number / `)` / `]` otherwise means `/` is divide.
+    return !/[A-Za-z0-9_$)\]]/.test(last);
+  };
+
   let i = 0;
   while (i < src.length) {
-    // Line comment
-    if (src[i] === "/" && src[i + 1] === "/") {
+    const ch = src[i]!;
+    const next = src[i + 1] ?? "";
+    const ctx = top();
+
+    if (ctx.kind === "template") {
+      // Inside backticks: literal text gets blanked, escape sequences are
+      // dropped (preserve newlines), `${` opens a nested code context, and
+      // a bare `` ` `` closes the template.
+      if (ch === "\\") {
+        out.push(" ");
+        out.push(next === "\n" ? "\n" : " ");
+        i += 2;
+        continue;
+      }
+      if (ch === "$" && next === "{") {
+        out.push("${");
+        stack.push({ kind: "code", braceDepth: 1 });
+        lastCode = "{";
+        i += 2;
+        continue;
+      }
+      if (ch === "`") {
+        out.push("`");
+        stack.pop();
+        // We were inside a template that lived in some outer code ctx; the
+        // outer ctx already had its own brace depth, which is unaffected.
+        lastCode = "`";
+        i++;
+        continue;
+      }
+      out.push(ch === "\n" ? "\n" : " ");
+      i++;
+      continue;
+    }
+
+    // ctx.kind === "code"
+    // Line comment.
+    if (ch === "/" && next === "/") {
       const end = src.indexOf("\n", i + 2);
       const len = end === -1 ? src.length - i : end - i;
-      out += " ".repeat(len);
+      out.push(" ".repeat(len));
       i += len;
+      lastCode = " ";
+      continue;
     }
-    // Block comment
-    else if (src[i] === "/" && src[i + 1] === "*") {
+    // Block comment.
+    if (ch === "/" && next === "*") {
       const end = src.indexOf("*/", i + 2);
       const len = end === -1 ? src.length - i : end - i + 2;
       // Preserve newlines so line numbers stay accurate.
-      out += src.slice(i, i + len).replace(/[^\n]/g, " ");
+      out.push(src.slice(i, i + len).replace(/[^\n]/g, " "));
       i += len;
+      lastCode = " ";
+      continue;
     }
-    // Double-quoted string literals
-    else if (src[i] === '"') {
+    // Regex literal (heuristic: `/` after a token that can't precede divide).
+    if (ch === "/" && canStartRegex(lastCode, lastIdent)) {
       let j = i + 1;
-      while (j < src.length && src[j] !== '"') {
-        if (src[j] === "\\") j++; // skip escape
+      let inClass = false;
+      while (j < src.length) {
+        const rc = src[j]!;
+        if (rc === "\\") {
+          j += 2;
+          continue;
+        }
+        if (rc === "[") inClass = true;
+        else if (rc === "]") inClass = false;
+        else if (rc === "/" && !inClass) {
+          j++;
+          // skip flags
+          while (j < src.length && /[A-Za-z]/.test(src[j]!)) j++;
+          break;
+        }
+        else if (rc === "\n") break; // unterminated regex — bail
         j++;
       }
-      const len = j - i + 1; // include closing quote
-      out += " ".repeat(len);
-      i += len;
+      out.push("/".padEnd(j - i, " "));
+      i = j;
+      lastCode = "x"; // an "identifier-like" sentinel so the next `/` is divide
+      continue;
     }
-    // Single-quoted string literals
-    else if (src[i] === "'") {
+    // Double-quoted string.
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== '"') {
+        if (src[j] === "\\") j++;
+        j++;
+      }
+      const len = j - i + 1;
+      out.push(" ".repeat(len));
+      i += len;
+      lastCode = "x";
+      continue;
+    }
+    // Single-quoted string.
+    if (ch === "'") {
       let j = i + 1;
       while (j < src.length && src[j] !== "'") {
         if (src[j] === "\\") j++;
         j++;
       }
       const len = j - i + 1;
-      out += " ".repeat(len);
+      out.push(" ".repeat(len));
       i += len;
+      lastCode = "x";
+      continue;
     }
-    // Template literals (backtick) — blank the literal text segments, and
-    // for each `${...}` interpolation recursively blank the strings/comments
-    // *inside* the interpolation body before emitting it. Without this, a
-    // string literal inside an interpolation (e.g. `${foo("err")}`) could
-    // trip a stdlib symbol detector because the inner literal text would
-    // be visible to the scanner.
-    else if (src[i] === "`") {
-      out += "`";
-      let j = i + 1;
-      while (j < src.length) {
-        const ch = src[j]!;
-        if (ch === "\\") {
-          // Drop the escape sequence (two chars). The backslash is always
-          // non-newline (we only enter this branch on `\\`). The following
-          // character can be a real newline (line-continuation in a
-          // template), in which case we preserve it so line counts stay
-          // accurate — we never emit an extra synthetic newline.
-          const next = src[j + 1] ?? "";
-          out += " ";
-          out += next === "\n" ? "\n" : " ";
-          j += 2;
-          continue;
-        }
-        if (ch === "$" && src[j + 1] === "{") {
-          // Scan forward to the matching `}` (balancing nested braces).
-          // Strings/templates/regex inside the interpolation can contain
-          // `{` / `}` chars that we must NOT count as brace pairs; the
-          // safe move is to recurse: blanking the slice first replaces
-          // those literals with spaces, then a flat brace-counter on the
-          // blanked output reliably finds the closing `}`. Newlines inside
-          // the expression are preserved (blanking keeps them).
-          out += "${";
-          const exprStart = j + 2;
-          const restBlanked = blankStringsAndComments(src.slice(exprStart));
-          let depth = 1;
-          let k = 0;
-          while (k < restBlanked.length && depth > 0) {
-            const rc = restBlanked[k]!;
-            if (rc === "{") depth++;
-            else if (rc === "}") depth--;
-            if (depth > 0) k++;
-          }
-          // `k` now points at the matching `}` in the blanked slice; the
-          // same offset applies to the original because blanking preserves
-          // byte positions. Emit the blanked expression (so any inner
-          // strings/comments stay blanked) followed by the closing `}`.
-          out += restBlanked.slice(0, k);
-          out += "}";
-          j = exprStart + k + 1;
-          continue;
-        }
-        if (ch === "`") break;
-        out += ch === "\n" ? "\n" : " ";
-        j++;
-      }
-      if (src[j] === "`") {
-        out += "`";
-        j++;
-      }
-      i = j;
-    } else {
-      out += src[i];
+    // Template literal opener — push a template ctx onto the stack.
+    if (ch === "`") {
+      out.push("`");
+      stack.push({ kind: "template" });
+      lastCode = "`";
       i++;
+      continue;
     }
+    // Brace tracking for `${...}` interpolation contexts.
+    if (ch === "{" && ctx.braceDepth > 0) {
+      ctx.braceDepth++;
+      out.push(ch);
+      lastCode = ch;
+      i++;
+      continue;
+    }
+    if (ch === "}" && ctx.braceDepth > 0) {
+      ctx.braceDepth--;
+      out.push(ch);
+      lastCode = ch;
+      if (ctx.braceDepth === 0) {
+        // Closed the interpolation — pop back to the enclosing template.
+        stack.pop();
+      }
+      i++;
+      continue;
+    }
+    // Regular code character. Maintain lastIdent so the regex heuristic
+    // can see trailing keywords (e.g. `return /x/` should NOT be divide).
+    out.push(ch);
+    if (/[A-Za-z0-9_$]/.test(ch)) {
+      lastIdent = /[A-Za-z0-9_$]/.test(lastCode) ? lastIdent + ch : ch;
+      lastCode = ch;
+    } else if (/\s/.test(ch)) {
+      // Whitespace ends the current ident in `lastCode` terms but we keep
+      // `lastIdent` so a following `/` can still see the keyword. `lastCode`
+      // is also left unchanged so the regex heuristic looks at the last
+      // non-whitespace character.
+    } else {
+      lastIdent = "";
+      lastCode = ch;
+    }
+    i++;
   }
-  return out;
+  return out.join("");
 }
 
 /**
@@ -224,7 +319,17 @@ function findExistingRuntimeImport(src: string, typeOnly: boolean): ExistingImpo
   const prefix = typeOnly ? String.raw`import\s+type\s+\{` : String.raw`import\s+\{`;
   const re = new RegExp(`^\\s*${prefix}([^}]*)\\}\\s+from\\s+["']@mbfarias\\/botscript-runtime["'];?`, "m");
   const m = src.match(re);
-  if (!m) return null;
+  if (!m || m.index === undefined) return null;
+  // Make sure the match isn't inside a comment or string literal — e.g. a
+  // commented-out `// import { ok } from "@mbfarias/botscript-runtime";`
+  // line would otherwise look like a real import to the regex. We re-scan a
+  // blanked copy of `src` and require the `import` keyword to still appear
+  // at the same offset; blanked regions become whitespace, so a match
+  // hidden inside a comment/string will fail this check.
+  const blanked = blankStringsAndComments(src);
+  const probe = blanked.slice(m.index, m.index + m[0].length);
+  const expectKeyword = typeOnly ? "import" : "import";
+  if (!probe.trimStart().startsWith(expectKeyword)) return null;
   const specs = (m[1] ?? "")
     .split(",")
     .map((s) => s.trim())
