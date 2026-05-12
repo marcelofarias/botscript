@@ -605,7 +605,13 @@ function mergeOrPrepend(
       const probe = blanked.slice(m.index, m.index + m[0].length);
       if (!probe.trimStart().startsWith("import")) continue;
     }
-    lastEnd = m.index + m[0].length;
+    // Advance to end-of-line so trailing same-line content — e.g. an
+    // inline `// comment` after the semicolon, or non-canonical extra
+    // whitespace — stays on the existing import's line, not on the new
+    // one we're about to splice in.
+    let eol = m.index + m[0].length;
+    while (eol < src.length && src[eol] !== "\n") eol++;
+    lastEnd = eol;
   }
   if (lastEnd >= 0) {
     return src.slice(0, lastEnd) + "\n" + importLine + src.slice(lastEnd);
