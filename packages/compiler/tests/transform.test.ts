@@ -509,6 +509,19 @@ describe("imports", () => {
     expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("named value import from another module suppresses stdlib auto-import", () => {
+    // `import { ok } from "./util"` binds a local `ok` in the value
+    // namespace. The stdlib auto-import must not add another `ok` from
+    // `@mbfarias/botscript-runtime` — that would be a duplicate-binding
+    // TS error.
+    const src =
+      `?bs 0.6\n` +
+      `import { ok } from "./util";\n` +
+      `fn x() -> number = pure { ok }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("`import type { ok }` does NOT suppress auto-importing the VALUE ok", () => {
     // TS value vs type namespaces: a pure `import type` only binds the
     // name in the type namespace. A subsequent value reference to `ok`

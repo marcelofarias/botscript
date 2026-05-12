@@ -293,28 +293,35 @@ function blankStringsAndComments(src: string): string {
         if (src[j] === "\\") j++;
         j++;
       }
-      // Clamp on unterminated strings.
-      const end = j < src.length ? j + 1 : src.length;
-      // Preserve every LineTerminator (line-continuation \` \\\\n\` inside the
-      // string still contains a real newline that needs to survive).
+      const closeAt = j < src.length ? j : -1; // index of closing quote, or -1 if unterminated
+      const end = closeAt >= 0 ? closeAt + 1 : src.length;
+      // Preserve the quote characters themselves so downstream regexes
+      // that scan for `from "..."` (e.g. the IMPORT_LINE_RE in this pass)
+      // can still find a string-literal shape. Body becomes spaces; line
+      // terminators inside the body (line-continuation `\\\n`) survive.
       for (let k = i; k < end; k++) {
-        out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
+        if (k === i || k === closeAt) out.push(src[k]!);
+        else out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
       }
       i = end;
       lastCode = "x";
       lastIdent = "";
       continue;
     }
-    // Single-quoted string. Same treatment as double-quoted.
+    // Single-quoted string. Same treatment as double-quoted; the opening
+    // and closing quote characters are preserved so the blanked output
+    // still looks like a string literal to downstream regexes.
     if (ch === "'") {
       let j = i + 1;
       while (j < src.length && src[j] !== "'") {
         if (src[j] === "\\") j++;
         j++;
       }
-      const end = j < src.length ? j + 1 : src.length;
+      const closeAt = j < src.length ? j : -1;
+      const end = closeAt >= 0 ? closeAt + 1 : src.length;
       for (let k = i; k < end; k++) {
-        out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
+        if (k === i || k === closeAt) out.push(src[k]!);
+        else out.push(isLineTerminatorAt(src, k) ? src[k]! : " ");
       }
       i = end;
       lastCode = "x";
@@ -555,7 +562,15 @@ export function passImports(src: string, version: VersionInfo): string {
       boundType.add(name);
       if (!isTypeOnly) boundValue.add(name);
     };
-    for (let m: RegExpExecArray | null; (m = IMPORT_LINE_RE.exec(scanned)) !== null; ) {
+    // Run the regex on the RAW source so module-specifier paths survive
+    // (the blanker keeps the quote characters but blanks the body, which
+    // would erase the path before we could read it). To still reject
+    // commented-out imports, verify each match's offset against the
+    // blanked source — if the `import` keyword is still visible there,
+    // the match is real code.
+    for (let m: RegExpExecArray | null; (m = IMPORT_LINE_RE.exec(src)) !== null; ) {
+      const probe = scanned.slice(m.index, m.index + m[0].length);
+      if (!probe.trimStart().startsWith("import")) continue;
       const wholeTypeOnly = m[1] !== undefined;
       const head = m[2]!.trim();
       // Strip an optional `Default,` prefix if a comma-separated named
