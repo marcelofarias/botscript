@@ -22,7 +22,9 @@ export const http = {
    *
    * Network-level errors (connection refused, DNS failure, etc.) are caught
    * and lifted into `Err`. HTTP error status codes are NOT automatically
-   * converted — callers that care should check `res.value.ok` or `.status`.
+   * converted — the resolved `Response` is always wrapped in `Ok`. After
+   * unwrapping with `?` you hold a plain `Response`; check `res.ok` or
+   * `res.status` directly. (Without unwrapping, use `res.value.ok`.)
    */
   get: async (url: string, init?: RequestInit): Promise<Result<Response, Error>> => {
     $require("net");

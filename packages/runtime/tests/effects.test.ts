@@ -56,6 +56,17 @@ describe("http wrappers", () => {
     if (isErr(r)) expect(r.error).toBeInstanceOf(Error);
   });
 
+  it("get returns Ok for HTTP error status (non-2xx does not become Err)", async () => {
+    const mockResponse = new Response("Not Found", { status: 404 });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+    const r = await $enter(["net"], () => http.get("https://example.com/missing"));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.ok).toBe(false);
+      expect(r.value.status).toBe(404);
+    }
+  });
+
   it("rejects with CapabilityViolation when net is not in scope", async () => {
     vi.stubGlobal("fetch", vi.fn());
     await expect(
