@@ -568,4 +568,27 @@ test "slug works" {
     expect(r1Pos).toBeGreaterThan(arrowStart);
     expect(r1Pos).toBeLessThan(arrowEnd);
   });
+
+  it("primer loadUser idiom at ?bs 0.6 compiles without manual import preamble", () => {
+    // Mirrors the primer's first canonical idiom. The user copies this verbatim
+    // (no explicit import statement) and expects it to compile — stdlib
+    // auto-import at 0.6 is what makes that work.
+    const src =
+      `?bs 0.6\n` +
+      `async fn loadUser(id: string) uses { net } -> Promise<Result<string, Error>> {\n` +
+      `  let res = (await http.get(\`/users/\${id}\`))?\n` +
+      `  return ok(unsafe "shape validated" { res as string })\n` +
+      `}\n`;
+    const out = t(src);
+    // stdlib values auto-imported — no manual import in the source above.
+    expect(out).toMatch(/import \{[^}]*\bhttp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Result is a type-only export.
+    expect(out).toMatch(/import type \{[^}]*\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    // Structural transforms still applied.
+    expect(out).toMatch(/async function loadUser/);
+    expect(out).toContain(`$enter(["net"] as const`);
+    expect(out).toContain("const __r1 = (await http.get(`/users/");
+    expect(out).toMatch(/if \(__r1\.kind === "err"\) return __r1;/);
+  });
 });

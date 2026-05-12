@@ -96,8 +96,13 @@ additions below are the entire language surface.
   fs.writeJson(path, value) -> Result  requires uses { fs }, atomic write
   stdout.println(s) / stderr.println(s)
 
+  Under ?bs 0.6 the compiler auto-imports every stdlib symbol you reference
+  (ok, err, http, time, random, stdout, stderr, Result, Option, …) — no
+  manual import preamble needed. Pre-0.6 pins keep their old behaviour.
+
 == IDIOMS (the canonical way to do common things) ==
   // fail fast on a fetch — await, unwrap the Result, then parse the body
+  // ?bs 0.6  <- stdlib symbols (ok, http, Result, …) are auto-imported
   async fn loadUser(id: string) uses { net } -> Promise<Result<User, Error>> {
     let res = (await http.get(\`/users/\${id}\`))?
     let json = await res.json()
