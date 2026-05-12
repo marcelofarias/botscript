@@ -40,12 +40,30 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers" \
             -d '{"reviewers":["Copilot"]}')
           echo "Review request status: $STATUS"
+          BODY=$(cat /tmp/copilot-review-response.json 2>/dev/null || echo "")
           case "$STATUS" in
-            201) echo "Copilot review requested." ;;
-            422) echo "Copilot already on the reviewer list — nothing to do." ;;
+            200|201|204)
+              # GitHub's docs say 201 Created for a fresh request; 200 / 204
+              # are accepted defensively for any response shape they might
+              # adopt for idempotent re-requests.
+              echo "Copilot review requested (status $STATUS)."
+              ;;
+            422)
+              # 422 is overloaded: it covers "reviewer already requested"
+              # (the happy idempotent path) AND validation failures
+              # ("Reviewer is not a collaborator", missing permissions,
+              # etc.). Sniff the response body for the already-requested
+              # marker; treat anything else as a real warning.
+              if printf '%s' "$BODY" | grep -qiE 'already (been )?requested|already added'; then
+                echo "Copilot already on the reviewer list — nothing to do."
+              else
+                echo "::warning::Got 422 from requested_reviewers but body doesn't look like 'already requested':"
+                printf '%s\n' "$BODY"
+              fi
+              ;;
             *)
               echo "::warning::Unexpected status $STATUS from requested_reviewers endpoint."
-              cat /tmp/copilot-review-response.json 2>/dev/null || true
+              printf '%s\n' "$BODY"
               ;;
           esac
           exit 0
