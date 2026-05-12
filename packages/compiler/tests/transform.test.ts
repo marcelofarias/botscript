@@ -396,5 +396,17 @@ test "slug works" {
     expect(out).toContain("const __r1 = await http.get(url);");
     expect(out).toMatch(/if \(__r1\.kind === "err"\) return __r1;/);
     expect(out).toContain("let res = __r1.value;");
+    // The captured `await` must live INSIDE the `$enter(..., async () => { ... })`
+    // arrow body. If the desugar accidentally hoisted `__r1 = await http.get(url)`
+    // out of the arrow, the assertions above would still pass but the program
+    // would be broken (await at sync top of an async function wrapper) and the
+    // `net` capability frame would be wrong. Lock the structural invariant.
+    const arrowStart = out.indexOf("async () => {");
+    const arrowEnd = out.indexOf("})", arrowStart);
+    const r1Pos = out.indexOf("const __r1 = await http.get(url);");
+    expect(arrowStart).toBeGreaterThan(-1);
+    expect(arrowEnd).toBeGreaterThan(arrowStart);
+    expect(r1Pos).toBeGreaterThan(arrowStart);
+    expect(r1Pos).toBeLessThan(arrowEnd);
   });
 });

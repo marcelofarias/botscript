@@ -21,14 +21,16 @@
  *    body runs. The error is still loud and happens at build/link time,
  *    which is the point.
  *
- * Trade-off: TypeScript consumers building under the `browser` condition
- * see a module with no named exports. Their build won't typecheck against
- * `ok`, `err`, `http`, `$enter`, etc. That's intentional: this package
- * doesn't work in the browser, and a TS / linker error at build time is a
- * louder, earlier signal than a `node:async_hooks` resolution failure
- * deep in a bundler graph. If you actually want a browser-safe subset of
- * botscript-runtime, file an issue and we'll carve out a no-effects
- * entrypoint.
+ * Note on TypeScript: `package.json` keeps `"types"` at the top level of
+ * each `exports` entry, which is the recommended order for TS to pick up
+ * the same `.d.ts` regardless of resolution condition. So TS consumers
+ * building under the `browser` condition usually keep typechecking against
+ * the Node `.d.ts` (it's still the surface they're calling); they just
+ * crash at build/runtime when the bundler resolves this stub instead of
+ * the real entry. That's intentional — this package doesn't work in the
+ * browser, and a loud build-time error is the desired signal. If you
+ * actually want a browser-safe subset of botscript-runtime, file an issue
+ * and we'll carve out a no-effects entrypoint.
  */
 const MESSAGE =
   "@mbfarias/botscript-runtime is Node-only. It imports `node:async_hooks` " +
