@@ -469,6 +469,20 @@ describe("imports", () => {
     expect(out).not.toMatch(/\bResult\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("aliased import does NOT suppress auto-importing the unaliased name", () => {
+    // `import { ok as myOk } ...` binds `myOk`, not `ok`. A later use of
+    // `ok(…)` is therefore unbound and must be auto-imported, not skipped.
+    const src =
+      `?bs 0.6\n` +
+      `import { ok as myOk } from "@mbfarias/botscript-runtime";\n` +
+      `fn x() -> Result<number, string> = ok(1)\n`;
+    const out = t(src);
+    // The merged import should contain both `myOk` (preserving the alias)
+    // and a fresh `ok` so `ok(...)` resolves at runtime.
+    expect(out).toMatch(/import \{[^}]*\bok\s+as\s+myOk\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).toMatch(/import \{[^}]*(?<![\w])ok(?![\w])[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("a commented-out runtime import is NOT mistaken for a real one", () => {
     // A user comment that mentions `import { ok } from "..."` must not
     // suppress the real auto-import. Without filtering comments out of the

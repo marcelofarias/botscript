@@ -311,6 +311,8 @@ function blankStringsAndComments(src: string): string {
  */
 interface ExistingImport {
   match: string;
+  /** Offset of `match` in the original src (UTF-16 code units). */
+  matchStart: number;
   isTypeOnly: boolean;
   specs: { name: string; alias: string | null; typePrefix: boolean }[];
 }
@@ -349,7 +351,7 @@ function findExistingRuntimeImport(src: string, typeOnly: boolean): ExistingImpo
       }
       return { name: body, alias: null, typePrefix };
     });
-  return { match: m[0], isTypeOnly: typeOnly, specs };
+  return { match: m[0], matchStart: m.index, isTypeOnly: typeOnly, specs };
 }
 
 function renderSpec(spec: { name: string; alias: string | null; typePrefix: boolean }): string {
@@ -385,16 +387,20 @@ export function passImports(src: string, version: VersionInfo): string {
 
   if (usedValues.size === 0 && usedTypes.size === 0) return src;
 
-  // Drop any symbol the user has ALREADY imported (in either bag, regardless
-  // of value-vs-type strictness). Respect their existing line: even if a
-  // type-only symbol lives in their value import, we don't second-guess
-  // them — that's a stylistic choice for them to make. Auto-import only
-  // fills genuine gaps.
+  // Drop any symbol the user already has bound at the top level. A spec
+  // contributes to the skip set as its LOCAL binding name, not its export
+  // name — `import { ok as myOk }` binds `myOk`, not `ok`, so a later use
+  // of `ok(…)` must still be auto-imported. Unaliased specs bind their
+  // export name directly.
   const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false);
   const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true);
+  const boundLocally = new Set<string>();
   for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
-    usedValues.delete(spec.name);
-    usedTypes.delete(spec.name);
+    boundLocally.add(spec.alias ?? spec.name);
+  }
+  for (const name of boundLocally) {
+    usedValues.delete(name);
+    usedTypes.delete(name);
   }
 
   if (usedValues.size === 0 && usedTypes.size === 0) return src;
@@ -418,16 +424,25 @@ export function passImports(src: string, version: VersionInfo): string {
 function mergeOrPrepend(src: string, typeOnly: boolean, toAdd: Set<string>): string {
   const existing = findExistingRuntimeImport(src, typeOnly);
   if (existing) {
-    const have = new Set(existing.specs.map((s) => s.name));
+    // Compare against the LOCAL binding (alias if present, else the export
+    // name). `import { ok as myOk }` binds `myOk`, not `ok`, so `ok` is NOT
+    // "already in this import" — we can still add an unaliased `ok` to it.
+    const have = new Set(existing.specs.map((s) => s.alias ?? s.name));
     const additions = [...toAdd].filter((s) => !have.has(s));
     if (additions.length === 0) return src;
     const merged = [...existing.specs, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => (a.alias ?? a.name).localeCompare(b.alias ?? b.name))
       .map(renderSpec)
       .join(", ");
     const keyword = typeOnly ? "import type" : "import";
     const replacement = `${keyword} { ${merged} } from "@mbfarias/botscript-runtime";`;
-    return src.replace(existing.match, replacement);
+    // Position-based splice. Using `src.replace(existing.match, ...)` would
+    // replace the FIRST textual occurrence of the matched line, which can
+    // be a duplicate string earlier in the file (e.g. inside a comment
+    // block that quotes the same import). Splicing at the known offset
+    // guarantees we update the real import every time.
+    return src.slice(0, existing.matchStart) + replacement +
+      src.slice(existing.matchStart + existing.match.length);
   }
   const keyword = typeOnly ? "import type" : "import";
   const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
