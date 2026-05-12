@@ -4,6 +4,34 @@ All notable changes to botscript. Each release pins a `?bs` version; shipped
 pins do not change behaviour after release (AGENTS.md rule 4). New behaviour
 goes behind a new pin.
 
+## ?bs 0.6 — unreleased
+
+### Added
+- **Stdlib auto-import** — the compiler's final pass now also detects
+  user-facing stdlib names in the rewritten output (`ok`, `err`, `http`,
+  `time`, `random`, `stdout`, `stderr`, `Result`, `Option`, `Some`, `None`,
+  `Ok`, `Err`, and the family of helpers). Any name that's used but not
+  already in scope gets added to an auto-generated
+  `import { … } from "@mbfarias/botscript-runtime";` (or a separate
+  `import type { … } …` line for the type-only members), so the canonical
+  primer examples compile through `tsc` without a manual import preamble.
+  Closes #25.
+- The auto-import recognises pre-existing runtime imports, including
+  `import type` lines and `import { ok as myOk }` aliases, and never
+  double-imports or shadows the user's existing bindings.
+- `findExistingRuntimeImport` now skips matches that fall inside comments
+  or string literals (so a `// import …` line doesn't suppress a real
+  auto-import). Gated at 0.6+ for forward-compat.
+
+### Unchanged
+- `fs` still lives at `@mbfarias/botscript-runtime/fs` and is NOT
+  auto-imported. Keep an explicit
+  `import { fs } from "@mbfarias/botscript-runtime/fs";` in any file that
+  uses it.
+- Files pinned to `?bs 0.5` (or earlier) compile to byte-identical output:
+  the new auto-import behaviour and the new comment-aware import detection
+  both gate at `atLeast(version.resolved, "0.6")`.
+
 ## ?bs 0.5 — 2026-05-09
 
 ### Added

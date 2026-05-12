@@ -97,8 +97,11 @@ additions below are the entire language surface.
   stdout.println(s) / stderr.println(s)
 
   Under ?bs 0.6 the compiler auto-imports every stdlib symbol you reference
-  (ok, err, http, time, random, stdout, stderr, Result, Option, …) — no
-  manual import preamble needed. Pre-0.6 pins keep their old behaviour.
+  from the main entry (ok, err, http, time, random, stdout, stderr, Result,
+  Option, …) — no manual import preamble needed. The fs surface lives at
+  @mbfarias/botscript-runtime/fs and is NOT auto-imported — keep an explicit
+  import { fs } from "@mbfarias/botscript-runtime/fs" in any file that uses
+  it. Pre-0.6 pins keep their old behaviour.
 
 == IDIOMS (the canonical way to do common things) ==
   // fail fast on a fetch — await, unwrap the Result, then parse the body

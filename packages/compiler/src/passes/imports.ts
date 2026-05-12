@@ -392,8 +392,13 @@ export function passImports(src: string, version: VersionInfo): string {
   // name — `import { ok as myOk }` binds `myOk`, not `ok`, so a later use
   // of `ok(…)` must still be auto-imported. Unaliased specs bind their
   // export name directly.
-  const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false);
-  const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true);
+  // From 0.6 on, ignore matches that fall inside comments / strings so a
+  // commented-out runtime import doesn't suppress a real auto-import.
+  // Older pins keep the legacy behaviour to honour the forward-compat rule
+  // ("Never modify a shipped version's emitted TS").
+  const commentAware = atLeast(version.resolved, "0.6");
+  const existingValue = findExistingRuntimeImport(src, /*typeOnly=*/ false, { commentAware });
+  const existingType = findExistingRuntimeImport(src, /*typeOnly=*/ true, { commentAware });
   const boundLocally = new Set<string>();
   for (const spec of [...(existingValue?.specs ?? []), ...(existingType?.specs ?? [])]) {
     boundLocally.add(spec.alias ?? spec.name);
@@ -410,13 +415,13 @@ export function passImports(src: string, version: VersionInfo): string {
   // VALUE IMPORT. Merge into existing `import { ... } from "..."` if present,
   // otherwise emit a fresh line.
   if (usedValues.size > 0) {
-    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues);
+    out = mergeOrPrepend(out, /*typeOnly=*/ false, usedValues, { commentAware });
   }
   // TYPE IMPORT. Same treatment for `import type { ... } from "..."`. We
   // never collapse types into a value import (or vice versa) \u2014 callers
   // using `verbatimModuleSyntax` need them separate.
   if (usedTypes.size > 0) {
-    out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes);
+    out = mergeOrPrepend(out, /*typeOnly=*/ true, usedTypes, { commentAware });
   }
   return out;
 }
