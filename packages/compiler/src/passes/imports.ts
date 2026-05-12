@@ -148,8 +148,14 @@ function blankStringsAndComments(src: string): string {
     // A keyword like `return /x/` allows a regex even though the last char
     // is alphabetic. Trust those keywords explicitly.
     if (/[A-Za-z_$]/.test(last) && REGEX_PRECEDENT_KEYWORDS.has(ident)) return true;
-    // Identifier / number / `)` / `]` otherwise means `/` is divide.
-    return !/[A-Za-z0-9_$)\]]/.test(last);
+    // Identifier / number / `)` / `]` / `}` otherwise means `/` is divide.
+    // Including `}` is a pragmatic call: it correctly handles `({...}) /
+    // 2` (object literal followed by divide) at the cost of mis-classifying
+    // `if (x) {} /regex/.test(y)` (block followed by regex). Compiled
+    // botscript output — the only input this scanner sees — doesn't
+    // produce the block-then-regex pattern, so the trade-off favours the
+    // object-literal case.
+    return !/[A-Za-z0-9_$)\]}]/.test(last);
   };
 
   let i = 0;
