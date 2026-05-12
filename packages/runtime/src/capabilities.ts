@@ -34,61 +34,51 @@ export class CapabilityViolation extends Error {
   }
 }
 
-const stack: Capability[][] = [];
+// Capability frames are stored in an AsyncLocalStorage so each async chain
+// carries its own stack. A naive module-level array would interleave under
+// concurrent async `$enter` calls (e.g. via `Promise.all`): one task's pop
+// would tear down another task's frame and `$require` would consult the
+// wrong top. AsyncLocalStorage propagates the store across awaits and forks
+// a fresh snapshot per call to `als.run`, so concurrent and nested frames
+// stay isolated. Sync callers behave identically to the previous array-based
+// implementation because `als.run` is a synchronous wrapper.
+import { AsyncLocalStorage } from "node:async_hooks";
+
+type Frame = ReadonlyArray<Capability>;
+const als = new AsyncLocalStorage<Frame[]>();
 
 export const $enter = <T>(caps: ReadonlyArray<Capability>, fn: () => T): T => {
-  // Capability frames must outlive async bodies. If `fn` is async its body
-  // suspends at the first `await` and the call returns a Promise immediately;
-  // a naive synchronous `finally { stack.pop() }` would tear the frame down
-  // before any awaited effect runs, so a downstream `$require` would see an
-  // empty (or wrong) frame. Detect a thenable return value and defer the pop
-  // until the promise settles. Sync callers stay byte-identical with the old
-  // synchronous behaviour.
-  stack.push([...caps]);
-  let popped = false;
-  const pop = (): void => {
-    if (popped) return;
-    popped = true;
-    stack.pop();
-  };
-  try {
-    const result = fn();
-    if (
-      result !== null &&
-      typeof result === "object" &&
-      typeof (result as { then?: unknown }).then === "function"
-    ) {
-      return (result as unknown as Promise<unknown>).then(
-        (v) => { pop(); return v; },
-        (e) => { pop(); throw e; },
-      ) as unknown as T;
-    }
-    pop();
-    return result;
-  } catch (e) {
-    pop();
-    throw e;
-  }
+  const parent = als.getStore() ?? [];
+  const next: Frame[] = [...parent, Object.freeze([...caps])];
+  return als.run(next, fn);
 };
 
 export const $require = (cap: Capability): void => {
-  const top = stack[stack.length - 1];
-  if (top === undefined) {
+  const stack = als.getStore();
+  if (stack === undefined || stack.length === 0) {
     // No frame — direct top-level call. Conservative default: allow, since
     // top-level is module init. Tests opt-in via $enter([]) for pure assertions.
     return;
   }
+  const top = stack[stack.length - 1]!;
   if (!top.includes(cap)) {
     throw new CapabilityViolation(cap, top);
   }
 };
 
 export const $current = (): ReadonlyArray<Capability> | undefined => {
-  const top = stack[stack.length - 1];
-  return top === undefined ? undefined : [...top];
+  const stack = als.getStore();
+  if (stack === undefined || stack.length === 0) return undefined;
+  return [...stack[stack.length - 1]!];
 };
 
-/** Test-only: clear the capability stack. Don't call this in app code. */
+/**
+ * Test-only: enter a pristine empty store. Don't call this in app code.
+ * No-op outside an `als.run` context (the prior array-based reset would
+ * clear module state; AsyncLocalStorage is per-context, so the global
+ * "reset" notion no longer applies). Kept for test compatibility.
+ */
 export const $reset = (): void => {
-  stack.length = 0;
+  // Intentionally empty. AsyncLocalStorage scopes naturally end when their
+  // run() returns; there is no global state to clear.
 };

@@ -85,4 +85,31 @@ describe("capabilities", () => {
     ).rejects.toThrow("async boom");
     expect($current()).toBeUndefined();
   });
+
+  it("concurrent async $enter calls do not bleed capabilities into each other", async () => {
+    // Two overlapping async tasks with disjoint capability sets must each see
+    // their own frame regardless of interleaving order. With a module-level
+    // mutable stack one task's pop would corrupt the other's top.
+    const a = $enter(["net"], async () => {
+      await Promise.resolve();
+      const seen = $current();
+      expect(seen).toEqual(["net"]);
+      expect(() => $require("net")).not.toThrow();
+      expect(() => $require("fs")).toThrow(CapabilityViolation);
+      await Promise.resolve();
+      return seen;
+    });
+    const b = $enter(["fs"], async () => {
+      await Promise.resolve();
+      const seen = $current();
+      expect(seen).toEqual(["fs"]);
+      expect(() => $require("fs")).not.toThrow();
+      expect(() => $require("net")).toThrow(CapabilityViolation);
+      return seen;
+    });
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra).toEqual(["net"]);
+    expect(rb).toEqual(["fs"]);
+    expect($current()).toBeUndefined();
+  });
 });

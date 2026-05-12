@@ -16,9 +16,11 @@ import { ok, err, type Result } from "./result.js";
 export const http = {
   /**
    * Perform a GET request. Returns `Promise<Result<Response, Error>>` so the
-   * `?` unwrap operator can be used directly after `await`:
+   * `?` unwrap operator can be used directly after `await`. Use parentheses
+   * around `await http.get(url)` so `?` clearly applies to the resolved
+   * `Result`, not to the `Promise` (matches the primer's `loadUser` idiom):
    *
-   *   let res = await http.get(url)?
+   *   let res = (await http.get(url))?
    *
    * Network-level errors (connection refused, DNS failure, etc.) are caught
    * and lifted into `Err`. HTTP error status codes are NOT automatically
