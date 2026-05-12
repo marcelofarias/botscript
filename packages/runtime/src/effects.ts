@@ -25,11 +25,12 @@ const toError = (e: unknown): Error => {
  *   import { http } from "@mbfarias/botscript-runtime";
  *   import { fs }   from "@mbfarias/botscript-runtime/fs";
  *
- * Note: the whole `@mbfarias/botscript-runtime` package is Node-only. This
- * module imports `./capabilities.js`, which uses `node:async_hooks` for
- * per-async-context capability frames, and the `http` wrappers themselves
- * rely on the global Fetch API (Node 18+, or any Bun/Deno). See the
- * package's `engines.node` field for the supported runtime range.
+ * Runtime requirement: the `http` wrappers here rely on the global Fetch
+ * API (`fetch`, `Response`). That's available in modern browsers, Bun,
+ * Deno, and Node 18+; the package's `engines.node` pins the minimum Node
+ * version. The capability machinery in `./capabilities.js` is pure JS
+ * and runs anywhere; only the `./fs` subpath is strictly Node-only
+ * (it imports `node:fs` / `node:path`).
  */
 
 export const http = {
