@@ -37,11 +37,37 @@ export class CapabilityViolation extends Error {
 const stack: Capability[][] = [];
 
 export const $enter = <T>(caps: ReadonlyArray<Capability>, fn: () => T): T => {
+  // Capability frames must outlive async bodies. If `fn` is async its body
+  // suspends at the first `await` and the call returns a Promise immediately;
+  // a naive synchronous `finally { stack.pop() }` would tear the frame down
+  // before any awaited effect runs, so a downstream `$require` would see an
+  // empty (or wrong) frame. Detect a thenable return value and defer the pop
+  // until the promise settles. Sync callers stay byte-identical with the old
+  // synchronous behaviour.
   stack.push([...caps]);
-  try {
-    return fn();
-  } finally {
+  let popped = false;
+  const pop = (): void => {
+    if (popped) return;
+    popped = true;
     stack.pop();
+  };
+  try {
+    const result = fn();
+    if (
+      result !== null &&
+      typeof result === "object" &&
+      typeof (result as { then?: unknown }).then === "function"
+    ) {
+      return (result as unknown as Promise<unknown>).then(
+        (v) => { pop(); return v; },
+        (e) => { pop(); throw e; },
+      ) as unknown as T;
+    }
+    pop();
+    return result;
+  } catch (e) {
+    pop();
+    throw e;
   }
 };
 

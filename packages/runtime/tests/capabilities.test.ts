@@ -59,4 +59,30 @@ describe("capabilities", () => {
     ).toThrow("boom");
     expect($current()).toBeUndefined();
   });
+
+  it("async callback: frame outlives awaits, then pops after settle", async () => {
+    let duringAwait: readonly string[] | undefined;
+    const result = await $enter(["net"], async () => {
+      // Yield to the microtask queue, then re-check the frame.
+      await Promise.resolve();
+      duringAwait = $current();
+      // A second $require after the await must still see the frame.
+      expect(() => $require("net")).not.toThrow();
+      return 42;
+    });
+    expect(result).toBe(42);
+    expect(duringAwait).toEqual(["net"]);
+    // After the promise settles the frame is gone.
+    expect($current()).toBeUndefined();
+  });
+
+  it("async callback: frame pops even when the promise rejects", async () => {
+    await expect(
+      $enter(["net"], async () => {
+        await Promise.resolve();
+        throw new Error("async boom");
+      }),
+    ).rejects.toThrow("async boom");
+    expect($current()).toBeUndefined();
+  });
 });

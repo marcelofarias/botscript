@@ -101,7 +101,7 @@ additions below are the entire language surface.
   async fn loadUser(id: string) uses { net } -> Promise<Result<User, Error>> {
     let res = (await http.get(\`/users/\${id}\`))?
     let json = await res.json()
-    ok(unsafe "shape validated upstream" { json as User })
+    return ok(unsafe "shape validated upstream" { json as User })
   }
 
   // pure helper

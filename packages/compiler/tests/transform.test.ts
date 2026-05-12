@@ -366,7 +366,7 @@ fn slug(s: string) -> string = pure { s.toLowerCase().replaceAll(" ", "-") }
 
 async fn loadUser(id: string) uses { net } -> Promise<Result<{name: string}, Error>> {
   let res = await http.get(\`/u/\${id}\`)?
-  ok({ name: id })
+  return ok({ name: id })
 }
 
 test "slug works" {
@@ -389,7 +389,7 @@ test "slug works" {
     const src =
       `async fn fetch(url: string) uses { net } -> Promise<Result<string, Error>> {\n` +
       `  let res = await http.get(url)?\n` +
-      `  ok("done")\n` +
+      `  return ok("done")\n` +
       `}\n`;
     const out = t(src);
     // The `await` must be part of the captured expression, not silently dropped.
