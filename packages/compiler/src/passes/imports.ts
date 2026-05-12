@@ -480,8 +480,12 @@ export function passImports(src: string, version: VersionInfo): string {
   // earlier steps can land in the wrong order when only one of them was a
   // fresh prepend (e.g. value already existed, type was newly added — the
   // type line gets prepended ABOVE the existing value line). Re-emit them
-  // in canonical order.
-  out = normalizeRuntimeImportOrder(out);
+  // in canonical order. Gated at 0.6+ because the normalizer's reorder
+  // would touch user-written import order under pre-0.6 pins, violating
+  // the forward-compat byte-identical guarantee.
+  if (useAliasAware) {
+    out = normalizeRuntimeImportOrder(out);
+  }
   return out;
 }
 
@@ -559,9 +563,21 @@ function mergeOrPrepend(
       : existing.specs.map((s) => ({ name: s.name, alias: null, typePrefix: s.typePrefix }));
     const merged = [...normalisedExisting, ...additions.map((name) => ({ name, alias: null, typePrefix: false }))]
       .sort((a, b) => {
-        const ka = options.aliasAware ? (a.alias ?? a.name) : a.name;
-        const kb = options.aliasAware ? (b.alias ?? b.name) : b.name;
-        return ka.localeCompare(kb);
+        // 0.6+: sort by local binding (alias if any, else export name).
+        // Pre-0.6: sort by the FULL rendered spec text, matching the
+        //          legacy implementation which sorted raw `from`-list
+        //          entries as plain strings (so `type Result` sorted
+        //          alongside `Result`, `ok` etc. in code-unit order).
+        // Use plain `<`/`>` for code-unit comparison rather than
+        // `localeCompare` — the compiler must emit deterministic output
+        // independent of host locale or collation rules.
+        const ka = options.aliasAware
+          ? (a.alias ?? a.name)
+          : renderSpec(a);
+        const kb = options.aliasAware
+          ? (b.alias ?? b.name)
+          : renderSpec(b);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
       })
       .map(renderSpec)
       .join(", ");
