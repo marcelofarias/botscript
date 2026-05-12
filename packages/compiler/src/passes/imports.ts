@@ -154,6 +154,15 @@ function blankStringsAndComments(src: string): string {
       // dropped (preserve newlines), `${` opens a nested code context, and
       // a bare `` ` `` closes the template.
       if (ch === "\\") {
+        // Clamp: if the backslash is the last code unit in the file, only
+        // emit one blank to preserve the same-byte-count invariant. Letting
+        // \`i += 2\` walk past end-of-input would silently extend `out` by
+        // an extra space and desync later offset-based checks.
+        if (i + 1 >= src.length) {
+          out.push(" ");
+          i += 1;
+          continue;
+        }
         out.push(" ");
         out.push(next === "\n" ? "\n" : " ");
         i += 2;
@@ -171,7 +180,12 @@ function blankStringsAndComments(src: string): string {
         stack.pop();
         // We were inside a template that lived in some outer code ctx; the
         // outer ctx already had its own brace depth, which is unaffected.
-        lastCode = "`";
+        // After the closing backtick the template literal is a primary
+        // value (just like a string or number), so a following `/` is
+        // divide — use the identifier-like sentinel so canStartRegex
+        // returns false. Clear lastIdent for the same reason.
+        lastCode = "x";
+        lastIdent = "";
         i++;
         continue;
       }
@@ -241,21 +255,25 @@ function blankStringsAndComments(src: string): string {
         if (src[j] === "\\") j++;
         j++;
       }
-      const len = j - i + 1;
+      // Clamp on unterminated strings: when we ran off the end without
+      // finding the closing quote, `j - i + 1` would overcount the closing
+      // quote that doesn't exist, breaking the same-byte-count invariant.
+      const len = j < src.length ? j - i + 1 : src.length - i;
       out.push(" ".repeat(len));
       i += len;
       lastCode = "x";
       lastIdent = "";
       continue;
     }
-    // Single-quoted string. Same treatment as double-quoted.
+    // Single-quoted string. Same treatment as double-quoted, including
+    // the unterminated-string clamp.
     if (ch === "'") {
       let j = i + 1;
       while (j < src.length && src[j] !== "'") {
         if (src[j] === "\\") j++;
         j++;
       }
-      const len = j - i + 1;
+      const len = j < src.length ? j - i + 1 : src.length - i;
       out.push(" ".repeat(len));
       i += len;
       lastCode = "x";
@@ -549,13 +567,16 @@ function mergeOrPrepend(
       .join(", ");
     const keyword = typeOnly ? "import type" : "import";
     const replacement = `${keyword} { ${merged} } from "@mbfarias/botscript-runtime";`;
-    // Position-based splice. Using `src.replace(existing.match, ...)` would
-    // replace the FIRST textual occurrence of the matched line, which can
-    // be a duplicate string earlier in the file (e.g. inside a comment
-    // block that quotes the same import). Splicing at the known offset
-    // guarantees we update the real import every time.
-    return src.slice(0, existing.matchStart) + replacement +
-      src.slice(existing.matchStart + existing.match.length);
+    // 0.6+: position-based splice at the known offset (correct).
+    // Pre-0.6: keep the legacy \`String.replace\` behaviour (which targets
+    // the FIRST textual occurrence) so files pinned to 0.1–0.5 emit
+    // byte-identical TS, even in the degenerate case where the same
+    // import text appears earlier in the file (e.g. quoted in a comment).
+    if (options.aliasAware) {
+      return src.slice(0, existing.matchStart) + replacement +
+        src.slice(existing.matchStart + existing.match.length);
+    }
+    return src.replace(existing.match, replacement);
   }
   const keyword = typeOnly ? "import type" : "import";
   const importLine = `${keyword} { ${[...toAdd].sort().join(", ")} } from "@mbfarias/botscript-runtime";`;
@@ -572,8 +593,18 @@ function mergeOrPrepend(
   // \`normalizeRuntimeImportOrder\`'s leading-line scan).
   const runtimeImportRe =
     /^import(?:\s+type)?\s+\{[^}]*\}\s+from\s+["']@mbfarias\/botscript-runtime["'];?/gm;
+  // Under 0.6+ comment-aware mode, ignore matches that fall inside a
+  // comment or string literal. We probe the blanked source at each match
+  // offset — if the `import` keyword is still visible there, the match
+  // is real code. Pre-0.6 keeps the legacy behaviour where any text
+  // match counts (mirrors the older `String.replace`-based prepend).
+  const blanked = options.commentAware ? blankStringsAndComments(src) : null;
   let lastEnd = -1;
   for (let m: RegExpExecArray | null; (m = runtimeImportRe.exec(src)) !== null; ) {
+    if (blanked) {
+      const probe = blanked.slice(m.index, m.index + m[0].length);
+      if (!probe.trimStart().startsWith("import")) continue;
+    }
     lastEnd = m.index + m[0].length;
   }
   if (lastEnd >= 0) {
