@@ -559,6 +559,29 @@ describe("imports", () => {
     expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
   });
 
+  it("`declare function ok(...)` suppresses auto-importing ok", () => {
+    // Ambient declarations bind a name at module scope in both value and
+    // type namespaces. Auto-importing the same name would produce a TS2451
+    // duplicate-binding error, so the pass must skip it.
+    const src =
+      `?bs 0.6\n` +
+      `declare function ok(n: number): number;\n` +
+      `fn use_it() -> number = pure { ok(2) }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
+  it("`function* ok()` (generator) suppresses auto-importing ok", () => {
+    // Generator functions (`function*`) bind a name in the value namespace.
+    // Auto-importing the same stdlib name would shadow the local generator.
+    const src =
+      `?bs 0.6\n` +
+      `function* ok(): Generator<number> { yield 1; }\n` +
+      `fn use_it() -> number = pure { ok().next().value }\n`;
+    const out = t(src);
+    expect(out).not.toMatch(/import \{[^}]*\bok\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("aliased import does NOT suppress auto-importing the unaliased name", () => {
     // `import { ok as myOk } ...` binds `myOk`, not `ok`. A later use of
     // `ok(…)` is therefore unbound and must be auto-imported, not skipped.

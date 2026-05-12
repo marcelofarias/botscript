@@ -541,7 +541,10 @@ export function passImports(src: string, version: VersionInfo): string {
     //   - `import Default, { a } from "..."`           (default + named)
     //   - `import * as ns from "..."`                  (namespace)
     //   - `import type { ... } from "..."`             (type-only)
-    //   - `import "..."`                               (side-effect; no bindings)
+    //   NOTE: `import "..."` (side-effect only, no `from` clause) has no
+    //   bindings and is intentionally NOT matched by IMPORT_LINE_RE — the
+    //   regex requires `from "..."`. This is correct: there's nothing to
+    //   add to the bound-names set for a bare side-effect import.
     // Also includes ALSO our own \`@mbfarias/botscript-runtime\` so a file
     // with multiple runtime imports of the same kind picks up bindings
     // from every one of them, not just the first that the regex-match
@@ -867,8 +870,13 @@ function collectLocallyDeclared(blanked: string): { values: Set<string>; types: 
   // binding into the value or type bag. \`function\`/\`const\`/\`let\`/
   // \`var\` bind values only; \`interface\`/\`type\` bind types only;
   // \`class\`/\`enum\` bind BOTH.
+  //
+  // The pattern tolerates:
+  //   - an optional leading `declare` (ambient declarations like
+  //     `declare function ok(...)` or `declare const ok = ...`)
+  //   - an optional `*` after `function` (generator declarations)
   const DECL_RE =
-    /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(function|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
+    /^(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:async\s+)?(function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm;
   let m: RegExpExecArray | null;
   while ((m = DECL_RE.exec(blanked)) !== null) {
     const keyword = m[1]!;
