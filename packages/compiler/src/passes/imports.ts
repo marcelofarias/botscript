@@ -117,6 +117,15 @@ const STDLIB_TYPE_SYMBOLS = [
  * worst case is a false-positive stdlib import in a file that wasn't going
  * to typecheck anyway.
  */
+/**
+ * Return true if `s` at `idx` is an ECMAScript LineTerminator code unit:
+ * LF (U+000A), CR (U+000D), LS (U+2028), or PS (U+2029).
+ */
+function isLineTerminatorAt(s: string, idx: number): boolean {
+  const c = s.charCodeAt(idx);
+  return c === 0x0a || c === 0x0d || c === 0x2028 || c === 0x2029;
+}
+
 function blankStringsAndComments(src: string): string {
   type Ctx = { kind: "template" } | { kind: "code"; braceDepth: number };
   const stack: Ctx[] = [{ kind: "code", braceDepth: 0 }];
@@ -164,7 +173,9 @@ function blankStringsAndComments(src: string): string {
           continue;
         }
         out.push(" ");
-        out.push(next === "\n" ? "\n" : " ");
+        // Preserve any LineTerminator (LF, CR, LS, PS) so line counts and
+        // line-anchored regexes stay aligned with the original source.
+        out.push(isLineTerminatorAt(src, i + 1) ? src[i + 1]! : " ");
         i += 2;
         continue;
       }
@@ -189,7 +200,7 @@ function blankStringsAndComments(src: string): string {
         i++;
         continue;
       }
-      out.push(ch === "\n" ? "\n" : " ");
+      out.push(isLineTerminatorAt(src, i) ? ch : " ");
       i++;
       continue;
     }
@@ -220,7 +231,14 @@ function blankStringsAndComments(src: string): string {
       const end = src.indexOf("*/", i + 2);
       const len = end === -1 ? src.length - i : end - i + 2;
       // Preserve newlines so line numbers stay accurate.
-      out.push(src.slice(i, i + len).replace(/[^\n]/g, " "));
+      // Preserve every LineTerminator (LF / CR / LS / PS) so line-anchored
+      // scans further down the pipeline see the same line count.
+      out.push(
+        src.slice(i, i + len).replace(/[\s\S]/g, (c) => {
+          const code = c.charCodeAt(0);
+          return code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029 ? c : " ";
+        }),
+      );
       i += len;
       continue;
     }
@@ -699,7 +717,10 @@ function mergeOrPrepend(
     // whitespace — stays on the existing import's line, not on the new
     // one we're about to splice in.
     let eol = m.index + m[0].length;
-    while (eol < src.length && src[eol] !== "\n") eol++;
+    // Stop at any LineTerminator (LF, CR, LS, PS) — not just LF — so the
+    // splice point stays on the existing import's line for CR-only and
+    // CRLF inputs too.
+    while (eol < src.length && !isLineTerminatorAt(src, eol)) eol++;
     lastEnd = eol;
   }
   if (lastEnd >= 0) {
