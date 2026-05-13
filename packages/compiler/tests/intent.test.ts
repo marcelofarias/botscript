@@ -158,3 +158,20 @@ describe("INT001 — diagnostic shape", () => {
     }
   });
 });
+
+describe("INT001 — case-insensitive pure matching", () => {
+  it("fires INT001 when intent is 'Pure' (capital P)", () => {
+    const src = `?bs 0.7\nfn fetch(url: string) uses { net } intent: "Pure" -> string = url\n`;
+    expect(() => t(src)).toThrow();
+  });
+
+  it("fires INT001 when intent is 'PURE' (all caps)", () => {
+    const src = `?bs 0.7\nfn compute() uses { time } intent: "PURE" -> number = 42\n`;
+    expect(() => t(src)).toThrow();
+  });
+
+  it("fires INT001 when intent is 'Pure function' (mixed case)", () => {
+    const src = `?bs 0.7\nfn slug(s: string) uses { fs } intent: "Pure function" -> string = s\n`;
+    expect(() => t(src)).toThrow();
+  });
+});

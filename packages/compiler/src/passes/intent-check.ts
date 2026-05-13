@@ -42,7 +42,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // INT001: intent claims "pure" but the function has capability declarations.
     if (containsPureClaim(decl.intent) && decl.capabilities.length > 0) {
       const entry = getErrorCode("INT001")!;
-      const loc = locationOf(src, decl.intentStart ?? decl.fnKeywordStart);
+      // intentStart is always set when intent is set (parseFn assigns them
+      // together); the non-null assertion is safe.
+      const intentStart = decl.intentStart!;
+      const loc = locationOf(src, intentStart);
       const capsStr = decl.capabilities.join(", ");
 
       const diagnostic: Diagnostic = {
@@ -51,8 +54,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         file: null,
         line: loc.line,
         column: loc.column,
-        start: decl.intentStart ?? decl.fnKeywordStart,
-        end: (decl.intentStart ?? decl.fnKeywordStart) + decl.intent.length + 2, // +2 for quotes
+        start: intentStart,
+        end: intentStart + decl.intent.length + 2, // +2 for surrounding quotes
         message:
           `fn '${decl.name}' intent claims 'pure' but declares capabilities { ${capsStr} } — ` +
           `pure functions may not consume external resources`,
@@ -79,7 +82,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
  * Does NOT match: "impure", "not-pure".
  */
 function containsPureClaim(intent: string): boolean {
-  return /(?<![a-zA-Z0-9_-])pure(?![a-zA-Z0-9_-])/.test(intent);
+  // Case-insensitive: "Pure", "PURE", "pure function" all carry the same claim.
+  return /(?<![a-zA-Z0-9_-])pure(?![a-zA-Z0-9_-])/i.test(intent);
 }
 
 function locationOf(src: string, offset: number): { line: number; column: number } {
