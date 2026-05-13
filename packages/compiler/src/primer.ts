@@ -27,12 +27,14 @@ additions below are the entire language surface.
                                               are accepted and emitted verbatim.
   fn name(args) intent: "claim" -> ReturnType (0.7+) machine-checkable intent.
                                               The compiler verifies declared
-                                              intent against the fn's caps and
-                                              body. Recognised mechanical claim:
-                                              "pure" — no capability declarations
-                                              allowed (INT001). intent: and
-                                              uses { } may coexist; the check
-                                              fires only when they conflict.
+                                              intent against the fn's header
+                                              (body-shape checks are planned,
+                                              not implemented yet). Recognised
+                                              mechanical claim: "pure" — no
+                                              capability declarations allowed
+                                              (INT001). intent: and uses { }
+                                              may coexist; the check fires only
+                                              when they conflict.
   Capabilities: net, fs, time, random, process, stdout, stderr.
   Under ?bs 0.2 the capability declaration is checked statically — a function
   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse

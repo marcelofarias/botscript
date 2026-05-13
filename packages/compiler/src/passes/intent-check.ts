@@ -2,7 +2,9 @@
  * Intent-vs-capability consistency check.
  *
  *   ?bs 0.7  Enabled. Every `fn` whose header carries an `intent: "..."` clause
- *            is checked against its capability declarations and body shape.
+ *            is checked against its declared capabilities (the `uses { ... }`
+ *            clause). Body-shape verification is not implemented yet — the
+ *            current rule is a header-level consistency check.
  *
  *            Currently enforced claims:
  *
@@ -20,28 +22,22 @@
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex } from "../parser/lex.js";
-import { parseFn } from "../parser/parse-fn.js";
+import { parseProgram } from "../parser/parse.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
 
-  const tokens = lex(src);
-  const diagnostics: Diagnostic[] = [];
   const allowGenerics = atLeast(version.resolved, "0.4");
+  const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
+  const diagnostics: Diagnostic[] = [];
 
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i]!;
-    if (t.kind !== "keyword" || t.keyword !== "fn") continue;
+  for (const slot of program.fns) {
+    const decl = slot.decl;
 
-    const decl = parseFn(tokens, i, { allowGenerics });
-    if (!decl) continue;
-
-    // Skip to end of this declaration to avoid re-parsing inner fns.
-    i = decl.tokenEnd - 1;
-
-    if (!decl.intent) continue;
+    // Use === undefined (not falsiness) so an explicitly empty intent: ""
+    // is still treated as an intent clause being present.
+    if (decl.intent === undefined) continue;
 
     // INT001: intent claims "pure" but the function has capability declarations.
     if (containsPureClaim(decl.intent) && decl.capabilities.length > 0) {
