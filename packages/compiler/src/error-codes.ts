@@ -183,6 +183,46 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(\"/users/\" + id);\n" +
       "}",
   },
+  DEP001: {
+    code: "DEP001",
+    title: "reads annotation is incomplete — callee reads a resource category not declared by the caller",
+    rule:
+      "if fn A calls fn B (in the same file) and B declares reads { x }, then A must also declare reads { x }; " +
+      "a function's reads clause must cover the union of its own reads and all same-file callees' reads (transitively)",
+    idiom:
+      "declare every resource category your function reads, directly or through what it calls; " +
+      "callers should be able to audit the full read surface from the header alone",
+    rewrite: "fn name(args) reads { missing-label, ... } -> ...",
+    example:
+      "// before — loadUser reads from db via fetchFromDb, but doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn fetchFromDb(id: string) reads { db } -> string { ... }\n" +
+      "fn loadUser(id: string) reads { cache } -> string { fetchFromDb(id) }\n\n" +
+      "// after — loadUser declares all resource categories it (or its callees) reads\n" +
+      "?bs 0.9\n" +
+      "fn fetchFromDb(id: string) reads { db } -> string { ... }\n" +
+      "fn loadUser(id: string) reads { cache, db } -> string { fetchFromDb(id) }",
+  },
+  DEP002: {
+    code: "DEP002",
+    title: "writes annotation is incomplete — callee writes a resource category not declared by the caller",
+    rule:
+      "if fn A calls fn B (in the same file) and B declares writes { x }, then A must also declare writes { x }; " +
+      "a function's writes clause must cover the union of its own writes and all same-file callees' writes (transitively)",
+    idiom:
+      "declare every resource category your function writes, directly or through what it calls; " +
+      "callers should be able to audit the full write surface from the header alone",
+    rewrite: "fn name(args) writes { missing-label, ... } -> ...",
+    example:
+      "// before — saveUser writes to db via persistUser, but doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn persistUser(user: User) writes { db } -> void { ... }\n" +
+      "fn saveUser(user: User) writes { cache } -> void { persistUser(user) }\n\n" +
+      "// after — saveUser declares all resource categories it (or its callees) writes\n" +
+      "?bs 0.9\n" +
+      "fn persistUser(user: User) writes { db } -> void { ... }\n" +
+      "fn saveUser(user: User) writes { cache, db } -> void { persistUser(user) }",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

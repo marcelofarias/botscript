@@ -248,6 +248,53 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
     },
   },
+  DEP001: {
+    code: "DEP001",
+    title: "reads annotation is incomplete — callee reads a resource category not declared by the caller",
+    body:
+      "From `?bs 0.9`, the compiler enforces transitivity of `reads {}` and `writes {}` " +
+      "annotations across same-file function calls. If fn A calls fn B and B declares " +
+      "`reads { db }`, then A must also declare `reads { db }`. This ensures that a " +
+      "caller of A can read A's header alone and know every resource category A (or " +
+      "anything it calls) reads from.\n\n" +
+      "The rule mirrors how CAP001 handles capabilities: the declared surface must cover " +
+      "the transitive actual surface. Over-declaration is always allowed — conservative " +
+      "annotations are harmless. Only under-declaration fires DEP001.\n\n" +
+      "The fix is simple: add the missing label(s) to the caller's `reads {}` clause. " +
+      "The diagnostic message names the call path (\"A -> B\") and the specific label, " +
+      "so the rewrite is mechanical.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchFromDb(id: string) reads { db } -> string = id\n" +
+        "fn loadUser(id: string) reads { cache } -> string = fetchFromDb(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn fetchFromDb(id: string) reads { db } -> string = id\n" +
+        "fn loadUser(id: string) reads { cache, db } -> string = fetchFromDb(id)\n",
+    },
+  },
+  DEP002: {
+    code: "DEP002",
+    title: "writes annotation is incomplete — callee writes a resource category not declared by the caller",
+    body:
+      "The writes-side counterpart to DEP001. From `?bs 0.9`, if fn A calls fn B and B " +
+      "declares `writes { db }`, then A must also declare `writes { db }`. " +
+      "Same rationale: the declared write surface must cover the transitive write surface " +
+      "so callers can audit it from A's header alone.\n\n" +
+      "Add the missing label to the caller's `writes {}` clause to clear the diagnostic. " +
+      "The message names the call path and the specific missing label.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn persistUser(id: string) writes { db } -> void { }\n" +
+        "fn saveUser(id: string) writes { cache } -> void { persistUser(id) }\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn persistUser(id: string) writes { db } -> void { }\n" +
+        "fn saveUser(id: string) writes { cache, db } -> void { persistUser(id) }\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

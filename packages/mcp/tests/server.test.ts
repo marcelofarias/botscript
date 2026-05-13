@@ -49,6 +49,8 @@ describe("botscript-mcp explanations", () => {
       "BS002",
       "CAP001",
       "CAP002",
+      "DEP001",
+      "DEP002",
       "FMT001",
       "INT001",
       "INT002",

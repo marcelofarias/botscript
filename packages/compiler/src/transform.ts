@@ -4,6 +4,7 @@ import { formatSource, isCanonical } from "./format/format.js";
 import { passAssert } from "./passes/assert.js";
 import { passBlocks } from "./passes/blocks.js";
 import { passCapCheck } from "./passes/cap-check.js";
+import { passDepCheck } from "./passes/dep-check.js";
 import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passIntentCheck } from "./passes/intent-check.js";
@@ -51,6 +52,9 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // transitive capability walk, which produces noisier output.
   { name: "intentCheck", fn: passIntentCheck, minVersion: "0.7" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
+  // depCheck enforces transitivity of reads/writes annotations across
+  // same-file calls. Runs after capCheck; only active from 0.9.
+  { name: "depCheck", fn: passDepCheck, minVersion: "0.9" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },

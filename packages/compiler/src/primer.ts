@@ -47,9 +47,11 @@ additions below are the entire language surface.
                                               categories the function writes
                                               to. Labels are user-defined
                                               identifiers (e.g. metrics, db).
-                                              Both are metadata-only in 0.8
-                                              — stripped from TS output, not
-                                              yet transitively enforced.
+                                              Metadata-only in 0.8: stripped from
+                                              TS output. From 0.9, transitively
+                                              enforced (DEP001 / DEP002): if fn A
+                                              calls fn B and B declares reads { x },
+                                              A must also declare reads { x }.
                                               reads {}, writes {}, and intent:
                                               may coexist with uses {} in any
                                               order after uses {} (if present)
