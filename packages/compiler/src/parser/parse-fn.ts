@@ -176,6 +176,9 @@ export function parseFn(
     const tok = tokens[i];
     if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes")) {
       const keyword = tok.text;
+      // Duplicate annotation — treat as a parse error (stop parsing the header).
+      if (keyword === "reads" && reads !== undefined) break;
+      if (keyword === "writes" && writes !== undefined) break;
       const savedI = i;
       i++;
       i = skipTrivia(tokens, i);

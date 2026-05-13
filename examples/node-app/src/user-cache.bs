@@ -13,7 +13,7 @@ fn lookupCache(id: string) reads { cache } -> string | undefined =
 
 fn writeCache(id: string, value: string) writes { cache } -> void { }
 
-fn fetchFromDb(id: string) uses { net } reads { db } -> Promise<Result<string, string>> {
+async fn fetchFromDb(id: string) uses { net } reads { db } -> Promise<Result<string, string>> {
   const res = await http.get(`https://api.example.com/users/${id}`);
   if (!res.ok) return err("not found");
   return ok(id);

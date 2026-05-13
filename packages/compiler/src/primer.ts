@@ -36,15 +36,19 @@ additions below are the entire language surface.
                                               may coexist; the check fires only
                                               when they conflict.
   fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
-  fn name(args) writes { a, b } -> ReturnType categories the function reads
-                                              from / writes to. Labels are
-                                              user-defined ("cache", "db",
-                                              "metrics", etc.). Metadata-only
-                                              in 0.8 — stripped from TS output,
-                                              not yet transitively enforced.
-                                              reads {}, writes {}, uses {}, and
-                                              intent: may all coexist in any
-                                              order between args and ->.
+                                              categories the function reads
+                                              from. Labels are user-defined
+                                              ("cache", "db", etc.).
+  fn name(args) writes { a, b } -> ReturnType (0.8+) declare which resource
+                                              categories the function writes
+                                              to. Labels are user-defined
+                                              ("metrics", "db", etc.).
+                                              Both are metadata-only in 0.8
+                                              — stripped from TS output, not
+                                              yet transitively enforced.
+                                              reads {}, writes {}, uses {},
+                                              and intent: may all coexist in
+                                              any order between args and ->.
   Capabilities: net, fs, time, random, process, stdout, stderr.
   Under ?bs 0.2 the capability declaration is checked statically — a function
   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse

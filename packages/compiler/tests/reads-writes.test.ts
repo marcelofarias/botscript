@@ -149,6 +149,31 @@ describe("reads/writes stripped from TypeScript output", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Duplicate annotation detection
+// ---------------------------------------------------------------------------
+
+describe("parseFn duplicate reads/writes", () => {
+  it("returns null for duplicate reads {} annotations", () => {
+    // The second reads {} is treated as a parse error (not a silent overwrite).
+    const tokens = lex(
+      `fn dup(id: string) reads { cache } reads { db } -> string = id`,
+    );
+    const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
+    const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
+    expect(decl).toBeNull();
+  });
+
+  it("returns null for duplicate writes {} annotations", () => {
+    const tokens = lex(
+      `fn dup(id: string) writes { metrics } writes { audit } -> void { }`,
+    );
+    const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
+    const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
+    expect(decl).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Version gate: reads/writes parse silently under earlier pins too
 // (parseFn is version-agnostic; the check level, not parse level, is gated)
 // ---------------------------------------------------------------------------
