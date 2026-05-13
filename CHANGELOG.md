@@ -4,6 +4,37 @@ All notable changes to botscript. Each release pins a `?bs` version; shipped
 pins do not change behaviour after release (AGENTS.md rule 4). New behaviour
 goes behind a new pin.
 
+## ?bs 0.8 — unreleased
+
+### Added
+- **Declarative `reads { ... }` / `writes { ... }`** on fn headers — declare
+  which user-defined resource categories (e.g. `cache`, `db`, `metrics`) a
+  function reads from or writes to. Labels are user-defined strings, not
+  tied to stdlib namespaces. Metadata-only in 0.8: parsed, stored on
+  `FnDecl`, and stripped from emitted TypeScript. Transitivity enforcement
+  lands at `?bs 0.9` (DEP001 / DEP002).
+- **INT001 extended** to also fire when a function declares
+  `intent: "pure"` alongside a non-empty `reads { }` or `writes { }` clause.
+  Pure functions have no read/write dependencies, same way they have no
+  capabilities.
+
+### Compat
+- Files pinned to `?bs 0.7` (or earlier) compile to byte-identical output.
+  The new `reads { }` / `writes { }` parsing is gated on `?bs 0.8`.
+
+## ?bs 0.7 — unreleased
+
+### Added
+- **Machine-checkable `intent: "..."`** clauses on fn headers (RFC #15).
+  A free-form string capturing the function's intent, parsed and stored on
+  `FnDecl`. The first mechanical claim the compiler verifies is `"pure"` —
+  INT001 fires when an intent contains "pure" but the function also
+  declares a non-empty `uses { ... }` clause.
+
+### Compat
+- Files pinned to `?bs 0.6` (or earlier) compile to byte-identical output.
+  INT001 only runs under `?bs 0.7+`.
+
 ## ?bs 0.6 — unreleased
 
 ### Added

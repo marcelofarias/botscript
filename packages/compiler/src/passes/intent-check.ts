@@ -2,7 +2,8 @@
  * Intent-vs-capability consistency check.
  *
  *   ?bs 0.7  Enabled. Every `fn` whose header carries an `intent: "..."` clause
- *            is checked against its declared capabilities and body.
+ *            is checked against its declared capabilities, read/write
+ *            dependencies (`uses { }`, `reads { }`, `writes { }`), and body.
  *
  *            Currently enforced claims:
  *
@@ -96,7 +97,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite:
-          `// remove resource annotations:\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
+          `// remove the conflicting header clauses (uses/reads/writes):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
           `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
       };
       diagnostics.push(diagnostic);

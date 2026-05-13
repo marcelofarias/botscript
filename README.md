@@ -157,7 +157,8 @@ adding a row.
 
 Per-version release notes live in [`CHANGELOG.md`](./CHANGELOG.md). `LATEST`
 is still 0.1, so existing files compile unchanged; opt into newer behaviour
-with a `?bs 0.2` / `?bs 0.3` / `?bs 0.4` / `?bs 0.5` / `?bs 0.6` directive.
+with a `?bs 0.2` / `?bs 0.3` / `?bs 0.4` / `?bs 0.5` / `?bs 0.6` / `?bs 0.7` /
+`?bs 0.8` directive.
 
 ## MCP server (for bots)
 

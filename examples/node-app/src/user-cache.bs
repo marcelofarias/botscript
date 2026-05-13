@@ -8,6 +8,11 @@ import { ok, err, type Result } from "@mbfarias/botscript-runtime";
 // Use them the same way you use uses {}: document intent, prepare for
 // enforcement in a future version.
 
+// lookupCache / writeCache are intentionally stubbed — the reads/writes
+// annotations are metadata-only in 0.8 (no body-shape verification yet),
+// so the bodies don't need to actually touch a cache. They illustrate the
+// declarative shape; a real implementation would back this with a Map or
+// external KV store and the same annotations would still apply.
 fn lookupCache(id: string) reads { cache } -> string | undefined =
   pure { undefined }
 

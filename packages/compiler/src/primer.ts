@@ -31,10 +31,12 @@ additions below are the entire language surface.
                                               (body-shape checks are planned,
                                               not implemented yet). Recognised
                                               mechanical claim: "pure" — no
-                                              capability declarations allowed
-                                              (INT001). intent: and uses { }
-                                              may coexist; the check fires only
-                                              when they conflict.
+                                              capability declarations (uses { })
+                                              and no read/write dependencies
+                                              (reads { } / writes { }) allowed
+                                              (INT001). intent: may coexist with
+                                              uses / reads / writes; the check
+                                              fires only when they conflict.
   fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
                                               categories the function reads
                                               from. Labels are user-defined
@@ -62,7 +64,10 @@ additions below are the entire language surface.
     CAP002  uses clause names a capability nothing in the body reaches. The
             declaration must match what the function actually uses.
   Under ?bs 0.7 the intent check adds:
-    INT001  intent contains 'pure' but the function has capability declarations.
+    INT001  intent contains 'pure' but the function has capability declarations
+            (uses {}) or read/write dependencies (reads {} / writes {}). Pure
+            functions may not consume external resources or have read/write
+            dependencies.
   cap-check diagnostics also carry start/end UTF-16 string offsets alongside
   line/column from 0.2 onward, so editor and LSP integrations can map the
   error to a precise span without re-walking the source. (The whole-file
