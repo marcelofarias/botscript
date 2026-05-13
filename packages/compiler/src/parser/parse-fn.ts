@@ -39,6 +39,20 @@ export interface FnDecl {
   args: string;
   capabilities: string[];
   /**
+   * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
+   * element is an ident naming a resource category the function reads from.
+   * Metadata-only in the first version — stripped from TS output, not yet
+   * enforced transitively. Introduced in `?bs 0.8`.
+   */
+  reads?: string[];
+  /**
+   * Optional declarative write-dependency list, e.g. `writes { metrics, db }`. Each
+   * element is an ident naming a resource category the function writes to.
+   * Metadata-only in the first version — stripped from TS output, not yet
+   * enforced transitively. Introduced in `?bs 0.8`.
+   */
+  writes?: string[];
+  /**
    * Optional machine-checkable intent string, e.g. `"pure"`, `"idempotent"`.
    * Parsed from `intent: "<value>"` between the `uses {}` clause and `->` in
    * the function header. Present only when the `intent:` clause is written;
@@ -151,33 +165,64 @@ export function parseFn(
     i = skipTrivia(tokens, i);
   }
 
-  // Optional `intent: "<value>"` — machine-checkable intent declaration.
+  // Optional `reads { ... }`, `writes { ... }`, and `intent: "<value>"` in any
+  // order between `uses {}` and `->`. All are metadata: stripped from TS output.
+  let reads: string[] | undefined;
+  let writes: string[] | undefined;
   let intent: string | undefined;
   let intentStart: number | undefined;
-  if (tokens[i]?.kind === "ident" && tokens[i]?.text === "intent") {
-    const savedI = i;
-    i++;
-    i = skipTrivia(tokens, i);
-    if (tokens[i]?.kind === "punct" && tokens[i]?.text === ":") {
+  // Loop until we hit something that isn't reads/writes/intent.
+  for (;;) {
+    const tok = tokens[i];
+    if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes")) {
+      const keyword = tok.text;
+      const savedI = i;
       i++;
       i = skipTrivia(tokens, i);
-      const strTok = tokens[i];
-      if (strTok?.kind === "string") {
-        // Strip the surrounding quotes to get the raw value.
-        intentStart = strTok.start;
-        const raw = strTok.text;
-        intent = raw.startsWith('"') || raw.startsWith("'")
-          ? raw.slice(1, -1)
-          : raw;
+      const open = tokens[i];
+      if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
+        // Not a reads/writes block — backtrack and stop.
+        i = savedI;
+        break;
+      }
+      const close = open.matchedAt;
+      const items = parseCapList(tokens, i + 1, close);
+      if (keyword === "reads") {
+        reads = items;
+      } else {
+        writes = items;
+      }
+      i = close + 1;
+      i = skipTrivia(tokens, i);
+    } else if (tok?.kind === "ident" && tok.text === "intent") {
+      const savedI = i;
+      i++;
+      i = skipTrivia(tokens, i);
+      if (tokens[i]?.kind === "punct" && tokens[i]?.text === ":") {
         i++;
         i = skipTrivia(tokens, i);
+        const strTok = tokens[i];
+        if (strTok?.kind === "string") {
+          // Strip the surrounding quotes to get the raw value.
+          intentStart = strTok.start;
+          const raw = strTok.text;
+          intent = raw.startsWith('"') || raw.startsWith("'")
+            ? raw.slice(1, -1)
+            : raw;
+          i++;
+          i = skipTrivia(tokens, i);
+        } else {
+          // Not a string — backtrack and stop.
+          i = savedI;
+          break;
+        }
       } else {
-        // Not a string — backtrack; treat as start of return type.
+        // No colon after `intent` — backtrack and stop.
         i = savedI;
+        break;
       }
     } else {
-      // No colon after `intent` — backtrack.
-      i = savedI;
+      break;
     }
   }
 
@@ -338,6 +383,8 @@ export function parseFn(
     typeParams,
     args,
     capabilities,
+    reads,
+    writes,
     intent,
     intentStart,
     returnType,

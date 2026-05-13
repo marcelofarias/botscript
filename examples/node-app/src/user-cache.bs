@@ -1,0 +1,30 @@
+?bs 0.8
+
+import { ok, err, type Result } from "@mbfarias/botscript-runtime";
+
+// reads {} / writes {} annotations (0.8+) declare which resource categories
+// a function touches. Labels are user-defined. Metadata-only in 0.8 —
+// stripped from TypeScript output, not yet transitively enforced.
+// Use them the same way you use uses {}: document intent, prepare for
+// enforcement in a future version.
+
+fn lookupCache(id: string) reads { cache } -> string | undefined =
+  pure { undefined }
+
+fn writeCache(id: string, value: string) writes { cache } -> void { }
+
+fn fetchFromDb(id: string) uses { net } reads { db } -> Promise<Result<string, string>> {
+  const res = await http.get(`https://api.example.com/users/${id}`);
+  if (!res.ok) return err("not found");
+  return ok(id);
+}
+
+async fn loadUser(id: string) uses { net } reads { cache, db } writes { cache } -> Promise<Result<string, string>> {
+  const cached = lookupCache(id);
+  if (cached !== undefined) return ok(cached);
+  const result = await fetchFromDb(id);
+  if (result.ok) writeCache(id, result.value);
+  return result;
+}
+
+export { loadUser };
