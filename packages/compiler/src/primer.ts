@@ -46,9 +46,10 @@ additions below are the entire language surface.
                                               Both are metadata-only in 0.8
                                               — stripped from TS output, not
                                               yet transitively enforced.
-                                              reads {}, writes {}, uses {},
-                                              and intent: may all coexist in
-                                              any order between args and ->.
+                                              reads {}, writes {}, and intent:
+                                              may coexist with uses {} in any
+                                              order after uses {} (if present)
+                                              and before ->.
   Capabilities: net, fs, time, random, process, stdout, stderr.
   Under ?bs 0.2 the capability declaration is checked statically — a function
   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse

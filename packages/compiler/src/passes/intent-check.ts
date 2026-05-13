@@ -77,7 +77,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
       if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
       if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
+      // Comma-joined for human-readable message; space-joined for the rewrite
+      // field (fn header clauses are space-separated, not comma-separated).
       const conflictsStr = parts.join(", ");
+      const conflictsRewrite = parts.join(" ");
 
       const diagnostic: Diagnostic = {
         code: "INT001",
@@ -94,7 +97,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         idiom: entry.idiom,
         rewrite:
           `// remove resource annotations:\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsStr} -> ...`,
+          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
       };
       diagnostics.push(diagnostic);
       // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).

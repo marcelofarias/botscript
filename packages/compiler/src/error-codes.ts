@@ -149,7 +149,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "// option A — remove resource annotations:\n" +
       "fn name(args) intent: \"pure\" -> type = ...\n\n" +
       "// option B — remove the intent claim:\n" +
-      "fn name(args) uses { caps } reads { ... } -> type = ...",
+      "fn name(args) uses { caps } reads { ... } writes { ... } -> type = ...",
     example:
       "// before — intent says pure, but function reads from cache\n" +
       "?bs 0.8\n" +
