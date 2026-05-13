@@ -248,4 +248,31 @@ fn loadUser(id: string) -> string = fetchFromDb(id)
       "DEP001",
     );
   });
+
+  it("ignores property accesses that happen to share a fn name", () => {
+    // `obj.fetchFromDb(...)` is a method call on `obj`, not a same-file fn
+    // call. Even though `fetchFromDb` is also the name of a top-level fn
+    // declaring reads { db }, the property-access guard must skip it.
+    expect(() =>
+      compile(
+        `?bs 0.9
+fn fetchFromDb(id: string) reads { db } -> string = id
+fn loadUser(id: string, obj: { fetchFromDb: (s: string) => string }) -> string =
+  obj.fetchFromDb(id)
+`,
+      ),
+    ).not.toThrow();
+  });
+
+  it("ignores optional-chaining property accesses (?.) too", () => {
+    expect(() =>
+      compile(
+        `?bs 0.9
+fn fetchFromDb(id: string) reads { db } -> string = id
+fn loadUser(id: string, obj: { fetchFromDb?: (s: string) => string } | null) -> string | undefined =
+  obj?.fetchFromDb(id)
+`,
+      ),
+    ).not.toThrow();
+  });
 });

@@ -150,8 +150,9 @@ export function passDepCheck(src: string, version: VersionInfo): string {
   }
 
   // 4. Validate: for each fn, declared reads/writes must cover transitive sets.
-  //    Skip top-level fns whose annotations come only from their OWN declarations
-  //    (no callee contribution) — those are always trivially consistent.
+  //    Self-only fns are trivially consistent because step 2 seeds the
+  //    transitive set from the same `declaredReads` / `declaredWrites` sets
+  //    that step 4 then checks against — no explicit skip needed.
   for (const rec of records.values()) {
     // DEP001: reads under-declared.
     const missingReads = [...rec.transitiveReads.keys()].filter(
@@ -194,6 +195,12 @@ function collectCallees(
     if (!tok || tok.kind !== "ident") continue;
     if (!fnNames.has(tok.text)) continue;
     if (tok.text === fn.name) continue; // skip self-references
+    // Skip property accesses like `obj.helper(...)` or `obj?.helper(...)` —
+    // these are not same-file fn calls even if `helper` matches a top-level
+    // fn name. Mirrors cap-check's member-access guard.
+    const prevIdx = prevSignificant(tokens, i - 1);
+    const prev = tokens[prevIdx];
+    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot")) continue;
     // Must be followed by `(` to be a call (not just a reference).
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
@@ -219,6 +226,25 @@ function nextSignificant(tokens: Token[], start: number): number {
       t.kind === "blockComment"
     ) {
       i++;
+      continue;
+    }
+    return i;
+  }
+  return i;
+}
+
+function prevSignificant(tokens: Token[], start: number): number {
+  let i = start;
+  while (i >= 0) {
+    const t = tokens[i];
+    if (!t) return i;
+    if (
+      t.kind === "whitespace" ||
+      t.kind === "newline" ||
+      t.kind === "lineComment" ||
+      t.kind === "blockComment"
+    ) {
+      i--;
       continue;
     }
     return i;
@@ -253,8 +279,9 @@ function mkError(
   const firstLabel = missingLabels[0]!;
   const firstPath = transitiveMap.get(firstLabel)!;
   const pathStr = formatPath(firstPath);
+  const leaf = pathStr.split(" -> ").at(-1)!;
+  const transitively = firstPath.kind === "via" ? " transitively" : "";
 
-  const allMissing = missingLabels.map((l) => `"${l}"`).join(", ");
   const currentDecl =
     kind === "reads"
       ? rec.declaredReads.size === 0
@@ -269,15 +296,31 @@ function mkError(
       ? [...new Set([...rec.declaredReads, ...missingLabels])].join(", ")
       : [...new Set([...rec.declaredWrites, ...missingLabels])].join(", ");
 
+  const otherMissing = missingLabels.slice(1);
+  const otherTail =
+    otherMissing.length > 0
+      ? `; also missing: ${otherMissing.map((l) => `"${l}"`).join(", ")}`
+      : "";
+
+  // For via-paths, name the call chain in the main message so the caller
+  // sees that the dependency arrives through a callee, not from a direct call.
+  const callDescription =
+    firstPath.kind === "via"
+      ? `${pathStr} — '${leaf}' ${kind} { ${firstLabel} }`
+      : `'${leaf}' which ${kind} { ${firstLabel} }`;
+
   const message =
-    `fn '${rec.decl.name}' calls '${pathStr.split(" -> ").at(-1)}' which ${kind} { ${firstLabel} }, ` +
-    `but '${rec.decl.name}' only declares ${kind} { ${currentDecl} }`;
+    `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
+    `but '${rec.decl.name}' only declares ${kind} { ${currentDecl} }${otherTail}`;
 
   const callPath =
     firstPath.kind === "via"
       ? `call path: ${pathStr}`
       : `directly declared on '${rec.decl.name}'`;
 
+  // Anchor the diagnostic span through the fn name (not just the `fn`
+  // keyword) for better editor / LSP highlighting — mirrors cap-check.
+  const nameEnd = rec.decl.nameStart + rec.decl.name.length;
   const diagnostic: Diagnostic = {
     code,
     severity: "error",
@@ -285,7 +328,7 @@ function mkError(
     line,
     column,
     start: rec.decl.fnKeywordStart,
-    end: rec.decl.fnKeywordStart + 2,
+    end: nameEnd,
     message,
     rule: entry.rule,
     idiom: entry.idiom,
