@@ -137,24 +137,26 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   INT001: {
     code: "INT001",
-    title: "intent declares 'pure' but function has capability declarations",
+    title: "intent declares 'pure' but function has capability or resource declarations",
     rule:
-      "a function whose intent contains 'pure' must have no capability declarations — " +
+      "a function whose intent contains 'pure' must have no capability declarations (uses {}) " +
+      "and no read/write resource dependencies (reads {} / writes {}) — " +
       "pure functions are deterministic, side-effect-free, and access no external resources",
     idiom:
-      "remove uses { ... } from a pure function, or change the intent to reflect the actual behaviour",
+      "remove uses { ... }, reads { ... }, and writes { ... } from a pure function, " +
+      "or change the intent to reflect the actual behaviour",
     rewrite:
-      "// option A — remove the uses clause:\n" +
+      "// option A — remove resource annotations:\n" +
       "fn name(args) intent: \"pure\" -> type = ...\n\n" +
       "// option B — remove the intent claim:\n" +
-      "fn name(args) uses { caps } -> type = ...",
+      "fn name(args) uses { caps } reads { ... } -> type = ...",
     example:
-      "// before — intent says pure, body hits the network\n" +
-      "?bs 0.7\n" +
-      "fn greet(name: string) uses { net } intent: \"pure\" -> string = ...\n\n" +
+      "// before — intent says pure, but function reads from cache\n" +
+      "?bs 0.8\n" +
+      "fn lookup(id: string) reads { cache } intent: \"pure\" -> string | undefined = ...\n\n" +
       "// after — intent matches the declaration\n" +
-      "?bs 0.7\n" +
-      "fn greet(name: string) intent: \"pure\" -> string = ...",
+      "?bs 0.8\n" +
+      "fn lookup(id: string) reads { cache } -> string | undefined = ...",
   },
   INT002: {
     code: "INT002",

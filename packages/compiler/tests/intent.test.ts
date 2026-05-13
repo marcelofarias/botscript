@@ -282,3 +282,53 @@ describe("INT002 — pure intent violated in body (?bs 0.7+)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT001 extended: reads {} / writes {} also contradict "pure" intent
+// ---------------------------------------------------------------------------
+
+describe("INT001 — pure intent vs reads/writes annotations (?bs 0.8)", () => {
+  it("fires INT001 when intent is 'pure' but function has reads { }", () => {
+    const src = `?bs 0.8\nfn lookup(id: string) reads { cache } intent: "pure" -> string = id\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      expect(err.diagnostics[0]!.message).toContain("reads");
+    }
+  });
+
+  it("fires INT001 when intent is 'pure' but function has writes { }", () => {
+    const src = `?bs 0.8\nfn record(id: string) writes { metrics } intent: "pure" -> void { }\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      expect(err.diagnostics[0]!.message).toContain("writes");
+    }
+  });
+
+  it("fires INT001 when all three conflict: uses + reads + writes + pure intent", () => {
+    const src = `?bs 0.8\nfn combo(id: string) uses { net } reads { cache } writes { metrics } intent: "pure" -> string = id\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      const msg = err.diagnostics[0]!.message;
+      expect(msg).toContain("uses");
+      expect(msg).toContain("reads");
+      expect(msg).toContain("writes");
+    }
+  });
+
+  it("does NOT fire INT001 when reads/writes present but intent is not pure", () => {
+    const src = `?bs 0.8\nfn fetch(id: string) reads { cache } writes { metrics } intent: "net-fetcher" -> string = id\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+});

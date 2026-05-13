@@ -131,7 +131,7 @@ describe("reads/writes stripped from TypeScript output", () => {
   it("reads/writes alongside uses and intent are all stripped", () => {
     // No stdlib usage in body, so no uses {} needed — keeps the test focused.
     const src =
-      `?bs 0.8\nfn process(id: string) reads { cache } writes { audit } intent: "pure" -> string = id\n`;
+      `?bs 0.8\nfn process(id: string) reads { cache } writes { audit } intent: "processor" -> string = id\n`;
     const out = compile(src);
     expect(out).not.toContain("reads");
     expect(out).not.toContain("writes");

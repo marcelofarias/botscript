@@ -58,14 +58,26 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // is still treated as an intent clause being present.
     if (decl.intent === undefined) continue;
 
-    // INT001: intent claims "pure" but the function has capability declarations.
-    if (containsPureClaim(decl.intent) && decl.capabilities.length > 0) {
+    // INT001: intent claims "pure" but the function has capability or
+    // read/write resource declarations. A pure function is deterministic and
+    // side-effect-free: it may neither consume external capabilities (uses {})
+    // nor declare resource dependencies (reads {} / writes {}).
+    const hasUses = decl.capabilities.length > 0;
+    const hasReads = (decl.reads?.length ?? 0) > 0;
+    const hasWrites = (decl.writes?.length ?? 0) > 0;
+    if (containsPureClaim(decl.intent) && (hasUses || hasReads || hasWrites)) {
       const entry = getErrorCode("INT001")!;
       // intentStart is always set when intent is set (parseFn assigns them
       // together); the non-null assertion is safe.
       const intentStart = decl.intentStart!;
       const loc = locationOf(src, intentStart);
-      const capsStr = decl.capabilities.join(", ");
+
+      // Build a human-readable list of the conflicting declarations.
+      const parts: string[] = [];
+      if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
+      if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
+      if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
+      const conflictsStr = parts.join(", ");
 
       const diagnostic: Diagnostic = {
         code: "INT001",
@@ -76,13 +88,13 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         start: intentStart,
         end: intentStart + decl.intent.length + 2, // +2 for surrounding quotes
         message:
-          `fn '${decl.name}' intent claims 'pure' but declares capabilities { ${capsStr} } — ` +
-          `pure functions may not consume external resources`,
+          `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
+          `pure functions may not consume external resources or have read/write dependencies`,
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite:
-          `// remove uses clause:\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-          `// or remove the pure intent claim:\nfn ${decl.name}(...) uses { ${capsStr} } -> ...`,
+          `// remove resource annotations:\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
+          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsStr} -> ...`,
       };
       diagnostics.push(diagnostic);
       // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
