@@ -198,6 +198,8 @@ export function parseFn(
       i = close + 1;
       i = skipTrivia(tokens, i);
     } else if (tok?.kind === "ident" && tok.text === "intent") {
+      // Duplicate intent: — treat as a parse error (stop parsing the header).
+      if (intent !== undefined) break;
       const savedI = i;
       i++;
       i = skipTrivia(tokens, i);

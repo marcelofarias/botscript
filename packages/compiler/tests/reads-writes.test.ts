@@ -171,6 +171,16 @@ describe("parseFn duplicate reads/writes", () => {
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
     expect(decl).toBeNull();
   });
+
+  it("returns null for duplicate intent: annotations", () => {
+    // The second intent: is treated as a parse error (not a silent overwrite).
+    const tokens = lex(
+      `fn dup(id: string) intent: "pure" intent: "idempotent" -> string = id`,
+    );
+    const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
+    const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
+    expect(decl).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
