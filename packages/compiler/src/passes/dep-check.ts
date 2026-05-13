@@ -280,7 +280,15 @@ function mkError(
   const firstPath = transitiveMap.get(firstLabel)!;
   const pathStr = formatPath(firstPath);
   const leaf = pathStr.split(" -> ").at(-1)!;
-  const transitively = firstPath.kind === "via" ? " transitively" : "";
+  // `missingLabels` are by construction always propagated from callees (the
+  // caller's own declarations are seeded as `kind: "declared"` and filtered
+  // out before reaching here), so `firstPath` is always `kind: "via"`. The
+  // chain is "transitive" only when more than one hop separates caller from
+  // leaf — when `firstPath.next` is itself a via-node. A direct call (one hop,
+  // next is `kind: "declared"`) reads as a direct call in the diagnostic.
+  const directCall =
+    firstPath.kind === "via" && firstPath.next.kind === "declared";
+  const transitively = directCall ? "" : " transitively";
 
   const currentDecl =
     kind === "reads"
@@ -302,21 +310,18 @@ function mkError(
       ? `; also missing: ${otherMissing.map((l) => `"${l}"`).join(", ")}`
       : "";
 
-  // For via-paths, name the call chain in the main message so the caller
-  // sees that the dependency arrives through a callee, not from a direct call.
-  const callDescription =
-    firstPath.kind === "via"
-      ? `${pathStr} — '${leaf}' ${kind} { ${firstLabel} }`
-      : `'${leaf}' which ${kind} { ${firstLabel} }`;
+  // For multi-hop chains, name the call chain in the main message so the
+  // caller sees that the dependency arrives through an intermediate callee.
+  // For direct calls (one hop), keep the message focused on the leaf.
+  const callDescription = directCall
+    ? `'${leaf}' which ${kind} { ${firstLabel} }`
+    : `${pathStr} — '${leaf}' ${kind} { ${firstLabel} }`;
 
   const message =
     `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
     `but '${rec.decl.name}' only declares ${kind} { ${currentDecl} }${otherTail}`;
 
-  const callPath =
-    firstPath.kind === "via"
-      ? `call path: ${pathStr}`
-      : `directly declared on '${rec.decl.name}'`;
+  const callPath = `call path: ${pathStr}`;
 
   // Anchor the diagnostic span through the fn name (not just the `fn`
   // keyword) for better editor / LSP highlighting — mirrors cap-check.
