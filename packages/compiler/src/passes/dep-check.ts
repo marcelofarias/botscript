@@ -196,6 +196,9 @@ function collectCallees(
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
     if (!fnNames.has(tok.text)) continue;
+    // Skip the fn's own name — it appears in the header as `fn <name>(params)`
+    // and would create a spurious self-edge. Mirrors cap-check's guard.
+    if (tok.text === fn.name) continue;
     // Skip property accesses like `obj.helper(...)` or `obj?.helper(...)` —
     // these are not same-file fn calls even if `helper` matches a top-level
     // fn name. Mirrors cap-check's member-access guard.
