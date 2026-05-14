@@ -8,6 +8,7 @@
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
+import { getErrorCode } from "../error-codes.js";
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
@@ -512,6 +513,10 @@ function parseLabelList(tokens: Token[], from: number, to: number, src?: string)
 function throwSyn001(src: string | undefined, tok: Token, message: string): void {
   if (!src) return;
   const { line, column } = locationOf(src, tok.start);
+  // Pull rule/idiom/rewrite from the central registry (AGENTS.md: passes
+  // must not hard-code these fields). We fall back to inline strings only
+  // if the registry entry is missing, which would itself be a bug.
+  const entry = getErrorCode("SYN001");
   const diag: Diagnostic = {
     code: "SYN001",
     severity: "error",
@@ -521,9 +526,9 @@ function throwSyn001(src: string | undefined, tok: Token, message: string): void
     start: tok.start,
     end: tok.end,
     message,
-    rule: "each fn header clause (reads, writes, intent) may appear at most once; reads/writes labels must be plain identifiers",
-    idiom: "declare each clause once; use identifiers (not quoted strings) as resource labels",
-    rewrite: "fn name(...) reads { cache, db } writes { metrics } intent: \"pure\" -> ...",
+    rule: entry?.rule ?? "duplicate or invalid fn header clause",
+    idiom: entry?.idiom ?? "declare each clause once",
+    rewrite: entry?.rewrite ?? "fn name(...) reads { cache, db } -> ...",
   };
   throw new BotscriptError([diag]);
 }
