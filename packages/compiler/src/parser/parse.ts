@@ -35,7 +35,7 @@ export function parseProgram(src: string, opts: ParseOptions = {}): Program {
   const statements: Stmt[] = [];
   const fns: FnStmt[] = [];
 
-  const parseFnOpts: ParseFnOptions = { allowGenerics: opts.allowGenerics };
+  const parseFnOpts: ParseFnOptions = { allowGenerics: opts.allowGenerics, src };
   const includeNested = !!opts.includeNestedFns;
 
   for (let i = 0; i < tokens.length; i++) {

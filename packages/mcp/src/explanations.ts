@@ -260,6 +260,31 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.3\nconst r = Result.try { JSON.parse(input) };\n",
     },
   },
+  SYN001: {
+    code: "SYN001",
+    title: "duplicate or invalid fn header clause",
+    body:
+      "Each fn header clause — `reads {}`, `writes {}`, `intent:` — may appear at most " +
+      "once per function declaration. A second occurrence is a syntax error: the compiler " +
+      "cannot know which declaration wins, and silently picking one hides bugs (e.g. " +
+      "`reads { cache } reads { db }` would silently discard `db`, making DEP001 blind " +
+      "to the database dependency).\n\n" +
+      "The same rule applies to resource labels inside `reads {}` or `writes {}`: labels " +
+      "must be plain identifiers (e.g. `cache`, `db`, `metrics`). Quoted strings like " +
+      "`reads { \"cache\" }` are not valid — the parser would silently produce an empty " +
+      "list because the string token is not an identifier, and the dependency would be " +
+      "invisible to DEP001.\n\n" +
+      "Fix: merge duplicate clauses into a single declaration, and use unquoted identifiers " +
+      "as resource labels.",
+    example: {
+      fails:
+        "?bs 0.8\n" +
+        "fn load(id: string) reads { cache } reads { db } -> string = id\n",
+      passes:
+        "?bs 0.8\n" +
+        "fn load(id: string) reads { cache, db } -> string = id\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();

@@ -25,7 +25,7 @@ export function passFn(src: string, version?: VersionInfo): string {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     if (t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i, { allowGenerics });
+    const decl = parseFn(tokens, i, { allowGenerics, src });
     if (!decl) continue;
     // Emit everything up to the start of this declaration.
     out += src.slice(cursor, tokens[decl.tokenStart]!.start);

@@ -198,6 +198,23 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       "let parsed = Result.try { JSON.parse(input) }?",
   },
+  SYN001: {
+    code: "SYN001",
+    title: "duplicate or invalid fn header clause",
+    rule:
+      "each fn header clause (reads {}, writes {}, intent:) may appear at most once; " +
+      "labels inside reads/writes must be plain identifiers, not quoted strings",
+    idiom:
+      "declare each resource dependency or intent claim exactly once; " +
+      "merge duplicate lists rather than repeating the clause",
+    rewrite:
+      "fn name(...) reads { cache, db } writes { metrics } -> ...",
+    example:
+      "// duplicate reads — SYN001\n" +
+      "fn load(id: string) reads { cache } reads { db } -> string = id\n\n" +
+      "// fix: merge into one clause\n" +
+      "fn load(id: string) reads { cache, db } -> string = id",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

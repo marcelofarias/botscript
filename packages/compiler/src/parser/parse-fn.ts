@@ -7,6 +7,7 @@
  * with the emitted text.
  */
 
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
@@ -103,6 +104,12 @@ export interface ParseFnOptions {
    * had on this construct).
    */
   allowGenerics?: boolean;
+  /**
+   * Source text. When provided, parseFn throws a SYN001 BotscriptError on
+   * duplicate header clauses (reads/writes/intent) and on invalid label
+   * tokens inside reads/writes lists, rather than silently using first-wins.
+   */
+  src?: string;
 }
 
 /**
@@ -188,17 +195,18 @@ export function parseFn(
         break;
       }
       const close = open.matchedAt;
-      if (!isDuplicate) {
-        const items = parseCapList(tokens, i + 1, close);
+      if (isDuplicate) {
+        // Duplicate clause: emit SYN001 when src is available.
+        throwSyn001(opts.src, tok, `duplicate \`${keyword} {}\` clause — each header clause may appear at most once`);
+        // No src: fall through with first-wins (silent, for direct parseFn callers in tests).
+      } else {
+        const items = parseLabelList(tokens, i + 1, close, opts.src);
         if (keyword === "reads") {
           reads = items;
         } else {
           writes = items;
         }
       }
-      // Duplicate: skip the block (first-wins) rather than breaking — a break
-      // would cause parseFn to return null, leaving unlowered botscript syntax
-      // in the emitted TypeScript output.
       i = close + 1;
       i = skipTrivia(tokens, i);
     } else if (tok?.kind === "ident" && tok.text === "intent") {
@@ -211,7 +219,11 @@ export function parseFn(
         i = skipTrivia(tokens, i);
         const strTok = tokens[i];
         if (strTok?.kind === "string") {
-          if (!isDuplicateIntent) {
+          if (isDuplicateIntent) {
+            // Duplicate clause: emit SYN001 when src is available.
+            throwSyn001(opts.src, strTok, `duplicate \`intent:\` clause — each header clause may appear at most once`);
+            // No src: fall through with first-wins (silent, for direct parseFn callers in tests).
+          } else {
             // Strip the surrounding quotes to get the raw value.
             intentStart = strTok.start;
             const raw = strTok.text;
@@ -219,8 +231,6 @@ export function parseFn(
               ? raw.slice(1, -1)
               : raw;
           }
-          // Duplicate: skip (first-wins) rather than breaking to avoid leaving
-          // unlowered botscript syntax in the emitted TypeScript output.
           i++;
           i = skipTrivia(tokens, i);
         } else {
@@ -468,6 +478,66 @@ function parseCapList(tokens: Token[], from: number, to: number): string[] {
     i++;
   }
   return caps;
+}
+
+/**
+ * Parse a user-defined label list inside `reads { ... }` or `writes { ... }`.
+ * Labels must be plain identifiers. If `src` is provided and a non-identifier
+ * token is found, throws SYN001 so users get a clear error instead of silently
+ * receiving an empty or truncated list (e.g. `reads { "cache" }` → empty).
+ */
+function parseLabelList(tokens: Token[], from: number, to: number, src?: string): string[] {
+  const labels: string[] = [];
+  for (let i = from; i < to; i++) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") continue;
+    // Commas are accepted as optional separators (e.g. `reads { cache, db }`).
+    if (t.kind === "punct" && t.text === ",") continue;
+    if (t.kind === "ident") {
+      labels.push(t.text);
+      continue;
+    }
+    // Non-identifier, non-separator token inside a reads/writes list.
+    throwSyn001(src, t, `invalid label in reads/writes list — labels must be plain identifiers (e.g. \`cache\`, \`db\`), not ${JSON.stringify(t.text)}`);
+    // No src: silently ignore (backward compat for direct callers without src).
+  }
+  return labels;
+}
+
+/**
+ * Throw a SYN001 BotscriptError when `src` is available. When `src` is absent
+ * the caller falls through silently (backward compat for tests that call parseFn
+ * directly without a source string).
+ */
+function throwSyn001(src: string | undefined, tok: Token, message: string): void {
+  if (!src) return;
+  const { line, column } = locationOf(src, tok.start);
+  const diag: Diagnostic = {
+    code: "SYN001",
+    severity: "error",
+    file: null,
+    line,
+    column,
+    start: tok.start,
+    end: tok.end,
+    message,
+    rule: "each fn header clause (reads, writes, intent) may appear at most once; reads/writes labels must be plain identifiers",
+    idiom: "declare each clause once; use identifiers (not quoted strings) as resource labels",
+    rewrite: "fn name(...) reads { cache, db } writes { metrics } intent: \"pure\" -> ...",
+  };
+  throw new BotscriptError([diag]);
+}
+
+function locationOf(src: string, offset: number): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let i = 0; i < offset && i < src.length; i++) {
+    if (src[i] === "\n") {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+  return { line, column: offset - lineStart + 1 };
 }
 
 /** Find the previous token index that isn't whitespace/newline/comment. */
