@@ -153,33 +153,39 @@ describe("reads/writes stripped from TypeScript output", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseFn duplicate reads/writes", () => {
-  it("returns null for duplicate reads {} annotations", () => {
-    // The second reads {} is treated as a parse error (not a silent overwrite).
+  it("uses first-wins for duplicate reads {} (fn still lowers correctly)", () => {
+    // Duplicate reads {} is silently ignored (first-wins). parseFn returns a
+    // valid decl rather than null — returning null would leave the fn unlowered
+    // as raw botscript syntax in the TypeScript output, which is worse.
     const tokens = lex(
       `fn dup(id: string) reads { cache } reads { db } -> string = id`,
     );
     const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
-    expect(decl).toBeNull();
+    expect(decl).not.toBeNull();
+    expect(decl!.reads).toEqual(["cache"]); // first-wins
   });
 
-  it("returns null for duplicate writes {} annotations", () => {
+  it("uses first-wins for duplicate writes {} (fn still lowers correctly)", () => {
     const tokens = lex(
       `fn dup(id: string) writes { metrics } writes { audit } -> void { }`,
     );
     const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
-    expect(decl).toBeNull();
+    expect(decl).not.toBeNull();
+    expect(decl!.writes).toEqual(["metrics"]); // first-wins
   });
 
-  it("returns null for duplicate intent: annotations", () => {
-    // The second intent: is treated as a parse error (not a silent overwrite).
+  it("uses first-wins for duplicate intent: (fn still lowers correctly)", () => {
+    // Duplicate intent: is silently ignored (first-wins). parseFn returns a
+    // valid decl — returning null would leave the fn unlowered.
     const tokens = lex(
       `fn dup(id: string) intent: "pure" intent: "idempotent" -> string = id`,
     );
     const fnIdx = tokens.findIndex((t) => t.kind === "keyword" && t.keyword === "fn");
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
-    expect(decl).toBeNull();
+    expect(decl).not.toBeNull();
+    expect(decl!.intent).toBe("pure"); // first-wins
   });
 });
 

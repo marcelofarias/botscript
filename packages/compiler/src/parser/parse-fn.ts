@@ -176,9 +176,8 @@ export function parseFn(
     const tok = tokens[i];
     if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes")) {
       const keyword = tok.text;
-      // Duplicate annotation — treat as a parse error (stop parsing the header).
-      if (keyword === "reads" && reads !== undefined) break;
-      if (keyword === "writes" && writes !== undefined) break;
+      const isDuplicate = (keyword === "reads" && reads !== undefined) ||
+        (keyword === "writes" && writes !== undefined);
       const savedI = i;
       i++;
       i = skipTrivia(tokens, i);
@@ -189,17 +188,21 @@ export function parseFn(
         break;
       }
       const close = open.matchedAt;
-      const items = parseCapList(tokens, i + 1, close);
-      if (keyword === "reads") {
-        reads = items;
-      } else {
-        writes = items;
+      if (!isDuplicate) {
+        const items = parseCapList(tokens, i + 1, close);
+        if (keyword === "reads") {
+          reads = items;
+        } else {
+          writes = items;
+        }
       }
+      // Duplicate: skip the block (first-wins) rather than breaking — a break
+      // would cause parseFn to return null, leaving unlowered botscript syntax
+      // in the emitted TypeScript output.
       i = close + 1;
       i = skipTrivia(tokens, i);
     } else if (tok?.kind === "ident" && tok.text === "intent") {
-      // Duplicate intent: — treat as a parse error (stop parsing the header).
-      if (intent !== undefined) break;
+      const isDuplicateIntent = intent !== undefined;
       const savedI = i;
       i++;
       i = skipTrivia(tokens, i);
@@ -208,12 +211,16 @@ export function parseFn(
         i = skipTrivia(tokens, i);
         const strTok = tokens[i];
         if (strTok?.kind === "string") {
-          // Strip the surrounding quotes to get the raw value.
-          intentStart = strTok.start;
-          const raw = strTok.text;
-          intent = raw.startsWith('"') || raw.startsWith("'")
-            ? raw.slice(1, -1)
-            : raw;
+          if (!isDuplicateIntent) {
+            // Strip the surrounding quotes to get the raw value.
+            intentStart = strTok.start;
+            const raw = strTok.text;
+            intent = raw.startsWith('"') || raw.startsWith("'")
+              ? raw.slice(1, -1)
+              : raw;
+          }
+          // Duplicate: skip (first-wins) rather than breaking to avoid leaving
+          // unlowered botscript syntax in the emitted TypeScript output.
           i++;
           i = skipTrivia(tokens, i);
         } else {
