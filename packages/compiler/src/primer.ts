@@ -65,9 +65,10 @@ additions below are the entire language surface.
             declaration must match what the function actually uses.
   Under ?bs 0.7 the intent check adds:
     INT001  intent contains 'pure' but the function has capability declarations
-            (uses {}) or read/write dependencies (reads {} / writes {}). Pure
-            functions may not consume external resources or have read/write
-            dependencies.
+            (uses {}). Pure functions may not consume external resources.
+  Under ?bs 0.8, INT001 also fires when 'pure' intent conflicts with
+            read/write dependencies (reads {} / writes {}). Pure functions
+            may have neither capabilities nor resource dependencies.
   cap-check diagnostics also carry start/end UTF-16 string offsets alongside
   line/column from 0.2 onward, so editor and LSP integrations can map the
   error to a precise span without re-walking the source. (The whole-file

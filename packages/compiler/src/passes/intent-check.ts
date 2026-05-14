@@ -22,6 +22,10 @@
  *            Planned for future versions: idempotent, total, monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
+ *   ?bs 0.8  INT001 extended: also fires when `reads { ... }` or `writes { ... }`
+ *            conflict with a "pure" intent claim. A pure function must have no
+ *            resource dependencies either.
+ *
  *   pre-0.7  This pass is not run. Files on earlier pins may parse `intent:`
  *            without triggering any check.
  */
@@ -47,6 +51,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
+  const checksReadsWrites = atLeast(version.resolved, "0.8");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const allDecls = program.fns.map((s) => s.decl);
@@ -59,85 +64,76 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // is still treated as an intent clause being present.
     if (decl.intent === undefined) continue;
 
-    // INT001: intent claims "pure" but the function has capability or
-    // read/write resource declarations. A pure function is deterministic and
-    // side-effect-free: it may neither consume external capabilities (uses {})
-    // nor declare resource dependencies (reads {} / writes {}).
+    if (!containsPureClaim(decl.intent)) continue;
+
     const hasUses = decl.capabilities.length > 0;
-    const hasReads = (decl.reads?.length ?? 0) > 0;
-    const hasWrites = (decl.writes?.length ?? 0) > 0;
-    if (containsPureClaim(decl.intent) && (hasUses || hasReads || hasWrites)) {
+    const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
+    const hasWrites = checksReadsWrites && (decl.writes?.length ?? 0) > 0;
+
+    if (hasUses || hasReads || hasWrites) {
+      // INT001: header-level conflict — intent claims "pure" but the function
+      // has capability or (from 0.8) read/write resource declarations.
       const entry = getErrorCode("INT001")!;
-      // intentStart is always set when intent is set (parseFn assigns them
-      // together); the non-null assertion is safe.
       const intentStart = decl.intentStart!;
       const loc = locationOf(src, intentStart);
 
-      // Build a human-readable list of the conflicting declarations.
       const parts: string[] = [];
       if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
       if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
       if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
-      // Comma-joined for human-readable message; space-joined for the rewrite
-      // field (fn header clauses are space-separated, not comma-separated).
       const conflictsStr = parts.join(", ");
       const conflictsRewrite = parts.join(" ");
 
-      const diagnostic: Diagnostic = {
+      diagnostics.push({
         code: "INT001",
         severity: "error",
         file: null,
         line: loc.line,
         column: loc.column,
         start: intentStart,
-        end: intentStart + decl.intent.length + 2, // +2 for surrounding quotes
+        end: intentStart + decl.intent.length + 2,
         message:
           `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
-          `pure functions may not consume external resources or have read/write dependencies`,
+          `pure functions may not consume external resources or have resource dependencies`,
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite:
           `// remove the conflicting header clauses (uses/reads/writes):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
           `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
-      };
-      diagnostics.push(diagnostic);
+      });
       // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
       continue;
     }
 
-    // INT002: intent claims "pure", uses {} is empty, but the body directly
-    // references a stdlib capability. This is the under-declaration case that
-    // INT001 cannot catch (no declared clause to conflict with).
-    if (containsPureClaim(decl.intent) && decl.capabilities.length === 0) {
-      const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
-      if (bodyUse) {
-        const entry = getErrorCode("INT002")!;
-        const intentStart = decl.intentStart!;
-        const loc = locationOf(src, intentStart);
-        const diagnostic: Diagnostic = {
-          code: "INT002",
-          severity: "error",
-          file: null,
-          line: loc.line,
-          column: loc.column,
-          start: intentStart,
-          end: intentStart + decl.intent.length + 2,
-          message:
-            `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
-            `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
-            `pure functions may not consume external resources`,
-          rule: entry.rule,
-          idiom: entry.idiom,
-          rewrite:
-            `// option A — remove the capability call from the body:\n` +
-            `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
-            `// option B — declare the capability and remove the pure claim:\n` +
-            `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
-        };
-        diagnostics.push(diagnostic);
-      }
+    // INT002: intent claims "pure", uses {} is empty (and reads/writes are
+    // absent or not yet enforced), but the body directly references a stdlib
+    // capability. This is the under-declaration case that INT001 cannot catch.
+    const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
+    if (bodyUse) {
+      const entry = getErrorCode("INT002")!;
+      const intentStart = decl.intentStart!;
+      const loc = locationOf(src, intentStart);
+      diagnostics.push({
+        code: "INT002",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent.length + 2,
+        message:
+          `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
+          `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
+          `pure functions may not consume external resources`,
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite:
+          `// option A — remove the capability call from the body:\n` +
+          `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — declare the capability and remove the pure claim:\n` +
+          `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
+      });
     }
-
   }
 
   if (diagnostics.length > 0) {

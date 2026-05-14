@@ -1,6 +1,6 @@
 ?bs 0.8
 
-import { ok, err, type Result } from "@mbfarias/botscript-runtime";
+import { ok, err, isOk, type Result } from "@mbfarias/botscript-runtime";
 
 // reads {} / writes {} annotations (0.8+) declare which resource categories
 // a function touches. Labels are user-defined. Metadata-only in 0.8 —
@@ -20,7 +20,7 @@ fn writeCache(id: string, value: string) writes { cache } -> void { }
 
 async fn fetchFromDb(id: string) uses { net } reads { db } -> Promise<Result<string, string>> {
   const res = await http.get(`https://api.example.com/users/${id}`);
-  if (!res.ok) return err("not found");
+  if (!isOk(res)) return err("not found");
   return ok(id);
 }
 
@@ -28,7 +28,7 @@ async fn loadUser(id: string) uses { net } reads { cache, db } writes { cache } 
   const cached = lookupCache(id);
   if (cached !== undefined) return ok(cached);
   const result = await fetchFromDb(id);
-  if (result.ok) writeCache(id, result.value);
+  if (isOk(result)) writeCache(id, result.value);
   return result;
 }
 
