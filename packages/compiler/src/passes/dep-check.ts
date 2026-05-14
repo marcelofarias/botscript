@@ -14,9 +14,10 @@
  * manually.
  *
  *   DEP001  reads under-declared: fn A calls fn B which (transitively)
- *           reads a resource category that A does not declare. Diagnostic
- *           names the call path and leaf, e.g. "A -> B -> C — 'C' reads
- *           { x }".
+ *           reads a resource category that A does not declare. For a direct
+ *           call the diagnostic says "'B' which reads { x }"; for a multi-hop
+ *           chain it names the path from the direct callee, e.g.
+ *           "B -> C — 'C' reads { x }".
  *
  *   DEP002  writes under-declared: same for writes { ... }.
  *
@@ -195,7 +196,6 @@ function collectCallees(
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
     if (!fnNames.has(tok.text)) continue;
-    if (tok.text === fn.name) continue; // skip self-references
     // Skip property accesses like `obj.helper(...)` or `obj?.helper(...)` —
     // these are not same-file fn calls even if `helper` matches a top-level
     // fn name. Mirrors cap-check's member-access guard.
@@ -290,6 +290,14 @@ function mkError(
   const directCall =
     firstPath.kind === "via" && firstPath.next.kind === "declared";
   const transitively = directCall ? "" : " transitively";
+  // For multi-hop chains, start the display path at the direct callee to avoid
+  // duplicating the caller name in "fn 'A' transitively calls A -> B -> C":
+  // show "B -> C" instead. The full path including the caller is preserved in
+  // the rewrite hint where it provides useful trace context.
+  const displayPath =
+    !directCall && firstPath.kind === "via"
+      ? formatPath(firstPath.next)
+      : pathStr;
 
   const currentDecl =
     kind === "reads"
@@ -316,7 +324,7 @@ function mkError(
   // For direct calls (one hop), keep the message focused on the leaf.
   const callDescription = directCall
     ? `'${leaf}' which ${kind} { ${firstLabel} }`
-    : `${pathStr} — '${leaf}' ${kind} { ${firstLabel} }`;
+    : `${displayPath} — '${leaf}' ${kind} { ${firstLabel} }`;
 
   const message =
     `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
