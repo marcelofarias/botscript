@@ -79,6 +79,26 @@ describe("parseFn reads/writes", () => {
     expect(decl!.writes).toEqual(["log"]);
   });
 
+  it("parses intent: before reads/writes (any order)", () => {
+    const decl = parseFirstFn(
+      `fn process(x: string) intent: "cache-writer" reads { db } writes { cache } -> void { }`,
+    );
+    expect(decl).not.toBeNull();
+    expect(decl!.intent).toBe("cache-writer");
+    expect(decl!.reads).toEqual(["db"]);
+    expect(decl!.writes).toEqual(["cache"]);
+  });
+
+  it("parses reads/writes before intent: (any order)", () => {
+    const decl = parseFirstFn(
+      `fn process(x: string) reads { db } writes { cache } intent: "cache-writer" -> void { }`,
+    );
+    expect(decl).not.toBeNull();
+    expect(decl!.intent).toBe("cache-writer");
+    expect(decl!.reads).toEqual(["db"]);
+    expect(decl!.writes).toEqual(["cache"]);
+  });
+
   it("reads/writes with empty braces produce empty arrays", () => {
     const decl = parseFirstFn(
       `fn noop(x: string) reads { } writes { } -> void { }`,
