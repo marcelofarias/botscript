@@ -135,6 +135,27 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.4\n" +
       "fn add(a: number, b: number) -> number = a + b",
   },
+  INT001: {
+    code: "INT001",
+    title: "intent declares 'pure' but function has capability declarations",
+    rule:
+      "a function whose intent contains 'pure' must have no capability declarations — " +
+      "pure functions are deterministic, side-effect-free, and access no external resources",
+    idiom:
+      "remove uses { ... } from a pure function, or change the intent to reflect the actual behaviour",
+    rewrite:
+      "// option A — remove the uses clause:\n" +
+      "fn name(args) intent: \"pure\" -> type = ...\n\n" +
+      "// option B — remove the intent claim:\n" +
+      "fn name(args) uses { caps } -> type = ...",
+    example:
+      "// before — intent says pure, body hits the network\n" +
+      "?bs 0.7\n" +
+      "fn greet(name: string) uses { net } intent: \"pure\" -> string = ...\n\n" +
+      "// after — intent matches the declaration\n" +
+      "?bs 0.7\n" +
+      "fn greet(name: string) intent: \"pure\" -> string = ...",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

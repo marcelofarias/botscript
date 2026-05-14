@@ -38,6 +38,20 @@ export interface FnDecl {
   /** Verbatim args including parens. */
   args: string;
   capabilities: string[];
+  /**
+   * Optional machine-checkable intent string, e.g. `"pure"`, `"idempotent"`.
+   * Parsed from `intent: "<value>"` between the `uses {}` clause and `->` in
+   * the function header. Present only when the `intent:` clause is written;
+   * undefined otherwise.
+   *
+   * The compiler uses this to verify that claimed properties are consistent
+   * with the function's capability declarations and body shape. Introduced
+   * in `?bs 0.7` (gated at the check level, not the parse level — parseFn
+   * always accepts it so earlier pins that happen to write it don't crash).
+   */
+  intent?: string;
+  /** Source offset of the intent string token (UTF-16 code units, inclusive). */
+  intentStart?: number;
   returnType: string;
   /** Body is a brace block OR a single-expression form (= pure / io / arbitrary). */
   body: FnBody;
@@ -135,6 +149,36 @@ export function parseFn(
     capabilities = parseCapList(tokens, i + 1, usesClose);
     i = usesClose + 1;
     i = skipTrivia(tokens, i);
+  }
+
+  // Optional `intent: "<value>"` — machine-checkable intent declaration.
+  let intent: string | undefined;
+  let intentStart: number | undefined;
+  if (tokens[i]?.kind === "ident" && tokens[i]?.text === "intent") {
+    const savedI = i;
+    i++;
+    i = skipTrivia(tokens, i);
+    if (tokens[i]?.kind === "punct" && tokens[i]?.text === ":") {
+      i++;
+      i = skipTrivia(tokens, i);
+      const strTok = tokens[i];
+      if (strTok?.kind === "string") {
+        // Strip the surrounding quotes to get the raw value.
+        intentStart = strTok.start;
+        const raw = strTok.text;
+        intent = raw.startsWith('"') || raw.startsWith("'")
+          ? raw.slice(1, -1)
+          : raw;
+        i++;
+        i = skipTrivia(tokens, i);
+      } else {
+        // Not a string — backtrack; treat as start of return type.
+        i = savedI;
+      }
+    } else {
+      // No colon after `intent` — backtrack.
+      i = savedI;
+    }
   }
 
   // Required `->` ReturnType.
@@ -294,6 +338,8 @@ export function parseFn(
     typeParams,
     args,
     capabilities,
+    intent,
+    intentStart,
     returnType,
     body,
   };
