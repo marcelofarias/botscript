@@ -15,7 +15,8 @@
  *
  *   DEP001  reads under-declared: fn A calls fn B which (transitively)
  *           reads a resource category that A does not declare. Diagnostic
- *           names the call path: "A -> B -> C [reads { x }]".
+ *           names the call path and leaf, e.g. "A -> B -> C — 'C' reads
+ *           { x }".
  *
  *   DEP002  writes under-declared: same for writes { ... }.
  *
