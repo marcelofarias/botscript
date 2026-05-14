@@ -32,11 +32,13 @@ additions below are the entire language surface.
                                               not implemented yet). Recognised
                                               mechanical claim: "pure" — no
                                               capability declarations (uses { })
-                                              and no read/write dependencies
-                                              (reads { } / writes { }) allowed
-                                              (INT001). intent: may coexist with
-                                              uses / reads / writes; the check
-                                              fires only when they conflict.
+                                              allowed (INT001, 0.7+); from 0.8,
+                                              no read/write dependencies
+                                              (reads { } / writes { }) either
+                                              (INT001, 0.8+). intent: may
+                                              coexist with uses / reads /
+                                              writes; the check fires only when
+                                              they conflict.
   fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
                                               categories the function reads
                                               from. Labels are user-defined

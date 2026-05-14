@@ -188,6 +188,16 @@ describe("duplicate fn header clauses — SYN001", () => {
     expect(() => compile(src)).toThrow("SYN001");
   });
 
+  it("rejects quoted label inside reads {} via transform (SYN001 — labels must be identifiers)", () => {
+    const src = `?bs 0.8\nfn load(id: string) reads { "cache" } -> string = id\n`;
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+
+  it("rejects quoted label inside writes {} via transform (SYN001)", () => {
+    const src = `?bs 0.8\nfn record(id: string) writes { "metrics" } -> void { }\n`;
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+
   it("parseFn without src uses first-wins (no throw — backward compat for direct callers)", () => {
     // Without src in opts, parseFn falls back to first-wins instead of throwing.
     // This preserves backward compat for tools that call parseFn directly in isolation.

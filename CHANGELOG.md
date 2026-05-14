@@ -21,10 +21,16 @@ goes behind a new pin.
 ### Compat
 - `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`
   accepts and strips the clauses at any version pin. What is gated on
-  `?bs 0.8` is enforcement — INT001 firing on reads/writes conflicts with
-  `intent: "pure"`. Files pinned to `?bs 0.7` (or earlier) that happen to
-  include `reads { }` / `writes { }` annotations still compile; the
-  clauses are stripped from the TypeScript output at all versions.
+  `?bs 0.8` is INT001 enforcement — `intent: "pure"` conflicting with
+  reads/writes only raises INT001 from 0.8 onward. Files pinned to
+  `?bs 0.7` (or earlier) that include `reads { }` / `writes { }`
+  annotations still compile; the clauses are stripped from the TypeScript
+  output at all versions.
+- Duplicate header clauses (two `reads {}`, two `intent:`, etc.) and
+  invalid labels (non-identifier tokens inside `reads {}` / `writes {}`)
+  are rejected with SYN001 at any version pin where the clause in
+  question is valid syntax. This is syntax validation, not separately
+  version-gated enforcement.
 
 ## ?bs 0.7 — unreleased
 

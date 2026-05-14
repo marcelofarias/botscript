@@ -331,4 +331,16 @@ describe("INT001 — pure intent vs reads/writes annotations (?bs 0.8)", () => {
     const src = `?bs 0.8\nfn fetch(id: string) reads { cache } writes { metrics } intent: "net-fetcher" -> string = id\n`;
     expect(() => t(src)).not.toThrow();
   });
+
+  it("does NOT fire INT001 for reads {} + pure intent under ?bs 0.7 (check gated on 0.8)", () => {
+    // The reads/writes INT001 check is gated on ?bs 0.8 via checksReadsWrites.
+    // A ?bs 0.7 file with reads { } + intent: "pure" must not raise INT001.
+    const src = `?bs 0.7\nfn lookup(id: string) reads { cache } intent: "pure" -> string = id\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT001 for writes {} + pure intent under ?bs 0.7 (check gated on 0.8)", () => {
+    const src = `?bs 0.7\nfn record(id: string) writes { metrics } intent: "pure" -> void { }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
 });
