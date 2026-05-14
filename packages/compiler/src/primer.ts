@@ -40,11 +40,11 @@ additions below are the entire language surface.
   fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
                                               categories the function reads
                                               from. Labels are user-defined
-                                              ("cache", "db", etc.).
+                                              identifiers (e.g. cache, db).
   fn name(args) writes { a, b } -> ReturnType (0.8+) declare which resource
                                               categories the function writes
                                               to. Labels are user-defined
-                                              ("metrics", "db", etc.).
+                                              identifiers (e.g. metrics, db).
                                               Both are metadata-only in 0.8
                                               — stripped from TS output, not
                                               yet transitively enforced.

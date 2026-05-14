@@ -9,8 +9,8 @@ goes behind a new pin.
 ### Added
 - **Declarative `reads { ... }` / `writes { ... }`** on fn headers — declare
   which user-defined resource categories (e.g. `cache`, `db`, `metrics`) a
-  function reads from or writes to. Labels are user-defined strings, not
-  tied to stdlib namespaces. Metadata-only in 0.8: parsed, stored on
+  function reads from or writes to. Labels are user-defined identifiers,
+  not tied to stdlib namespaces. Metadata-only in 0.8: parsed, stored on
   `FnDecl`, and stripped from emitted TypeScript. Transitivity enforcement
   lands at `?bs 0.9` (DEP001 / DEP002).
 - **INT001 extended** to also fire when a function declares
@@ -19,8 +19,12 @@ goes behind a new pin.
   capabilities.
 
 ### Compat
-- Files pinned to `?bs 0.7` (or earlier) compile to byte-identical output.
-  The new `reads { }` / `writes { }` parsing is gated on `?bs 0.8`.
+- `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`
+  accepts and strips the clauses at any version pin. What is gated on
+  `?bs 0.8` is enforcement — INT001 firing on reads/writes conflicts with
+  `intent: "pure"`. Files pinned to `?bs 0.7` (or earlier) that happen to
+  include `reads { }` / `writes { }` annotations still compile; the
+  clauses are stripped from the TypeScript output at all versions.
 
 ## ?bs 0.7 — unreleased
 
