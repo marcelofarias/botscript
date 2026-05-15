@@ -156,7 +156,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`\"impure\"` does not match, but `\"pure\"`, `\"pure function\"`, and " +
       "`\"idempotent and pure\"` all do.\n\n" +
       "INT001 is gated on `?bs 0.7`. Files pinned to earlier versions may use " +
-      "`intent:` declarations without triggering any check.",
+      "`intent:` declarations without triggering any check.\n\n" +
+      "Scope note: INT001 is a header-level consistency check — it verifies that the " +
+      "declared header clauses do not contradict each other, but does not verify that " +
+      "the function body actually matches its declarations. A function may declare " +
+      "`intent: \"pure\"` with no conflicting header clauses and still access external " +
+      "resources in its body; body-shape verification is planned for a future pass.",
     example: {
       fails:
         "?bs 0.7\n" +
