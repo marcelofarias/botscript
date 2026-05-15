@@ -20,7 +20,11 @@
 import { BotscriptError } from "../diagnostics.js";
 
 export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"];
-export const LATEST_VERSION = "0.1";
+export const DEFAULT_VERSION = "0.1";
+/** @deprecated Use DEFAULT_VERSION. Kept for backward compatibility. */
+export const LATEST_VERSION = DEFAULT_VERSION;
+/** The newest version this compiler supports; used in diagnostic rewrites. */
+export const LATEST_SUPPORTED_VERSION = SUPPORTED_VERSIONS.at(-1)!;
 
 const DIRECTIVE_RE = /^\s*\?bs\s+(\d+\.\d+(?:\.\d+)?)\s*$/m;
 
@@ -97,7 +101,7 @@ export function passVersion(src: string): { src: string; version: VersionInfo } 
         message: `malformed \`?bs\` directive — expected a version like \`0.1\`, got "${version}"`,
         rule: "the `?bs` directive must be followed by a version like `<major>.<minor>`",
         idiom: `\`?bs 0.1\` at the top of a .bs file pins it to language version 0.1`,
-        rewrite: `?bs ${LATEST_VERSION}`,
+        rewrite: `?bs ${LATEST_SUPPORTED_VERSION}`,
       },
     ]);
   }
@@ -113,7 +117,7 @@ export function passVersion(src: string): { src: string; version: VersionInfo } 
         message: `unsupported version "${version}". This compiler supports: ${SUPPORTED_VERSIONS.join(", ")}`,
         rule: "every `?bs <version>` must name a version this compiler ships",
         idiom: "pin a file to a known language version with `?bs <version>`",
-        rewrite: `?bs ${LATEST_VERSION}`,
+        rewrite: `?bs ${LATEST_SUPPORTED_VERSION}`,
       },
     ]);
   }

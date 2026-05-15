@@ -86,10 +86,13 @@ export function passDepCheck(src: string, version: VersionInfo): string {
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
 
+  // Precompute each fn's nested (descendant) decls once via a single sweep,
+  // instead of an O(n²) `decls.filter` per fn. Each `inner` list comes out
+  // sorted by `tokenStart`, which `collectCallees` relies on.
+  const innerByDecl = computeNesting(decls);
+
   for (const decl of decls) {
-    const inner = decls.filter(
-      (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
-    );
+    const inner = innerByDecl.get(decl) ?? [];
     const callees = collectCallees(tokens, decl, inner, fnNames);
     records.set(decl, {
       decl,
@@ -181,8 +184,39 @@ export function passDepCheck(src: string, version: VersionInfo): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Compute, for every fn decl, the list of decls nested anywhere inside it.
+ *
+ * A single sweep over `decls` sorted by `tokenStart` replaces a per-fn
+ * `decls.filter` (which is O(n²) overall). Fn ranges are properly nested —
+ * never partially overlapping — so a stack of "currently open" ancestors is
+ * sufficient: every decl is appended to each ancestor still on the stack.
+ * Each returned `inner` list is in ascending `tokenStart` order.
+ */
+function computeNesting(decls: FnDecl[]): Map<FnDecl, FnDecl[]> {
+  const inner = new Map<FnDecl, FnDecl[]>();
+  for (const d of decls) inner.set(d, []);
+
+  const sorted = [...decls].sort((a, b) => a.tokenStart - b.tokenStart);
+  const stack: FnDecl[] = [];
+  for (const d of sorted) {
+    // Drop ancestors that closed before this decl begins.
+    while (stack.length > 0 && stack[stack.length - 1]!.tokenEnd <= d.tokenStart) {
+      stack.pop();
+    }
+    // Every open ancestor contains this decl.
+    for (const ancestor of stack) inner.get(ancestor)!.push(d);
+    stack.push(d);
+  }
+  return inner;
+}
+
+/**
  * Collect the names of same-file fns called inside `fn`'s body, excluding
  * any tokens inside inner (nested) fn declarations.
+ *
+ * `inner` must be sorted by `tokenStart` (as produced by `computeNesting`).
+ * Containment is tracked with a stack advanced in lockstep with the token
+ * cursor, so the scan is O(tokens + innerFns) rather than O(tokens·innerFns).
  */
 function collectCallees(
   tokens: Token[],
@@ -191,8 +225,18 @@ function collectCallees(
   fnNames: Set<string>,
 ): Set<string> {
   const callees = new Set<string>();
+  // Active nested-fn ranges covering the current token, innermost last.
+  const open: FnDecl[] = [];
+  let nextInner = 0;
   for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
-    if (insideAny(i, inner)) continue;
+    // Close ranges that ended at or before `i`.
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    // Open ranges that start at or before `i`.
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
     if (!fnNames.has(tok.text)) continue;
@@ -212,10 +256,6 @@ function collectCallees(
     callees.add(tok.text);
   }
   return callees;
-}
-
-function insideAny(idx: number, inner: FnDecl[]): boolean {
-  return inner.some((g) => idx >= g.tokenStart && idx < g.tokenEnd);
 }
 
 function nextSignificant(tokens: Token[], start: number): number {

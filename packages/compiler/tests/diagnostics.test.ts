@@ -21,7 +21,8 @@ describe("BotscriptError + Diagnostic", () => {
       expect(d.severity).toBe("error");
       expect(d.message).toContain("malformed");
       expect(d.idiom).toMatch(/\?bs 0\.1/);
-      expect(d.rewrite).toMatch(/\?bs 0\.1/);
+      // The rewrite suggests the newest supported version, not the default.
+      expect(d.rewrite).toMatch(/\?bs 0\.9/);
       expect(d.line).toBe(1);
     }
   });
