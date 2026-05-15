@@ -54,8 +54,9 @@ export function passBareAs(src: string): string {
 
   // Also collect character-offset ranges for declaration-level `unsafe fn` bodies.
   // These use source offsets rather than token indices (parseFn returns offsets).
+  // Throws UNS002 immediately for any declaration-level unsafe fn with an empty reason.
   const unsafeFnBodyRanges: CharRange[] = [];
-  collectUnsafeFnBodies(tokens, unsafeFnBodyRanges);
+  collectUnsafeFnBodies(tokens, src, unsafeFnBodyRanges);
 
   // 2. Walk the token stream looking for bare `as` casts in expression
   //    position. Throw on the first one we find — matching `unsafe.ts`'s
@@ -292,8 +293,11 @@ function skipTrivia(tokens: Token[], i: number): number {
  * Collect source-offset ranges of fn bodies declared with
  * `unsafe "reason" fn name(…)`. An `as` cast inside such a body is allowed
  * — the fn declaration itself is the declared trust boundary.
+ *
+ * Throws UNS002 immediately for any declaration-level `unsafe "" fn` (empty
+ * reason), independent of `passUnsafe`'s expression-position heuristic.
  */
-function collectUnsafeFnBodies(tokens: Token[], out: CharRange[]): void {
+function collectUnsafeFnBodies(tokens: Token[], src: string, out: CharRange[]): void {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (!t || t.kind !== "keyword" || t.keyword !== "unsafe") continue;
@@ -316,6 +320,26 @@ function collectUnsafeFnBodies(tokens: Token[], out: CharRange[]): void {
       fnIdx = l;
     } else {
       continue;
+    }
+
+    // Declaration-level unsafe fn with an empty reason is always UNS002,
+    // regardless of whether the body contains an `as` cast.
+    const reason = reasonTok.text.slice(1, -1);
+    if (reason.trim() === "") {
+      const entry = getErrorCode("UNS002")!;
+      const { line, column } = locationOf(src, t.start);
+      const diag: Diagnostic = {
+        code: "UNS002",
+        severity: "error",
+        file: null,
+        line,
+        column,
+        message: "declaration-level unsafe fn has an empty justification string",
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite: entry.rewrite,
+      };
+      throw new BotscriptError([diag]);
     }
 
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });

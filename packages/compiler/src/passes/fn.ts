@@ -8,6 +8,8 @@
  * fragile `{ … }` body/object-type heuristic — bracket pairing comes from the
  * lexer and is always correct.
  */
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
+import { getErrorCode } from "../error-codes.js";
 import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
@@ -27,6 +29,24 @@ export function passFn(src: string, version?: VersionInfo): string {
     if (t.kind !== "keyword" || t.keyword !== "fn") continue;
     const decl = parseFn(tokens, i, { allowGenerics });
     if (!decl) continue;
+    // Declaration-level `unsafe "reason" fn` must have a non-empty reason (UNS002).
+    if (decl.unsafeReason !== undefined && decl.unsafeReason.trim() === "") {
+      const tok = tokens[decl.tokenStart]!;
+      const entry = getErrorCode("UNS002")!;
+      const { line, column } = locationOf(src, tok.start);
+      const diag: Diagnostic = {
+        code: "UNS002",
+        severity: "error",
+        file: null,
+        line,
+        column,
+        message: "declaration-level unsafe fn has an empty justification string",
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite: entry.rewrite,
+      };
+      throw new BotscriptError([diag]);
+    }
     // Emit everything up to the start of this declaration.
     out += src.slice(cursor, tokens[decl.tokenStart]!.start);
     out += emitFn(decl);
@@ -52,7 +72,7 @@ function emitFn(decl: FnDecl): string {
   // the emitted shape there is byte-identical to before. Only ?bs 0.4+ sees
   // the `<…>` block in the TS output.
   const tparams = decl.typeParams ?? "";
-  const unsafePrefix = decl.unsafeReason
+  const unsafePrefix = decl.unsafeReason !== undefined
     ? `/* unsafe: ${JSON.stringify(decl.unsafeReason)} */\n`
     : "";
   return (
@@ -83,5 +103,17 @@ function indent(s: string, n: number): string {
     .split("\n")
     .map((l) => (l.length === 0 ? l : pad + l))
     .join("\n");
+}
+
+function locationOf(src: string, offset: number): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let i = 0; i < offset && i < src.length; i++) {
+    if (src[i] === "\n") {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+  return { line, column: offset - lineStart + 1 };
 }
 
