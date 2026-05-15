@@ -528,20 +528,20 @@ Rewrite: fn formatHandle(...) uses { net } -> ...
 
         <ul>
           <li>
-            <strong><a href="https://github.com/vercel/next.js/pull/93134" target="_blank" rel="noreferrer">next.js #93134</a></strong> —
+            <strong><a href="https://github.com/vercel/next.js/pull/93134" target="_blank" rel="noopener noreferrer">next.js #93134</a></strong> —
             falsy throw confused as no-error (<code>throw undefined</code> read as
             "no error" by an <code>Error&nbsp;|&nbsp;null</code> truthiness check).
             In botscript, <code>match</code> on a tagged union doesn't have a
             "truthiness" path.
           </li>
           <li>
-            <strong><a href="https://github.com/microsoft/vscode/pull/299235" target="_blank" rel="noreferrer">vscode #299235</a></strong> —
+            <strong><a href="https://github.com/microsoft/vscode/pull/299235" target="_blank" rel="noopener noreferrer">vscode #299235</a></strong> —
             tagged union drift where <code>selectedValue: undefined</code> got
             dropped by <code>JSON.stringify</code>, destroying the discriminator.
             botscript's union tag is a real field, not an absent key.
           </li>
           <li>
-            <strong><a href="https://github.com/microsoft/vscode/pull/309950" target="_blank" rel="noreferrer">vscode #309950</a></strong> —
+            <strong><a href="https://github.com/microsoft/vscode/pull/309950" target="_blank" rel="noopener noreferrer">vscode #309950</a></strong> —
             <code>as</code>-cast lied about a possibly-absent value; 36 of 56
             callers were fire-and-forget. In botscript, <code>as</code> outside
             <code>unsafe&nbsp;{&nbsp;}</code> is a parse error.
@@ -577,8 +577,8 @@ Rewrite: fn formatHandle(...) uses { net } -> ...
           <p class="cta-title">Try it in your browser — no install required</p>
           <div class="cta-links">
             <a class="cta-link-primary" href="/">open playground →</a>
-            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noreferrer">github</a>
-            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript/blob/main/MANIFESTO.md" target="_blank" rel="noreferrer">read the manifesto</a>
+            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noopener noreferrer">github</a>
+            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript/blob/main/MANIFESTO.md" target="_blank" rel="noopener noreferrer">read the manifesto</a>
           </div>
           <div class="cta-npm"><code>npm i @mbfarias/botscript-compiler</code></div>
         </div>
@@ -589,7 +589,7 @@ Rewrite: fn formatHandle(...) uses { net } -> ...
     <footer class="site-footer">
       <a href="/">botscript.org</a>
       <span class="dot">·</span>
-      <a href="https://www.npmjs.com/package/@mbfarias/botscript-compiler" target="_blank" rel="noreferrer">@mbfarias/botscript-compiler</a>
+      <a href="https://www.npmjs.com/package/@mbfarias/botscript-compiler" target="_blank" rel="noopener noreferrer">@mbfarias/botscript-compiler</a>
       <span class="dot">·</span>
       <span>compiled in your browser</span>
     </footer>
