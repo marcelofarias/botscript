@@ -54,6 +54,12 @@ export function passUnsafe(src: string): string {
     const k = skipTrivia(tokens, j + 1);
     const open = tokens[k];
     if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
+      // Declaration-level `unsafe "reason" fn` — the fn keyword (or `async` before it)
+      // follows the reason string instead of `{`. This form is handled entirely by
+      // passFn; passUnsafe must not throw here.
+      if (open && open.kind === "keyword" && (open.keyword === "fn" || open.keyword === "async")) {
+        continue;
+      }
       throw mkError("UNS003", t, src, "unsafe block has no body — expected `{ ... }`");
     }
     const close = open.matchedAt;

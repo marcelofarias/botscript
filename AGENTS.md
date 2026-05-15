@@ -189,7 +189,7 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | UNS001 | (0.3+) `unsafe { … }` block missing a justification string. | `unsafe "<reason>" { … }`. |
 | UNS002 | (0.3+) `unsafe "" { … }` — empty justification. | Replace `""` with a one-sentence reason. |
 | UNS003 | (0.3+) `unsafe "reason"` with no following body. | `unsafe "reason" { <body> }`. |
-| UNS004 | (0.5+) Bare `as` cast outside an `unsafe "<reason>" { ... }` block. Every cast must live inside an unsafe block so the diff carries a written reason. `import * as ns`, `import { foo as bar }`, and `export * as ns` are not flagged. | `unsafe "<short reason>" { <expr> as <type> }`. |
+| UNS004 | (0.5+) Bare `as` cast outside an `unsafe "<reason>" { ... }` block or an `unsafe "reason" fn` body. Every cast must be justified. `import * as ns`, `import { foo as bar }`, and `export * as ns` are not flagged. | `unsafe "<short reason>" { <expr> as <type> }`, or declare the fn as `unsafe "reason" fn name(…)` when the fn is the module's one safe coercion point. |
 | FMT001 | (0.4+) Source is not in canonical form (RFC #13). Every program has exactly one canonical surface form; from `?bs 0.4` on, the compiler rejects whitespace / ordering variants rather than silently accepting them. The diagnostic points at the first UTF-16 code unit that differs from canonical. | `botscript fmt <file> --write`. |
 | RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
 

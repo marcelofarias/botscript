@@ -52,8 +52,11 @@ function emitFn(decl: FnDecl): string {
   // the emitted shape there is byte-identical to before. Only ?bs 0.4+ sees
   // the `<…>` block in the TS output.
   const tparams = decl.typeParams ?? "";
+  const unsafePrefix = decl.unsafeReason
+    ? `/* unsafe: ${JSON.stringify(decl.unsafeReason)} */\n`
+    : "";
   return (
-    `${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
+    `${unsafePrefix}${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
     `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
     `${indent(inner, 4)}\n` +
     `  });\n` +

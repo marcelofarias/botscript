@@ -122,6 +122,17 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
   raw as Shape
 }
 
+// ─── 10. unsafe "reason" fn (declaration-level escape hatch) ─────────────────
+// When a function is *the* trust boundary for type coercions in a module,
+// repeating the justification at every call site is noise. Declaration-level
+// `unsafe fn` moves the reason to the declaration; callers treat it as a normal
+// fn. The reason is preserved as a `/* unsafe: "…" */` comment in the emitted
+// TypeScript. Works with async: `unsafe "reason" async fn`.
+
+unsafe "raw API response shape validated by schema" fn parseShape(raw: unknown) -> Shape {
+  return raw as Shape;
+}
+
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)
 

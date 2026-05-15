@@ -52,6 +52,17 @@ export interface FnDecl {
   intent?: string;
   /** Source offset of the intent string token (UTF-16 code units, inclusive). */
   intentStart?: number;
+  /**
+   * Justification string from a declaration-level `unsafe "reason" fn …`
+   * prefix. When set, bare `as` casts inside the body are allowed (the fn
+   * is the declared trust boundary for type coercions). The reason is
+   * preserved as a leading `/* unsafe: "…" *\/` comment in the emitted
+   * TypeScript so the diff reviewer sees the why.
+   *
+   * Parsed version-agnostically (like intent) — the enforcement
+   * (passBareAs skipping the body) activates only at ?bs 0.5+.
+   */
+  unsafeReason?: string;
   returnType: string;
   /** Body is a brace block OR a single-expression form (= pure / io / arbitrary). */
   body: FnBody;
@@ -100,13 +111,36 @@ export function parseFn(
   idx: number,
   opts: ParseFnOptions = {},
 ): FnDecl | null {
-  // Detect leading `async` modifier.
+  // Detect leading `async` and/or `unsafe "reason"` modifiers.
+  // Valid prefix forms (in source order):
+  //   fn name(...)
+  //   async fn name(...)
+  //   unsafe "reason" fn name(...)
+  //   unsafe "reason" async fn name(...)
   let isAsync = false;
   let tokenStart = idx;
-  const prev = prevSignificant(tokens, idx);
-  if (prev !== -1 && tokens[prev]!.kind === "keyword" && tokens[prev]!.keyword === "async") {
+  let unsafeReason: string | undefined;
+
+  const prev1 = prevSignificant(tokens, idx);
+  if (prev1 !== -1 && tokens[prev1]!.kind === "keyword" && tokens[prev1]!.keyword === "async") {
     isAsync = true;
-    tokenStart = prev;
+    tokenStart = prev1;
+    // Check for `unsafe "reason"` before `async`
+    const prev2 = prevSignificant(tokens, prev1);
+    if (prev2 !== -1 && tokens[prev2]!.kind === "string") {
+      const prev3 = prevSignificant(tokens, prev2);
+      if (prev3 !== -1 && tokens[prev3]!.kind === "keyword" && tokens[prev3]!.keyword === "unsafe") {
+        unsafeReason = tokens[prev2]!.text.slice(1, -1);
+        tokenStart = prev3;
+      }
+    }
+  } else if (prev1 !== -1 && tokens[prev1]!.kind === "string") {
+    // Check for `unsafe "reason"` before `fn` (no async)
+    const prev2 = prevSignificant(tokens, prev1);
+    if (prev2 !== -1 && tokens[prev2]!.kind === "keyword" && tokens[prev2]!.keyword === "unsafe") {
+      unsafeReason = tokens[prev1]!.text.slice(1, -1);
+      tokenStart = prev2;
+    }
   }
 
   // Skip past `fn` to the name.
@@ -340,6 +374,7 @@ export function parseFn(
     capabilities,
     intent,
     intentStart,
+    unsafeReason,
     returnType,
     body,
   };
