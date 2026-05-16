@@ -172,6 +172,40 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn greet(name: string) intent: \"pure\" -> string = pure { name.toUpperCase() }\n",
     },
   },
+  INT002: {
+    code: "INT002",
+    title: "intent declares 'pure' but function body uses a capability",
+    body:
+      "INT002 is the body-level complement to INT001. INT001 catches the case where " +
+      "`intent: \"pure\"` and a non-empty `uses { ... }` clause are both declared in the " +
+      "header (an obvious contradiction). INT002 catches the more subtle case: the header " +
+      "looks fine (empty or absent `uses {}`), but the function body directly references a " +
+      "stdlib capability namespace like `http`, `time`, `random`, `fs`, `stdout`, or `stderr`.\n\n" +
+      "This matters because INT001 is a header-level consistency check — it compares clauses " +
+      "to each other, but does not look at the body. A function that declares " +
+      "`intent: \"pure\"` and no capabilities can still lie: the body can call `http.get()` " +
+      "and INT001 will say nothing. INT002 closes that gap.\n\n" +
+      "The check scans the fn body's own token range for direct stdlib references " +
+      "(`<namespace>.<member>`), excluding nested `fn` declarations. It does not do " +
+      "transitive call-graph inference — that is cap-check's domain (CAP001). INT002 fires " +
+      "on direct body references only, and fires before cap-check, so the message focuses on " +
+      "the pure-intent violation rather than the missing declaration.\n\n" +
+      "INT002 is gated on `?bs 0.7` (same gate as INT001). Files on earlier pins are not " +
+      "checked.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "// drainSecrets claims pure but directly calls http.get\n" +
+        "fn drainSecrets(id: string) intent: \"pure\" -> string = http.get(\"/s/\" + id)\n",
+      passes:
+        "// option A — remove the capability call (make it truly pure)\n" +
+        "?bs 0.7\n" +
+        "fn formatId(id: string) intent: \"pure\" -> string = pure { \"user-\" + id }\n\n" +
+        "// option B — remove the pure claim and declare the capability\n" +
+        "?bs 0.7\n" +
+        "fn drainSecrets(id: string) uses { net } -> string = http.get(\"/s/\" + id)\n",
+    },
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

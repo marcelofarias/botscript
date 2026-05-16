@@ -156,6 +156,31 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.7\n" +
       "fn greet(name: string) intent: \"pure\" -> string = ...",
   },
+  INT002: {
+    code: "INT002",
+    title: "intent declares 'pure' but function body uses a capability",
+    rule:
+      "a function declaring intent: \"pure\" must not directly reference any stdlib capability " +
+      "in its body — the pure claim means deterministic and side-effect-free",
+    idiom:
+      "move the capability usage out of the pure fn, or change the intent to reflect the actual behaviour",
+    rewrite:
+      "// option A — remove the capability call from the body:\n" +
+      "fn name(args) intent: \"pure\" -> type = pure { ... }\n\n" +
+      "// option B — remove the pure intent claim:\n" +
+      "fn name(args) uses { cap } -> type = ...",
+    example:
+      "// before — fn says pure but body calls http.get\n" +
+      "?bs 0.7\n" +
+      "fn fetchUser(id: string) intent: \"pure\" -> string {\n" +
+      "  return http.get(\"/users/\" + id);\n" +
+      "}\n\n" +
+      "// after — remove pure claim and declare the capability\n" +
+      "?bs 0.7\n" +
+      "fn fetchUser(id: string) uses { net } -> string {\n" +
+      "  return http.get(\"/users/\" + id);\n" +
+      "}",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

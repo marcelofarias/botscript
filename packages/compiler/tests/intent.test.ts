@@ -175,3 +175,110 @@ describe("INT001 — case-insensitive pure matching", () => {
     expect(() => t(src)).toThrow();
   });
 });
+
+describe("INT002 — pure intent violated in body (?bs 0.7+)", () => {
+  // Canonical form: single-return string fns use expression bodies (= expr).
+  // Void fns with standalone expression statements stay as block bodies.
+
+  it("fires INT002 when pure fn body directly calls http.get", () => {
+    const src = `?bs 0.7\nfn fetchSecret(id: string) intent: "pure" -> string = http.get("/secret/" + id)\n`;
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("fires INT002 when pure fn body uses time.now()", () => {
+    const src = `?bs 0.7\nfn timestamp() intent: "pure" -> number = time.now()\n`;
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("fires INT002 for random, fs, stdout, stderr capabilities in body", () => {
+    const cases: [string, string][] = [
+      ["random", "random.float()"],
+      ["fs", "fs.readFile(\"x\")"],
+    ];
+    for (const [cap, expr] of cases) {
+      const src = `?bs 0.7\nfn op() intent: "pure" -> void {\n  ${expr};\n}\n`;
+      expect(() => t(src), `expected INT002 for ${cap}`).toThrow(/INT002/);
+    }
+    // Void fns with stdout/stderr — block body form
+    const stdoutSrc = `?bs 0.7\nfn op() intent: "pure" -> void {\n  stdout.write("x");\n}\n`;
+    expect(() => t(stdoutSrc), "expected INT002 for stdout").toThrow(/INT002/);
+    const stderrSrc = `?bs 0.7\nfn op() intent: "pure" -> void {\n  stderr.write("x");\n}\n`;
+    expect(() => t(stderrSrc), "expected INT002 for stderr").toThrow(/INT002/);
+  });
+
+  it("diagnostic message includes fn name, namespace, member, and capability", () => {
+    const src = `?bs 0.7\nfn drainSecrets(id: string) intent: "pure" -> string = http.get("/s/" + id)\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT002");
+      expect(d.message).toContain("drainSecrets");
+      expect(d.message).toContain("http.get");
+      expect(d.message).toContain("net");
+      expect(d.rule).toBeTruthy();
+      expect(d.idiom).toBeTruthy();
+      expect(d.rewrite).toBeTruthy();
+    }
+  });
+
+  it("INT001 takes priority over INT002 when uses {} is also declared", () => {
+    // INT001 fires first (header conflict) — INT002 should not fire too.
+    const src = `?bs 0.7\nfn bad(id: string) uses { net } intent: "pure" -> string = id\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+    }
+  });
+
+  it("does NOT fire INT002 when pure fn body has no stdlib calls", () => {
+    const src = `?bs 0.7\nfn add(a: number, b: number) intent: "pure" -> number = pure { a + b }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT002 when body uses a non-stdlib identifier", () => {
+    const src = `?bs 0.7\nfn slug(s: string) intent: "pure" -> string = pure { s.toLowerCase() }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT002 on pre-0.7 pins", () => {
+    // ?bs 0.1 has no canonical-form gate, no intent check.
+    const src = `?bs 0.1\nfn fetchSecret(id: string) intent: "pure" -> string = http.get("/secret")\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT002 for capability use inside a nested fn body", () => {
+    // The outer fn declares intent: pure. Inner fn uses net inside its own body.
+    // INT002 must not fire for the outer fn — inner decl is excluded from the body scan.
+    const src = `?bs 0.7\nfn outer() intent: "pure" -> void {\n  fn inner() uses { net } -> void {\n    http.get("/x");\n  }\n}\n`;
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      for (const d of err.diagnostics) {
+        expect(d.code).not.toBe("INT002");
+      }
+    }
+  });
+
+  it("carries source range (start/end) pointing at the intent annotation", () => {
+    const src = `?bs 0.7\nfn bad() intent: "pure" -> void {\n  time.now();\n}\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT002");
+      expect(d.start).toBeTypeOf("number");
+      expect(d.end).toBeTypeOf("number");
+      expect(d.line).toBeGreaterThan(0);
+      expect(d.column).toBeGreaterThan(0);
+    }
+  });
+});

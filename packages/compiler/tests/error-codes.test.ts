@@ -6,7 +6,7 @@ describe("error-code registry", () => {
   it("has an entry for every code the compiler currently emits", () => {
     const codes = listErrorCodes().map((e) => e.code);
     // If the compiler grows a new diagnostic, add it to error-codes.ts AND to this list.
-    for (const code of ["CAP001", "CAP002", "INT001", "UNS001", "UNS002", "UNS003", "UNS004", "RES001"]) {
+    for (const code of ["CAP001", "CAP002", "INT001", "INT002", "UNS001", "UNS002", "UNS003", "UNS004", "RES001"]) {
       expect(codes).toContain(code);
     }
   });
