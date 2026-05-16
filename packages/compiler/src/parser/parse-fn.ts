@@ -39,6 +39,24 @@ export interface FnDecl {
   typeParams: string | null;
   /** Verbatim args including parens. */
   args: string;
+  /**
+   * TypeScript-compatible args: same as `args` but with botscript `->` arrows
+   * converted to `=>` and any `uses { … }` annotations stripped from
+   * function-typed parameters. Used by `emitFn` so the emitted TypeScript
+   * compiles cleanly.
+   *
+   * Example: `(action: () uses { net } -> string)` →
+   *          `(action: () => string)`
+   */
+  argsTs: string;
+  /**
+   * Union of all capability names declared in `uses { … }` annotations on
+   * function-typed parameters. Empty when no parameter carries an effect
+   * annotation. Used by `passEffCheck` (EFF002).
+   *
+   * Example: `(action: () uses { net } -> string)` → `["net"]`
+   */
+  paramCaps: string[];
   capabilities: string[];
   /**
    * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
@@ -163,6 +181,7 @@ export function parseFn(
   if (!argsOpen || argsOpen.kind !== "open" || argsOpen.text !== "(" || argsOpen.matchedAt === undefined) return null;
   const argsClose = argsOpen.matchedAt;
   const args = sliceText(tokens, i, argsClose + 1);
+  const { text: argsTs, paramCaps } = buildArgsTs(tokens, i, argsClose + 1);
   i = argsClose + 1;
   i = skipTrivia(tokens, i);
 
@@ -411,6 +430,8 @@ export function parseFn(
     name,
     typeParams,
     args,
+    argsTs,
+    paramCaps,
     capabilities,
     reads,
     writes,
@@ -571,6 +592,56 @@ function skipTrivia(tokens: Token[], i: number): number {
     return i;
   }
   return i;
+}
+
+/**
+ * Build the TypeScript-compatible args string from the args token range.
+ *
+ * Two transformations applied:
+ * 1. Botscript `->` (arrow token) → TypeScript `=>` (function type arrow).
+ * 2. `uses { cap, … }` annotations on function-typed parameters are stripped
+ *    from the emitted text and their capability names collected into `paramCaps`.
+ *
+ * The stripping is position-independent: any `uses { }` inside the args list
+ * is treated as a parameter effect annotation. This is safe because `uses` is
+ * a botscript keyword and cannot appear as an identifier in TypeScript types or
+ * default value expressions.
+ */
+function buildArgsTs(
+  tokens: Token[],
+  from: number,
+  to: number,
+): { text: string; paramCaps: string[] } {
+  let out = "";
+  const paramCaps: string[] = [];
+  let i = from;
+  while (i < to) {
+    const t = tokens[i]!;
+    // Convert botscript function-type arrow to TypeScript function-type arrow.
+    if (t.kind === "arrow") {
+      out += "=>";
+      i++;
+      continue;
+    }
+    // Strip `uses { caps }` and collect the declared capabilities.
+    if (t.kind === "keyword" && t.keyword === "uses") {
+      const j = skipTrivia(tokens, i + 1);
+      const open = tokens[j];
+      if (open && open.kind === "open" && open.text === "{" && open.matchedAt !== undefined) {
+        const caps = parseCapList(tokens, j + 1, open.matchedAt);
+        for (const c of caps) paramCaps.push(c);
+        i = open.matchedAt + 1;
+        // Consume any whitespace that separated `uses { … }` from the `->`.
+        // Without this, a space before `->` would remain and the emitted TS
+        // would read `(action: ()  => string)` (double space). Cosmetic only.
+        while (i < to && tokens[i]?.kind === "whitespace") i++;
+        continue;
+      }
+    }
+    out += t.text;
+    i++;
+  }
+  return { text: out, paramCaps };
 }
 
 function sliceText(tokens: Token[], from: number, to: number): string {

@@ -6,6 +6,7 @@ import { passBlocks } from "./passes/blocks.js";
 import { passCapCheck } from "./passes/cap-check.js";
 import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
+import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
 import { passMatch } from "./passes/match.js";
 import { passPrimer } from "./passes/primer.js";
@@ -50,6 +51,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // message "intent says pure but has uses { net }" is seen before the
   // transitive capability walk, which produces noisier output.
   { name: "intentCheck", fn: passIntentCheck, minVersion: "0.7" },
+  // effCheck: header-level check that the outer fn's capabilities cover the
+  // effect annotations on its callback parameters (EFF002). Runs alongside
+  // intentCheck — both are header consistency checks before the body walk.
+  { name: "effCheck", fn: passEffCheck, minVersion: "0.7" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },

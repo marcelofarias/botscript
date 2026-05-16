@@ -255,7 +255,15 @@ function checkStrict(src: string, allowGenerics: boolean): string {
     }
   }
   for (const rec of records.values()) {
-    const extra = [...rec.declared].filter((c) => !rec.consumed.has(c));
+    // Capabilities declared on function-typed parameters (paramCaps) justify
+    // the outer fn declaring those capabilities even if the body has no direct
+    // stdlib call for them — the callback may exercise those capabilities when
+    // called. Exclude paramCaps from the over-declaration check so EFF002 and
+    // CAP002 don't conflict.
+    const callbackJustified = new Set(rec.decl.paramCaps);
+    const extra = [...rec.declared].filter(
+      (c) => !rec.consumed.has(c) && !callbackJustified.has(c),
+    );
     if (extra.length > 0) {
       throw mkOverDeclaredError(src, rec, extra);
     }
