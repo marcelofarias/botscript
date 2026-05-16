@@ -261,8 +261,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "the transitive actual surface. Over-declaration is always allowed — conservative " +
       "annotations are harmless. Only under-declaration fires DEP001.\n\n" +
       "The fix is simple: add the missing label(s) to the caller's `reads {}` clause. " +
-      "The diagnostic message names the call path (\"A -> B\") and the specific label, " +
-      "so the rewrite is mechanical.",
+      "The compiler's rewrite hint names the missing label and the call path, " +
+      "so the fix is mechanical.",
     example: {
       fails:
         "?bs 0.9\n" +
@@ -283,7 +283,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Same rationale: the declared write surface must cover the transitive write surface " +
       "so callers can audit it from A's header alone.\n\n" +
       "Add the missing label to the caller's `writes {}` clause to clear the diagnostic. " +
-      "The message names the call path and the specific missing label.",
+      "The compiler's rewrite hint names the missing label and the call path.",
     example: {
       fails:
         "?bs 0.9\n" +

@@ -22,9 +22,16 @@ function compile(src: string): string {
 }
 
 function expectDep(src: string, code: "DEP001" | "DEP002", fragment?: string): void {
-  expect(() => compile(src)).toThrow(new RegExp(`\\[${code}\\]`));
+  let err: Error | null = null;
+  try {
+    compile(src);
+  } catch (e) {
+    err = e as Error;
+  }
+  expect(err).not.toBeNull();
+  expect(err?.message).toMatch(new RegExp(`\\[${code}\\]`));
   if (fragment) {
-    expect(() => compile(src)).toThrow(fragment);
+    expect(err?.message).toContain(fragment);
   }
 }
 
