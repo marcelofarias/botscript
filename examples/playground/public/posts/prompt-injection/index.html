@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>Prompt injection isn't a runtime problem — botscript</title>
+  <meta name="description" content="Most teams treat prompt injection as a filtering problem. That framing is wrong. It's an effect propagation problem — and botscript makes it a compile error." />
+  <meta property="og:title" content="Prompt injection isn't a runtime problem — botscript makes it a compile error" />
+  <meta property="og:description" content="Most teams treat prompt injection as a filtering problem. That framing is wrong. It's an effect propagation problem — and type system gaps are what compilers fix." />
+  <meta property="og:url" content="https://botscript.org/posts/prompt-injection" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0d10;
+      --bg-elev: #11161b;
+      --bg-pane: #0d1116;
+      --border: #1d242c;
+      --border-soft: #161c22;
+      --text: #e7eaef;
+      --text-dim: #7d8592;
+      --text-faint: #4f5763;
+      --teal: #2dd4bf;
+      --teal-deep: #0d9488;
+      --teal-glow: rgba(45, 212, 191, 0.18);
+      --amber: #f5b14a;
+      --amber-glow: rgba(245, 177, 74, 0.14);
+      --err: #f87171;
+      --err-glow: rgba(248, 113, 113, 0.12);
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+
+    body {
+      background:
+        radial-gradient(1200px 800px at 80% -10%, rgba(13, 148, 136, 0.10), transparent 60%),
+        radial-gradient(1000px 700px at -10% 90%, rgba(13, 148, 136, 0.06), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px clamp(20px, 5vw, 48px) 80px;
+    }
+
+    /* ---- site header ---- */
+
+    .site-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 56px;
+    }
+
+    .home-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text);
+      transition: color 120ms ease;
+    }
+    .home-link:hover { color: var(--teal); }
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--teal-deep), rgba(13, 148, 136, 0.4));
+      border: 1px solid var(--teal-deep);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--teal);
+      flex-shrink: 0;
+    }
+
+    .brand-name {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .playground-link {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      padding: 7px 14px;
+      border-radius: 8px;
+      transition: all 120ms ease;
+    }
+    .playground-link:hover { color: var(--teal); border-color: var(--teal-deep); }
+
+    /* ---- post header ---- */
+
+    .post-header { margin-bottom: 40px; }
+
+    .post-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--teal);
+      background: var(--teal-glow);
+      border: 1px solid rgba(45, 212, 191, 0.3);
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+
+    .post-title {
+      margin: 0 0 12px;
+      font-size: clamp(24px, 4vw, 32px);
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      line-height: 1.25;
+      color: var(--text);
+    }
+
+    .post-meta {
+      font-size: 13px;
+      color: var(--text-faint);
+      font-family: var(--mono);
+    }
+
+    /* ---- post body ---- */
+
+    .post-body { color: var(--text); }
+
+    .post-body p {
+      margin: 0 0 20px;
+      color: var(--text-dim);
+      line-height: 1.7;
+    }
+
+    .post-body p strong { color: var(--text); }
+
+    .post-body em {
+      font-style: normal;
+      color: var(--text);
+      background: rgba(245, 177, 74, 0.10);
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+
+    .post-body h2 {
+      margin: 44px 0 14px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .post-body h2:first-child { margin-top: 0; }
+
+    .post-body a {
+      color: var(--teal);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(45, 212, 191, 0.3);
+      transition: border-color 120ms ease;
+    }
+    .post-body a:hover { border-color: var(--teal); }
+
+    .post-body code {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--teal);
+      background: var(--teal-glow);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .post-body ul, .post-body ol {
+      margin: 0 0 20px;
+      padding-left: 24px;
+      color: var(--text-dim);
+      line-height: 1.7;
+    }
+
+    .post-body li { margin-bottom: 8px; }
+    .post-body li strong { color: var(--text); }
+
+    .post-body hr {
+      margin: 40px 0;
+      border: 0;
+      border-top: 1px solid var(--border-soft);
+    }
+
+    /* ---- code blocks ---- */
+
+    .code-block {
+      margin: 0 0 24px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .code-block-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .code-tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.08em;
+      border: 1px solid;
+    }
+    .code-tag-ok {
+      color: #7d8592;
+      border-color: #1d242c;
+      background: #11161b;
+    }
+    .code-tag-err {
+      color: #f87171;
+      border-color: #f87171;
+      background: rgba(248, 113, 113, 0.12);
+    }
+
+    .code-block pre {
+      margin: 0;
+      padding: 16px 18px;
+      background: var(--bg-pane);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      overflow-x: auto;
+    }
+
+    .code-block-err pre {
+      color: var(--err);
+      background: rgba(248, 113, 113, 0.04);
+    }
+
+    /* ---- callout box ---- */
+
+    .callout {
+      margin: 0 0 24px;
+      padding: 16px 20px;
+      background: linear-gradient(180deg, rgba(13, 148, 136, 0.08), rgba(13, 148, 136, 0.03));
+      border: 1px solid rgba(45, 212, 191, 0.2);
+      border-left: 3px solid var(--teal-deep);
+      border-radius: 0 10px 10px 0;
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .callout strong { color: var(--text); }
+    .callout code {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--teal);
+      background: var(--teal-glow);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* ---- CTA ---- */
+
+    .cta {
+      margin-top: 48px;
+      padding: 24px 28px;
+      background: linear-gradient(180deg, rgba(13, 148, 136, 0.08), rgba(13, 148, 136, 0.03));
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .cta-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .cta-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .cta-link-primary {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--bg);
+      background: var(--teal);
+      padding: 9px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: opacity 120ms ease;
+    }
+    .cta-link-primary:hover { opacity: 0.88; }
+
+    .cta-link-secondary {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-dim);
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      padding: 9px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 120ms ease;
+    }
+    .cta-link-secondary:hover { color: var(--teal); border-color: var(--teal-deep); }
+
+    .cta-npm {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--text-faint);
+      padding-top: 4px;
+    }
+
+    /* ---- footer ---- */
+
+    .site-footer {
+      margin-top: 64px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .site-footer a { color: var(--text-dim); text-decoration: none; }
+    .site-footer a:hover { color: var(--teal); }
+    .dot { color: var(--text-faint); }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header class="site-header">
+      <a class="home-link" href="/">
+        <div class="logo-mark">{}</div>
+        <span class="brand-name">botscript</span>
+      </a>
+      <a class="playground-link" href="/">try the playground →</a>
+    </header>
+
+    <article>
+      <header class="post-header">
+        <div class="post-eyebrow">security · language design</div>
+        <h1 class="post-title">Prompt injection isn't a runtime problem — botscript makes it a compile error</h1>
+        <div class="post-meta">May 2026</div>
+      </header>
+
+      <div class="post-body">
+
+        <p>
+          Most teams treat prompt injection as a filtering problem. Sanitize the input,
+          validate the output, hope the sandbox holds. That framing is wrong, and the
+          consequences are getting worse as more code is written by LLMs that will
+          happily repeat whatever pattern they last saw.
+        </p>
+
+        <p>
+          Prompt injection is an <strong>effect propagation problem</strong>. Untrusted
+          input reaches a capability — the network, the filesystem, a shell — via a call
+          path no reviewer traced. That's not a runtime failure waiting to happen. That's
+          a type system gap. And type system gaps are what compilers fix.
+        </p>
+
+        <hr>
+
+        <h2>The problem TypeScript can't express</h2>
+
+        <p>
+          In TypeScript, there's no way to write "this function is pure." You can
+          annotate, lint, comment, do code review — and a <code>fetch()</code> call
+          three layers down still ships silently.
+        </p>
+
+        <div class="code-block">
+          <div class="code-block-label">
+            <span>typescript</span>
+            <span class="code-tag code-tag-ok">compiles fine</span>
+          </div>
+          <pre>// Looks pure to every reviewer who reads this signature.
+function formatHandle(user: { name: string }): string {
+  trackImpression(user.name);          // ← calls what exactly?
+  return "@" + user.name.toLowerCase();
+}
+
+function trackImpression(name: string): void {
+  fetch("https://telemetry.svc/events?n=" + name);  // ← here it is, three layers down
+}</pre>
+        </div>
+
+        <p>
+          The bot receives a user name from untrusted input. <code>formatHandle</code>
+          looks safe. TypeScript agrees. Your linter agrees. The PR ships. Now untrusted
+          data is reaching an outbound network call — invisible to every reviewer who
+          read the signature.
+        </p>
+
+        <p>
+          This is the shape of every prompt injection payload that actually works:
+          untrusted data reaches an effect through a call path that looked innocuous
+          at every layer.
+        </p>
+
+        <hr>
+
+        <h2>What botscript does instead</h2>
+
+        <p>
+          botscript is a small TypeScript-superset language where <strong>every
+          capability a function consumes must be declared in its signature</strong>.
+          The compiler walks the call graph and enforces it at compile time.
+        </p>
+
+        <div class="code-block">
+          <div class="code-block-label">
+            <span>botscript</span>
+          </div>
+          <pre>fn formatHandle(user: { name: string }) -> string {
+  trackImpression(user.name);
+  return "@" + user.name.toLowerCase();
+}
+
+fn trackImpression(name: string) -> void {
+  http.get(`/api/events?n=${name}`);
+}</pre>
+        </div>
+
+        <div class="code-block code-block-err">
+          <div class="code-block-label">
+            <span>compiler output</span>
+            <span class="code-tag code-tag-err">CAP001</span>
+          </div>
+          <pre>botscript[CAP001]: fn 'formatHandle' transitively consumes capability 'net'
+via formatHandle -> trackImpression -> http.get, but uses clause is
+{ (none — pure scope) }
+
+Rule: a function declared 'uses { (none — pure scope) }' may not consume
+capability 'net' (reached via formatHandle -> trackImpression -> http.get)
+
+Rewrite: fn formatHandle(...) uses { net } -> ...
+         or remove the http.get call</pre>
+        </div>
+
+        <p>
+          The fix is either: declare the capability (<code>uses&nbsp;{&nbsp;net&nbsp;}</code>),
+          which propagates the declaration up every caller's signature until it surfaces
+          at a boundary where <code>net</code> is expected — or remove the call.
+          Either way, the hidden effect path is impossible. The type system collapses
+          the distance between "looks pure" and "is pure."
+        </p>
+
+        <hr>
+
+        <h2>This is stronger than linting</h2>
+
+        <p>
+          ESLint has rules about side effects. TypeScript strict mode has
+          <code>noImplicitAny</code>. None of them enforce effect propagation
+          transitively across a call graph, and none of them are structural —
+          they're advisory. A <code>// eslint-disable</code> comment makes the
+          violation disappear. An <code>unsafe&nbsp;{&nbsp;}</code> block in
+          botscript makes the violation <em>visible</em> — it's still in the code,
+          auditable, not hidden.
+        </p>
+
+        <p>
+          The difference matters when the code is written by a machine. LLMs follow
+          patterns. If the pattern in the codebase is "side effects in helpers are
+          fine," the model will produce side effects in helpers. If the pattern
+          requires every effect to appear in every function signature all the way up,
+          the model learns to write that — or the compiler refuses the output.
+        </p>
+
+        <hr>
+
+        <h2>It knows what it can't know</h2>
+
+        <p>
+          The botscript compiler doesn't try to be a full theorem prover. It enforces
+          capability propagation within a file, bans bare <code>as</code> casts outside
+          <code>unsafe&nbsp;{&nbsp;}</code> blocks, enforces exhaustive
+          <code>match</code> on tagged unions, and unifies <code>null&nbsp;|&nbsp;undefined</code>
+          into a single <code>Option&lt;T&gt;</code>. That's the whole list. The design
+          principle: <em>if a feature doesn't close a bot failure mode, it isn't here.</em>
+        </p>
+
+        <p>
+          Five recent merges from Next.js and VS Code — all from 2026 — carry bug
+          classes that are parse-time impossible in <code>.bs</code>. Not "would have
+          been caught in review." Parse-time impossible.
+        </p>
+
+        <ul>
+          <li>
+            <strong><a href="https://github.com/vercel/next.js/pull/93134" target="_blank" rel="noopener noreferrer">next.js #93134</a></strong> —
+            falsy throw confused as no-error (<code>throw undefined</code> read as
+            "no error" by an <code>Error&nbsp;|&nbsp;null</code> truthiness check).
+            In botscript, <code>match</code> on a tagged union doesn't have a
+            "truthiness" path.
+          </li>
+          <li>
+            <strong><a href="https://github.com/microsoft/vscode/pull/299235" target="_blank" rel="noopener noreferrer">vscode #299235</a></strong> —
+            tagged union drift where <code>selectedValue: undefined</code> got
+            dropped by <code>JSON.stringify</code>, destroying the discriminator.
+            botscript's union tag is a real field, not an absent key.
+          </li>
+          <li>
+            <strong><a href="https://github.com/microsoft/vscode/pull/309950" target="_blank" rel="noopener noreferrer">vscode #309950</a></strong> —
+            <code>as</code>-cast lied about a possibly-absent value; 36 of 56
+            callers were fire-and-forget. In botscript, <code>as</code> outside
+            <code>unsafe&nbsp;{&nbsp;}</code> is a parse error.
+          </li>
+        </ul>
+
+        <p>
+          The full list of five is on <a href="/">botscript.org</a>, with links to
+          the actual diffs.
+        </p>
+
+        <hr>
+
+        <h2>The MCP server</h2>
+
+        <p>
+          botscript ships an MCP server (<code>@mbfarias/botscript-mcp</code>). LLMs
+          writing <code>.bs</code> code get compiler diagnostics inline as MCP tool
+          results. The model cannot emit a CAP001 violation without immediately
+          receiving the structured error — the call path, the capability consumed, the
+          exact rewrite suggested.
+        </p>
+
+        <div class="callout">
+          <strong>The compiler is the first reviewer every LLM has to satisfy.</strong>
+          The language is designed for a world where most code is written by machines,
+          and the tooling reflects that. <code>?primer</code> injects the full language
+          spec as a comment at the top of any <code>.bs</code> file — so the model
+          always has the rules it needs to write correct code.
+        </div>
+
+        <div class="cta">
+          <p class="cta-title">Try it in your browser — no install required</p>
+          <div class="cta-links">
+            <a class="cta-link-primary" href="/">open playground →</a>
+            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript" target="_blank" rel="noopener noreferrer">github</a>
+            <a class="cta-link-secondary" href="https://github.com/marcelofarias/botscript/blob/main/MANIFESTO.md" target="_blank" rel="noopener noreferrer">read the manifesto</a>
+          </div>
+          <div class="cta-npm"><code>npm i @mbfarias/botscript-compiler</code></div>
+        </div>
+
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <a href="/">botscript.org</a>
+      <span class="dot">·</span>
+      <a href="https://www.npmjs.com/package/@mbfarias/botscript-compiler" target="_blank" rel="noopener noreferrer">@mbfarias/botscript-compiler</a>
+      <span class="dot">·</span>
+      <span>compiled in your browser</span>
+    </footer>
+
+  </div>
+</body>
+</html>
