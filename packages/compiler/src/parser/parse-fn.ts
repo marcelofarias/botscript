@@ -136,11 +136,17 @@ export function parseFn(
       }
     }
   } else if (prev1 !== -1 && tokens[prev1]!.kind === "string") {
-    // Check for `unsafe "reason"` before `fn` (no async)
+    // Check for `unsafe "reason"` before `fn` (no async, or `async` before `unsafe`)
     const prev2 = prevSignificant(tokens, prev1);
     if (prev2 !== -1 && tokens[prev2]!.kind === "keyword" && tokens[prev2]!.keyword === "unsafe") {
       unsafeReason = tokens[prev1]!.text.slice(1, -1);
       tokenStart = prev2;
+      // Also support `async unsafe "reason" fn` — async may precede the unsafe prefix.
+      const prev3 = prevSignificant(tokens, prev2);
+      if (prev3 !== -1 && tokens[prev3]!.kind === "keyword" && tokens[prev3]!.keyword === "async") {
+        isAsync = true;
+        tokenStart = prev3;
+      }
     }
   }
 

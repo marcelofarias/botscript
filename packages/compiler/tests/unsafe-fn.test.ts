@@ -125,6 +125,53 @@ unsafe fn parseUser(raw: unknown) -> string = raw as string
 });
 
 // ---------------------------------------------------------------------------
+// Modifier ordering: async may precede the unsafe prefix
+// ---------------------------------------------------------------------------
+
+describe("unsafe fn — async before unsafe modifier order", () => {
+  it("async unsafe fn is accepted (async before unsafe prefix)", () => {
+    const src = `?bs 0.5
+async unsafe "validated externally" fn coerce(x: unknown) -> string = x as string
+`;
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("async unsafe fn emits async function (async is not dropped)", () => {
+    const src = `?bs 0.5
+async unsafe "test only" fn asyncCoerce(x: unknown) -> string = x as string
+`;
+    const out = compile(src);
+    expect(out).toContain("async function asyncCoerce");
+    expect(out).toContain('/* unsafe: "test only" */');
+  });
+
+  it("async unsafe fn allows bare as inside the body", () => {
+    const src = `?bs 0.5
+async unsafe "all externally verified" fn parseAll(raw: unknown) -> string = raw as string
+`;
+    expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security: reason string containing `*/` does not break the block comment
+// ---------------------------------------------------------------------------
+
+describe("unsafe fn — comment injection prevention", () => {
+  it("a reason string containing `*/` does not terminate the block comment early", () => {
+    const src = `?bs 0.5
+unsafe "reason with */ inside" fn coerce(x: unknown) -> string = x as string
+`;
+    const out = compile(src);
+    // The emitted comment must not contain a raw `*/` before the closing delimiter.
+    // JSON.stringify escapes it so the comment is a single valid block comment.
+    const commentMatch = out.match(/\/\* unsafe: (.*?) \*\//s);
+    expect(commentMatch).not.toBeNull();
+    expect(commentMatch![1]).not.toContain("*/");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Forward-compat: files below 0.5 are unaffected
 // ---------------------------------------------------------------------------
 
