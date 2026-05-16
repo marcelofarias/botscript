@@ -139,11 +139,11 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "INT001",
     title: "intent declares 'pure' but function has capability or resource declarations",
     rule:
-      "a function whose intent contains 'pure' must have no capability declarations (uses {}) " +
-      "and no read/write resource dependencies (reads {} / writes {}) — " +
+      "a function whose intent contains 'pure' must have no capability declarations (uses {}) — " +
+      "from ?bs 0.8, it must also have no read/write resource dependencies (reads {} / writes {}) — " +
       "pure functions are deterministic, side-effect-free, and access no external resources",
     idiom:
-      "remove uses { ... }, reads { ... }, and writes { ... } from a pure function, " +
+      "remove the conflicting header clauses (uses {}, or reads {} / writes {} at ?bs 0.8+) from a pure function, " +
       "or change the intent to reflect the actual behaviour",
     rewrite:
       "// option A — remove resource annotations:\n" +
@@ -153,10 +153,10 @@ const E: Record<string, ErrorCodeEntry> = {
     example:
       "// before — intent says pure, but function reads from cache\n" +
       "?bs 0.8\n" +
-      "fn lookup(id: string) reads { cache } intent: \"pure\" -> string | undefined = ...\n\n" +
+      "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = ...\n\n" +
       "// after — intent matches the declaration\n" +
       "?bs 0.8\n" +
-      "fn lookup(id: string) reads { cache } -> string | undefined = ...",
+      "fn lookup(id: string) reads { cache } -> Option<string> = ...",
   },
   INT002: {
     code: "INT002",

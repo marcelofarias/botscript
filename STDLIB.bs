@@ -28,7 +28,7 @@ fn now() uses { time } -> number = time.now()
 // (e.g. cache, db, metrics) — not stdlib names. Metadata-only in 0.8;
 // transitivity is enforced at ?bs 0.9 (DEP001 / DEP002).
 
-fn lookupCache(id: string) reads { cache } -> string | undefined = pure { undefined }
+fn lookupCache(id: string) reads { cache } -> Option<string> = none
 fn writeCache(id: string, value: string) writes { cache } -> void { }
 
 // ─── 3. fn pure shorthand ───────────────────────────────────────────────────

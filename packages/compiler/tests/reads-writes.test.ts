@@ -200,6 +200,17 @@ describe("duplicate fn header clauses — SYN001", () => {
     expect(() => compile(src)).toThrow("SYN001");
   });
 
+  it("SYN001 fires on duplicate reads {} at pre-0.8 pins (not version-gated)", () => {
+    // SYN001 is syntax validation, not a semantic check — it fires regardless of pin.
+    const src = "?bs 0.7\nfn dup(id: string) reads { cache } reads { db } -> string = id\n";
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+
+  it("SYN001 fires on invalid label at pre-0.8 pins (not version-gated)", () => {
+    const src = `?bs 0.6\nfn load(id: string) reads { "cache" } -> string = id\n`;
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+
   it("parseFn without src uses first-wins (no throw — backward compat for direct callers)", () => {
     // Without src in opts, parseFn falls back to first-wins instead of throwing.
     // This preserves backward compat for tools that call parseFn directly in isolation.

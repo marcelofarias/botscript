@@ -166,11 +166,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.8\n" +
-        "fn lookup(id: string) reads { cache } intent: \"pure\" -> string | undefined = undefined\n",
+        "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = none\n",
       passes:
         "// option A — remove the conflicting header clause (uses/reads/writes)\n" +
         "?bs 0.8\n" +
-        "fn lookup(id: string) intent: \"pure\" -> string | undefined = pure { undefined }\n",
+        "fn lookup(id: string) intent: \"pure\" -> Option<string> = pure { none }\n",
     },
   },
   INT002: {
