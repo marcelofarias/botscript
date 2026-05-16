@@ -420,15 +420,15 @@ function formatHandle(user: { name: string }): string {
 }
 
 function trackImpression(name: string): void {
-  fetch("/api/events?n=" + name);      // ← here it is, three layers down
+  fetch("https://telemetry.svc/events?n=" + name);  // ← here it is, three layers down
 }</pre>
         </div>
 
         <p>
           The bot receives a user name from untrusted input. <code>formatHandle</code>
-          looks safe. TypeScript agrees. Your linter agrees. The PR ships. Now a crafted
-          name can trigger an outbound request to an attacker-controlled endpoint, or
-          exfiltrate data through a query parameter.
+          looks safe. TypeScript agrees. Your linter agrees. The PR ships. Now untrusted
+          data is reaching an outbound network call — invisible to every reviewer who
+          read the signature.
         </p>
 
         <p>
@@ -444,7 +444,7 @@ function trackImpression(name: string): void {
         <p>
           botscript is a small TypeScript-superset language where <strong>every
           capability a function consumes must be declared in its signature</strong>.
-          The compiler walks the call graph and enforces it at parse time.
+          The compiler walks the call graph and enforces it at compile time.
         </p>
 
         <div class="code-block">
