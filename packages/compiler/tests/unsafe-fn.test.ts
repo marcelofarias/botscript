@@ -158,13 +158,23 @@ async unsafe "all externally verified" fn parseAll(raw: unknown) -> string = raw
 // ---------------------------------------------------------------------------
 
 describe("unsafe fn — comment injection prevention", () => {
-  it("a reason string containing `*/` does not terminate the block comment early", () => {
+  it("a reason string containing `*/` does not terminate the block comment early (declaration-level)", () => {
     const src = `?bs 0.5
 unsafe "reason with */ inside" fn coerce(x: unknown) -> string = x as string
 `;
     const out = compile(src);
     // The emitted comment must not contain a raw `*/` before the closing delimiter.
     // JSON.stringify escapes it so the comment is a single valid block comment.
+    const commentMatch = out.match(/\/\* unsafe: (.*?) \*\//s);
+    expect(commentMatch).not.toBeNull();
+    expect(commentMatch![1]).not.toContain("*/");
+  });
+
+  it("an unsafe block reason containing `*/` does not terminate the block comment early", () => {
+    const src = `?bs 0.3
+const val = unsafe "reason with */ inside" { "ok" }
+`;
+    const out = compile(src);
     const commentMatch = out.match(/\/\* unsafe: (.*?) \*\//s);
     expect(commentMatch).not.toBeNull();
     expect(commentMatch![1]).not.toContain("*/");

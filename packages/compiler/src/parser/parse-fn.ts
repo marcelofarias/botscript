@@ -63,6 +63,8 @@ export interface FnDecl {
    * (passBareAs skipping the body) activates only at ?bs 0.5+.
    */
   unsafeReason?: string;
+  /** Source offset of the unsafe reason string token (UTF-16 code units, inclusive). Used to anchor UNS002 at the right location. */
+  unsafeReasonStart?: number;
   returnType: string;
   /** Body is a brace block OR a single-expression form (= pure / io / arbitrary). */
   body: FnBody;
@@ -118,9 +120,11 @@ export function parseFn(
   //   async fn name(...)
   //   unsafe "reason" fn name(...)
   //   unsafe "reason" async fn name(...)
+  //   async unsafe "reason" fn name(...)
   let isAsync = false;
   let tokenStart = idx;
   let unsafeReason: string | undefined;
+  let unsafeReasonStart: number | undefined;
 
   const prev1 = prevSignificant(tokens, idx);
   if (prev1 !== -1 && tokens[prev1]!.kind === "keyword" && tokens[prev1]!.keyword === "async") {
@@ -132,6 +136,7 @@ export function parseFn(
       const prev3 = prevSignificant(tokens, prev2);
       if (prev3 !== -1 && tokens[prev3]!.kind === "keyword" && tokens[prev3]!.keyword === "unsafe") {
         unsafeReason = tokens[prev2]!.text.slice(1, -1);
+        unsafeReasonStart = tokens[prev2]!.start;
         tokenStart = prev3;
       }
     }
@@ -140,6 +145,7 @@ export function parseFn(
     const prev2 = prevSignificant(tokens, prev1);
     if (prev2 !== -1 && tokens[prev2]!.kind === "keyword" && tokens[prev2]!.keyword === "unsafe") {
       unsafeReason = tokens[prev1]!.text.slice(1, -1);
+      unsafeReasonStart = tokens[prev1]!.start;
       tokenStart = prev2;
       // Also support `async unsafe "reason" fn` — async may precede the unsafe prefix.
       const prev3 = prevSignificant(tokens, prev2);
@@ -382,6 +388,7 @@ export function parseFn(
     intent,
     intentStart,
     unsafeReason,
+    unsafeReasonStart,
     returnType,
     body,
   };

@@ -31,9 +31,10 @@ export function passFn(src: string, version?: VersionInfo): string {
     if (!decl) continue;
     // Declaration-level `unsafe "reason" fn` must have a non-empty reason (UNS002).
     if (decl.unsafeReason !== undefined && decl.unsafeReason.trim() === "") {
-      const tok = tokens[decl.tokenStart]!;
+      // Anchor at the reason string token, not the `unsafe` or `async` keyword.
+      const anchorOffset = decl.unsafeReasonStart ?? tokens[decl.tokenStart]!.start;
       const entry = getErrorCode("UNS002")!;
-      const { line, column } = locationOf(src, tok.start);
+      const { line, column } = locationOf(src, anchorOffset);
       const diag: Diagnostic = {
         code: "UNS002",
         severity: "error",

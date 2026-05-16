@@ -72,7 +72,7 @@ export function passUnsafe(src: string): string {
 
     // Wrap body so a bare expression flows out as a value.
     const wrapped = wrapBody(body);
-    const reasonComment = `/* unsafe: ${head.text} */`;
+    const reasonComment = `/* unsafe: ${head.text.replace(/\*\//g, "*\\/")} */`;
     const emit = `${reasonComment} (() => { ${wrapped} })()`;
 
     out += src.slice(cursor, t.start);
