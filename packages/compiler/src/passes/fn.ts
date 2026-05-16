@@ -44,7 +44,7 @@ export function passFn(src: string, version?: VersionInfo): string {
         message: "declaration-level unsafe fn has an empty justification string",
         rule: entry.rule,
         idiom: entry.idiom,
-        rewrite: entry.rewrite,
+        rewrite: 'unsafe "<short reason>" fn <name>(...) -> T { ... }',
       };
       throw new BotscriptError([diag]);
     }

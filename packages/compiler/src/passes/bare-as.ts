@@ -327,7 +327,7 @@ function collectUnsafeFnBodies(tokens: Token[], src: string, out: CharRange[]): 
     const reason = reasonTok.text.slice(1, -1);
     if (reason.trim() === "") {
       const entry = getErrorCode("UNS002")!;
-      const { line, column } = locationOf(src, t.start);
+      const { line, column } = locationOf(src, reasonTok.start);
       const diag: Diagnostic = {
         code: "UNS002",
         severity: "error",
@@ -337,7 +337,7 @@ function collectUnsafeFnBodies(tokens: Token[], src: string, out: CharRange[]): 
         message: "declaration-level unsafe fn has an empty justification string",
         rule: entry.rule,
         idiom: entry.idiom,
-        rewrite: entry.rewrite,
+        rewrite: 'unsafe "<short reason>" fn <name>(...) -> T { ... }',
       };
       throw new BotscriptError([diag]);
     }

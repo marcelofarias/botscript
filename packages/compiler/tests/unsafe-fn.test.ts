@@ -164,7 +164,7 @@ unsafe "reason with */ inside" fn coerce(x: unknown) -> string = x as string
 `;
     const out = compile(src);
     // The emitted comment must not contain a raw `*/` before the closing delimiter.
-    // JSON.stringify escapes it so the comment is a single valid block comment.
+    // The implementation explicitly replaces `*/` so the comment is a single valid block comment.
     const commentMatch = out.match(/\/\* unsafe: (.*?) \*\//s);
     expect(commentMatch).not.toBeNull();
     expect(commentMatch![1]).not.toContain("*/");
