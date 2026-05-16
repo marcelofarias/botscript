@@ -116,6 +116,12 @@ export interface ParseFnOptions {
 /**
  * Parse a fn declaration starting at `idx` (which must be the `fn` keyword
  * token). If the previous non-trivia token is `async`, that's consumed too.
+ *
+ * Returns `null` when `idx` does not begin a valid fn declaration (the caller
+ * should skip it). Throws `BotscriptError` (SYN001) when `opts.src` is
+ * provided and the declaration has a structural error: duplicate header clauses
+ * (`reads`, `writes`, `intent`), or a non-identifier label inside `reads {}`
+ * or `writes {}`.
  */
 export function parseFn(
   tokens: Token[],
