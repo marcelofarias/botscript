@@ -33,7 +33,7 @@ export function passEffCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
-  const program = parseProgram(src, { allowGenerics });
+  const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const diagnostics: Diagnostic[] = [];
 
   for (const slot of program.fns) {

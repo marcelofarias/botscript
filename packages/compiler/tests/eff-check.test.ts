@@ -191,3 +191,23 @@ fn fetchOrFallback(fetch: () uses { net } -> string, fallback: string) uses { ne
     expect(out).not.toContain("uses {");
   });
 });
+
+describe("EFF002 checks nested fn declarations", () => {
+  it("fires EFF002 on a nested fn that under-declares callback effects", () => {
+    const src = `?bs 0.7
+fn outer() -> void {
+  fn inner(action: () uses { net } -> string) -> string = action()
+}
+`;
+    expectEff(src, "EFF002");
+  });
+
+  it("passes when nested fn correctly declares callback effects", () => {
+    const src = `?bs 0.7
+fn outer() -> void {
+  fn inner(action: () uses { net } -> string) uses { net } -> string = action()
+}
+`;
+    expect(() => compile(src)).not.toThrow();
+  });
+});
