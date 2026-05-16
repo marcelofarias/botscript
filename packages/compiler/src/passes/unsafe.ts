@@ -45,26 +45,29 @@ export function passUnsafe(src: string): string {
       throw mkError("UNS001", t, src, "unsafe block must be followed by a justification string");
     }
 
+    const k = skipTrivia(tokens, j + 1);
+    const open = tokens[k];
+    // Declaration-level `unsafe "reason" fn` — the fn keyword (or `async fn` before it)
+    // follows the reason string instead of `{`. Check this BEFORE validating the reason
+    // string so that `unsafe "" fn ...` is handled entirely by passFn (which emits the
+    // correct declaration-level UNS002 with the right rewrite hint) rather than the
+    // block-level UNS002 message here.
+    if (open && open.kind === "keyword" && open.keyword === "fn") {
+      continue;
+    }
+    if (open && open.kind === "keyword" && open.keyword === "async") {
+      const m = skipTrivia(tokens, k + 1);
+      const fnTok = tokens[m];
+      if (fnTok && fnTok.kind === "keyword" && fnTok.keyword === "fn") continue;
+    }
+
     // Reason content must be non-empty (strip surrounding quotes).
     const reason = head.text.slice(1, -1);
     if (reason.trim() === "") {
       throw mkError("UNS002", head, src, "unsafe justification is empty");
     }
 
-    const k = skipTrivia(tokens, j + 1);
-    const open = tokens[k];
     if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
-      // Declaration-level `unsafe "reason" fn` — the fn keyword (or `async fn` before it)
-      // follows the reason string instead of `{`. This form is handled entirely by
-      // passFn; passUnsafe must not throw here.
-      if (open && open.kind === "keyword" && open.keyword === "fn") {
-        continue;
-      }
-      if (open && open.kind === "keyword" && open.keyword === "async") {
-        const m = skipTrivia(tokens, k + 1);
-        const fnTok = tokens[m];
-        if (fnTok && fnTok.kind === "keyword" && fnTok.keyword === "fn") continue;
-      }
       throw mkError("UNS003", t, src, "unsafe block has no body — expected `{ ... }`");
     }
     const close = open.matchedAt;
