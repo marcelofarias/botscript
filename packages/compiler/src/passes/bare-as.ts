@@ -375,7 +375,7 @@ function mkError(tok: Token, src: string): BotscriptError {
     column,
     start: tok.start,
     end: tok.end,
-    message: "bare `as` cast outside an `unsafe \"<reason>\" { ... }` block",
+    message: "bare `as` cast outside an `unsafe \"<reason>\" { ... }` block or `unsafe \"<reason>\" fn` declaration",
     rule: entry.rule,
     idiom: entry.idiom,
     rewrite: entry.rewrite,

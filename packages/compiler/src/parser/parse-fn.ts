@@ -10,7 +10,7 @@
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
-  /** Token-array index where the parsed run begins (`async` modifier or `fn`). */
+  /** Token-array index where the parsed run begins (`unsafe` keyword, `async` modifier, or `fn`). */
   tokenStart: number;
   /** Token-array index just after the parsed run (the next token to emit normally). */
   tokenEnd: number;
@@ -23,7 +23,7 @@ export interface FnDecl {
   start: number;
   /** Source offset just after the parsed run end. UTF-16 code units, exclusive. */
   end: number;
-  /** Source offset of the `fn` keyword (after `async` if present). UTF-16 code units. */
+  /** Source offset of the `fn` keyword (after `unsafe "reason"` and/or `async` if present). UTF-16 code units. */
   fnKeywordStart: number;
   /** Source offset of the function name identifier. UTF-16 code units. */
   nameStart: number;
@@ -104,7 +104,8 @@ export interface ParseFnOptions {
 
 /**
  * Parse a fn declaration starting at `idx` (which must be the `fn` keyword
- * token). If the previous non-trivia token is `async`, that's consumed too.
+ * token). Leading `async` and/or `unsafe "reason"` modifiers are consumed
+ * by walking backwards from the `fn` token.
  */
 export function parseFn(
   tokens: Token[],
