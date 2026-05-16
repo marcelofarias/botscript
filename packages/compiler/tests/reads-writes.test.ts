@@ -2,7 +2,9 @@
  * Tests for reads {} / writes {} declarative annotations (?bs 0.8+).
  *
  * reads and writes are metadata: parsed and stored on FnDecl, stripped
- * from the TypeScript output. No enforcement in 0.8 — that comes later.
+ * from the TypeScript output. No transitivity or body-shape enforcement
+ * in 0.8 — that comes later. INT001 does enforce that reads {} / writes {}
+ * cannot coexist with intent: "pure" (gated on 0.8).
  */
 
 import { describe, expect, it } from "vitest";
