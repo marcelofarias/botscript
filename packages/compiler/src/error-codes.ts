@@ -137,24 +137,69 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   INT001: {
     code: "INT001",
-    title: "intent declares 'pure' but function has capability declarations",
+    title: "intent declares 'pure' but function has capability or resource declarations",
     rule:
-      "a function whose intent contains 'pure' must have no capability declarations — " +
+      "a function whose intent contains 'pure' must have no capability declarations (uses {}) — " +
+      "from ?bs 0.8, it must also have no read/write resource dependencies (reads {} / writes {}) — " +
       "pure functions are deterministic, side-effect-free, and access no external resources",
     idiom:
-      "remove uses { ... } from a pure function, or change the intent to reflect the actual behaviour",
+      "remove the conflicting header clauses (uses {}, or reads {} / writes {} at ?bs 0.8+) from a pure function, " +
+      "or change the intent to reflect the actual behaviour",
     rewrite:
-      "// option A — remove the uses clause:\n" +
+      "// option A — remove resource annotations:\n" +
       "fn name(args) intent: \"pure\" -> type = ...\n\n" +
       "// option B — remove the intent claim:\n" +
-      "fn name(args) uses { caps } -> type = ...",
+      "fn name(args) uses { caps } reads { ... } writes { ... } -> type = ...",
     example:
-      "// before — intent says pure, body hits the network\n" +
-      "?bs 0.7\n" +
-      "fn greet(name: string) uses { net } intent: \"pure\" -> string = ...\n\n" +
+      "// before — intent says pure, but function reads from cache\n" +
+      "?bs 0.8\n" +
+      "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = ...\n\n" +
       "// after — intent matches the declaration\n" +
+      "?bs 0.8\n" +
+      "fn lookup(id: string) reads { cache } -> Option<string> = ...",
+  },
+  INT002: {
+    code: "INT002",
+    title: "intent declares 'pure' but function body uses a capability",
+    rule:
+      "a function declaring intent: \"pure\" must not directly reference any stdlib capability " +
+      "in its body — the pure claim means deterministic and side-effect-free",
+    idiom:
+      "move the capability usage out of the pure fn, or change the intent to reflect the actual behaviour",
+    rewrite:
+      "// option A — remove the capability call from the body:\n" +
+      "fn name(args) intent: \"pure\" -> type = pure { ... }\n\n" +
+      "// option B — remove the pure intent claim:\n" +
+      "fn name(args) uses { cap } -> type = ...",
+    example:
+      "// before — fn says pure but body calls http.get\n" +
       "?bs 0.7\n" +
-      "fn greet(name: string) intent: \"pure\" -> string = ...",
+      "fn fetchUser(id: string) intent: \"pure\" -> string {\n" +
+      "  return http.get(\"/users/\" + id);\n" +
+      "}\n\n" +
+      "// after — remove pure claim and declare the capability\n" +
+      "?bs 0.7\n" +
+      "fn fetchUser(id: string) uses { net } -> string {\n" +
+      "  return http.get(\"/users/\" + id);\n" +
+      "}",
+  },
+  EFF002: {
+    code: "EFF002",
+    title: "outer fn declares narrower effects than a callback parameter",
+    rule:
+      "if a function-typed parameter declares `uses { caps }`, the containing fn must declare at least those capabilities — " +
+      "accepting an effectful callback without declaring its effects hides the blast radius from callers",
+    idiom:
+      "a fn's effect surface is the union of its direct effects and the effects its callback parameters may exercise",
+    rewrite:
+      "fn name(action: () uses { cap } -> T) uses { …existing, cap } -> ...",
+    example:
+      "// before — accepts effectful callback but outer fn declares no capabilities\n" +
+      "?bs 0.7\n" +
+      "fn withRetry(action: () uses { net } -> string) -> string = action()\n\n" +
+      "// after — outer fn declares the capability its callback may exercise\n" +
+      "?bs 0.7\n" +
+      "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()",
   },
   RES001: {
     code: "RES001",
@@ -170,6 +215,23 @@ const E: Record<string, ErrorCodeEntry> = {
       "let parsed = JSON.parse(input)\n\n" +
       "// after\n" +
       "let parsed = Result.try { JSON.parse(input) }?",
+  },
+  SYN001: {
+    code: "SYN001",
+    title: "duplicate or invalid fn header clause",
+    rule:
+      "each fn header clause (reads {}, writes {}, intent:) may appear at most once; " +
+      "labels inside reads/writes must be plain identifiers, not quoted strings",
+    idiom:
+      "declare each resource dependency or intent claim exactly once; " +
+      "merge duplicate lists rather than repeating the clause",
+    rewrite:
+      "fn name(...) reads { cache, db } writes { metrics } -> ...",
+    example:
+      "// duplicate reads — SYN001\n" +
+      "fn load(id: string) reads { cache } reads { db } -> string = id\n\n" +
+      "// fix: merge into one clause\n" +
+      "fn load(id: string) reads { cache, db } -> string = id",
   },
 };
 

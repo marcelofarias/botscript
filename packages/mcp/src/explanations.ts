@@ -151,28 +151,68 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   INT001: {
     code: "INT001",
-    title: "intent declares 'pure' but function has capability declarations",
+    title: "intent declares 'pure' but function has capability or read/write declarations",
     body:
       "An `intent: \"pure\"` clause is a machine-checkable claim that the function is " +
       "deterministic, side-effect-free, and accesses no external resources. A function " +
-      "with a non-empty `uses { ... }` clause contradicts that claim — the declaration " +
-      "says it can reach the network, file system, or clock while the intent says it " +
-      "cannot. Botscript treats this as an error rather than a warning because the " +
-      "mismatch is always a mistake: either the intent is wrong, or the `uses` clause " +
-      "is wrong.\n\n" +
+      "with a non-empty `uses { ... }`, `reads { ... }`, or `writes { ... }` clause " +
+      "contradicts that claim — the declaration says it can reach the network, file " +
+      "system, or clock (or depends on / mutates external state) while the intent says " +
+      "it cannot. Botscript treats this as an error rather than a warning because the " +
+      "mismatch is always a mistake: either the intent is wrong, or the conflicting " +
+      "header clause is wrong.\n\n" +
       "The word 'pure' is matched as a whole word inside the intent string — " +
       "`\"impure\"` does not match, but `\"pure\"`, `\"pure function\"`, and " +
       "`\"idempotent and pure\"` all do.\n\n" +
       "INT001 is gated on `?bs 0.7`. Files pinned to earlier versions may use " +
-      "`intent:` declarations without triggering any check.",
+      "`intent:` declarations without triggering any check. From `?bs 0.8`, the same " +
+      "rule applies to `reads { }` and `writes { }` clauses.\n\n" +
+      "Scope note: INT001 is a header-level consistency check — it verifies that the " +
+      "declared header clauses do not contradict each other. Body-shape verification " +
+      "(whether the function body actually matches its declared intent) is a separate " +
+      "check (INT002) introduced in `?bs 0.7`.",
+    example: {
+      fails:
+        "?bs 0.8\n" +
+        "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = none\n",
+      passes:
+        "// option A — remove the conflicting header clause (uses/reads/writes)\n" +
+        "?bs 0.8\n" +
+        "fn lookup(id: string) intent: \"pure\" -> Option<string> = pure { none }\n",
+    },
+  },
+  INT002: {
+    code: "INT002",
+    title: "intent declares 'pure' but function body uses a capability",
+    body:
+      "INT002 is the body-level complement to INT001. INT001 catches the case where " +
+      "`intent: \"pure\"` and a non-empty `uses { ... }` clause are both declared in the " +
+      "header (an obvious contradiction). INT002 catches the more subtle case: the header " +
+      "looks fine (empty or absent `uses {}`), but the function body directly references a " +
+      "stdlib capability namespace like `http`, `time`, `random`, `fs`, `stdout`, or `stderr`.\n\n" +
+      "This matters because INT001 is a header-level consistency check — it compares clauses " +
+      "to each other, but does not look at the body. A function that declares " +
+      "`intent: \"pure\"` and no capabilities can still lie: the body can call `http.get()` " +
+      "and INT001 will say nothing. INT002 closes that gap.\n\n" +
+      "The check scans the fn body's own token range for direct stdlib references " +
+      "(`<namespace>.<member>`), excluding nested `fn` declarations. It does not do " +
+      "transitive call-graph inference — that is cap-check's domain (CAP001). INT002 fires " +
+      "on direct body references only, and fires before cap-check, so the message focuses on " +
+      "the pure-intent violation rather than the missing declaration.\n\n" +
+      "INT002 is gated on `?bs 0.7` (same gate as INT001). Files on earlier pins are not " +
+      "checked.",
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn greet(name: string) uses { net } intent: \"pure\" -> string = name\n",
+        "// drainSecrets claims pure but directly calls http.get\n" +
+        "fn drainSecrets(id: string) intent: \"pure\" -> string = http.get(\"/s/\" + id)\n",
       passes:
-        "// option A — remove the uses clause\n" +
+        "// option A — remove the capability call (make it truly pure)\n" +
         "?bs 0.7\n" +
-        "fn greet(name: string) intent: \"pure\" -> string = pure { name.toUpperCase() }\n",
+        "fn formatId(id: string) intent: \"pure\" -> string = pure { \"user-\" + id }\n\n" +
+        "// option B — remove the pure claim and declare the capability\n" +
+        "?bs 0.7\n" +
+        "fn drainSecrets(id: string) uses { net } -> string = http.get(\"/s/\" + id)\n",
     },
   },
   FMT001: {
@@ -216,6 +256,42 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
     },
   },
+  EFF002: {
+    code: "EFF002",
+    title: "outer fn declares narrower effects than a callback parameter",
+    body:
+      "A function-typed parameter can carry a `uses { caps }` annotation declaring what " +
+      "side-effect capabilities the callback may exercise. The outer function that accepts " +
+      "that callback must declare at least those capabilities in its own `uses {}` clause.\n\n" +
+      "Without this rule, a combinator that accepts an effectful callback can claim a " +
+      "narrower effect surface than it can actually exercise. An orchestrator reading the " +
+      "outer fn's header sees `uses {}` and concludes the call is side-effect-free — but " +
+      "the callback can call `http.get`, write to the filesystem, or produce any other " +
+      "side effect the caller never saw declared. This is the \"callback effect leakage\" " +
+      "vector: the header is technically sound (no direct stdlib call) but the blast " +
+      "radius is hidden.\n\n" +
+      "EFF002 is a header-level check: it runs at parse time from the function signatures " +
+      "alone, with no body analysis. If fn A accepts `action: () uses { net } -> T`, A " +
+      "must declare `uses { net }` (or a superset). The rule is additive — it does not " +
+      "force the outer fn to *use* the capability, only to *declare* it. An outer fn that " +
+      "already declares `uses { net, time }` satisfies EFF002 for any callback that " +
+      "declares `uses { net }` or `uses { time }` or both.\n\n" +
+      "The call-site check (EFF001 — passing an effectful closure to a parameter slot " +
+      "that declares fewer effects) requires closure-level type inference and is out of " +
+      "scope for the current compiler. EFF002 alone closes the header-lying vector and " +
+      "is the 80% case.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "// EFF002: withRetry accepts a callback that declares { net },\n" +
+        "// but withRetry itself declares uses {}\n" +
+        "fn withRetry(action: () uses { net } -> string) -> string = action()\n",
+      passes:
+        "?bs 0.7\n" +
+        "// Fixed: outer fn declares the capability its callback may exercise\n" +
+        "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
@@ -226,6 +302,31 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails: "?bs 0.3\nconst r = Result.try;\n",
       passes: "?bs 0.3\nconst r = Result.try { JSON.parse(input) };\n",
+    },
+  },
+  SYN001: {
+    code: "SYN001",
+    title: "duplicate or invalid fn header clause",
+    body:
+      "Each fn header clause — `reads {}`, `writes {}`, `intent:` — may appear at most " +
+      "once per function declaration. A second occurrence is a syntax error: the compiler " +
+      "cannot know which declaration wins, and silently picking one hides bugs (e.g. " +
+      "`reads { cache } reads { db }` would silently discard `db`, making DEP001 blind " +
+      "to the database dependency).\n\n" +
+      "The same rule applies to resource labels inside `reads {}` or `writes {}`: labels " +
+      "must be plain identifiers (e.g. `cache`, `db`, `metrics`). Quoted strings like " +
+      "`reads { \"cache\" }` are not valid — the parser would silently produce an empty " +
+      "list because the string token is not an identifier, and the dependency would be " +
+      "invisible to DEP001.\n\n" +
+      "Fix: merge duplicate clauses into a single declaration, and use unquoted identifiers " +
+      "as resource labels.",
+    example: {
+      fails:
+        "?bs 0.8\n" +
+        "fn load(id: string) reads { cache } reads { db } -> string = id\n",
+      passes:
+        "?bs 0.8\n" +
+        "fn load(id: string) reads { cache, db } -> string = id\n",
     },
   },
 };

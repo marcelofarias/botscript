@@ -28,7 +28,7 @@ export function passFn(src: string, version?: VersionInfo): string {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     if (t.kind !== "keyword" || t.keyword !== "fn") continue;
-    const decl = parseFn(tokens, i, { allowGenerics });
+    const decl = parseFn(tokens, i, { allowGenerics, src });
     if (!decl) continue;
     // Declaration-level `unsafe "reason" fn` must have a non-empty reason (UNS002).
     if (decl.unsafeReason !== undefined && decl.unsafeReason.trim() === "") {
@@ -78,7 +78,7 @@ function emitFn(decl: FnDecl): string {
     ? `/* unsafe: "${decl.unsafeReason.replace(/\*\//g, "*\\/")}" */\n`
     : "";
   return (
-    `${unsafePrefix}${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
+    `${unsafePrefix}${asyncPrefix}function ${decl.name}${tparams}${decl.argsTs}: ${decl.returnType} {\n` +
     `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
     `${indent(inner, 4)}\n` +
     `  });\n` +
