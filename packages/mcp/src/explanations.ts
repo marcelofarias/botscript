@@ -248,6 +248,42 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.4\nfn add(a: number, b: number) -> number = a + b\n",
     },
   },
+  EFF002: {
+    code: "EFF002",
+    title: "outer fn declares narrower effects than a callback parameter",
+    body:
+      "A function-typed parameter can carry a `uses { caps }` annotation declaring what " +
+      "side-effect capabilities the callback may exercise. The outer function that accepts " +
+      "that callback must declare at least those capabilities in its own `uses {}` clause.\n\n" +
+      "Without this rule, a combinator that accepts an effectful callback can claim a " +
+      "narrower effect surface than it can actually exercise. An orchestrator reading the " +
+      "outer fn's header sees `uses {}` and concludes the call is side-effect-free — but " +
+      "the callback can call `http.get`, write to the filesystem, or produce any other " +
+      "side effect the caller never saw declared. This is the \"callback effect leakage\" " +
+      "vector: the header is technically sound (no direct stdlib call) but the blast " +
+      "radius is hidden.\n\n" +
+      "EFF002 is a header-level check: it runs at parse time from the function signatures " +
+      "alone, with no body analysis. If fn A accepts `action: () uses { net } -> T`, A " +
+      "must declare `uses { net }` (or a superset). The rule is additive — it does not " +
+      "force the outer fn to *use* the capability, only to *declare* it. An outer fn that " +
+      "already declares `uses { net, time }` satisfies EFF002 for any callback that " +
+      "declares `uses { net }` or `uses { time }` or both.\n\n" +
+      "The call-site check (EFF001 — passing an effectful closure to a parameter slot " +
+      "that declares fewer effects) requires closure-level type inference and is out of " +
+      "scope for the current compiler. EFF002 alone closes the header-lying vector and " +
+      "is the 80% case.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "// EFF002: withRetry accepts a callback that declares { net },\n" +
+        "// but withRetry itself declares uses {}\n" +
+        "fn withRetry(action: () uses { net } -> string) -> string = action()\n",
+      passes:
+        "?bs 0.7\n" +
+        "// Fixed: outer fn declares the capability its callback may exercise\n" +
+        "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

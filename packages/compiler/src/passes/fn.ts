@@ -53,7 +53,7 @@ function emitFn(decl: FnDecl): string {
   // the `<…>` block in the TS output.
   const tparams = decl.typeParams ?? "";
   return (
-    `${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
+    `${asyncPrefix}function ${decl.name}${tparams}${decl.argsTs}: ${decl.returnType} {\n` +
     `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
     `${indent(inner, 4)}\n` +
     `  });\n` +

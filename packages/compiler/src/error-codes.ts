@@ -183,6 +183,24 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(\"/users/\" + id);\n" +
       "}",
   },
+  EFF002: {
+    code: "EFF002",
+    title: "outer fn declares narrower effects than a callback parameter",
+    rule:
+      "if a function-typed parameter declares `uses { caps }`, the containing fn must declare at least those capabilities — " +
+      "accepting an effectful callback without declaring its effects hides the blast radius from callers",
+    idiom:
+      "a fn's effect surface is the union of its direct effects and the effects its callback parameters may exercise",
+    rewrite:
+      "fn name(action: () uses { cap } -> T) uses { …existing, cap } -> ...",
+    example:
+      "// before — accepts effectful callback but outer fn declares no capabilities\n" +
+      "?bs 0.7\n" +
+      "fn withRetry(action: () uses { net } -> string) -> string = action()\n\n" +
+      "// after — outer fn declares the capability its callback may exercise\n" +
+      "?bs 0.7\n" +
+      "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
