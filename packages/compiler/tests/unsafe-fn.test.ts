@@ -93,7 +93,7 @@ fn parse(raw: unknown) -> string = raw as string
     expect(() => compile(src)).toThrow(/\[UNS004\]/);
   });
 
-  it("a bare `as` in a normal fn body at file scope still throws UNS004", () => {
+  it("a bare `as` at file scope (outside any fn) still throws UNS004", () => {
     const src = `?bs 0.5
 const x = {} as string;
 `;

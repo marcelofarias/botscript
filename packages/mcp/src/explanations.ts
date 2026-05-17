@@ -119,11 +119,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   UNS004: {
     code: "UNS004",
-    title: "bare `as` cast outside unsafe block",
+    title: "bare `as` cast outside unsafe block or unsafe fn",
     body:
       "Every `as` cast is a claim about types the compiler cannot verify. From `?bs 0.5` on, " +
       "a bare `as` outside an `unsafe \"<reason>\" { ... }` block (or the body of an " +
-      "`unsafe \"reason\" fn`) is a parse error. The rule is the manifesto promise made " +
+      "`unsafe \"<reason>\" fn`) is a parse error. The rule is the manifesto promise made " +
       "concrete: the cast and a written justification live together in the diff, so the next " +
       "reviewer (human or model) sees the *why* alongside the *what* — not just an unexplained " +
       "`as User` whose intent has aged out.\n\n" +
