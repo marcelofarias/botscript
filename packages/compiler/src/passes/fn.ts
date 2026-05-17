@@ -14,6 +14,7 @@ import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
 import { lowerBlockBody } from "./_block-body.js";
+import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export function passFn(src: string, version?: VersionInfo): string {
@@ -106,15 +107,4 @@ function indent(s: string, n: number): string {
     .join("\n");
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}
 

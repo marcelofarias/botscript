@@ -30,6 +30,7 @@ import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
 import { parseFn } from "../parser/parse-fn.js";
+import { locationOf } from "./_location.js";
 
 interface Range {
   /** Token index of the first token to skip (inclusive). */
@@ -322,26 +323,10 @@ function collectUnsafeFnBodies(tokens: Token[], src: string, out: CharRange[]): 
       continue;
     }
 
-    // Declaration-level unsafe fn with an empty reason is always UNS002,
-    // regardless of whether the body contains an `as` cast.
-    const reason = reasonTok.text.slice(1, -1);
-    if (reason.trim() === "") {
-      const entry = getErrorCode("UNS002")!;
-      const { line, column } = locationOf(src, reasonTok.start);
-      const diag: Diagnostic = {
-        code: "UNS002",
-        severity: "error",
-        file: null,
-        line,
-        column,
-        message: "declaration-level unsafe fn has an empty justification string",
-        rule: entry.rule,
-        idiom: entry.idiom,
-        rewrite: 'unsafe "<short reason>" fn <name>(...) -> T { ... }',
-      };
-      throw new BotscriptError([diag]);
-    }
-
+    // Add the body to the skip set regardless of whether the reason is empty.
+    // An empty reason will be caught and diagnosed as UNS002 by passFn, which
+    // is the single owner of that validation. Without this, passBareAs would
+    // fire UNS004 on the `as` cast before passFn gets to report the real issue.
     const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
     if (!decl) continue;
 
@@ -383,14 +368,3 @@ function mkError(tok: Token, src: string): BotscriptError {
   return new BotscriptError([diag]);
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

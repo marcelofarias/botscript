@@ -23,6 +23,7 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
+import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
@@ -86,14 +87,3 @@ function containsPureClaim(intent: string): boolean {
   return /(?<![a-zA-Z0-9_-])pure(?![a-zA-Z0-9_-])/i.test(intent);
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

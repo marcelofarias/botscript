@@ -18,6 +18,7 @@
  * version pins. Nothing about a 0.1 file's *output* may change once shipped.
  */
 import { BotscriptError } from "../diagnostics.js";
+import { locationOf } from "./_location.js";
 
 export const SUPPORTED_VERSIONS: ReadonlyArray<string> = ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"];
 export const LATEST_VERSION = "0.1";
@@ -143,14 +144,3 @@ export function atLeast(actual: string, min: string): boolean {
   return true;
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let k = 0; k < offset && k < src.length; k++) {
-    if (src[k] === "\n") {
-      line++;
-      lineStart = k + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

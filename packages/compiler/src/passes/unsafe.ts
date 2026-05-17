@@ -22,6 +22,7 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
+import { locationOf } from "./_location.js";
 
 export function passUnsafe(src: string): string {
   const tokens = lex(src);
@@ -170,14 +171,3 @@ function hasTopLevelSemicolon(src: string): boolean {
   return false;
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}
