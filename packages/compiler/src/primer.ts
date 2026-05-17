@@ -26,18 +26,19 @@ additions below are the entire language surface.
                                               (T extends U) and defaults (T = D)
                                               are accepted and emitted verbatim.
   fn name(args) intent: "claim" -> ReturnType (0.7+) machine-checkable intent.
-                                              The compiler verifies declared
-                                              intent against the fn's header
-                                              (body-shape checks are planned,
-                                              not implemented yet). Recognised
-                                              mechanical claim: "pure" — no
+                                              The compiler checks declared
+                                              intent against both the fn's
+                                              header and (for pure) the body.
+                                              Recognised claim: "pure" — no
                                               capability declarations (uses { })
                                               allowed (INT001, 0.7+); from 0.8,
                                               no read/write dependencies
                                               (reads { } / writes { }) either
-                                              (INT001, 0.8+). intent: may
-                                              coexist with uses / reads /
-                                              writes; the check fires only when
+                                              (INT001, 0.8+); body must not
+                                              directly reference any stdlib
+                                              capability (INT002, 0.7+). intent:
+                                              may coexist with uses / reads /
+                                              writes; the checks fire only when
                                               they conflict.
   fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
                                               categories the function reads
