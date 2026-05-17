@@ -74,7 +74,7 @@ function emitFn(decl: FnDecl): string {
   // the `<…>` block in the TS output.
   const tparams = decl.typeParams ?? "";
   const unsafePrefix = decl.unsafeReason !== undefined
-    ? `/* unsafe: ${JSON.stringify(decl.unsafeReason).replace(/\*\//g, "*\\/")} */\n`
+    ? `/* unsafe: "${decl.unsafeReason.replace(/\*\//g, "*\\/")}" */\n`
     : "";
   return (
     `${unsafePrefix}${asyncPrefix}function ${decl.name}${tparams}${decl.args}: ${decl.returnType} {\n` +
