@@ -31,10 +31,29 @@ additions below are the entire language surface.
                                               (body-shape checks are planned,
                                               not implemented yet). Recognised
                                               mechanical claim: "pure" — no
-                                              capability declarations allowed
-                                              (INT001). intent: and uses { }
-                                              may coexist; the check fires only
-                                              when they conflict.
+                                              capability declarations (uses { })
+                                              allowed (INT001, 0.7+); from 0.8,
+                                              no read/write dependencies
+                                              (reads { } / writes { }) either
+                                              (INT001, 0.8+). intent: may
+                                              coexist with uses / reads /
+                                              writes; the check fires only when
+                                              they conflict.
+  fn name(args) reads { a, b } -> ReturnType  (0.8+) declare which resource
+                                              categories the function reads
+                                              from. Labels are user-defined
+                                              identifiers (e.g. cache, db).
+  fn name(args) writes { a, b } -> ReturnType (0.8+) declare which resource
+                                              categories the function writes
+                                              to. Labels are user-defined
+                                              identifiers (e.g. metrics, db).
+                                              Both are metadata-only in 0.8
+                                              — stripped from TS output, not
+                                              yet transitively enforced.
+                                              reads {}, writes {}, and intent:
+                                              may coexist with uses {} in any
+                                              order after uses {} (if present)
+                                              and before ->.
   Capabilities: net, fs, time, random, process, stdout, stderr.
   Under ?bs 0.2 the capability declaration is checked statically — a function
   declared uses { } that names http/time/random/fs/stdout/stderr.X is a parse
@@ -47,7 +66,11 @@ additions below are the entire language surface.
     CAP002  uses clause names a capability nothing in the body reaches. The
             declaration must match what the function actually uses.
   Under ?bs 0.7 the intent check adds:
-    INT001  intent contains 'pure' but the function has capability declarations.
+    INT001  intent contains 'pure' but the function has capability declarations
+            (uses {}). Pure functions may not consume external resources.
+  Under ?bs 0.8, INT001 also fires when 'pure' intent conflicts with
+            read/write dependencies (reads {} / writes {}). Pure functions
+            may have neither capabilities nor resource dependencies.
   cap-check diagnostics also carry start/end UTF-16 string offsets alongside
   line/column from 0.2 onward, so editor and LSP integrations can map the
   error to a precise span without re-walking the source. (The whole-file

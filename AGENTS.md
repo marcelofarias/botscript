@@ -192,11 +192,14 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | UNS004 | (0.5+) Bare `as` cast outside an `unsafe "<reason>" { ... }` block. Every cast must live inside an unsafe block so the diff carries a written reason. `import * as ns`, `import { foo as bar }`, and `export * as ns` are not flagged. | `unsafe "<short reason>" { <expr> as <type> }`. |
 | FMT001 | (0.4+) Source is not in canonical form (RFC #13). Every program has exactly one canonical surface form; from `?bs 0.4` on, the compiler rejects whitespace / ordering variants rather than silently accepting them. The diagnostic points at the first UTF-16 code unit that differs from canonical. | `botscript fmt <file> --write`. |
 | RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
+| INT001 | (0.7+) A fn declares `intent: "pure"` but also has `uses { … }`. (0.8+) Also fires when `intent: "pure"` is combined with `reads { … }` or `writes { … }`. Pure functions may not declare capabilities or resource dependencies. | Either drop the conflicting header clause(s) or change the intent to reflect the actual behaviour. |
+| SYN001 | Duplicate fn header clause (e.g. two `reads { }` on the same fn, or two `intent:`), or a label inside `reads {}` / `writes {}` that is not a plain identifier. `parseFn` is version-agnostic, so SYN001 fires whenever a duplicate clause is written regardless of the `?bs` pin. | Declare each header clause once; merge label lists rather than repeating the clause; use bare identifiers (not quoted strings) as labels. |
 
 When you add a new compiler error, allocate the next free code in the same
 range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
 `UNSnnn` for unsafe-block checks, `RESnnn` for Result-block checks,
-`FMTnnn` for canonical-form / formatter checks). The
+`FMTnnn` for canonical-form / formatter checks, `SYNnnn` for structural /
+duplicate-clause checks). The
 single source of truth is `packages/compiler/src/error-codes.ts` — passes
 read rule/idiom/rewrite from that registry. When you add a code:
 

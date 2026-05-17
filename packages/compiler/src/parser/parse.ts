@@ -30,12 +30,17 @@ export interface ParseOptions {
   includeNestedFns?: boolean;
 }
 
+/**
+ * Parse all fn declarations in `src`. May throw `BotscriptError` (SYN001)
+ * when a declaration has duplicate header clauses or invalid label tokens —
+ * the same throwing contract as `parseFn` with `src` provided.
+ */
 export function parseProgram(src: string, opts: ParseOptions = {}): Program {
   const tokens = lex(src);
   const statements: Stmt[] = [];
   const fns: FnStmt[] = [];
 
-  const parseFnOpts: ParseFnOptions = { allowGenerics: opts.allowGenerics };
+  const parseFnOpts: ParseFnOptions = { allowGenerics: opts.allowGenerics, src };
   const includeNested = !!opts.includeNestedFns;
 
   for (let i = 0; i < tokens.length; i++) {

@@ -7,6 +7,8 @@
  * with the emitted text.
  */
 
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
+import { getErrorCode } from "../error-codes.js";
 import type { Token } from "./lex.js";
 
 export interface FnDecl {
@@ -38,6 +40,20 @@ export interface FnDecl {
   /** Verbatim args including parens. */
   args: string;
   capabilities: string[];
+  /**
+   * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
+   * element is an ident naming a resource category the function reads from.
+   * Metadata-only in the first version — stripped from TS output, not yet
+   * enforced transitively. Introduced in `?bs 0.8`.
+   */
+  reads?: string[];
+  /**
+   * Optional declarative write-dependency list, e.g. `writes { metrics, db }`. Each
+   * element is an ident naming a resource category the function writes to.
+   * Metadata-only in the first version — stripped from TS output, not yet
+   * enforced transitively. Introduced in `?bs 0.8`.
+   */
+  writes?: string[];
   /**
    * Optional machine-checkable intent string, e.g. `"pure"`, `"idempotent"`.
    * Parsed from `intent: "<value>"` between the `uses {}` clause and `->` in
@@ -89,11 +105,23 @@ export interface ParseFnOptions {
    * had on this construct).
    */
   allowGenerics?: boolean;
+  /**
+   * Source text. When provided, parseFn throws a SYN001 BotscriptError on
+   * duplicate header clauses (reads/writes/intent) and on invalid label
+   * tokens inside reads/writes lists, rather than silently using first-wins.
+   */
+  src?: string;
 }
 
 /**
  * Parse a fn declaration starting at `idx` (which must be the `fn` keyword
  * token). If the previous non-trivia token is `async`, that's consumed too.
+ *
+ * Returns `null` when `idx` does not begin a valid fn declaration (the caller
+ * should skip it). Throws `BotscriptError` (SYN001) when `opts.src` is
+ * provided and the declaration has a structural error: duplicate header clauses
+ * (`reads`, `writes`, `intent`), or a non-identifier label inside `reads {}`
+ * or `writes {}`.
  */
 export function parseFn(
   tokens: Token[],
@@ -151,33 +179,79 @@ export function parseFn(
     i = skipTrivia(tokens, i);
   }
 
-  // Optional `intent: "<value>"` — machine-checkable intent declaration.
+  // Optional `reads { ... }`, `writes { ... }`, and `intent: "<value>"` in any
+  // order between `uses {}` and `->`. All are metadata: stripped from TS output.
+  let reads: string[] | undefined;
+  let writes: string[] | undefined;
   let intent: string | undefined;
   let intentStart: number | undefined;
-  if (tokens[i]?.kind === "ident" && tokens[i]?.text === "intent") {
-    const savedI = i;
-    i++;
-    i = skipTrivia(tokens, i);
-    if (tokens[i]?.kind === "punct" && tokens[i]?.text === ":") {
+  // Loop until we hit something that isn't reads/writes/intent.
+  for (;;) {
+    const tok = tokens[i];
+    if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes")) {
+      const keyword = tok.text;
+      const isDuplicate = (keyword === "reads" && reads !== undefined) ||
+        (keyword === "writes" && writes !== undefined);
+      const savedI = i;
       i++;
       i = skipTrivia(tokens, i);
-      const strTok = tokens[i];
-      if (strTok?.kind === "string") {
-        // Strip the surrounding quotes to get the raw value.
-        intentStart = strTok.start;
-        const raw = strTok.text;
-        intent = raw.startsWith('"') || raw.startsWith("'")
-          ? raw.slice(1, -1)
-          : raw;
+      const open = tokens[i];
+      if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
+        // Not a reads/writes block — backtrack and stop.
+        i = savedI;
+        break;
+      }
+      const close = open.matchedAt;
+      if (isDuplicate) {
+        // Duplicate clause: emit SYN001 when src is available.
+        throwSyn001(opts.src, tok, `duplicate \`${keyword} {}\` clause — each header clause may appear at most once`);
+        // No src: fall through with first-wins (silent, for direct parseFn callers in tests).
+      } else {
+        const items = parseLabelList(tokens, i + 1, close, opts.src);
+        if (keyword === "reads") {
+          reads = items;
+        } else {
+          writes = items;
+        }
+      }
+      i = close + 1;
+      i = skipTrivia(tokens, i);
+    } else if (tok?.kind === "ident" && tok.text === "intent") {
+      const isDuplicateIntent = intent !== undefined;
+      const savedI = i;
+      i++;
+      i = skipTrivia(tokens, i);
+      if (tokens[i]?.kind === "punct" && tokens[i]?.text === ":") {
         i++;
         i = skipTrivia(tokens, i);
+        const strTok = tokens[i];
+        if (strTok?.kind === "string") {
+          if (isDuplicateIntent) {
+            // Duplicate clause: emit SYN001 when src is available.
+            throwSyn001(opts.src, strTok, `duplicate \`intent:\` clause — each header clause may appear at most once`);
+            // No src: fall through with first-wins (silent, for direct parseFn callers in tests).
+          } else {
+            // Strip the surrounding quotes to get the raw value.
+            intentStart = strTok.start;
+            const raw = strTok.text;
+            intent = raw.startsWith('"') || raw.startsWith("'")
+              ? raw.slice(1, -1)
+              : raw;
+          }
+          i++;
+          i = skipTrivia(tokens, i);
+        } else {
+          // Not a string — backtrack and stop.
+          i = savedI;
+          break;
+        }
       } else {
-        // Not a string — backtrack; treat as start of return type.
+        // No colon after `intent` — backtrack and stop.
         i = savedI;
+        break;
       }
     } else {
-      // No colon after `intent` — backtrack.
-      i = savedI;
+      break;
     }
   }
 
@@ -338,6 +412,8 @@ export function parseFn(
     typeParams,
     args,
     capabilities,
+    reads,
+    writes,
     intent,
     intentStart,
     returnType,
@@ -409,6 +485,70 @@ function parseCapList(tokens: Token[], from: number, to: number): string[] {
     i++;
   }
   return caps;
+}
+
+/**
+ * Parse a user-defined label list inside `reads { ... }` or `writes { ... }`.
+ * Labels must be plain identifiers. If `src` is provided and a non-identifier
+ * token is found, throws SYN001 so users get a clear error instead of silently
+ * receiving an empty or truncated list (e.g. `reads { "cache" }` → empty).
+ */
+function parseLabelList(tokens: Token[], from: number, to: number, src?: string): string[] {
+  const labels: string[] = [];
+  for (let i = from; i < to; i++) {
+    const t = tokens[i]!;
+    if (t.kind === "whitespace" || t.kind === "newline" || t.kind === "lineComment" || t.kind === "blockComment") continue;
+    // Commas are accepted as optional separators (e.g. `reads { cache, db }`).
+    if (t.kind === "punct" && t.text === ",") continue;
+    if (t.kind === "ident") {
+      labels.push(t.text);
+      continue;
+    }
+    // Non-identifier, non-separator token inside a reads/writes list.
+    throwSyn001(src, t, `invalid label in reads/writes list — labels must be plain identifiers (e.g. \`cache\`, \`db\`), not ${JSON.stringify(t.text)}`);
+    // No src: silently ignore (backward compat for direct callers without src).
+  }
+  return labels;
+}
+
+/**
+ * Throw a SYN001 BotscriptError when `src` is available. When `src` is absent
+ * the caller falls through silently (backward compat for tests that call parseFn
+ * directly without a source string).
+ */
+function throwSyn001(src: string | undefined, tok: Token, message: string): void {
+  if (!src) return;
+  const { line, column } = locationOf(src, tok.start);
+  // Pull rule/idiom/rewrite from the central registry (AGENTS.md: passes
+  // must not hard-code these fields). We fall back to inline strings only
+  // if the registry entry is missing, which would itself be a bug.
+  const entry = getErrorCode("SYN001");
+  const diag: Diagnostic = {
+    code: "SYN001",
+    severity: "error",
+    file: null,
+    line,
+    column,
+    start: tok.start,
+    end: tok.end,
+    message,
+    rule: entry?.rule ?? "duplicate or invalid fn header clause",
+    idiom: entry?.idiom ?? "declare each clause once",
+    rewrite: entry?.rewrite ?? "fn name(...) reads { cache, db } -> ...",
+  };
+  throw new BotscriptError([diag]);
+}
+
+function locationOf(src: string, offset: number): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let i = 0; i < offset && i < src.length; i++) {
+    if (src[i] === "\n") {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+  return { line, column: offset - lineStart + 1 };
 }
 
 /** Find the previous token index that isn't whitespace/newline/comment. */

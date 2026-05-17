@@ -1,4 +1,4 @@
-?bs 0.5
+?bs 0.8
 ?primer
 
 // STDLIB.bs — every botscript feature, exactly once.
@@ -21,6 +21,15 @@ export type Shape = Circle { r: number } | Square { side: number };
 // Capabilities: net, fs, time, random, process, stdout, stderr.
 
 fn now() uses { time } -> number = time.now()
+
+// ─── 2b. fn with reads / writes (0.8+) ──────────────────────────────────────
+// `reads { ... }` and `writes { ... }` declare which user-defined resource
+// categories a function reads from or writes to. Labels are identifiers
+// (e.g. cache, db, metrics) — not stdlib names. Metadata-only in 0.8;
+// transitivity is enforced at ?bs 0.9 (DEP001 / DEP002).
+
+fn lookupCache(id: string) reads { cache } -> Option<string> = none
+fn writeCache(id: string, value: string) writes { cache } -> void { }
 
 // ─── 3. fn pure shorthand ───────────────────────────────────────────────────
 // `= pure { expr }` is equivalent to `uses { } { return expr; }`.
