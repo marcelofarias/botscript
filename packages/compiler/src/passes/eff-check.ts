@@ -48,7 +48,7 @@ export function passEffCheck(src: string, version: VersionInfo): string {
 
     const entry = getErrorCode("EFF002")!;
     const loc = locationOf(src, decl.fnKeywordStart);
-    const paramCapsStr = decl.paramCaps.join(", ");
+    const paramCapsStr = [...new Set(decl.paramCaps)].join(", ");
     const missingStr = uniqueMissing.join(", ");
     const declaredStr = decl.capabilities.length > 0
       ? `{ ${decl.capabilities.join(", ")} }`
@@ -61,7 +61,7 @@ export function passEffCheck(src: string, version: VersionInfo): string {
       line: loc.line,
       column: loc.column,
       start: decl.fnKeywordStart,
-      end: decl.fnKeywordStart + decl.name.length + 2,
+      end: decl.fnKeywordStart + decl.name.length + 3,
       message:
         `fn '${decl.name}' accepts callback parameter(s) that declare { ${paramCapsStr} } ` +
         `but only declares uses ${declaredStr} — ` +

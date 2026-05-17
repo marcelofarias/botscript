@@ -145,6 +145,7 @@ fn withRetry(action: () uses { net } -> string) -> string = action()
 `;
     try {
       compile(src);
+      expect.fail("should have thrown EFF002");
     } catch (e) {
       const err = e as BotscriptError;
       expect(err.diagnostics[0]!.message).toContain("net");
