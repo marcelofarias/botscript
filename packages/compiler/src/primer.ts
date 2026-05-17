@@ -49,11 +49,13 @@ additions below are the entire language surface.
                                               identifiers (e.g. metrics, db).
                                               Metadata-only in 0.8: stripped from
                                               TS output. From 0.9, transitively
-                                              enforced: if fn A calls fn B and B
-                                              declares reads { x }, A must also
-                                              declare reads { x } (DEP001). The
-                                              same rule applies to writes { x }
-                                              (DEP002).
+                                              enforced across same-file calls:
+                                              if fn A calls fn B (in the same
+                                              file) and B declares reads { x },
+                                              A must also declare reads { x }
+                                              (DEP001). Same rule for writes {}
+                                              (DEP002). Cross-file and external
+                                              calls are not checked.
                                               reads {}, writes {}, and intent:
                                               may coexist with uses {} in any
                                               order after uses {} (if present)
