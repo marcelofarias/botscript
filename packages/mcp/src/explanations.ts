@@ -331,6 +331,51 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn load(id: string) reads { cache, db } -> string = id\n",
     },
   },
+  DEP001: {
+    code: "DEP001",
+    title: "fn transitively reads a resource category not declared in its header",
+    body:
+      "From `?bs 0.9`, `reads { }` annotations are transitively enforced. If fn A calls " +
+      "fn B (in the same file) and B declares `reads { x }`, then A must also declare " +
+      "`reads { x }`. The rule extends to any depth: if B calls C which declares " +
+      "`reads { y }`, then both B and A must declare `reads { y }`.\n\n" +
+      "The purpose is completeness: reading A's header should tell you every resource " +
+      "category A (or anything it calls) touches, without tracing through the call graph.\n\n" +
+      "Over-declaration is always allowed — declaring more than the minimum is conservative " +
+      "and harmless. DEP001 only fires on under-declaration (a label that is reachable but " +
+      "not declared).",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+        "fn loadUser(id: string) -> string = getFromCache(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+        "fn loadUser(id: string) reads { cache } -> string = getFromCache(id)\n",
+    },
+  },
+  DEP002: {
+    code: "DEP002",
+    title: "fn transitively writes a resource category not declared in its header",
+    body:
+      "From `?bs 0.9`, `writes { }` annotations are transitively enforced. If fn A calls " +
+      "fn B (in the same file) and B declares `writes { x }`, then A must also declare " +
+      "`writes { x }`. The rule extends to any depth.\n\n" +
+      "The purpose is completeness: reading A's header should tell you every resource " +
+      "category A (or anything it calls) writes to, without tracing through the call graph.\n\n" +
+      "Over-declaration is always allowed. DEP002 only fires on under-declaration.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+        "fn recordEvent(id: string) -> void { updateMetrics(id); }\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+        "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();

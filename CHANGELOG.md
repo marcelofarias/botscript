@@ -4,6 +4,25 @@ All notable changes to botscript. Each release pins a `?bs` version; shipped
 pins do not change behaviour after release (AGENTS.md rule 4). New behaviour
 goes behind a new pin.
 
+## ?bs 0.9 — unreleased
+
+### Added
+- **DEP001 / DEP002 — `reads {}` / `writes {}` transitivity enforcement.**
+  From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
+  file) and B declares `reads { x }` (or `writes { x }`), then A must also
+  declare `reads { x }` (or `writes { x }`). The rule applies transitively to
+  any call depth. Reading A's header now tells you the complete resource
+  dependency surface without tracing the call graph manually.
+  - **DEP001** fires on reads under-declaration.
+  - **DEP002** fires on writes under-declaration.
+  - Over-declaration is always allowed (conservative declarations are harmless).
+  - Only same-file calls are tracked (consistent with cap-check).
+
+### Compat
+- Files on `?bs 0.8` (or earlier) are unaffected — DEP001/DEP002 are gated
+  on `?bs 0.9`. Existing code that uses `reads {}` / `writes {}` without
+  transitivity continues to compile at its current pin.
+
 ## ?bs 0.8 — unreleased
 
 ### Added
