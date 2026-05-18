@@ -73,13 +73,13 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   UNS002: {
     code: "UNS002",
-    title: "unsafe block followed by an empty justification",
+    title: "unsafe block or fn declaration with an empty justification",
     rule:
-      "the justification on an `unsafe` block must be a non-empty string — the empty string is not a reason",
+      "the justification on an `unsafe` block or `unsafe fn` declaration must be a non-empty string — the empty string is not a reason",
     idiom:
-      "if you cannot articulate the reason in one sentence, the cast probably should not be made",
+      "if you cannot articulate the reason in one sentence, the cast or declaration probably should not be made",
     rewrite:
-      'unsafe "<short reason>" { <body> }',
+      'unsafe "<short reason>" { <body> }  or  unsafe "<short reason>" fn <name>(...) -> T { ... }',
     example:
       "// before\n" +
       'unsafe "" { return value as User }\n\n' +
@@ -103,13 +103,13 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   UNS004: {
     code: "UNS004",
-    title: "bare `as` cast outside unsafe block",
+    title: "bare `as` cast outside unsafe block or unsafe fn body",
     rule:
-      "every `as` is a claim the compiler cannot verify; from `?bs 0.5` it must be justified by a written reason inside an `unsafe \"<reason>\" { ... }` block",
+      "every `as` is a claim the compiler cannot verify; from `?bs 0.5` it must be justified by a written reason inside an `unsafe \"<reason>\" { ... }` block or an `unsafe \"<reason>\" fn` declaration body",
     idiom:
-      "wrap the cast in `unsafe \"<reason>\" { ... }`; the reason becomes the review record on the cast",
+      "wrap the cast in `unsafe \"<reason>\" { ... }` or declare the containing function as `unsafe \"<reason>\" fn`; the reason becomes the review record on the cast",
     rewrite:
-      'unsafe "<short reason>" { <expr> as <type> }',
+      'unsafe "<short reason>" { <expr> as <type> }  or  unsafe "<short reason>" fn <name>(...) -> T { ... }',
     example:
       "// before\n" +
       "?bs 0.5\n" +

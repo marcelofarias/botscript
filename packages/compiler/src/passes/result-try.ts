@@ -19,6 +19,7 @@ import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
 import { lowerBlockBody } from "./_block-body.js";
+import { locationOf } from "./_location.js";
 
 export function passResultTry(src: string): string {
   const tokens = lex(src);
@@ -109,14 +110,3 @@ function wrapBody(body: string): string {
   return lowerBlockBody(body);
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

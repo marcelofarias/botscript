@@ -95,6 +95,18 @@ additions below are the entire language surface.
                             unsafe "<reason>" { ... } block is a parse error
                             (UNS004). Casts must be justified.
 
+  unsafe "reason" fn name(…) -> T { … }
+                            Declaration-level escape hatch. Marks the fn
+                            itself as the trust boundary for type coercions.
+                            Inside the body, bare \`as\` casts are allowed
+                            without repeating the justification at every
+                            call site. The reason is emitted as a leading
+                            /* unsafe: "…" */ comment in the compiled output.
+                            Use this for adapter/normalization fns that are
+                            the one safe coercion point in a module — callers
+                            treat the fn as a normal fn with no unsafe context
+                            required. Works with async: unsafe "r" async fn …
+
 == RESULT / OPTION ==
   Result<T, E>     ok(value) | err(error)
   Option<T>        some(value) | none

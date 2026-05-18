@@ -29,11 +29,19 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
+import { parseFn } from "../parser/parse-fn.js";
+import { locationOf } from "./_location.js";
 
 interface Range {
   /** Token index of the first token to skip (inclusive). */
   start: number;
   /** Token index just past the last token to skip (exclusive). */
+  end: number;
+}
+
+/** Character-offset range for unsafe fn body regions. */
+interface CharRange {
+  start: number;
   end: number;
 }
 
@@ -45,6 +53,12 @@ export function passBareAs(src: string): string {
   collectUnsafeBodies(tokens, skip);
   collectImportExport(tokens, skip);
 
+  // Also collect character-offset ranges for declaration-level `unsafe fn` bodies.
+  // These use source offsets rather than token indices (parseFn returns offsets).
+  // Empty-reason validation (UNS002) is not done here — `passFn` owns it.
+  const unsafeFnBodyRanges: CharRange[] = [];
+  collectUnsafeFnBodies(tokens, unsafeFnBodyRanges);
+
   // 2. Walk the token stream looking for bare `as` casts in expression
   //    position. Throw on the first one we find — matching `unsafe.ts`'s
   //    "first violation wins" pattern. (cap-check throws on the first
@@ -54,6 +68,7 @@ export function passBareAs(src: string): string {
     const t = tokens[i];
     if (!t || t.kind !== "ident" || t.text !== "as") continue;
     if (insideAny(i, skip)) continue;
+    if (insideAnyChar(t.start, unsafeFnBodyRanges)) continue;
     if (!isExpressionPosition(tokens, i)) continue;
     if (!looksLikeTypeAfter(tokens, i)) continue;
     throw mkError(t, src);
@@ -275,9 +290,63 @@ function skipTrivia(tokens: Token[], i: number): number {
   return i;
 }
 
+/**
+ * Collect source-offset ranges of fn bodies declared with
+ * `unsafe "reason" fn name(…)`. An `as` cast inside such a body is allowed
+ * — the fn declaration itself is the declared trust boundary.
+ *
+ * An empty reason (`unsafe "" fn`) is NOT diagnosed here — `passFn` is the
+ * single owner of UNS002. This function still adds the body to the skip set
+ * so that `passBareAs` does not fire UNS004 on the body's `as` casts before
+ * `passFn` gets to report the real (empty-reason) issue.
+ */
+function collectUnsafeFnBodies(tokens: Token[], out: CharRange[]): void {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t || t.kind !== "keyword" || t.keyword !== "unsafe") continue;
+
+    const j = skipTrivia(tokens, i + 1);
+    const reasonTok = tokens[j];
+    if (!reasonTok || reasonTok.kind !== "string") continue;
+
+    const k = skipTrivia(tokens, j + 1);
+    const next = tokens[k];
+    if (!next || next.kind !== "keyword") continue;
+
+    let fnIdx: number;
+    if (next.keyword === "fn") {
+      fnIdx = k;
+    } else if (next.keyword === "async") {
+      const l = skipTrivia(tokens, k + 1);
+      const fnTok = tokens[l];
+      if (!fnTok || fnTok.kind !== "keyword" || fnTok.keyword !== "fn") continue;
+      fnIdx = l;
+    } else {
+      continue;
+    }
+
+    // Add the body to the skip set regardless of whether the reason is empty.
+    // An empty reason will be caught and diagnosed as UNS002 by passFn, which
+    // is the single owner of that validation. Without this, passBareAs would
+    // fire UNS004 on the `as` cast before passFn gets to report the real issue.
+    const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
+    if (!decl) continue;
+
+    out.push({ start: decl.body.start, end: decl.body.end });
+    i = decl.tokenEnd - 1;
+  }
+}
+
 function insideAny(idx: number, ranges: Range[]): boolean {
   for (const r of ranges) {
     if (idx >= r.start && idx < r.end) return true;
+  }
+  return false;
+}
+
+function insideAnyChar(offset: number, ranges: CharRange[]): boolean {
+  for (const r of ranges) {
+    if (offset >= r.start && offset < r.end) return true;
   }
   return false;
 }
@@ -293,7 +362,7 @@ function mkError(tok: Token, src: string): BotscriptError {
     column,
     start: tok.start,
     end: tok.end,
-    message: "bare `as` cast outside an `unsafe \"<reason>\" { ... }` block",
+    message: "bare `as` cast outside an `unsafe \"<reason>\" { ... }` block or `unsafe \"<reason>\" fn` body",
     rule: entry.rule,
     idiom: entry.idiom,
     rewrite: entry.rewrite,
@@ -301,14 +370,3 @@ function mkError(tok: Token, src: string): BotscriptError {
   return new BotscriptError([diag]);
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

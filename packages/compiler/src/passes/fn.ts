@@ -8,15 +8,22 @@
  * fragile `{ … }` body/object-type heuristic — bracket pairing comes from the
  * lexer and is always correct.
  */
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
+import { getErrorCode } from "../error-codes.js";
 import { lex } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { parseFn } from "../parser/parse-fn.js";
 import { lowerBlockBody } from "./_block-body.js";
+import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export function passFn(src: string, version?: VersionInfo): string {
   const tokens = lex(src);
   const allowGenerics = version ? atLeast(version.resolved, "0.4") : false;
+  // Declaration-level `unsafe "reason" fn` enforcement (UNS002 on an empty
+  // reason) is gated to ?bs 0.5+, matching the feature gate documented in
+  // AGENTS.md and UNS004. Earlier pins parse the prefix but do not enforce.
+  const unsafeFnActive = version ? atLeast(version.resolved, "0.5") : false;
   // Walk tokens, find every `fn` keyword, parse it, and emit the desugared TS.
   // We slice from previous emit-cursor to the start of the parsed run, then
   // append the emit. That keeps comments/whitespace verbatim.
@@ -27,6 +34,26 @@ export function passFn(src: string, version?: VersionInfo): string {
     if (t.kind !== "keyword" || t.keyword !== "fn") continue;
     const decl = parseFn(tokens, i, { allowGenerics, src });
     if (!decl) continue;
+    // Declaration-level `unsafe "reason" fn` must have a non-empty reason (UNS002).
+    // Gated to ?bs 0.5+ — earlier pins emit the prefix without enforcement.
+    if (unsafeFnActive && decl.unsafeReason !== undefined && decl.unsafeReason.trim() === "") {
+      // Anchor at the reason string token, not the `unsafe` or `async` keyword.
+      const anchorOffset = decl.unsafeReasonStart ?? tokens[decl.tokenStart]!.start;
+      const entry = getErrorCode("UNS002")!;
+      const { line, column } = locationOf(src, anchorOffset);
+      const diag: Diagnostic = {
+        code: "UNS002",
+        severity: "error",
+        file: null,
+        line,
+        column,
+        message: "declaration-level unsafe fn has an empty justification string",
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite: 'unsafe "<short reason>" fn <name>(...) -> T { ... }',
+      };
+      throw new BotscriptError([diag]);
+    }
     // Emit everything up to the start of this declaration.
     out += src.slice(cursor, tokens[decl.tokenStart]!.start);
     out += emitFn(decl);
@@ -52,8 +79,11 @@ function emitFn(decl: FnDecl): string {
   // the emitted shape there is byte-identical to before. Only ?bs 0.4+ sees
   // the `<…>` block in the TS output.
   const tparams = decl.typeParams ?? "";
+  const unsafePrefix = decl.unsafeReason !== undefined
+    ? `/* unsafe: "${decl.unsafeReason.replace(/\*\//g, "*\\/")}" */\n`
+    : "";
   return (
-    `${asyncPrefix}function ${decl.name}${tparams}${decl.argsTs}: ${decl.returnType} {\n` +
+    `${unsafePrefix}${asyncPrefix}function ${decl.name}${tparams}${decl.argsTs}: ${decl.returnType} {\n` +
     `  return $enter(${capsLiteral} as const, ${arrow}{\n` +
     `${indent(inner, 4)}\n` +
     `  });\n` +
@@ -81,4 +111,5 @@ function indent(s: string, n: number): string {
     .map((l) => (l.length === 0 ? l : pad + l))
     .join("\n");
 }
+
 

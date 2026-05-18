@@ -24,6 +24,7 @@ import { getErrorCode } from "../error-codes.js";
 import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
+import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 /** stdlib namespace -> capability it consumes. */
@@ -496,14 +497,3 @@ function nextIdent(tokens: Token[], dotIdx: number): string | null {
   return t && t.kind === "ident" ? t.text : null;
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}

@@ -95,11 +95,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   UNS002: {
     code: "UNS002",
-    title: "unsafe block has an empty justification",
+    title: "unsafe block or unsafe fn declaration has an empty justification",
     body:
       "The justification on an `unsafe` block must be a non-empty string. The empty string " +
       "is not a reason. Same intent as UNS001: the cast and its reason live together in the " +
-      "diff so the next reviewer can judge whether the escape hatch is still warranted.",
+      "diff so the next reviewer can judge whether the escape hatch is still warranted. " +
+      "From `?bs 0.5`, the same rule applies to a declaration-level `unsafe \"<reason>\" fn " +
+      "<name>(...)` — an empty reason there is UNS002 too.",
     example: {
       fails: "?bs 0.3\nconst u = unsafe \"\" { value as User };\n",
       passes: "?bs 0.3\nconst u = unsafe \"Response.json() returns any\" { value as User };\n",
@@ -119,13 +121,21 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   UNS004: {
     code: "UNS004",
-    title: "bare `as` cast outside unsafe block",
+    title: "bare `as` cast outside unsafe block or unsafe fn",
     body:
       "Every `as` cast is a claim about types the compiler cannot verify. From `?bs 0.5` on, " +
-      "a bare `as` outside an `unsafe \"<reason>\" { ... }` block is a parse error. The rule " +
-      "is the manifesto promise made concrete: the cast and a written justification live " +
-      "together in the diff, so the next reviewer (human or model) sees the *why* alongside " +
-      "the *what* — not just an unexplained `as User` whose intent has aged out.\n\n" +
+      "a bare `as` outside an `unsafe \"<reason>\" { ... }` block (or the body of an " +
+      "`unsafe \"<reason>\" fn`) is a parse error. The rule is the manifesto promise made " +
+      "concrete: the cast and a written justification live together in the diff, so the next " +
+      "reviewer (human or model) sees the *why* alongside the *what* — not just an unexplained " +
+      "`as User` whose intent has aged out.\n\n" +
+      "**Two escape hatches:**\n" +
+      "1. Per-cast: `unsafe \"<reason>\" { expr as Type }` — wraps one cast with a reason.\n" +
+      "2. Per-function: `unsafe \"<reason>\" fn name(…)` — marks the fn as the trust boundary. " +
+      "All `as` casts inside the body are allowed without repeating the reason at each site. " +
+      "Use this when the function is the one safe coercion point in a module (e.g. an adapter " +
+      "that validates raw API responses). The reason is emitted as a comment before the " +
+      "compiled function so reviewers see it in the diff.\n\n" +
       "What gets flagged: TypeScript type assertions in expression position — `x as User`, " +
       "`x as any`, `x as const`, chained casts like `(x as unknown) as User`. What does NOT " +
       "get flagged: the import-namespace form `import * as ns from \"...\"` (the `as` here is " +

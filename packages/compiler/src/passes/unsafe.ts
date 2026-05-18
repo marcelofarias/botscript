@@ -22,6 +22,7 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex, type Token } from "../parser/lex.js";
+import { locationOf } from "./_location.js";
 
 export function passUnsafe(src: string): string {
   const tokens = lex(src);
@@ -45,14 +46,29 @@ export function passUnsafe(src: string): string {
       throw mkError("UNS001", t, src, "unsafe block must be followed by a justification string");
     }
 
+    const k = skipTrivia(tokens, j + 1);
+    const open = tokens[k];
+    // Declaration-level `unsafe "reason" fn` — the fn keyword (or `async fn` before it)
+    // follows the reason string instead of `{`. Skip it here BEFORE validating the
+    // reason string: declaration-level reasons are owned by passFn. passFn emits the
+    // correct declaration-level UNS002 (with the right rewrite hint) for an empty
+    // `unsafe "" fn` reason at ?bs 0.5+; earlier pins parse it without enforcement.
+    // Either way, the block-level UNS002 message here must not fire on a fn prefix.
+    if (open && open.kind === "keyword" && open.keyword === "fn") {
+      continue;
+    }
+    if (open && open.kind === "keyword" && open.keyword === "async") {
+      const m = skipTrivia(tokens, k + 1);
+      const fnTok = tokens[m];
+      if (fnTok && fnTok.kind === "keyword" && fnTok.keyword === "fn") continue;
+    }
+
     // Reason content must be non-empty (strip surrounding quotes).
     const reason = head.text.slice(1, -1);
     if (reason.trim() === "") {
       throw mkError("UNS002", head, src, "unsafe justification is empty");
     }
 
-    const k = skipTrivia(tokens, j + 1);
-    const open = tokens[k];
     if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
       throw mkError("UNS003", t, src, "unsafe block has no body — expected `{ ... }`");
     }
@@ -61,7 +77,7 @@ export function passUnsafe(src: string): string {
 
     // Wrap body so a bare expression flows out as a value.
     const wrapped = wrapBody(body);
-    const reasonComment = `/* unsafe: ${head.text} */`;
+    const reasonComment = `/* unsafe: ${head.text.replace(/\*\//g, "*\\/")} */`;
     const emit = `${reasonComment} (() => { ${wrapped} })()`;
 
     out += src.slice(cursor, t.start);
@@ -156,14 +172,3 @@ function hasTopLevelSemicolon(src: string): boolean {
   return false;
 }
 
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < src.length; i++) {
-    if (src[i] === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
-}
