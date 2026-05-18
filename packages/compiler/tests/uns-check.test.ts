@@ -1,0 +1,256 @@
+/**
+ * Tests for UNS005: external call without declared result contract (?bs 0.9+).
+ *
+ * Fires on any stdlib capability call (http.x, fs.x, time.x, etc.) that has
+ * no declared result contract at the call site.
+ *
+ * Suppressed by:
+ *   - `match ns.method(...) { ... }` — direct match at the call site
+ *   - `match await ns.method(...) { ... }` — await is transparent
+ *   - `unsafe "reason" { ns.method(...) }` — explicit escape hatch
+ *   - `unsafe "reason" fn` — declaration-level escape hatch
+ */
+
+import { describe, expect, it } from "vitest";
+import { transform } from "../src/transform.js";
+
+function compile(src: string): string {
+  return transform(src).code;
+}
+
+// ---------------------------------------------------------------------------
+// Basic firing cases
+// ---------------------------------------------------------------------------
+
+describe("UNS005: basic firing", () => {
+  it("fires on a bare http call assigned to a variable", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      "  const data = http.get(url);\n" +
+      "  data\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+    expect(() => compile(src)).toThrow(/http\.get/);
+  });
+
+  it("fires on a bare fs call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readConfig(path: string) uses { fs } -> string {\n" +
+      "  fs.read(path)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+    expect(() => compile(src)).toThrow(/fs\.read/);
+  });
+
+  it("fires on a bare time call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTs() uses { time } -> number {\n" +
+      "  time.now()\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("fires on a bare random call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn roll() uses { random } -> number {\n" +
+      "  random.float()\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("fires on a bare http.post call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn send(url: string, body: string) uses { net } -> string {\n" +
+      "  http.post(url, body)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suppression: match
+// ---------------------------------------------------------------------------
+
+describe("UNS005: suppressed by match", () => {
+  it("does not fire when the call is the direct subject of match", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    Ok(data) => ok(data),\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+
+  it("does not fire when await-wrapped call is the match subject", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match await http.get(url) {\n" +
+      "    Ok(data) => ok(data),\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+
+  it("does not fire for fs.read in a match", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readFile(path: string) uses { fs } -> Result<string, string> {\n" +
+      "  match fs.read(path) {\n" +
+      "    Ok(contents) => ok(contents),\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suppression: unsafe block
+// ---------------------------------------------------------------------------
+
+describe("UNS005: suppressed by unsafe block", () => {
+  it("does not fire when the call is inside an unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      '  unsafe "I know http.get returns a plain string here" { http.get(url) }\n' +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+
+  it("does not fire for fs.read inside unsafe", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readConfig(path: string) uses { fs } -> string {\n" +
+      '  unsafe "config file is always valid JSON" { fs.read(path) }\n' +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suppression: unsafe fn declaration
+// ---------------------------------------------------------------------------
+
+describe("UNS005: suppressed by unsafe fn declaration", () => {
+  it("does not fire inside an unsafe fn body", () => {
+    const src =
+      "?bs 0.9\n" +
+      'unsafe "known adapter — callers trust the return type" fn fetchRaw(url: string) uses { net } -> string {\n' +
+      "  http.get(url)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Version gate
+// ---------------------------------------------------------------------------
+
+describe("UNS005: version gate", () => {
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      "  const data = http.get(url);\n" +
+      "  data\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+
+  it("does not fire at ?bs 0.7", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      "  http.get(url)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inner fn exclusion
+// ---------------------------------------------------------------------------
+
+describe("UNS005: inner fn exclusion", () => {
+  it("fires on the outer fn but not the inner if inner is unsafe-wrapped", () => {
+    // outer has a bare call → should fire UNS005
+    // inner has a match → should not fire
+    const src =
+      "?bs 0.9\n" +
+      "fn outer(url: string) uses { net } -> string {\n" +
+      "  const r = http.get(url);\n" +
+      "  fn inner(u: string) uses { net } -> Result<string, string> {\n" +
+      "    match http.get(u) {\n" +
+      "      Ok(d) => ok(d),\n" +
+      "      Err(e) => err(e),\n" +
+      "    }\n" +
+      "  }\n" +
+      "  r\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("does not fire on inner fn when inner fn uses match", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn outer(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    Ok(d) => {\n" +
+      "      fn inner(u: string) uses { net } -> Result<string, string> {\n" +
+      "        match http.get(u) {\n" +
+      "          Ok(data) => ok(data),\n" +
+      "          Err(e) => err(e),\n" +
+      "        }\n" +
+      "      }\n" +
+      "      ok(d)\n" +
+      "    },\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multiple calls
+// ---------------------------------------------------------------------------
+
+describe("UNS005: multiple calls in one fn", () => {
+  it("fires for a fn that has two bare stdlib calls", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn doWork(url: string, path: string) uses { net, fs } -> string {\n" +
+      "  const a = http.get(url);\n" +
+      "  const b = fs.read(path);\n" +
+      "  a\n" +
+      "}\n";
+    // Should throw UNS005 (first violation, same as other passes)
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("passes when all calls in a fn are match-wrapped", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn doWork(url: string, path: string) uses { net, fs } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    Ok(a) => match fs.read(path) {\n" +
+      "      Ok(b) => ok(a),\n" +
+      "      Err(e) => err(e),\n" +
+      "    },\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow("UNS005");
+  });
+});

@@ -68,6 +68,7 @@ describe("botscript-mcp explanations", () => {
       "UNS002",
       "UNS003",
       "UNS004",
+      "UNS005",
       "VER001",
       "VER002",
     ]);

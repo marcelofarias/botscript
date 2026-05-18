@@ -183,6 +183,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "const u = unsafe \"third-party Response.json() returns any\" { data as User };\n",
     },
   },
+  UNS005: {
+    code: "UNS005",
+    title: "external call without declared result contract",
+    body:
+      "UNS005 fires when a stdlib capability call (`http.x`, `fs.x`, `time.x`, `random.x`, " +
+      "`stdout.x`, `stderr.x`) has no declared result contract at the call site. The return " +
+      "value may be structurally typed correctly — the compiler sees a `string` or `Result<T, E>` " +
+      "— but be semantically incorrect in ways only the runtime context can detect.\n\n" +
+      "UNS005 is **compiler-inferred**, not programmer-applied. Unlike UNS001–UNS004 which fire " +
+      "on malformed `unsafe` blocks, UNS005 fires on ordinary-looking external calls. A reviewer " +
+      "can tell at a glance whether the author made a deliberate choice (unsafe block) or the " +
+      "compiler is flagging an omission.\n\n" +
+      "**Suppression mechanisms (in order of preference):**\n\n" +
+      "1. **Exhaustive match** — `match http.get(url) { Ok(v) => ..., Err(e) => ... }` wraps " +
+      "the call in a structural contract check. Both success and failure paths are explicit " +
+      "and compiler-enforced. `match await http.get(url)` is also accepted (await is transparent).\n\n" +
+      "2. **unsafe block** — `unsafe \"I know what X returns\" { ns.method(...) }` accepts the " +
+      "uncertainty with a written explanation. The reason becomes the review record on the call.\n\n" +
+      "3. **(Future) ensures annotation** — when `ensures: \"...\"` lands in a future version, " +
+      "declaring it on the callee's header will suppress UNS005 for all call sites.\n\n" +
+      "UNS005 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) uses { net } -> string {\n" +
+        "  const data = http.get(`/users/${id}`);\n" +
+        "  data\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
+        "  match http.get(`/users/${id}`) {\n" +
+        "    Ok(data) => ok(data),\n" +
+        "    Err(e) => err(`fetch failed: ${e}`),\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   INT001: {
     code: "INT001",
     title: "intent declares 'pure' but function has capability or read/write declarations",
