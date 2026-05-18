@@ -104,8 +104,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
       passes:
         "?bs 0.9\n" +
-        "fn callApi(url: string) uses { net } -> string {\n" +
-        "  http.get(url)\n" +
+        "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
+        "  match http.get(url) {\n" +
+        "    Ok(data) => ok(data),\n" +
+        "    Err(e) => err(e),\n" +
+        "  }\n" +
         "}\n",
     },
   },

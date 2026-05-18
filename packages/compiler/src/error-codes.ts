@@ -77,8 +77,11 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// No CAP003: regular fn with the same claim is compiler-verified\n" +
       "?bs 0.9\n" +
-      "fn callApi(url: string) uses { net } -> string {\n" +
-      "  http.get(url)  // CAP001/CAP002 apply normally\n" +
+      "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    Ok(data) => ok(data),\n" +
+      "    Err(e) => err(`fetch failed: ${e}`),\n" +
+      "  }\n" +
       "}",
   },
   UNS001: {
