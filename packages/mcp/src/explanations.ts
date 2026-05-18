@@ -164,9 +164,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "can tell at a glance whether the author made a deliberate choice (unsafe block) or the " +
       "compiler is flagging an omission.\n\n" +
       "**Suppression mechanisms (in order of preference):**\n\n" +
-      "1. **Exhaustive match** — `match http.get(url) { Ok(v) => ..., Err(e) => ... }` wraps " +
-      "the call in a structural contract check. Both success and failure paths are explicit " +
-      "and compiler-enforced. `match await http.get(url)` is also accepted (await is transparent).\n\n" +
+      "1. **match** — `match http.get(url) { Ok(v) => ..., Err(e) => ... }` wraps " +
+      "the call in a structural contract check. Both success and failure paths are explicit. " +
+      "`match await http.get(url)` is also accepted (await is transparent).\n\n" +
       "2. **unsafe block** — `unsafe \"I know what X returns\" { ns.method(...) }` accepts the " +
       "uncertainty with a written explanation. The reason becomes the review record on the call.\n\n" +
       "3. **(Future) ensures annotation** — when `ensures: \"...\"` lands in a future version, " +

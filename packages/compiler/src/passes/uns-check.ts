@@ -28,7 +28,7 @@
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex, type Token } from "../parser/lex.js";
+import type { Token } from "../parser/lex.js";
 import { parseFn } from "../parser/parse-fn.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
