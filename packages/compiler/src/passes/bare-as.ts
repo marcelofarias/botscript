@@ -55,7 +55,7 @@ export function passBareAs(src: string): string {
 
   // Also collect character-offset ranges for declaration-level `unsafe fn` bodies.
   // These use source offsets rather than token indices (parseFn returns offsets).
-  // Throws UNS002 immediately for any declaration-level unsafe fn with an empty reason.
+  // Empty-reason validation (UNS002) is not done here — `passFn` owns it.
   const unsafeFnBodyRanges: CharRange[] = [];
   collectUnsafeFnBodies(tokens, unsafeFnBodyRanges);
 
