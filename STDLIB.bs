@@ -140,7 +140,7 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
   raw as Shape
 }
 
-// ─── 10. unsafe "reason" fn (declaration-level escape hatch) ─────────────────
+// ─── 10b. unsafe "reason" fn (declaration-level escape hatch) ────────────────
 // When a function is *the* trust boundary for type coercions in a module,
 // repeating the justification at every call site is noise. Declaration-level
 // `unsafe fn` moves the reason to the declaration; callers treat it as a normal

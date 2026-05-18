@@ -57,7 +57,7 @@ export function passBareAs(src: string): string {
   // These use source offsets rather than token indices (parseFn returns offsets).
   // Throws UNS002 immediately for any declaration-level unsafe fn with an empty reason.
   const unsafeFnBodyRanges: CharRange[] = [];
-  collectUnsafeFnBodies(tokens, src, unsafeFnBodyRanges);
+  collectUnsafeFnBodies(tokens, unsafeFnBodyRanges);
 
   // 2. Walk the token stream looking for bare `as` casts in expression
   //    position. Throw on the first one we find — matching `unsafe.ts`'s
@@ -295,10 +295,12 @@ function skipTrivia(tokens: Token[], i: number): number {
  * `unsafe "reason" fn name(…)`. An `as` cast inside such a body is allowed
  * — the fn declaration itself is the declared trust boundary.
  *
- * Throws UNS002 immediately for any declaration-level `unsafe "" fn` (empty
- * reason), independent of `passUnsafe`'s expression-position heuristic.
+ * An empty reason (`unsafe "" fn`) is NOT diagnosed here — `passFn` is the
+ * single owner of UNS002. This function still adds the body to the skip set
+ * so that `passBareAs` does not fire UNS004 on the body's `as` casts before
+ * `passFn` gets to report the real (empty-reason) issue.
  */
-function collectUnsafeFnBodies(tokens: Token[], src: string, out: CharRange[]): void {
+function collectUnsafeFnBodies(tokens: Token[], out: CharRange[]): void {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (!t || t.kind !== "keyword" || t.keyword !== "unsafe") continue;
