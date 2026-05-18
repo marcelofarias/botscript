@@ -18,10 +18,22 @@ goes behind a new pin.
   - Over-declaration is always allowed (conservative declarations are harmless).
   - Only same-file calls are tracked (consistent with cap-check).
 
+- **UNS005 — external call without declared result contract.**
+  From `?bs 0.9`, the compiler fires `UNS005` when a stdlib capability call
+  (`http.x`, `fs.x`, `time.x`, `random.x`, `stdout.x`, `stderr.x`) has no
+  declared result contract at the call site. The return value may be
+  structurally typed correctly but semantically incorrect in ways the compiler
+  cannot detect — UNS005 forces explicit handling.
+  - Unlike UNS001–UNS004 (programmer-applied), UNS005 is **compiler-inferred**.
+  - Suppress by wrapping in `match ns.method(...) { Ok(...) => ..., Err(...) => ... }`
+    (including `match await ...`).
+  - Suppress with `unsafe "<reason>" { ns.method(...) }` to accept the
+    uncertainty with a written explanation.
+  - `unsafe "<reason>" fn` declaration bodies are also suppressed.
+
 ### Compat
-- Files on `?bs 0.8` (or earlier) are unaffected — DEP001/DEP002 are gated
-  on `?bs 0.9`. Existing code that uses `reads {}` / `writes {}` without
-  transitivity continues to compile at its current pin.
+- Files on `?bs 0.8` (or earlier) are unaffected — DEP001/DEP002 and UNS005
+  are gated on `?bs 0.9`. Existing code continues to compile at its current pin.
 
 ## ?bs 0.8 — unreleased
 
