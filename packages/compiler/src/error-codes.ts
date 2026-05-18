@@ -118,6 +118,35 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.5\n" +
       'const u = unsafe "Response.json() returns any" { data as User };',
   },
+  UNS005: {
+    code: "UNS005",
+    title: "external call without declared result contract",
+    rule:
+      "a stdlib capability call (http.x, fs.x, time.x, etc.) must have a declared result contract " +
+      "at the call site — either wrap in `match` to handle all cases exhaustively, or use " +
+      "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation",
+    idiom:
+      "prefer `match ns.method(...) { Ok(v) => ..., Err(e) => ... }` — it makes both success " +
+      "and failure paths explicit and compiler-checked; use `unsafe` only when you are certain " +
+      "about the shape and want to document why",
+    rewrite:
+      'match ns.method(...) { Ok(value) => { /* use value */ }, Err(e) => { /* handle */ } }',
+    example:
+      "// before — UNS005: no contract on what http.get returns\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> string {\n" +
+      "  const data = http.get(`/users/${id}`);\n" +
+      "  data\n" +
+      "}\n\n" +
+      "// after — result contract via exhaustive match\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(`/users/${id}`) {\n" +
+      "    Ok(data) => ok(data),\n" +
+      "    Err(e) => err(`fetch failed: ${e}`),\n" +
+      "  }\n" +
+      "}",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

@@ -9,6 +9,7 @@ import { passImports } from "./passes/imports.js";
 import { passDepCheck } from "./passes/dep-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
+import { passUnsCheck } from "./passes/uns-check.js";
 import { passMatch } from "./passes/match.js";
 import { passPrimer } from "./passes/primer.js";
 import { passResultTry } from "./passes/result-try.js";
@@ -59,6 +60,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // depCheck: transitivity enforcement for reads {} / writes {} annotations (DEP001 / DEP002).
   // Header-level like intentCheck and effCheck — runs before the body walk.
   { name: "depCheck", fn: passDepCheck, minVersion: "0.9" },
+  // unsCheck: fires UNS005 on stdlib capability calls with no declared result
+  // contract (no match, no unsafe block). Must run before passUnsafe, which
+  // rewrites the source and erases unsafe keywords used as suppression markers.
+  { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
