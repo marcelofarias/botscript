@@ -95,11 +95,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   UNS002: {
     code: "UNS002",
-    title: "unsafe block has an empty justification",
+    title: "unsafe block or unsafe fn declaration has an empty justification",
     body:
       "The justification on an `unsafe` block must be a non-empty string. The empty string " +
       "is not a reason. Same intent as UNS001: the cast and its reason live together in the " +
-      "diff so the next reviewer can judge whether the escape hatch is still warranted.",
+      "diff so the next reviewer can judge whether the escape hatch is still warranted. " +
+      "From `?bs 0.5`, the same rule applies to a declaration-level `unsafe \"<reason>\" fn " +
+      "<name>(...)` — an empty reason there is UNS002 too.",
     example: {
       fails: "?bs 0.3\nconst u = unsafe \"\" { value as User };\n",
       passes: "?bs 0.3\nconst u = unsafe \"Response.json() returns any\" { value as User };\n",
