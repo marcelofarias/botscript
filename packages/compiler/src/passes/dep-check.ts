@@ -39,6 +39,7 @@ import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
+import { locationOf } from "./_location.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -369,16 +370,4 @@ function mkError(
   };
 
   return new BotscriptError([diagnostic]);
-}
-
-function locationOf(src: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let k = 0; k < offset && k < src.length; k++) {
-    if (src[k] === "\n") {
-      line++;
-      lineStart = k + 1;
-    }
-  }
-  return { line, column: offset - lineStart + 1 };
 }
