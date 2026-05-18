@@ -56,6 +56,31 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       "fn slug(s: string) -> string = pure { s.toLowerCase() }",
   },
+  CAP003: {
+    code: "CAP003",
+    title: "capability declared inside unsafe fn — asserted, not proven",
+    rule:
+      "a `uses {}` declaration on an `unsafe fn` is programmer-asserted, not compiler-proven: " +
+      "the capability inference pass still runs on the visible body, but an unsafe fn can contain " +
+      "`as` casts that alias stdlib namespaces, bypassing name-based detection",
+    idiom:
+      "treat a CAP003-tagged capability claim as advisory rather than verified — " +
+      "callers and audit tooling should note the asserted provenance; " +
+      "if the function is the canonical safe adapter for a capability, document it in the unsafe reason",
+    rewrite:
+      "// no rewrite needed — this is a warning; suppress by removing uses {} if the body has no visible stdlib calls",
+    example:
+      "// CAP003 fires: unsafe fn with a uses {} claim\n" +
+      "?bs 0.9\n" +
+      "unsafe \"wraps external http client\" fn callApi(url: string) uses { net } -> string {\n" +
+      "  http.get(url)  // warning: claim is asserted, not proven\n" +
+      "}\n\n" +
+      "// No CAP003: regular fn with the same claim is compiler-verified\n" +
+      "?bs 0.9\n" +
+      "fn callApi(url: string) uses { net } -> string {\n" +
+      "  http.get(url)  // CAP001/CAP002 apply normally\n" +
+      "}",
+  },
   UNS001: {
     code: "UNS001",
     title: "unsafe block missing justification string",

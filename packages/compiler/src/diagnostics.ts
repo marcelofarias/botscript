@@ -8,7 +8,7 @@
  * "rule / idiom / rewrite" shape the manifesto promises.
  */
 
-export type DiagnosticSeverity = "error";
+export type DiagnosticSeverity = "error" | "warning";
 
 export interface Diagnostic {
   /** Stable, machine-parseable code. e.g. "CAP001". */

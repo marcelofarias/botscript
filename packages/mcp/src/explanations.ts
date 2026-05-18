@@ -77,6 +77,38 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.3\nfn slug(s: string) -> string = pure { s.toLowerCase() }\n",
     },
   },
+  CAP003: {
+    code: "CAP003",
+    title: "Capability declared inside unsafe fn — asserted, not proven",
+    body:
+      "CAP003 is a **warning** (non-blocking) that fires when a `uses { }` declaration " +
+      "appears on an `unsafe fn`. Compilation still succeeds.\n\n" +
+      "The capability inference pass (CAP001/CAP002) still runs on the visible stdlib calls " +
+      "inside the body — but an `unsafe fn` can contain `as` casts that alias stdlib " +
+      "namespaces, bypassing the name-based detection the compiler relies on. The capability " +
+      "claim is therefore *programmer-asserted*, not *compiler-proven*.\n\n" +
+      "**Why it matters:** callers that import a capability claim have no way to know — " +
+      "from the type system alone — whether the claim was verified or hand-written. A CAP003 " +
+      "tag makes that distinction visible. Audit tooling and higher-strictness modes can refuse " +
+      "to import CAP003-tagged capabilities without explicit acknowledgment.\n\n" +
+      "**What to do:** if the function is the canonical safe adapter for a capability and the " +
+      "claim is correct, the warning is informational — no action required. If you want to " +
+      "suppress it, remove the `uses {}` clause (if the body has no visible stdlib calls) or " +
+      "refactor to a regular fn where the compiler can verify the claim.\n\n" +
+      "CAP003 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "unsafe \"wraps external http client\" fn callApi(url: string) uses { net } -> string {\n" +
+        "  http.get(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn callApi(url: string) uses { net } -> string {\n" +
+        "  http.get(url)\n" +
+        "}\n",
+    },
+  },
   UNS001: {
     code: "UNS001",
     title: "unsafe block missing justification string",

@@ -18,10 +18,26 @@ goes behind a new pin.
   - Over-declaration is always allowed (conservative declarations are harmless).
   - Only same-file calls are tracked (consistent with cap-check).
 
+- **CAP003 — capability asserted in unsafe fn (non-blocking warning).**
+  From `?bs 0.9`, the compiler emits a `warning` (not an error) when a
+  `uses {}` declaration appears on an `unsafe fn`. The capability inference
+  pass (CAP001/CAP002) still runs on the visible stdlib calls in the body —
+  but an `unsafe fn` can contain `as` casts that alias stdlib namespaces,
+  bypassing name-based detection. CAP003 annotates the claim as
+  *programmer-asserted, not compiler-proven* so callers and audit tooling can
+  distinguish the two. Compilation always succeeds; the warning is returned in
+  `TransformResult.warnings`.
+
+- **Warning severity in `TransformResult`.**
+  `TransformResult` now carries a `warnings: ReadonlyArray<Diagnostic>` field.
+  All prior callers that read only `code`, `forms`, and `version` are
+  unaffected; the new field is additive.
+
 ### Compat
-- Files on `?bs 0.8` (or earlier) are unaffected — DEP001/DEP002 are gated
-  on `?bs 0.9`. Existing code that uses `reads {}` / `writes {}` without
-  transitivity continues to compile at its current pin.
+- Files on `?bs 0.8` (or earlier) are unaffected — DEP001/DEP002 and CAP003
+  are gated on `?bs 0.9`. Existing code that uses `reads {}` / `writes {}` or
+  `unsafe fn` without transitivity/assertion warnings continues to compile at
+  its current pin.
 
 ## ?bs 0.8 — unreleased
 

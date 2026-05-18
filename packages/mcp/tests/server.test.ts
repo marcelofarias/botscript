@@ -49,6 +49,7 @@ describe("botscript-mcp explanations", () => {
       "BS002",
       "CAP001",
       "CAP002",
+      "CAP003",
       "DEP001",
       "DEP002",
       "EFF002",
@@ -65,21 +66,31 @@ describe("botscript-mcp explanations", () => {
   });
 
   it("each example pair represents a real fails/passes contrast", async () => {
-    // The fails example should throw a BotscriptError carrying the matching
-    // diagnostic code. The passes example should compile successfully.
+    // The fails example must either throw a BotscriptError carrying the
+    // matching code (errors) OR compile successfully but return a warning with
+    // the matching code (warning-only diagnostics like CAP003). The passes
+    // example must compile without errors or warnings for that code.
     const { transform, BotscriptError } = await import("@mbfarias/botscript-compiler");
     for (const code of KNOWN_CODES) {
       const { example } = EXPLANATIONS[code]!;
+      let threwOrWarned = false;
       try {
-        transform(example.fails);
-        throw new Error(`fails example for ${code} did not throw`);
+        const result = transform(example.fails);
+        // Didn't throw — check for a matching warning.
+        const warn = result.warnings.find((w) => w.code === code);
+        expect(warn, `fails example for ${code} produced neither an error nor a warning`).toBeDefined();
+        threwOrWarned = true;
       } catch (e) {
         expect(e, `${code} fails example threw wrong type`).toBeInstanceOf(BotscriptError);
         const err = e as InstanceType<typeof BotscriptError>;
         expect(err.diagnostics[0]!.code, `${code} mismatched code`).toBe(code);
+        threwOrWarned = true;
       }
-      // passes example should compile clean.
-      expect(() => transform(example.passes)).not.toThrow();
+      expect(threwOrWarned).toBe(true);
+      // passes example should compile clean with no matching warning.
+      const passResult = transform(example.passes);
+      const passWarn = passResult.warnings.find((w) => w.code === code);
+      expect(passWarn, `passes example for ${code} still has warning`).toBeUndefined();
     }
   });
 });

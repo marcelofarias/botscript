@@ -1,4 +1,4 @@
-import { BotscriptError } from "./diagnostics.js";
+import { BotscriptError, type Diagnostic } from "./diagnostics.js";
 import { getErrorCode } from "./error-codes.js";
 import { formatSource, isCanonical } from "./format/format.js";
 import { passAssert } from "./passes/assert.js";
@@ -6,6 +6,7 @@ import { passBlocks } from "./passes/blocks.js";
 import { passCapCheck } from "./passes/cap-check.js";
 import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
+import { passCapAssert } from "./passes/cap-assert.js";
 import { passDepCheck } from "./passes/dep-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
@@ -34,11 +35,19 @@ export interface TransformResult {
   forms: ReadonlyArray<string>;
   /** Resolved language version this file was compiled against. */
   version: VersionInfo;
+  /** Non-blocking diagnostics. Compilation succeeded; these are advisory. */
+  warnings: ReadonlyArray<Diagnostic>;
+}
+
+/** A pass may return either a transformed string or a result with warnings. */
+interface PassResult {
+  code: string;
+  warnings: ReadonlyArray<Diagnostic>;
 }
 
 interface PipelineEntry {
   name: string;
-  fn: (src: string, version: VersionInfo) => string;
+  fn: (src: string, version: VersionInfo) => string | PassResult;
   /** If set, only run when version.resolved >= minVersion. */
   minVersion?: string;
 }
@@ -59,6 +68,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // depCheck: transitivity enforcement for reads {} / writes {} annotations (DEP001 / DEP002).
   // Header-level like intentCheck and effCheck — runs before the body walk.
   { name: "depCheck", fn: passDepCheck, minVersion: "0.9" },
+  // capAssert: non-blocking warning (CAP003) when a `uses {}` claim appears on
+  // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
+  // Runs before capCheck so capCheck still validates the claim's content.
+  { name: "capAssert", fn: passCapAssert, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
@@ -91,13 +104,20 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
     if (atLeast(version.resolved, "0.4")) assertCanonical(source);
     let code = versioned;
     const forms: string[] = [];
+    const allWarnings: Diagnostic[] = [];
     for (const pass of PASS_PIPELINE) {
       if (pass.minVersion && !atLeast(version.resolved, pass.minVersion)) continue;
-      const next = pass.fn(code, version);
-      if (next !== code) forms.push(pass.name);
-      code = next;
+      const result = pass.fn(code, version);
+      if (typeof result === "string") {
+        if (result !== code) forms.push(pass.name);
+        code = result;
+      } else {
+        if (result.code !== code) forms.push(pass.name);
+        code = result.code;
+        allWarnings.push(...result.warnings);
+      }
     }
-    return { code, forms, version };
+    return { code, forms, version, warnings: allWarnings };
   } catch (e) {
     // Attach the filename to every diagnostic the pipeline emitted so callers
     // and the CLI's JSON output point to the right file. Errors that aren't
