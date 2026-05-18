@@ -49,10 +49,11 @@ export function passUnsafe(src: string): string {
     const k = skipTrivia(tokens, j + 1);
     const open = tokens[k];
     // Declaration-level `unsafe "reason" fn` — the fn keyword (or `async fn` before it)
-    // follows the reason string instead of `{`. Check this BEFORE validating the reason
-    // string so that `unsafe "" fn ...` is handled entirely by passFn (which emits the
-    // correct declaration-level UNS002 with the right rewrite hint) rather than the
-    // block-level UNS002 message here.
+    // follows the reason string instead of `{`. Skip it here BEFORE validating the
+    // reason string: declaration-level reasons are owned by passFn. passFn emits the
+    // correct declaration-level UNS002 (with the right rewrite hint) for an empty
+    // `unsafe "" fn` reason at ?bs 0.5+; earlier pins parse it without enforcement.
+    // Either way, the block-level UNS002 message here must not fire on a fn prefix.
     if (open && open.kind === "keyword" && open.keyword === "fn") {
       continue;
     }
