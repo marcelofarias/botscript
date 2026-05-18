@@ -233,6 +233,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: merge into one clause\n" +
       "fn load(id: string) reads { cache, db } -> string = id",
   },
+  DEP001: {
+    code: "DEP001",
+    title: "fn transitively reads a resource category not declared in its header",
+    rule:
+      "if fn A calls fn B (directly or transitively) and B declares `reads { x }`, " +
+      "then A must also declare `reads { x }` — the reads surface must be complete at every call layer",
+    idiom:
+      "a fn's reads declaration is the union of its own declared reads plus the reads of everything it calls; " +
+      "add the missing label to the caller's `reads { }` clause",
+    rewrite:
+      "fn name(...) reads { …existing, missing } -> ...",
+    example:
+      "// before — loadUser calls getFromCache which reads { cache }, but loadUser doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+      "fn loadUser(id: string) -> string = getFromCache(id)  // DEP001\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+      "fn loadUser(id: string) reads { cache } -> string = getFromCache(id)",
+  },
+  DEP002: {
+    code: "DEP002",
+    title: "fn transitively writes a resource category not declared in its header",
+    rule:
+      "if fn A calls fn B (directly or transitively) and B declares `writes { x }`, " +
+      "then A must also declare `writes { x }` — the writes surface must be complete at every call layer",
+    idiom:
+      "a fn's writes declaration is the union of its own declared writes plus the writes of everything it calls; " +
+      "add the missing label to the caller's `writes { }` clause",
+    rewrite:
+      "fn name(...) writes { …existing, missing } -> ...",
+    example:
+      "// before — recordEvent calls updateMetrics which writes { metrics }, but recordEvent doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+      "fn recordEvent(id: string) -> void { updateMetrics(id); }  // DEP002\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+      "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
