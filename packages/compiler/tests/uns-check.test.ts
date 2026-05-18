@@ -38,7 +38,7 @@ describe("UNS005: basic firing", () => {
     const src =
       "?bs 0.9\n" +
       "fn readConfig(path: string) uses { fs } -> string {\n" +
-      "  fs.read(path)\n" +
+      "  fs.readText(path)\n" +
       "}\n";
     expect(() => compile(src)).toThrow("UNS005");
     expect(() => compile(src)).toThrow(/fs\.read/);
@@ -57,7 +57,7 @@ describe("UNS005: basic firing", () => {
     const src =
       "?bs 0.9\n" +
       "fn roll() uses { random } -> number {\n" +
-      "  random.float()\n" +
+      "  random.next()\n" +
       "}\n";
     expect(() => compile(src)).toThrow("UNS005");
   });
@@ -101,11 +101,11 @@ describe("UNS005: suppressed by match", () => {
     expect(() => compile(src)).not.toThrow("UNS005");
   });
 
-  it("does not fire for fs.read in a match", () => {
+  it("does not fire for fs.readText in a match", () => {
     const src =
       "?bs 0.9\n" +
       "fn readFile(path: string) uses { fs } -> Result<string, string> {\n" +
-      "  match fs.read(path) {\n" +
+      "  match fs.readText(path) {\n" +
       "    Ok(contents) => ok(contents),\n" +
       "    Err(e) => err(e),\n" +
       "  }\n" +
@@ -128,11 +128,11 @@ describe("UNS005: suppressed by unsafe block", () => {
     expect(() => compile(src)).not.toThrow("UNS005");
   });
 
-  it("does not fire for fs.read inside unsafe", () => {
+  it("does not fire for fs.readText inside unsafe", () => {
     const src =
       "?bs 0.9\n" +
       "fn readConfig(path: string) uses { fs } -> string {\n" +
-      '  unsafe "config file is always valid JSON" { fs.read(path) }\n' +
+      '  unsafe "config file is always valid JSON" { fs.readText(path) }\n' +
       "}\n";
     expect(() => compile(src)).not.toThrow("UNS005");
   });
@@ -232,7 +232,7 @@ describe("UNS005: multiple calls in one fn", () => {
       "?bs 0.9\n" +
       "fn doWork(url: string, path: string) uses { net, fs } -> string {\n" +
       "  const a = http.get(url);\n" +
-      "  const b = fs.read(path);\n" +
+      "  const b = fs.readText(path);\n" +
       "  a\n" +
       "}\n";
     // Should throw UNS005 (first violation, same as other passes)
@@ -244,7 +244,7 @@ describe("UNS005: multiple calls in one fn", () => {
       "?bs 0.9\n" +
       "fn doWork(url: string, path: string) uses { net, fs } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(a) => match fs.read(path) {\n" +
+      "    Ok(a) => match fs.readText(path) {\n" +
       "      Ok(b) => ok(a),\n" +
       "      Err(e) => err(e),\n" +
       "    },\n" +

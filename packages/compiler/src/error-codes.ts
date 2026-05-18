@@ -148,11 +148,11 @@ const E: Record<string, ErrorCodeEntry> = {
     title: "external call without declared result contract",
     rule:
       "a stdlib capability call (http.x, fs.x, time.x, etc.) must have a declared result contract " +
-      "at the call site — either wrap in `match` to handle all cases exhaustively, or use " +
+      "at the call site — either wrap in `match` to make the success and failure paths explicit, or use " +
       "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation",
     idiom:
       "prefer `match ns.method(...) { Ok(v) => ..., Err(e) => ... }` — it makes both success " +
-      "and failure paths explicit and compiler-checked; use `unsafe` only when you are certain " +
+      "and failure paths explicit; use `unsafe` only when you are certain " +
       "about the shape and want to document why",
     rewrite:
       'match ns.method(...) { Ok(value) => { /* use value */ }, Err(e) => { /* handle */ } }',
@@ -163,7 +163,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "  const data = http.get(`/users/${id}`);\n" +
       "  data\n" +
       "}\n\n" +
-      "// after — result contract via exhaustive match\n" +
+      "// after — result contract via match\n" +
       "?bs 0.9\n" +
       "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(`/users/${id}`) {\n" +
