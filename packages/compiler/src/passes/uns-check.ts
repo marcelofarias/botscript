@@ -29,13 +29,15 @@
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import type { Token } from "../parser/lex.js";
-import { parseFn } from "../parser/parse-fn.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
-/** stdlib namespaces that consume external capabilities. */
+/**
+ * stdlib namespaces that consume external capabilities.
+ * Must stay in sync with STDLIB_TO_CAP in cap-check.ts (the canonical source).
+ */
 const STDLIB_CAPS = new Set(["http", "fs", "time", "random", "stdout", "stderr"]);
 
 interface CharRange {
@@ -57,7 +59,12 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
   // Any stdlib call inside these ranges is suppressed.
   const unsafeRanges: CharRange[] = [];
   collectUnsafeBlockRanges(tokens, unsafeRanges);
-  collectUnsafeFnBodyRanges(tokens, unsafeRanges);
+  // Unsafe fn bodies come from the pre-parsed decls — no re-parsing needed.
+  for (const decl of decls) {
+    if (decl.unsafeReason !== undefined) {
+      unsafeRanges.push({ start: decl.body.start, end: decl.body.end });
+    }
+  }
 
   const innerByDecl = computeNesting(decls);
   const diagnostics: Diagnostic[] = [];
@@ -107,6 +114,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
       const ns = tok.text;
       const member = memberTok.text;
 
+      const closingParen = parenTok.matchedAt !== undefined ? tokens[parenTok.matchedAt] : undefined;
       diagnostics.push({
         code: "UNS005",
         severity: "error",
@@ -114,7 +122,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
         line: loc.line,
         column: loc.column,
         start: tok.start,
-        end: memberTok.end,
+        end: closingParen?.end ?? memberTok.end,
         message:
           `'${ns}.${member}(...)' is an external call with no declared result contract — ` +
           `the return value may be structurally typed but semantically incorrect`,
@@ -130,8 +138,8 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
           `unsafe "I know what ${ns}.${member} returns here" { ${ns}.${member}(...) }`,
       });
 
-      // Advance past the call to avoid redundant hits (e.g. chained calls).
-      i = parenTok.matchedAt ?? parenIdx;
+      // Do not advance past the closing paren — inner stdlib calls in the
+      // argument list (e.g. http.get(fs.readText(path))) must each be flagged.
     }
   }
 
@@ -178,47 +186,18 @@ function collectUnsafeBlockRanges(tokens: Token[], out: CharRange[]): void {
   }
 }
 
-/** Collects char-offset ranges for `unsafe "reason" fn` declaration bodies. */
-function collectUnsafeFnBodyRanges(tokens: Token[], out: CharRange[]): void {
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "unsafe") continue;
-
-    const j = nextSignificant(tokens, i + 1);
-    const reasonTok = tokens[j];
-    if (!reasonTok || reasonTok.kind !== "string") continue;
-
-    const k = nextSignificant(tokens, j + 1);
-    const next = tokens[k];
-    if (!next || next.kind !== "keyword") continue;
-
-    let fnIdx: number;
-    if (next.keyword === "fn") {
-      fnIdx = k;
-    } else if (next.keyword === "async") {
-      const l = nextSignificant(tokens, k + 1);
-      const fnTok = tokens[l];
-      if (!fnTok || fnTok.kind !== "keyword" || fnTok.keyword !== "fn") continue;
-      fnIdx = l;
-    } else {
-      continue;
-    }
-
-    const decl = parseFn(tokens, fnIdx, { allowGenerics: true });
-    if (!decl) continue;
-
-    out.push({ start: decl.body.start, end: decl.body.end });
-    i = decl.tokenEnd - 1;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
  * Returns true when the stdlib call at `callIdx` is the direct subject of a
- * `match` expression. Skips trivia and `await` tokens looking backward.
+ * `match` expression. Skips trivia, `await`, and grouping parens looking
+ * backward. This means all of these are recognized:
+ *   match http.get(url) { ... }
+ *   match await http.get(url) { ... }
+ *   match (http.get(url)) { ... }
+ *   match (await http.get(url)) { ... }
  */
 function isDirectMatchSubject(tokens: Token[], callIdx: number): boolean {
   let i = callIdx - 1;
@@ -237,6 +216,13 @@ function isDirectMatchSubject(tokens: Token[], callIdx: number): boolean {
     // await is transparent — the match still covers the result.
     // Note: await is not in the KEYWORDS set; it lexes as an ident.
     if (t.kind === "ident" && t.text === "await") {
+      i--;
+      continue;
+    }
+    // Opening paren is transparent — match (http.get(url)) is equivalent to
+    // match http.get(url). Walk backward through as many grouping parens as
+    // needed so match (await (http.get(url))) is also recognized.
+    if (t.kind === "open" && t.text === "(") {
       i--;
       continue;
     }
@@ -272,13 +258,19 @@ function insideAnyChar(offset: number, ranges: CharRange[]): boolean {
 }
 
 function computeNesting(decls: FnDecl[]): Map<FnDecl, FnDecl[]> {
-  const result = new Map<FnDecl, FnDecl[]>();
-  for (const outer of decls) {
-    const inner = decls.filter(
-      (d) => d !== outer && d.tokenStart >= outer.tokenStart && d.tokenEnd <= outer.tokenEnd,
-    );
-    inner.sort((a, b) => a.tokenStart - b.tokenStart);
-    result.set(outer, inner);
+  const inner = new Map<FnDecl, FnDecl[]>();
+  for (const d of decls) inner.set(d, []);
+
+  const sorted = [...decls].sort((a, b) => a.tokenStart - b.tokenStart);
+  const stack: FnDecl[] = [];
+
+  for (const d of sorted) {
+    while (stack.length > 0 && stack[stack.length - 1]!.tokenEnd <= d.tokenStart) {
+      stack.pop();
+    }
+    for (const ancestor of stack) inner.get(ancestor)!.push(d);
+    stack.push(d);
   }
-  return result;
+
+  return inner;
 }

@@ -86,7 +86,7 @@ describe("UNS005: suppressed by match", () => {
       "    Err(e) => err(e),\n" +
       "  }\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 
   it("does not fire when await-wrapped call is the match subject", () => {
@@ -98,7 +98,7 @@ describe("UNS005: suppressed by match", () => {
       "    Err(e) => err(e),\n" +
       "  }\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 
   it("does not fire for fs.readText in a match", () => {
@@ -110,7 +110,19 @@ describe("UNS005: suppressed by match", () => {
       "    Err(e) => err(e),\n" +
       "  }\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when the call is parenthesized inside match", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match (http.get(url)) {\n" +
+      "    Ok(data) => ok(data),\n" +
+      "    Err(e) => err(e),\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
   });
 });
 
@@ -125,7 +137,7 @@ describe("UNS005: suppressed by unsafe block", () => {
       "fn fetchData(url: string) uses { net } -> string {\n" +
       '  unsafe "I know http.get returns a plain string here" { http.get(url) }\n' +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 
   it("does not fire for fs.readText inside unsafe", () => {
@@ -134,7 +146,7 @@ describe("UNS005: suppressed by unsafe block", () => {
       "fn readConfig(path: string) uses { fs } -> string {\n" +
       '  unsafe "config file is always valid JSON" { fs.readText(path) }\n' +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 });
 
@@ -149,7 +161,7 @@ describe("UNS005: suppressed by unsafe fn declaration", () => {
       'unsafe "known adapter — callers trust the return type" fn fetchRaw(url: string) uses { net } -> string {\n' +
       "  http.get(url)\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 });
 
@@ -165,7 +177,7 @@ describe("UNS005: version gate", () => {
       "  const data = http.get(url);\n" +
       "  data\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 
   it("does not fire at ?bs 0.7", () => {
@@ -174,7 +186,7 @@ describe("UNS005: version gate", () => {
       "fn fetchData(url: string) uses { net } -> string {\n" +
       "  http.get(url)\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 });
 
@@ -218,7 +230,7 @@ describe("UNS005: inner fn exclusion", () => {
       "    Err(e) => err(e),\n" +
       "  }\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 });
 
@@ -251,6 +263,6 @@ describe("UNS005: multiple calls in one fn", () => {
       "    Err(e) => err(e),\n" +
       "  }\n" +
       "}\n";
-    expect(() => compile(src)).not.toThrow("UNS005");
+    expect(() => compile(src)).not.toThrow();
   });
 });
