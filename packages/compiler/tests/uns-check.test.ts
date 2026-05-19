@@ -235,6 +235,42 @@ describe("UNS005: inner fn exclusion", () => {
 });
 
 // ---------------------------------------------------------------------------
+// stdout / stderr namespaces
+// ---------------------------------------------------------------------------
+
+describe("UNS005: stdout and stderr namespaces", () => {
+  it("fires on a bare stdout call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn logMsg(msg: string) uses { stdout } -> string {\n" +
+      "  const r = stdout.write(msg);\n" +
+      "  msg\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("fires on a bare stderr call", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn logErr(msg: string) uses { stderr } -> string {\n" +
+      "  const r = stderr.write(msg);\n" +
+      "  msg\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+
+  it("suppresses stdout call inside unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn logMsg(msg: string) uses { stdout } -> string {\n" +
+      "  unsafe \"fire and forget\" { stdout.write(msg) }\n" +
+      "  msg\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Multiple calls
 // ---------------------------------------------------------------------------
 

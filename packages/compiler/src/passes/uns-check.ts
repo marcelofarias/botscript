@@ -9,6 +9,7 @@
  *             - The call is the direct subject of a `match` expression
  *               (`match http.get(url) { ... }`).
  *             - The call is inside an `unsafe "<reason>" { ... }` block.
+ *             - The call is inside an `unsafe "<reason>" fn` body.
  *
  *           This is compiler-inferred (not programmer-applied) — unlike
  *           UNS001-UNS004 which fire on malformed `unsafe` blocks.
@@ -20,7 +21,9 @@
  *             1. Wrap in `match` to handle both Ok and Err arms.
  *             2. Use `unsafe "<reason>" { ... }` to accept the uncertainty
  *                with a written explanation.
- *             3. (Future) Declare `ensures: "..."` on the callee — allows
+ *             3. Declare the containing fn as `unsafe "<reason>" fn` when
+ *                the entire fn body is the intended escape hatch.
+ *             4. (Future) Declare `ensures: "..."` on the callee — allows
  *                the compiler to verify the output contract structurally.
  *
  *   pre-0.9  This pass is not run.

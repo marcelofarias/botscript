@@ -151,8 +151,9 @@ const E: Record<string, ErrorCodeEntry> = {
     title: "external call without declared result contract",
     rule:
       "a stdlib capability call (http.x, fs.x, time.x, etc.) must have a declared result contract " +
-      "at the call site — either wrap in `match` to make the success and failure paths explicit, or use " +
-      "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation",
+      "at the call site — wrap in `match` to make success and failure paths explicit, use " +
+      "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation, or " +
+      "declare the containing fn as `unsafe \"<reason>\" fn` when the entire body is the escape hatch",
     idiom:
       "prefer `match ns.method(...) { ok { value } -> ...\n  err { error } -> ... }` — it makes both success " +
       "and failure paths explicit; use `unsafe` only when you are certain " +

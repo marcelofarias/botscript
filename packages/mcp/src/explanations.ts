@@ -204,7 +204,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`match await http.get(url)` is also accepted (await is transparent).\n\n" +
       "2. **unsafe block** — `unsafe \"I know what X returns\" { ns.method(...) }` accepts the " +
       "uncertainty with a written explanation. The reason becomes the review record on the call.\n\n" +
-      "3. **(Future) ensures annotation** — when `ensures: \"...\"` lands in a future version, " +
+      "3. **unsafe fn** — `unsafe \"reason\" fn name(...) -> T { ns.method(...) }` suppresses UNS005 " +
+      "for the entire fn body. Use when the fn itself is the module's single safe adapter for the call.\n\n" +
+      "4. **(Future) ensures annotation** — when `ensures: \"...\"` lands in a future version, " +
       "declaring it on the callee's header will suppress UNS005 for all call sites.\n\n" +
       "UNS005 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
     example: {
