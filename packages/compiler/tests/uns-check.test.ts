@@ -140,6 +140,21 @@ describe("UNS005: suppressed by match", () => {
       "}\n";
     expect(() => compile(src)).toThrow("UNS005");
   });
+
+  it("fires when the call is part of a larger expression in the match scrutinee", () => {
+    // `http.get(url) + "x"` — the stdlib call is inside a binary expression,
+    // not the direct match subject. The forward scan sees `+` after the closing
+    // paren and correctly rejects suppression.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      "  match (http.get(url) + \"x\") {\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -269,7 +284,7 @@ describe("UNS005: stdout and stderr namespaces", () => {
     const src =
       "?bs 0.9\n" +
       "fn logErr(msg: string) uses { stderr } -> string {\n" +
-      "  const r = stderr.write(msg);\n" +
+      "  const r = stderr.println(msg);\n" +
       "  msg\n" +
       "}\n";
     expect(() => compile(src)).toThrow("UNS005");

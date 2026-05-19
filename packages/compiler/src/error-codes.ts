@@ -155,9 +155,9 @@ const E: Record<string, ErrorCodeEntry> = {
       "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation, or " +
       "declare the containing fn as `unsafe \"<reason>\" fn` when the entire body is the escape hatch",
     idiom:
-      "prefer `match ns.method(...) { ok { value } -> ...\n  err { error } -> ... }` — it makes both success " +
-      "and failure paths explicit; use `unsafe` only when you are certain " +
-      "about the shape and want to document why",
+      "prefer match over bare stdlib calls — " +
+      "`match ns.method(...)` makes both success and failure paths explicit; " +
+      "use `unsafe` only when you are certain about the shape and want to document why",
     rewrite:
       "match ns.method(...) {\n  ok { value } -> { /* use value */ }\n  err { error } -> { /* handle error */ }\n}",
     example:
