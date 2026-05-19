@@ -152,16 +152,16 @@ export function passDepCheck(src: string, version: VersionInfo): string {
   //    that step 4 then checks against — no explicit skip needed.
   for (const rec of records.values()) {
     // DEP001: reads under-declared.
-    const missingReads = [...rec.transitiveReads.keys()].filter(
-      (l) => !rec.declaredReads.has(l),
-    );
+    const missingReads = [...rec.transitiveReads.keys()]
+      .filter((l) => !rec.declaredReads.has(l))
+      .sort();
     if (missingReads.length > 0) {
       throw mkError(src, rec, "reads", missingReads, rec.transitiveReads);
     }
     // DEP002: writes under-declared.
-    const missingWrites = [...rec.transitiveWrites.keys()].filter(
-      (l) => !rec.declaredWrites.has(l),
-    );
+    const missingWrites = [...rec.transitiveWrites.keys()]
+      .filter((l) => !rec.declaredWrites.has(l))
+      .sort();
     if (missingWrites.length > 0) {
       throw mkError(src, rec, "writes", missingWrites, rec.transitiveWrites);
     }
@@ -334,8 +334,8 @@ function mkError(
 
   const proposed =
     kind === "reads"
-      ? [...new Set([...rec.declaredReads, ...missingLabels])].join(", ")
-      : [...new Set([...rec.declaredWrites, ...missingLabels])].join(", ");
+      ? [...new Set([...rec.declaredReads, ...missingLabels])].sort().join(", ")
+      : [...new Set([...rec.declaredWrites, ...missingLabels])].sort().join(", ");
 
   const otherMissing = missingLabels.slice(1);
   const otherTail =
