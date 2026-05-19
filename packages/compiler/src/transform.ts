@@ -8,6 +8,7 @@ import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passCapAssert } from "./passes/cap-assert.js";
 import { passDepCheck } from "./passes/dep-check.js";
+import { passThrCheck } from "./passes/thr-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
 import { passMatch } from "./passes/match.js";
@@ -68,6 +69,8 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // depCheck: transitivity enforcement for reads {} / writes {} annotations (DEP001 / DEP002).
   // Header-level like intentCheck and effCheck — runs before the body walk.
   { name: "depCheck", fn: passDepCheck, minVersion: "0.9" },
+  // thrCheck: transitivity enforcement for throws {} annotations (THR001).
+  { name: "thrCheck", fn: passThrCheck, minVersion: "0.9" },
   // capAssert: non-blocking warning (CAP003) when a `uses {}` claim appears on
   // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
   // Runs before capCheck so capCheck still validates the claim's content.

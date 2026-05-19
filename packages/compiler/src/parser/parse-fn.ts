@@ -75,6 +75,12 @@ export interface FnDecl {
    */
   writes?: string[];
   /**
+   * Optional declarative exception list, e.g. `throws { HttpError, TimeoutError }`. Each
+   * element is an ident naming an exception type the function (or its callees) may throw.
+   * Transitively enforced from `?bs 0.9` (THR001). Stripped from TS output.
+   */
+  throws?: string[];
+  /**
    * Optional machine-checkable intent string, e.g. `"pure"`, `"idempotent"`.
    * Parsed from `intent: "<value>"` between the `uses {}` clause and `->` in
    * the function header. Present only when the `intent:` clause is written;
@@ -151,8 +157,8 @@ export interface ParseFnOptions {
   allowGenerics?: boolean;
   /**
    * Source text. When provided, parseFn throws a SYN001 BotscriptError on
-   * duplicate header clauses (reads/writes/intent) and on invalid label
-   * tokens inside reads/writes lists, rather than silently using first-wins.
+   * duplicate header clauses (reads/writes/throws/intent) and on invalid label
+   * tokens inside reads/writes/throws lists, rather than silently using first-wins.
    */
   src?: string;
 }
@@ -165,8 +171,8 @@ export interface ParseFnOptions {
  * Returns `null` when `idx` does not begin a valid fn declaration (the caller
  * should skip it). Throws `BotscriptError` (SYN001) when `opts.src` is
  * provided and the declaration has a structural error: duplicate header clauses
- * (`reads`, `writes`, `intent`), or a non-identifier label inside `reads {}`
- * or `writes {}`.
+ * (`reads`, `writes`, `throws`, `intent`), or a non-identifier label inside `reads {}`,
+ * `writes {}`, or `throws {}`.
  */
 export function parseFn(
   tokens: Token[],
@@ -258,25 +264,27 @@ export function parseFn(
     i = skipTrivia(tokens, i);
   }
 
-  // Optional `reads { ... }`, `writes { ... }`, and `intent: "<value>"` in any
+  // Optional `reads { ... }`, `writes { ... }`, `throws { ... }`, and `intent: "<value>"` in any
   // order between `uses {}` and `->`. All are metadata: stripped from TS output.
   let reads: string[] | undefined;
   let writes: string[] | undefined;
+  let throws_: string[] | undefined;
   let intent: string | undefined;
   let intentStart: number | undefined;
-  // Loop until we hit something that isn't reads/writes/intent.
+  // Loop until we hit something that isn't reads/writes/throws/intent.
   for (;;) {
     const tok = tokens[i];
-    if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes")) {
+    if (tok?.kind === "ident" && (tok.text === "reads" || tok.text === "writes" || tok.text === "throws")) {
       const keyword = tok.text;
       const isDuplicate = (keyword === "reads" && reads !== undefined) ||
-        (keyword === "writes" && writes !== undefined);
+        (keyword === "writes" && writes !== undefined) ||
+        (keyword === "throws" && throws_ !== undefined);
       const savedI = i;
       i++;
       i = skipTrivia(tokens, i);
       const open = tokens[i];
       if (!open || open.kind !== "open" || open.text !== "{" || open.matchedAt === undefined) {
-        // Not a reads/writes block — backtrack and stop.
+        // Not a reads/writes/throws block — backtrack and stop.
         i = savedI;
         break;
       }
@@ -289,8 +297,10 @@ export function parseFn(
         const items = parseLabelList(tokens, i + 1, close, opts.src);
         if (keyword === "reads") {
           reads = items;
-        } else {
+        } else if (keyword === "writes") {
           writes = items;
+        } else {
+          throws_ = items;
         }
       }
       i = close + 1;
@@ -495,6 +505,7 @@ export function parseFn(
     capabilities,
     reads,
     writes,
+    throws: throws_,
     intent,
     intentStart,
     unsafeReason,
@@ -589,7 +600,7 @@ function parseLabelList(tokens: Token[], from: number, to: number, src?: string)
       continue;
     }
     // Non-identifier, non-separator token inside a reads/writes list.
-    throwSyn001(src, t, `invalid label in reads/writes list — labels must be plain identifiers (e.g. \`cache\`, \`db\`), not ${JSON.stringify(t.text)}`);
+    throwSyn001(src, t, `invalid label in reads/writes/throws list — labels must be plain identifiers (e.g. \`cache\`, \`HttpError\`), not ${JSON.stringify(t.text)}`);
     // No src: silently ignore (backward compat for direct callers without src).
   }
   return labels;
