@@ -583,10 +583,10 @@ function parseCapList(tokens: Token[], from: number, to: number): string[] {
 }
 
 /**
- * Parse a user-defined label list inside `reads { ... }` or `writes { ... }`.
- * Labels must be plain identifiers. If `src` is provided and a non-identifier
- * token is found, throws SYN001 so users get a clear error instead of silently
- * receiving an empty or truncated list (e.g. `reads { "cache" }` → empty).
+ * Parse a user-defined label list inside `reads { ... }`, `writes { ... }`, or
+ * `throws { ... }`. Labels must be plain identifiers. If `src` is provided and
+ * a non-identifier token is found, throws SYN001 so users get a clear error
+ * instead of silently receiving an empty or truncated list.
  */
 function parseLabelList(tokens: Token[], from: number, to: number, src?: string): string[] {
   const labels: string[] = [];
