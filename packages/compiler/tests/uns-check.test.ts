@@ -124,6 +124,22 @@ describe("UNS005: suppressed by match", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("fires when the call follows a parenthesized match but is not its subject", () => {
+    // A match (x) { ... } block appears earlier in the fn, so there's a
+    // `match (` in the token stream before the bare http.get call. The backward
+    // scan from http must NOT cross statement boundaries and incorrectly conclude
+    // this call is suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string, x: number) uses { net } -> string {\n" +
+      "  match (x) {\n" +
+      "    ok { v } -> v\n" +
+      "    _ -> http.get(url)\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
 });
 
 // ---------------------------------------------------------------------------

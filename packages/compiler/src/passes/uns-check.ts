@@ -36,12 +36,9 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
+import { STDLIB_TO_CAP } from "./cap-check.js";
 
-/**
- * stdlib namespaces that consume external capabilities.
- * Must stay in sync with STDLIB_TO_CAP in cap-check.ts (the canonical source).
- */
-const STDLIB_CAPS = new Set(["http", "fs", "time", "random", "stdout", "stderr"]);
+const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
 interface CharRange {
   start: number;
@@ -110,7 +107,9 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
       // Suppression 2: direct subject of a `match` expression.
       // Skips trivia and `await` — `match await http.get(url) { }` is fine.
-      if (isDirectMatchSubject(tokens, i)) continue;
+      // Pass the closing-paren index so the forward check can verify the call
+      // is the full scrutinee (not part of a larger expression like `http.get(url) + "x"`).
+      if (isDirectMatchSubject(tokens, i, parenTok.matchedAt)) continue;
 
       const entry = getErrorCode("UNS005")!;
       const loc = locationOf(src, tok.start);
@@ -201,8 +200,14 @@ function collectUnsafeBlockRanges(tokens: Token[], out: CharRange[]): void {
  *   match await http.get(url) { ... }
  *   match (http.get(url)) { ... }
  *   match (await http.get(url)) { ... }
+ *
+ * When `closingParenIdx` is provided, also verifies (forward) that the token
+ * immediately after the call's closing paren (skipping any grouping `)` from
+ * `match (...)`) is the `{` opening match arms. This prevents false suppression
+ * for `match (http.get(url) + "x") { }` where the call is part of a larger
+ * scrutinee expression.
  */
-function isDirectMatchSubject(tokens: Token[], callIdx: number): boolean {
+function isDirectMatchSubject(tokens: Token[], callIdx: number, closingParenIdx?: number): boolean {
   let i = callIdx - 1;
   while (i >= 0) {
     const t = tokens[i];
@@ -229,7 +234,35 @@ function isDirectMatchSubject(tokens: Token[], callIdx: number): boolean {
       i--;
       continue;
     }
-    return t.kind === "keyword" && t.keyword === "match";
+    if (!(t.kind === "keyword" && t.keyword === "match")) return false;
+    break;
+  }
+  if (i < 0) return false;
+
+  // Forward check: the token(s) after the call's closing paren must be `{`.
+  // Skip closing grouping parens (from `match (http.get(url)) { }` forms).
+  // If the next sig token is anything else (e.g. `+`), the call is part of a
+  // larger expression and is not the direct match subject.
+  if (closingParenIdx === undefined) return true; // can't verify forward; trust backward
+  let j = closingParenIdx + 1;
+  while (j < tokens.length) {
+    const t = tokens[j];
+    if (!t) { j++; continue; }
+    if (
+      t.kind === "whitespace" ||
+      t.kind === "newline" ||
+      t.kind === "lineComment" ||
+      t.kind === "blockComment"
+    ) {
+      j++;
+      continue;
+    }
+    // A closing grouping paren is transparent (from `match (http.get(url)) { }`).
+    if (t.kind === "close" && t.text === ")") {
+      j++;
+      continue;
+    }
+    return t.kind === "open" && t.text === "{";
   }
   return false;
 }
