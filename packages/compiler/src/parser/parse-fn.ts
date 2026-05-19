@@ -61,15 +61,17 @@ export interface FnDecl {
   /**
    * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
    * element is an ident naming a resource category the function reads from.
-   * Metadata-only in the first version — stripped from TS output, not yet
-   * enforced transitively. Introduced in `?bs 0.8`.
+   * Stripped from TS output; transitively enforced across same-file static calls
+   * from `?bs 0.9` via DEP001. External, dynamic, and higher-order calls are not tracked.
+   * Introduced in `?bs 0.8`.
    */
   reads?: string[];
   /**
    * Optional declarative write-dependency list, e.g. `writes { metrics, db }`. Each
    * element is an ident naming a resource category the function writes to.
-   * Metadata-only in the first version — stripped from TS output, not yet
-   * enforced transitively. Introduced in `?bs 0.8`.
+   * Stripped from TS output; transitively enforced across same-file static calls
+   * from `?bs 0.9` via DEP002. External, dynamic, and higher-order calls are not tracked.
+   * Introduced in `?bs 0.8`.
    */
   writes?: string[];
   /**
