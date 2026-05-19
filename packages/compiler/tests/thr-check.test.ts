@@ -86,6 +86,21 @@ describe("THR001: throws under-declared (0.9+)", () => {
     expect(() => compile(src)).toThrow(/loadUser/);
   });
 
+  it("shows full 3-hop path in error message when the failing fn is defined first", () => {
+    // loadAll is defined before fetchUser and callApi, so it is validated first.
+    // Its path is loadAll -> fetchUser -> callApi (2 hops from the declaring fn),
+    // exercising the multi-hop displayPath branch in mkError.
+    const src =
+      "?bs 0.9\n" +
+      "fn loadAll() -> string = fetchUser()\n" +
+      "fn fetchUser() -> string = callApi()\n" +
+      "fn callApi() throws { NetworkError } -> string = \"x\"\n";
+    expect(() => compile(src)).toThrow("THR001");
+    expect(() => compile(src)).toThrow(/loadAll/);
+    expect(() => compile(src)).toThrow(/transitively/);
+    expect(() => compile(src)).toThrow(/fetchUser.*callApi/);
+  });
+
   it("passes when the caller declares the missing throws label", () => {
     const src =
       "?bs 0.9\n" +

@@ -599,7 +599,7 @@ function parseLabelList(tokens: Token[], from: number, to: number, src?: string)
       labels.push(t.text);
       continue;
     }
-    // Non-identifier, non-separator token inside a reads/writes list.
+    // Non-identifier, non-separator token inside a reads/writes/throws list.
     throwSyn001(src, t, `invalid label in reads/writes/throws list — labels must be plain identifiers (e.g. \`cache\`, \`HttpError\`), not ${JSON.stringify(t.text)}`);
     // No src: silently ignore (backward compat for direct callers without src).
   }
