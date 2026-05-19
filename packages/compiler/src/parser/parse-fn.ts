@@ -268,7 +268,7 @@ export function parseFn(
   // order between `uses {}` and `->`. All are metadata: stripped from TS output.
   let reads: string[] | undefined;
   let writes: string[] | undefined;
-  let throws_: string[] | undefined;
+  let throws_: string[] | undefined; // underscore: `throws` is a JS reserved word; FnDecl field is `throws` (unsuffixed)
   let intent: string | undefined;
   let intentStart: number | undefined;
   // Loop until we hit something that isn't reads/writes/throws/intent.

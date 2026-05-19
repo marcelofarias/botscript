@@ -19,6 +19,10 @@
  * Only same-file call resolution is performed (same as cap-check / dep-check).
  * Over-declaration is intentionally NOT checked — a caller may conservatively
  * declare more exception types than it strictly needs.
+ *
+ * NOTE: This pass enforces transitivity only — it does NOT verify that a fn's
+ * body actually throws the types it declares (a leaf fn can lie). Body-level
+ * soundness requires the effect inference pass; see issue #14.
  */
 
 import { BotscriptError } from "../diagnostics.js";

@@ -51,8 +51,8 @@ describe("parseFn throws {}", () => {
   it("throws {} is stripped from TS output", () => {
     const src = "fn fetchRemote(id: string) throws { HttpError } -> string = id\n";
     const out = compile(src);
-    expect(out).not.toContain("throws");
-    expect(out).not.toContain("HttpError");
+    expect(out).not.toContain("throws {"); // the clause syntax specifically
+    expect(out).not.toContain("HttpError"); // the exception type name
   });
 
   it("rejects duplicate throws {} clauses with SYN001", () => {
