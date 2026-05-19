@@ -245,8 +245,8 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN001",
     title: "duplicate or invalid fn header clause",
     rule:
-      "each fn header clause (reads {}, writes {}, intent:) may appear at most once; " +
-      "labels inside reads/writes must be plain identifiers, not quoted strings",
+      "each fn header clause (reads {}, writes {}, throws {}, intent:) may appear at most once; " +
+      "labels inside reads/writes/throws must be plain identifiers, not quoted strings",
     idiom:
       "declare each resource dependency or intent claim exactly once; " +
       "merge duplicate lists rather than repeating the clause",
