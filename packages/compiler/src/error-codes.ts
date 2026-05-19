@@ -385,6 +385,32 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn fetchRemote(id: string) throws { HttpError } -> string = id\n" +
       "fn loadUser(id: string) throws { HttpError } -> string = fetchRemote(id)",
   },
+  THR002: {
+    code: "THR002",
+    title: "fn body constructs an error type not present in its throws declaration",
+    rule:
+      "if a fn body contains `err(TypeName(...))` or `err(new TypeName(...))` where TypeName " +
+      "(CapCase ident) is not in the fn's own `throws { }` set, the fn is producing an error " +
+      "callers cannot match — they will never see a TypeName arm",
+    idiom:
+      "add the constructed error type to the fn's `throws { }` clause so callers can exhaustively match it; " +
+      "indirect patterns like `err(e)` are out of scope — only direct constructor calls are checked",
+    rewrite:
+      "fn name(...) throws { …existing, UndeclaredError } -> ...",
+    example:
+      "// before — parseConfig constructs NetworkError but declares throws { ParseError }\n" +
+      "?bs 0.9\n" +
+      "fn parseConfig(s: string) throws { ParseError } -> Result<string, string> {\n" +
+      "  if (bad) err(NetworkError(\"timed out\"))  // THR002: NetworkError not declared\n" +
+      "  else ok(s)\n" +
+      "}\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn parseConfig(s: string) throws { ParseError, NetworkError } -> Result<string, string> {\n" +
+      "  if (bad) err(NetworkError(\"timed out\"))\n" +
+      "  else ok(s)\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

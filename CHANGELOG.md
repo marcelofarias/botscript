@@ -7,6 +7,20 @@ goes behind a new pin.
 ## ?bs 0.9 — unreleased
 
 ### Added
+- **THR001 — `throws {}` transitivity enforcement.**
+  From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
+  file) and B declares `throws { X }`, then A must also declare `throws { X }`.
+  The rule applies transitively to any call depth. Reading A's header now tells
+  you the complete exception surface without tracing the call graph manually.
+  Over-declaration is always allowed (conservative headers are harmless).
+
+- **THR002 — undeclared error type construction.**
+  From `?bs 0.9`, the compiler fires when a fn body contains
+  `err(TypeName(...))` or `err(new TypeName(...))` where TypeName (CapCase
+  ident) is absent from the fn's own `throws { }` clause. Catches the case
+  where a fn produces an error type its callers cannot match. Indirect
+  patterns (`err(e)` where `e`'s type is inferred) are out of scope.
+
 - **DEP001 / DEP002 — `reads {}` / `writes {}` transitivity enforcement.**
   From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
   file) and B declares `reads { x }` (or `writes { x }`), then A must also
