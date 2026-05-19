@@ -1,7 +1,8 @@
 /**
- * Tests for throws {} transitivity enforcement (?bs 0.9+).
+ * Tests for throws {} enforcement (?bs 0.9+).
  *
  * THR001: fn A calls fn B which throws { X }, but A doesn't declare throws { X }.
+ * THR002: fn body constructs err(TypeName(...)) where TypeName is not in throws {}.
  */
 
 import { describe, expect, it } from "vitest";
@@ -171,6 +172,124 @@ describe("THR001: throws under-declared (0.9+)", () => {
       "?bs 0.9\n" +
       "fn fetchRemote(id: string) reads { cache } throws { HttpError } -> string = id\n" +
       "fn loadUser(id: string) reads { cache } throws { HttpError } -> string = fetchRemote(id)\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THR002: undeclared error construction
+// ---------------------------------------------------------------------------
+
+describe("THR002: body constructs undeclared error type (0.9+)", () => {
+  it("fires when body calls err(CapCase(...)) not in throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseConfig(s: string) throws { ParseError } -> Result<string, string> {\n" +
+      "  if (bad) err(NetworkError(\"timed out\"))\n" +
+      "  else ok(s)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+    expect(() => compile(src)).toThrow(/NetworkError/);
+  });
+
+  it("fires when body calls err(CapCase) bare ref not in throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn build(s: string) -> Result<string, string> {\n" +
+      "  if (bad) err(BuildError)\n" +
+      "  else ok(s)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+    expect(() => compile(src)).toThrow(/BuildError/);
+  });
+
+  it("fires when body calls err(new CapCase(...)) not in throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn connect(url: string) throws { TimeoutError } -> Result<string, string> {\n" +
+      "  if (bad) err(new NetworkError(\"conn refused\"))\n" +
+      "  else ok(url)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+    expect(() => compile(src)).toThrow(/NetworkError/);
+  });
+
+  it("does not fire when the error type is declared in throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseConfig(s: string) throws { ParseError } -> Result<string, string> {\n" +
+      "  if (bad) err(ParseError(\"invalid\"))\n" +
+      "  else ok(s)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire for lowercase err(e) patterns (indirect, out of scope)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn wrap(s: string) -> Result<string, string> {\n" +
+      "  const e = \"something failed\"\n" +
+      "  err(e)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when the fn has no throws {} but body uses err(lowercase)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fail(s: string) -> Result<string, string> = err(s)\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn parseConfig(s: string) throws { ParseError } -> Result<string, string> {\n" +
+      "  if (bad) err(NetworkError(\"timed out\"))\n" +
+      "  else ok(s)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire for err as a property access (obj.err(...))", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn handle(logger: { err: (x: string) => void }, s: string) -> string {\n" +
+      "  logger.err(BadInput(\"oops\"))\n" +
+      "  s\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when declared throws covers multiple error types including the constructed one", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) throws { HttpError, NetworkError } -> Result<string, string> {\n" +
+      "  if (slow) err(NetworkError(\"timeout\"))\n" +
+      "  else err(HttpError(\"404\"))\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("includes the undeclared type name in the error message", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parse(s: string) -> Result<string, string> {\n" +
+      "  err(SyntaxError(\"bad input\"))\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow(/SyntaxError/);
+    expect(() => compile(src)).toThrow(/THR002/);
+  });
+
+  it("does not fire for err call inside an inner fn that itself declares the type", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn outer(s: string) -> string {\n" +
+      "  fn inner(x: string) throws { ParseError } -> Result<string, string> {\n" +
+      "    err(ParseError(\"bad\"))\n" +
+      "  }\n" +
+      "  s\n" +
+      "}\n";
     expect(() => compile(src)).not.toThrow();
   });
 });
