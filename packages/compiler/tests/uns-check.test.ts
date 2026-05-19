@@ -82,8 +82,8 @@ describe("UNS005: suppressed by match", () => {
       "?bs 0.9\n" +
       "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
@@ -94,8 +94,8 @@ describe("UNS005: suppressed by match", () => {
       "?bs 0.9\n" +
       "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
       "  match await http.get(url) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
@@ -106,8 +106,8 @@ describe("UNS005: suppressed by match", () => {
       "?bs 0.9\n" +
       "fn readFile(path: string) uses { fs } -> Result<string, string> {\n" +
       "  match fs.readText(path) {\n" +
-      "    Ok(contents) => ok(contents),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
@@ -118,8 +118,8 @@ describe("UNS005: suppressed by match", () => {
       "?bs 0.9\n" +
       "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
       "  match (http.get(url)) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
@@ -204,8 +204,8 @@ describe("UNS005: inner fn exclusion", () => {
       "  const r = http.get(url);\n" +
       "  fn inner(u: string) uses { net } -> Result<string, string> {\n" +
       "    match http.get(u) {\n" +
-      "      Ok(d) => ok(d),\n" +
-      "      Err(e) => err(e),\n" +
+      "      ok { value } -> ok(value)\n" +
+      "      err { error } -> err(error)\n" +
       "    }\n" +
       "  }\n" +
       "  r\n" +
@@ -218,16 +218,16 @@ describe("UNS005: inner fn exclusion", () => {
       "?bs 0.9\n" +
       "fn outer(url: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(d) => {\n" +
+      "    ok { value } -> {\n" +
       "      fn inner(u: string) uses { net } -> Result<string, string> {\n" +
       "        match http.get(u) {\n" +
-      "          Ok(data) => ok(data),\n" +
-      "          Err(e) => err(e),\n" +
+      "          ok { value } -> ok(value)\n" +
+      "          err { error } -> err(error)\n" +
       "        }\n" +
       "      }\n" +
-      "      ok(d)\n" +
-      "    },\n" +
-      "    Err(e) => err(e),\n" +
+      "      ok(value)\n" +
+      "    }\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
@@ -256,11 +256,11 @@ describe("UNS005: multiple calls in one fn", () => {
       "?bs 0.9\n" +
       "fn doWork(url: string, path: string) uses { net, fs } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(a) => match fs.readText(path) {\n" +
-      "      Ok(b) => ok(a),\n" +
-      "      Err(e) => err(e),\n" +
-      "    },\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> match fs.readText(path) {\n" +
+      "      ok { value } -> ok(value)\n" +
+      "      err { error } -> err(error)\n" +
+      "    }\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();

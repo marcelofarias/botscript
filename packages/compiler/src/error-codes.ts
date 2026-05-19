@@ -79,8 +79,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(`fetch failed: ${e}`),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(`fetch failed: ${error}`)\n" +
       "  }\n" +
       "}",
   },
@@ -154,11 +154,11 @@ const E: Record<string, ErrorCodeEntry> = {
       "at the call site — either wrap in `match` to make the success and failure paths explicit, or use " +
       "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation",
     idiom:
-      "prefer `match ns.method(...) { Ok(v) => ..., Err(e) => ... }` — it makes both success " +
+      "prefer `match ns.method(...) { ok { value } -> ...\n  err { error } -> ... }` — it makes both success " +
       "and failure paths explicit; use `unsafe` only when you are certain " +
       "about the shape and want to document why",
     rewrite:
-      'match ns.method(...) { Ok(value) => { /* use value */ }, Err(e) => { /* handle */ } }',
+      "match ns.method(...) {\n  ok { value } -> { /* use value */ }\n  err { error } -> { /* handle error */ }\n}",
     example:
       "// before — UNS005: no contract on what http.get returns\n" +
       "?bs 0.9\n" +
@@ -170,8 +170,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(`/users/${id}`) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(`fetch failed: ${e}`),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(`fetch failed: ${error}`)\n" +
       "  }\n" +
       "}",
   },

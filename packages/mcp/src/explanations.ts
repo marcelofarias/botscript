@@ -106,8 +106,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.9\n" +
         "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
         "  match http.get(url) {\n" +
-        "    Ok(data) => ok(data),\n" +
-        "    Err(e) => err(e),\n" +
+        "    ok { value } -> ok(value)\n" +
+        "    err { error } -> err(error)\n" +
         "  }\n" +
         "}\n",
     },
@@ -199,7 +199,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "can tell at a glance whether the author made a deliberate choice (unsafe block) or the " +
       "compiler is flagging an omission.\n\n" +
       "**Suppression mechanisms (in order of preference):**\n\n" +
-      "1. **match** — `match http.get(url) { Ok(v) => ..., Err(e) => ... }` wraps " +
+      "1. **match** — `match http.get(url) { ok { value } -> ...\n  err { error } -> ... }` wraps " +
       "the call in a structural contract check. Both success and failure paths are explicit. " +
       "`match await http.get(url)` is also accepted (await is transparent).\n\n" +
       "2. **unsafe block** — `unsafe \"I know what X returns\" { ns.method(...) }` accepts the " +
@@ -218,8 +218,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.9\n" +
         "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
         "  match http.get(`/users/${id}`) {\n" +
-        "    Ok(data) => ok(data),\n" +
-        "    Err(e) => err(`fetch failed: ${e}`),\n" +
+        "    ok { value } -> ok(value)\n" +
+        "    err { error } -> err(`fetch failed: ${error}`)\n" +
         "  }\n" +
         "}\n",
     },

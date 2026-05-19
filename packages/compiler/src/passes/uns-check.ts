@@ -129,10 +129,10 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite:
-          `// option A — match on the result (handles both Ok and Err):\n` +
+          `// option A — match on the result (handles both ok and err):\n` +
           `match ${ns}.${member}(...) {\n` +
-          `  Ok(value) => { /* use value */ },\n` +
-          `  Err(e) => { /* handle error */ },\n` +
+          `  ok { value } -> { /* use value */ }\n` +
+          `  err { error } -> { /* handle error */ }\n` +
           `}\n\n` +
           `// option B — accept the uncertainty with a written reason:\n` +
           `unsafe "I know what ${ns}.${member} returns here" { ${ns}.${member}(...) }`,

@@ -61,8 +61,8 @@ describe("CAP003: does not fire for regular fns", () => {
       "?bs 0.9\n" +
       "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(data) => ok(data),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
     const result = transform(src);
@@ -131,8 +131,8 @@ describe("CAP003: multiple fns", () => {
       "?bs 0.9\n" +
       "fn safeOne(url: string) uses { net } -> Result<string, string> {\n" +
       "  match http.get(url) {\n" +
-      "    Ok(d) => ok(d),\n" +
-      "    Err(e) => err(e),\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n" +
       "unsafe \"adapter one\" fn unsafeOne(url: string) uses { net } -> string {\n" +
