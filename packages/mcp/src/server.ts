@@ -100,8 +100,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return errorText("transform: `source` must be a string");
       }
       try {
-        const { code, forms, version } = transform(source, filename ? { filename } : {});
-        return json({ ok: true, code, forms, version });
+        const { code, forms, version, warnings } = transform(source, filename ? { filename } : {});
+        return json({ ok: true, code, forms, version, warnings: [...warnings] });
       } catch (e) {
         if (e instanceof BotscriptError) {
           return json({ ok: false, diagnostics: [...e.diagnostics] });
