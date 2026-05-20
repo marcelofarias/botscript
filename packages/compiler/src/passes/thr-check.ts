@@ -274,9 +274,11 @@ function checkBodyErrors(
     if (declaredThrows.has(typeName)) continue;
 
     const { line, column } = locationOf(src, tok.start);
-    const currentDecl =
-      declaredThrows.size === 0 ? "(none)" : [...declaredThrows].join(", ");
-    const proposed = [...new Set([...declaredThrows, typeName])].join(", ");
+    const currentDeclStr =
+      declaredThrows.size === 0
+        ? "no throws clause"
+        : `throws { ${[...declaredThrows].sort().join(", ")} }`;
+    const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
 
     return new BotscriptError([{
       code: "THR002",
@@ -288,7 +290,7 @@ function checkBodyErrors(
       end: tok.end,
       message:
         `fn '${fn.name}' constructs err(${typeName}...) but '${typeName}' ` +
-        `is not in throws { ${currentDecl} }`,
+        `is not in ${currentDeclStr}`,
       rule: entry.rule,
       idiom: entry.idiom,
       rewrite: `fn ${fn.name}(...) throws { ${proposed} } -> ...`,
