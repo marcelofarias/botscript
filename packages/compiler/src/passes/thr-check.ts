@@ -28,7 +28,8 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, collectCallees } from "./_callgraph.js";
+import type { Token } from "../parser/lex.js";
+import { computeNesting, collectCallees, nextSignificant, prevSignificant } from "./_callgraph.js";
 
 // ---------------------------------------------------------------------------
 // Types
