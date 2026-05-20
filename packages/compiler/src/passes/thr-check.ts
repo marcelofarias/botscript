@@ -224,7 +224,7 @@ function checkBodyErrors(
   const open: FnDecl[] = [];
   let nextInner = 0;
 
-  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
     while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
       open.push(inner[nextInner]!);
@@ -276,7 +276,6 @@ function checkBodyErrors(
     const currentDecl =
       declaredThrows.size === 0 ? "(none)" : [...declaredThrows].join(", ");
     const proposed = [...new Set([...declaredThrows, typeName])].join(", ");
-    const nameEnd = fn.nameStart + fn.name.length;
 
     return new BotscriptError([{
       code: "THR002",
@@ -284,8 +283,8 @@ function checkBodyErrors(
       file: null,
       line,
       column,
-      start: fn.fnKeywordStart,
-      end: nameEnd,
+      start: tok.start,
+      end: tok.end,
       message:
         `fn '${fn.name}' constructs err(${typeName}...) but '${typeName}' ` +
         `is not in throws { ${currentDecl} }`,
