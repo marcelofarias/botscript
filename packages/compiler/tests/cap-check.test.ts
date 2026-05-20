@@ -320,14 +320,11 @@ describe("cap-check: no false positive for stdlib namespace in parameter type", 
     expect(() => t(src)).not.toThrow();
   });
 
-  it("does not fire CAP001 when stdlib namespace appears in return type annotation", () => {
-    const src = "?bs 0.9\nfn makeClient() -> http.Client = http.newClient()\n";
-    // Body calls http.newClient() without uses {net} — should fire for the body call but
-    // NOT double-fire for the return type annotation.
-    try { t(src); } catch { /* expected */ }
-    // Point: the test only checks the body-scan starts at body, not param/return type.
-    // The actual CAP001 fire is acceptable — we just don't want double diagnostics.
-    // This mainly documents the fix; the first test above is the regression sentinel.
+  it("does not fire CAP001 when stdlib namespace appears only in return type annotation", () => {
+    // Return type `http.Client` is a type annotation, not a capability call.
+    // No stdlib call in the body — should compile clean.
+    const src = "?bs 0.9\nfn makeClient() -> http.Client = \"placeholder\"\n";
+    expect(() => t(src)).not.toThrow();
   });
 
   it("still fires CAP001 when stdlib call is in the body (not the header)", () => {
