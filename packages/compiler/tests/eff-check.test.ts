@@ -344,3 +344,19 @@ describe("EFF004: writes on callback not propagated (?bs 0.9+)", () => {
     expect(() => compile(src)).toThrow();
   });
 });
+
+describe("SYN001 on invalid labels in callback reads/writes annotations", () => {
+  it("fires SYN001 for a string literal inside a callback reads list", () => {
+    const src =
+      `?bs 0.9\n` +
+      `fn run(op: () reads { "cache" } -> void) reads { cache } -> void { op() }\n`;
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+
+  it("fires SYN001 for a string literal inside a callback writes list", () => {
+    const src =
+      `?bs 0.9\n` +
+      `fn run(op: () writes { "db" } -> void) writes { db } -> void { op() }\n`;
+    expect(() => compile(src)).toThrow("SYN001");
+  });
+});

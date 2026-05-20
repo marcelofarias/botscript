@@ -246,7 +246,7 @@ export function parseFn(
   if (!argsOpen || argsOpen.kind !== "open" || argsOpen.text !== "(" || argsOpen.matchedAt === undefined) return null;
   const argsClose = argsOpen.matchedAt;
   const args = sliceText(tokens, i, argsClose + 1);
-  const { text: argsTs, paramCaps, paramReads, paramWrites } = buildArgsTs(tokens, i, argsClose + 1);
+  const { text: argsTs, paramCaps, paramReads, paramWrites } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
   i = argsClose + 1;
   i = skipTrivia(tokens, i);
 
@@ -675,14 +675,17 @@ function skipTrivia(tokens: Token[], i: number): number {
  *    `paramWrites`.
  *
  * The stripping is position-independent: any effect annotation inside the args
- * list is treated as a parameter effect annotation. This is safe because `uses`,
- * `reads`, and `writes` are botscript keywords and cannot appear as identifiers
- * in TypeScript types or default value expressions.
+ * list is treated as a parameter effect annotation. This is safe because the
+ * stripping only activates on the specific `uses { ... }` / `reads { ... }` /
+ * `writes { ... }` syntax pattern — a keyword/ident token immediately followed
+ * by a `{...}` block — not on bare `reads` or `writes` identifiers elsewhere in
+ * TypeScript type positions (e.g. `reads` as a field name in an object type).
  */
 function buildArgsTs(
   tokens: Token[],
   from: number,
   to: number,
+  src?: string,
 ): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[] } {
   let out = "";
   const paramCaps: string[] = [];
@@ -707,13 +710,18 @@ function buildArgsTs(
       const j = skipTrivia(tokens, i + 1);
       const open = tokens[j];
       if (open && open.kind === "open" && open.text === "{" && open.matchedAt !== undefined) {
-        const labels = parseCapList(tokens, j + 1, open.matchedAt);
         if (isUses) {
+          const labels = parseCapList(tokens, j + 1, open.matchedAt);
           for (const c of labels) paramCaps.push(c);
-        } else if (isReads) {
-          for (const l of labels) paramReads.push(l);
         } else {
-          for (const l of labels) paramWrites.push(l);
+          // parseLabelList validates that all tokens are plain identifiers and
+          // fires SYN001 (via src) on invalid labels like `reads { "cache" }`.
+          const labels = parseLabelList(tokens, j + 1, open.matchedAt, src);
+          if (isReads) {
+            for (const l of labels) paramReads.push(l);
+          } else {
+            for (const l of labels) paramWrites.push(l);
+          }
         }
         i = open.matchedAt + 1;
         // Consume whitespace that separated the annotation from the `->` to
