@@ -212,3 +212,135 @@ fn outer() -> void {
     expect(() => compile(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// EFF003: reads {} on callback parameters (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("EFF003: reads on callback not propagated (?bs 0.9+)", () => {
+  it("fires EFF003 when a callback declares reads {} but outer fn declares no reads", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) -> string = loader()\n";
+    expect(() => compile(src)).toThrow("EFF003");
+    expect(() => compile(src)).toThrow(/withCache/);
+  });
+
+  it("fires EFF003 when a callback declares reads {} but outer fn declares different reads", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { db } -> string = loader()\n";
+    expect(() => compile(src)).toThrow("EFF003");
+  });
+
+  it("does not fire EFF003 when outer fn declares all callback reads", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string = loader()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire EFF003 when outer fn over-declares reads (superset)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache, db } -> string = loader()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("strips reads {} from callback parameter in emitted TypeScript", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string = loader()\n";
+    const out = compile(src);
+    expect(out).not.toContain("reads");
+    expect(out).toContain("loader: () => string");
+  });
+
+  it("does not fire EFF003 below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn withCache(loader: () reads { cache } -> string) -> string = loader()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire EFF003 when callback has no reads annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run(action: () -> string) -> string = action()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("fires EFF003 with multiple missing reads labels", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withData(loader: () reads { cache, db } -> string) -> string = loader()\n";
+    expect(() => compile(src)).toThrow("EFF003");
+    expect(() => compile(src)).toThrow(/cache/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EFF004: writes {} on callback parameters (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("EFF004: writes on callback not propagated (?bs 0.9+)", () => {
+  it("fires EFF004 when a callback declares writes {} but outer fn declares no writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) -> void { recorder() }\n";
+    expect(() => compile(src)).toThrow("EFF004");
+    expect(() => compile(src)).toThrow(/withMetrics/);
+  });
+
+  it("fires EFF004 when callback writes not covered by outer fn writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) writes { audit } -> void { recorder() }\n";
+    expect(() => compile(src)).toThrow("EFF004");
+  });
+
+  it("does not fire EFF004 when outer fn declares all callback writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) writes { metrics } -> void { recorder() }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire EFF004 when outer fn over-declares writes (superset)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) writes { metrics, audit } -> void { recorder() }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("strips writes {} from callback parameter in emitted TypeScript", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) writes { metrics } -> void { recorder() }\n";
+    const out = compile(src);
+    expect(out).not.toContain("writes");
+    expect(out).toContain("recorder: () => void");
+  });
+
+  it("does not fire EFF004 below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) -> void { recorder() }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire EFF004 when callback has no writes annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run(action: () -> void) -> void { action() }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("can fire EFF003 and EFF004 together when callback has both reads and writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn withDataOp(op: () reads { cache } writes { db } -> void) -> void { op() }\n";
+    // Should throw — at least one of EFF003 or EFF004
+    expect(() => compile(src)).toThrow();
+  });
+});

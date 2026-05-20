@@ -326,6 +326,61 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()\n",
     },
   },
+  EFF003: {
+    code: "EFF003",
+    title: "outer fn declares narrower reads than a callback parameter",
+    body:
+      "A function-typed parameter can carry a `reads { labels }` annotation declaring which " +
+      "resource categories the callback reads from. The outer function that accepts that " +
+      "callback must declare at least those labels in its own `reads {}` clause.\n\n" +
+      "Without this rule, a higher-order fn that accepts a resource-reading callback can " +
+      "advertise a narrower read surface than it can actually access. An orchestrator reading " +
+      "the outer fn's header sees no `reads {}` and concludes the call touches no resources — " +
+      "but the callback may read from the cache, database, or any other declared resource.\n\n" +
+      "EFF003 is the `reads`-variant of EFF002. It gates on `?bs 0.9` alongside " +
+      "DEP001/DEP002 (same-file reads/writes transitivity). The outer fn does not need to " +
+      "use the resource directly — it just needs to declare it so callers have an accurate " +
+      "read-dependency surface.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "// EFF003: withCache accepts a callback that declares reads { cache },\n" +
+        "// but withCache itself declares reads {}\n" +
+        "fn withCache(loader: () reads { cache } -> string) -> string = loader()\n",
+      passes:
+        "?bs 0.9\n" +
+        "// Fixed: outer fn declares the read-dependency its callback may exercise\n" +
+        "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string = loader()\n",
+    },
+  },
+  EFF004: {
+    code: "EFF004",
+    title: "outer fn declares narrower writes than a callback parameter",
+    body:
+      "A function-typed parameter can carry a `writes { labels }` annotation declaring which " +
+      "resource categories the callback writes to. The outer function that accepts that " +
+      "callback must declare at least those labels in its own `writes {}` clause.\n\n" +
+      "Without this rule, a higher-order fn that accepts a resource-writing callback can " +
+      "advertise a narrower write surface than it can actually mutate. An orchestrator reading " +
+      "the outer fn's header sees no `writes {}` and concludes the call mutates no resources — " +
+      "but the callback may write to metrics, the database, an audit log, or any other declared " +
+      "resource.\n\n" +
+      "EFF004 is the `writes`-variant of EFF002. It gates on `?bs 0.9` alongside " +
+      "DEP001/DEP002 (same-file reads/writes transitivity). The outer fn does not need to " +
+      "write directly — it just needs to declare the labels so callers have an accurate " +
+      "write-dependency surface.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "// EFF004: withMetrics accepts a callback that declares writes { metrics },\n" +
+        "// but withMetrics itself declares writes {}\n" +
+        "fn withMetrics(recorder: () writes { metrics } -> void) -> void { recorder() }\n",
+      passes:
+        "?bs 0.9\n" +
+        "// Fixed: outer fn declares the write-dependency its callback may exercise\n" +
+        "fn withMetrics(recorder: () writes { metrics } -> void) writes { metrics } -> void { recorder() }\n",
+    },
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",
