@@ -492,9 +492,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "THR002",
     title: "fn body constructs an error type absent from its throws declaration",
     body:
-      "THR002 fires from `?bs 0.9` when a fn body contains `err(TypeName(...))` or " +
-      "`err(new TypeName(...))` where TypeName (a CapCase identifier) is not present in " +
-      "the fn's own `throws { }` clause.\n\n" +
+      "THR002 fires from `?bs 0.9` when a fn body contains `err(TypeName(...))`, " +
+      "`err(new TypeName(...))`, or bare `err(TypeName)` where TypeName (a CapCase " +
+      "identifier) is not present in the fn's own `throws { }` clause.\n\n" +
       "This is the producer-side complement to THR001. THR001 ensures callers propagate the " +
       "throws surface; THR002 ensures the fn actually declares what it produces. Without it, " +
       "a fn can silently return an error type its callers cannot match — exhaustive match arms " +
