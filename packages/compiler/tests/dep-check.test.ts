@@ -191,3 +191,27 @@ describe("recursive fns", () => {
     expect(() => compile(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Parameter-default / return-type false-positive regression (issue #70)
+// ---------------------------------------------------------------------------
+
+describe("parameter default and return-type exclusion", () => {
+  it("does not fire DEP001 when callee appears only in a parameter default, not the body", () => {
+    // `helper` is called in the parameter default of `caller` (evaluated at the
+    // call site), not in caller's body. collectCallees must not pick it up.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() reads { cache } -> string = \"x\"\n" +
+      "fn caller(x: string = helper()) -> string = x\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("still fires DEP001 when callee is called inside the body", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() reads { cache } -> string = \"x\"\n" +
+      "fn caller() -> string { helper() }\n";
+    expect(() => compile(src)).toThrow("DEP001");
+  });
+});

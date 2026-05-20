@@ -102,6 +102,13 @@ export interface FnDecl {
   /** Source offset of the unsafe reason string token (UTF-16 code units, inclusive). Used to anchor UNS002 at the right location. */
   unsafeReasonStart?: number;
   returnType: string;
+  /**
+   * Token-array index of the first body token (`{` for block bodies, `=` for
+   * expression bodies). Effect-check passes use this to scan only from the body
+   * start rather than from `tokenStart`, avoiding false matches on idents in the
+   * parameter list or return-type annotation.
+   */
+  bodyTokenStart: number;
   /** Body is a brace block OR a single-expression form (= pure / io / arbitrary). */
   body: FnBody;
 }
@@ -489,6 +496,7 @@ export function parseFn(
     unsafeReason,
     unsafeReasonStart,
     returnType,
+    bodyTokenStart: typeEnd,
     body,
   };
 }
