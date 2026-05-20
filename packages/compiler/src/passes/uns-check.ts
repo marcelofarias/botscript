@@ -111,6 +111,11 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
       // is the full scrutinee (not part of a larger expression like `http.get(url) + "x"`).
       if (isDirectMatchSubject(tokens, i, parenTok.matchedAt)) continue;
 
+      // Suppression 3: malformed `unsafe "reason" ns.method(...)` (missing `{}`).
+      // passUnsafe will emit UNS003 for the missing block body; suppress UNS005
+      // here so the more specific diagnostic wins.
+      if (isMalformedUnsafeExpr(tokens, i)) continue;
+
       const entry = getErrorCode("UNS005")!;
       const loc = locationOf(src, tok.start);
       const ns = tok.text;
@@ -145,6 +150,12 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
     }
   }
 
+  // UNS005 intentionally accumulates all violations before throwing so the
+  // caller sees every missing result contract in one pass — violations are
+  // independent (each has a mechanical fix) and reporting them all at once is
+  // more useful than bailing on the first. This differs from passes like
+  // bareAs/depCheck that bail on first error because a single violation there
+  // already indicates a structural problem that invalidates further analysis.
   if (diagnostics.length > 0) {
     throw new BotscriptError(diagnostics);
   }
@@ -191,6 +202,25 @@ function collectUnsafeBlockRanges(tokens: Token[], out: CharRange[]): void {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the stdlib call at `callIdx` is immediately preceded
+ * (ignoring whitespace) by `unsafe "reason"` without a following `{`.
+ *
+ * This is the "malformed unsafe expression" pattern: the author wrote
+ * `unsafe "reason" ns.method(...)` instead of `unsafe "reason" { ns.method(...) }`.
+ * passUnsafe will fire UNS003 (missing body) for this form — suppress UNS005
+ * so the more specific diagnostic wins.
+ */
+function isMalformedUnsafeExpr(tokens: Token[], callIdx: number): boolean {
+  let i = callIdx - 1;
+  while (i >= 0 && (tokens[i]?.kind === "whitespace" || tokens[i]?.kind === "newline")) i--;
+  if (i < 0 || tokens[i]?.kind !== "string") return false;
+  i--;
+  while (i >= 0 && (tokens[i]?.kind === "whitespace" || tokens[i]?.kind === "newline")) i--;
+  const t = tokens[i];
+  return !!(t && t.kind === "keyword" && t.keyword === "unsafe");
+}
 
 /**
  * Returns true when the stdlib call at `callIdx` is the direct subject of a

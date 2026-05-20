@@ -333,3 +333,28 @@ describe("UNS005: multiple calls in one fn", () => {
     expect(() => compile(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Diagnostic precedence: UNS003 over UNS005 for malformed unsafe blocks
+// ---------------------------------------------------------------------------
+
+describe("UNS003 takes precedence over UNS005 for malformed unsafe blocks", () => {
+  it("fires UNS003 (not UNS005) for unsafe \"reason\" ns.method() (missing {})", () => {
+    // `unsafe "reason" http.get(url)` is a malformed unsafe block — the
+    // author forgot the `{ ... }` body. passUnsafe owns this and fires UNS003.
+    // passUnsCheck must not fire UNS005 for the call first.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) uses { net } -> string {\n" +
+      "  unsafe \"trust me\" http.get(url)\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ code: string }> };
+      // Should be UNS003 (malformed block), not UNS005 (missing contract)
+      expect(err.diagnostics?.[0]?.code).toBe("UNS003");
+    }
+  });
+});
