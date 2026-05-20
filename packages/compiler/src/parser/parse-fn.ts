@@ -41,11 +41,11 @@ export interface FnDecl {
   args: string;
   /**
    * TypeScript-compatible args: same as `args` but with botscript `->` arrows
-   * converted to `=>` and any `uses { … }` annotations stripped from
-   * function-typed parameters. Used by `emitFn` so the emitted TypeScript
-   * compiles cleanly.
+   * converted to `=>` and any `uses { … }`, `reads { … }`, and `writes { … }`
+   * annotations stripped from function-typed parameters. Used by `emitFn` so
+   * the emitted TypeScript compiles cleanly.
    *
-   * Example: `(action: () uses { net } -> string)` →
+   * Example: `(action: () uses { net } reads { cache } -> string)` →
    *          `(action: () => string)`
    */
   argsTs: string;
