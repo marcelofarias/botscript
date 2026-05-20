@@ -2,8 +2,9 @@
  * Throws declaration check (?bs 0.9+).
  *
  * Enforces transitivity of `throws { ... }` annotations across same-file
- * function calls, and checks that a fn's body does not directly construct
- * error types absent from its own `throws {}` declaration.
+ * function calls, checks that a fn's body does not directly construct error
+ * types absent from its own `throws {}` declaration, and ensures that
+ * callback parameters' throws annotations are reflected in the containing fn.
  *
  *   THR001  throws under-declared: fn A calls fn B which (transitively)
  *           declares `throws { X }` that A does not declare. For a direct
@@ -17,6 +18,12 @@
  *           callers' exhaustive match arms permanently dead. Indirect patterns
  *           (`err(e)` where e's type is inferred) are out of scope — token-based
  *           detection only.
+ *
+ *   THR003  callback throws not covered: a function-typed parameter carries
+ *           `throws { X }` but the containing fn's own `throws {}` does not
+ *           include X. Calling the callback can surface X, so the outer fn's
+ *           throws surface must cover it (direct analogue of EFF003/EFF004 for
+ *           the throws dimension).
  *
  * Only same-file call resolution is performed for THR001 (same as cap-check /
  * dep-check). Over-declaration is intentionally NOT checked — a caller may
@@ -129,6 +136,17 @@ export function passThrCheck(src: string, version: VersionInfo): string {
     const inner = innerByDecl.get(rec.decl) ?? [];
     const err = checkBodyErrors(tokens, rec.decl, inner, rec.declaredThrows, src);
     if (err) throw err;
+  }
+
+  // THR003: fn's throws surface must cover all throws declared on callback parameters.
+  for (const decl of decls) {
+    if (decl.paramThrows.length === 0) continue;
+    const declared = new Set(decl.throws ?? []);
+    const missing = [...new Set(decl.paramThrows)]
+      .filter((t) => !declared.has(t))
+      .sort();
+    if (missing.length === 0) continue;
+    throw mkThr003Error(src, decl, missing, declared);
   }
 
   return src;
@@ -299,4 +317,44 @@ function checkBodyErrors(
   }
 
   return null;
+}
+
+function mkThr003Error(
+  src: string,
+  decl: FnDecl,
+  missingThrows: string[],
+  declared: Set<string>,
+): BotscriptError {
+  const entry = getErrorCode("THR003")!;
+  const { line, column } = locationOf(src, decl.fnKeywordStart);
+  const nameEnd = decl.nameStart + decl.name.length;
+
+  const currentDeclStr =
+    declared.size === 0
+      ? "no throws clause"
+      : `throws { ${[...declared].sort().join(", ")} }`;
+  const proposed = [...new Set([...declared, ...missingThrows])].sort().join(", ");
+  const missingStr = missingThrows.join(", ");
+
+  const otherMissing = missingThrows.slice(1);
+  const otherTail =
+    otherMissing.length > 0
+      ? `; also missing: ${otherMissing.map((t) => `"${t}"`).join(", ")}`
+      : "";
+
+  return new BotscriptError([{
+    code: "THR003",
+    severity: "error" as const,
+    file: null,
+    line,
+    column,
+    start: decl.fnKeywordStart,
+    end: nameEnd,
+    message:
+      `fn '${decl.name}' accepts callback parameter(s) that declare throws { ${missingStr} } ` +
+      `but '${decl.name}' declares ${currentDeclStr}${otherTail}`,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite: `fn ${decl.name}(...) throws { ${proposed} } -> ...`,
+  }]);
 }

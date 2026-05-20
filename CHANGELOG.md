@@ -22,6 +22,14 @@ goes behind a new pin.
   cannot match. Indirect patterns (`err(e)` where `e`'s type is inferred)
   are out of scope.
 
+- **THR003 — under-declared throws from callback parameter throws annotations.**
+  From `?bs 0.9`, the compiler fires when a function-typed parameter carries
+  `throws { X }` but the containing fn does not declare `throws { X }` in
+  its own header. Calling the callback exercises that throw, so the outer
+  fn's throws surface must cover it. Direct analogue of EFF003/EFF004 for
+  the throws dimension. `throws {}` is stripped from emitted TypeScript
+  (same as `uses {}`, `reads {}`, `writes {}`). Over-declaration is always allowed.
+
 - **DEP001 / DEP002 — `reads {}` / `writes {}` transitivity enforcement.**
   From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
   file) and B declares `reads { x }` (or `writes { x }`), then A must also

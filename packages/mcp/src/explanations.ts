@@ -521,6 +521,43 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  THR003: {
+    code: "THR003",
+    title: "fn under-declares throws implied by callback parameter throws annotations",
+    body:
+      "THR003 fires from `?bs 0.9` when a function-typed parameter carries `throws { X }` " +
+      "but the containing fn does not declare `throws { X }` in its own header.\n\n" +
+      "This is the direct analogue of EFF003 (reads on callback) and EFF004 (writes on callback), " +
+      "applied to the throws surface. When a fn calls its callback parameter, it can exercise the " +
+      "callback's declared throws — so the outer fn's own `throws {}` must be a superset of all " +
+      "callback parameters' throws annotations.\n\n" +
+      "**Why it matters:** a reviewer reading the outer fn's header sees no throws declaration and " +
+      "has no warning that calling it may produce the error type. Callers that match exhaustively on " +
+      "the outer fn's return type will have no arm for the undeclared exception — it becomes dead " +
+      "code or a silent gap.\n\n" +
+      "**Fix:** add the callback parameter's throws labels to the containing fn's own `throws { }` clause.\n\n" +
+      "Over-declaration is allowed — if the containing fn declares more throws types than it can " +
+      "actually exercise, that is harmless (same policy as THR001/THR002).\n\n" +
+      "THR003 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn process(\n" +
+        "  items: string[],\n" +
+        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        ") -> void {\n" +
+        "  handler(items[0])\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn process(\n" +
+        "  items: string[],\n" +
+        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        ") throws { NetworkError } -> void {\n" +
+        "  handler(items[0])\n" +
+        "}\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();

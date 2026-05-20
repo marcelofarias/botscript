@@ -384,6 +384,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  else ok(s)\n" +
       "}",
   },
+  THR003: {
+    code: "THR003",
+    title: "fn under-declares throws implied by callback parameter throws annotations",
+    rule:
+      "if a function-typed parameter carries `throws { X }`, the containing fn can exercise that " +
+      "exception through any call to the callback — so the fn's own `throws {}` must cover it; " +
+      "a fn's throws surface is the union of its own declared throws and the throws its callback " +
+      "parameters may exercise",
+    idiom:
+      "add the callback parameter's throws labels to the containing fn's own `throws { }` clause; " +
+      "this is the direct analogue of EFF003/EFF004 for the throws surface",
+    rewrite:
+      "fn name(...) throws { …existing, CallbackThrown } -> ...",
+    example:
+      "// before — process accepts a handler that throws { NetworkError } but doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      ") -> void {   // THR003: missing throws { NetworkError }\n" +
+      "  handler(items[0])\n" +
+      "}\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      ") throws { NetworkError } -> void {\n" +
+      "  handler(items[0])\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

@@ -73,6 +73,14 @@ export interface FnDecl {
    * Example: `(cb: () writes { metrics } -> void)` → `["metrics"]`
    */
   paramWrites: string[];
+  /**
+   * Union of all exception type names declared in `throws { … }` annotations on
+   * function-typed parameters. Empty when no parameter carries a throws annotation.
+   * Used by `passThrCheck` (THR003). Gated on `?bs 0.9`.
+   *
+   * Example: `(handler: (s: string) throws { NetworkError } -> void)` → `["NetworkError"]`
+   */
+  paramThrows: string[];
   capabilities: string[];
   /**
    * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
@@ -264,7 +272,7 @@ export function parseFn(
   if (!argsOpen || argsOpen.kind !== "open" || argsOpen.text !== "(" || argsOpen.matchedAt === undefined) return null;
   const argsClose = argsOpen.matchedAt;
   const args = sliceText(tokens, i, argsClose + 1);
-  const { text: argsTs, paramCaps, paramReads, paramWrites } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
+  const { text: argsTs, paramCaps, paramReads, paramWrites, paramThrows } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
   i = argsClose + 1;
   i = skipTrivia(tokens, i);
 
@@ -521,6 +529,7 @@ export function parseFn(
     paramCaps,
     paramReads,
     paramWrites,
+    paramThrows,
     capabilities,
     reads,
     writes,
@@ -710,11 +719,12 @@ function buildArgsTs(
   from: number,
   to: number,
   src?: string,
-): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[] } {
+): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[]; paramThrows: string[] } {
   let out = "";
   const paramCaps: string[] = [];
   const paramReads: string[] = [];
   const paramWrites: string[] = [];
+  const paramThrows: string[] = [];
   let i = from;
   while (i < to) {
     const t = tokens[i]!;
@@ -754,10 +764,22 @@ function buildArgsTs(
         continue;
       }
     }
+    // Strip `throws { types }` and collect the declared exception types.
+    if (t.kind === "ident" && t.text === "throws") {
+      const j = skipTrivia(tokens, i + 1);
+      const open = tokens[j];
+      if (open && open.kind === "open" && open.text === "{" && open.matchedAt !== undefined) {
+        const types = parseLabelList(tokens, j + 1, open.matchedAt, src);
+        for (const ty of types) paramThrows.push(ty);
+        i = open.matchedAt + 1;
+        while (i < to && tokens[i]?.kind === "whitespace") i++;
+        continue;
+      }
+    }
     out += t.text;
     i++;
   }
-  return { text: out, paramCaps, paramReads, paramWrites };
+  return { text: out, paramCaps, paramReads, paramWrites, paramThrows };
 }
 
 function sliceText(tokens: Token[], from: number, to: number): string {

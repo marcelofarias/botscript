@@ -294,3 +294,111 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).not.toThrow();
   });
 });
+
+describe("THR003 — callback parameter throws not covered by containing fn", () => {
+  it("fires when callback parameter declares throws { X } but outer fn has no throws clause", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: (s: string) throws { NetworkError } -> void\n" +
+      ") -> void {\n" +
+      "  handler(items[0])\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR003");
+    expect(() => compile(src)).toThrow(/process/);
+    expect(() => compile(src)).toThrow(/NetworkError/);
+  });
+
+  it("fires when callback throws X but outer fn declares throws { Y } (missing X)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn apply(\n" +
+      "  f: (s: string) throws { IoError } -> string\n" +
+      ") throws { ParseError } -> string {\n" +
+      "  f(\"x\")\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR003");
+    expect(() => compile(src)).toThrow(/IoError/);
+  });
+
+  it("does not fire when outer fn's throws is a superset of callback throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: (s: string) throws { NetworkError } -> void\n" +
+      ") throws { NetworkError } -> void {\n" +
+      "  handler(items[0])\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when outer fn over-declares (superset)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn wrap(\n" +
+      "  f: () throws { IoError } -> void\n" +
+      ") throws { IoError, ParseError } -> void {\n" +
+      "  f()\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when callback parameter has no throws annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run(\n" +
+      "  action: (s: string) -> void\n" +
+      ") -> void {\n" +
+      "  action(\"x\")\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn process(\n" +
+      "  handler: (s: string) throws { NetworkError } -> void\n" +
+      ") -> void {\n" +
+      "  handler(\"x\")\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("strips throws {} from callback parameter type in emitted TypeScript", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn wrap(\n" +
+      "  f: (s: string) throws { IoError } -> string\n" +
+      ") throws { IoError } -> string {\n" +
+      "  f(\"x\")\n" +
+      "}\n";
+    const out = compile(src);
+    expect(out).not.toContain("throws");
+    expect(out).not.toContain("IoError");
+    expect(out).toContain("=> string");
+  });
+
+  it("collects throws from multiple callback parameters, fires on first missing", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn both(\n" +
+      "  a: () throws { IoError } -> void,\n" +
+      "  b: () throws { ParseError } -> void\n" +
+      ") -> void {\n" +
+      "  a()\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR003");
+  });
+
+  it("bs explain THR003 entry exists with rule, idiom, and rewrite", async () => {
+    const { getErrorCode } = await import("../src/error-codes.js");
+    const entry = getErrorCode("THR003");
+    expect(entry).toBeDefined();
+    expect(entry!.rule).toMatch(/throws/);
+    expect(entry!.idiom).toBeDefined();
+    expect(entry!.rewrite).toBeDefined();
+  });
+});
