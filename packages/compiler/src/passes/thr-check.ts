@@ -10,12 +10,13 @@
  *           call the diagnostic says "'B' which throws { X }"; for a multi-hop
  *           chain it names the path, e.g. "B -> C — 'C' throws { X }".
  *
- *   THR002  undeclared error construction: fn body contains `err(TypeName(...))`
- *           or `err(new TypeName(...))` where TypeName (CapCase ident) is not in
- *           the fn's own `throws {}` set. Catches the case where a fn returns
- *           an error type it never declared, leaving callers' exhaustive match
- *           arms permanently dead. Indirect patterns (`err(e)` where e's type
- *           is inferred) are out of scope — token-based detection only.
+ *   THR002  undeclared error construction: fn body contains `err(TypeName(...))`,
+ *           `err(new TypeName(...))`, or bare `err(TypeName)` where TypeName
+ *           (CapCase ident) is not in the fn's own `throws {}` set. Catches the
+ *           case where a fn returns an error type it never declared, leaving
+ *           callers' exhaustive match arms permanently dead. Indirect patterns
+ *           (`err(e)` where e's type is inferred) are out of scope — token-based
+ *           detection only.
  *
  * Only same-file call resolution is performed for THR001 (same as cap-check /
  * dep-check). Over-declaration is intentionally NOT checked — a caller may
@@ -207,9 +208,9 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
 }
 
 /**
- * THR002: scan fn body for `err(TypeName(...))` or `err(new TypeName(...))`
- * where TypeName (CapCase ident) is not in the fn's own `throws {}` set.
- * Returns a BotscriptError on the first violation found, or null.
+ * THR002: scan fn body for `err(TypeName(...))`, `err(new TypeName(...))`, or
+ * bare `err(TypeName)` where TypeName (CapCase ident) is not in the fn's own
+ * `throws {}` set. Returns a BotscriptError on the first violation found, or null.
  */
 function checkBodyErrors(
   tokens: Token[],

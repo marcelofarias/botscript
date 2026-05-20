@@ -2,7 +2,8 @@
  * Tests for throws {} enforcement (?bs 0.9+).
  *
  * THR001: fn A calls fn B which throws { X }, but A doesn't declare throws { X }.
- * THR002: fn body constructs err(TypeName(...)) where TypeName is not in throws {}.
+ * THR002: fn body constructs err(TypeName(...)), err(new TypeName(...)), or bare
+ *         err(TypeName) where TypeName (CapCase) is not in throws {}.
  */
 
 import { describe, expect, it } from "vitest";

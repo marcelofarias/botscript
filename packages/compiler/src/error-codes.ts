@@ -361,12 +361,13 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "THR002",
     title: "fn body constructs an error type not present in its throws declaration",
     rule:
-      "if a fn body contains `err(TypeName(...))` or `err(new TypeName(...))` where TypeName " +
-      "(CapCase ident) is not in the fn's own `throws { }` set, the fn is producing an error " +
-      "callers cannot match — they will never see a TypeName arm",
+      "if a fn body contains `err(TypeName(...))`, `err(new TypeName(...))`, or bare `err(TypeName)` " +
+      "where TypeName (CapCase ident) is not in the fn's own `throws { }` set, the fn is producing an " +
+      "error callers cannot match — they will never see a TypeName arm",
     idiom:
       "add the constructed error type to the fn's `throws { }` clause so callers can exhaustively match it; " +
-      "indirect patterns like `err(e)` are out of scope — only direct constructor calls are checked",
+      "indirect patterns like `err(e)` (where e's type is inferred) are out of scope — only direct " +
+      "constructor calls and bare CapCase references are checked",
     rewrite:
       "fn name(...) throws { …existing, UndeclaredError } -> ...",
     example:
