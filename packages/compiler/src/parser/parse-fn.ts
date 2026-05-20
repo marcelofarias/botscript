@@ -107,8 +107,12 @@ export interface FnDecl {
    * expression bodies). Effect-check passes use this to scan only from the body
    * start rather than from `tokenStart`, avoiding false matches on idents in the
    * parameter list or return-type annotation.
+   *
+   * Optional so that code constructing `FnDecl` values outside the parser (e.g.
+   * tests, mocks) is not forced to populate this field. Consumers should fall
+   * back to `tokenStart` when absent: `fn.bodyTokenStart ?? fn.tokenStart`.
    */
-  bodyTokenStart: number;
+  bodyTokenStart?: number;
   /** Body is a brace block OR a single-expression form (= pure / io / arbitrary). */
   body: FnBody;
 }

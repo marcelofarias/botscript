@@ -219,7 +219,7 @@ function collectCallees(
   const open: FnDecl[] = [];
   let nextInner = 0;
 
-  for (let i = fn.bodyTokenStart; i < fn.tokenEnd; i++) {
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
     while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
       open.push(inner[nextInner]!);
