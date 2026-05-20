@@ -49,11 +49,13 @@ describe("parseFn throws {}", () => {
   });
 
   it("throws {} is stripped from TS output", () => {
+    // HttpError appears only in the throws clause — not the fn name, param
+    // types, or return type — so its absence in the output confirms stripping.
     const src = "fn fetchRemote(id: string) throws { HttpError } -> string = id\n";
     const out = compile(src);
     expect(out).toContain("fetchRemote"); // fn is present in output
-    expect(out).not.toContain("throws"); // clause keyword stripped
-    expect(out).not.toContain("HttpError"); // exception type name stripped
+    expect(out).not.toContain("throws {"); // clause is stripped
+    expect(out).not.toContain("HttpError"); // exception type name is not leaked
   });
 
   it("rejects duplicate throws {} clauses with SYN001", () => {

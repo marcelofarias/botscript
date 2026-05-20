@@ -117,9 +117,9 @@ export function passThrCheck(src: string, version: VersionInfo): string {
 
   // Validate: declared throws must cover transitive throws.
   for (const rec of records.values()) {
-    const missing = [...rec.transitiveThrows.keys()].filter(
-      (l) => !rec.declaredThrows.has(l),
-    );
+    const missing = [...rec.transitiveThrows.keys()]
+      .filter((l) => !rec.declaredThrows.has(l))
+      .sort();
     if (missing.length > 0) {
       throw mkError(src, rec, missing);
     }
@@ -165,7 +165,7 @@ function mkError(src: string, rec: FnRecord, missingLabels: string[]): Botscript
       ? "(none)"
       : [...rec.declaredThrows].join(", ");
 
-  const proposed = [...new Set([...rec.declaredThrows, ...missingLabels])].join(", ");
+  const proposed = [...new Set([...rec.declaredThrows, ...missingLabels])].sort().join(", ");
 
   const otherMissing = missingLabels.slice(1);
   const otherTail =
