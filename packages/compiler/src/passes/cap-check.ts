@@ -135,7 +135,7 @@ function checkDirect(src: string, allowGenerics: boolean): string {
 
 function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]): void {
   const declared = new Set(fn.capabilities);
-  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
@@ -290,7 +290,7 @@ function scanBody(
   const callNames = new Set<string>();
   const fnNames = new Set(decls.map((d) => d.name));
 
-  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
