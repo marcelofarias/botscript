@@ -10,13 +10,15 @@ import type { Token } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 
 /**
- * Build a map from each FnDecl to its direct inner (nested) FnDecls.
+ * Build a map from each FnDecl to all nested (direct and indirect) FnDecls
+ * within its token range.
  *
  * A single sweep over `decls` sorted by `tokenStart` replaces a per-fn
  * `decls.filter` (which is O(n²) overall). Fn ranges are properly nested —
  * never partially overlapping — so a stack of "currently open" ancestors is
  * sufficient: every decl is appended to each ancestor still on the stack.
- * Each returned `inner` list is in ascending `tokenStart` order.
+ * Each returned list therefore includes all descendants, not just immediate
+ * children. Each list is in ascending `tokenStart` order.
  */
 export function computeNesting(decls: FnDecl[]): Map<FnDecl, FnDecl[]> {
   const inner = new Map<FnDecl, FnDecl[]>();
