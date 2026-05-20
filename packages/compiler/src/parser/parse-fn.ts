@@ -41,11 +41,11 @@ export interface FnDecl {
   args: string;
   /**
    * TypeScript-compatible args: same as `args` but with botscript `->` arrows
-   * converted to `=>` and any `uses { … }` annotations stripped from
-   * function-typed parameters. Used by `emitFn` so the emitted TypeScript
-   * compiles cleanly.
+   * converted to `=>` and any `uses { … }`, `reads { … }`, and `writes { … }`
+   * annotations stripped from function-typed parameters. Used by `emitFn` so
+   * the emitted TypeScript compiles cleanly.
    *
-   * Example: `(action: () uses { net } -> string)` →
+   * Example: `(action: () uses { net } reads { cache } -> string)` →
    *          `(action: () => string)`
    */
   argsTs: string;
@@ -57,6 +57,22 @@ export interface FnDecl {
    * Example: `(action: () uses { net } -> string)` → `["net"]`
    */
   paramCaps: string[];
+  /**
+   * Union of all resource-read labels declared in `reads { … }` annotations on
+   * function-typed parameters. Empty when no parameter carries a reads annotation.
+   * Used by `passEffCheck` (EFF003). Gated on `?bs 0.9`.
+   *
+   * Example: `(cb: () reads { cache } -> string)` → `["cache"]`
+   */
+  paramReads: string[];
+  /**
+   * Union of all resource-write labels declared in `writes { … }` annotations on
+   * function-typed parameters. Empty when no parameter carries a writes annotation.
+   * Used by `passEffCheck` (EFF004). Gated on `?bs 0.9`.
+   *
+   * Example: `(cb: () writes { metrics } -> void)` → `["metrics"]`
+   */
+  paramWrites: string[];
   capabilities: string[];
   /**
    * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
@@ -241,7 +257,7 @@ export function parseFn(
   if (!argsOpen || argsOpen.kind !== "open" || argsOpen.text !== "(" || argsOpen.matchedAt === undefined) return null;
   const argsClose = argsOpen.matchedAt;
   const args = sliceText(tokens, i, argsClose + 1);
-  const { text: argsTs, paramCaps } = buildArgsTs(tokens, i, argsClose + 1);
+  const { text: argsTs, paramCaps, paramReads, paramWrites } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
   i = argsClose + 1;
   i = skipTrivia(tokens, i);
 
@@ -492,6 +508,8 @@ export function parseFn(
     args,
     argsTs,
     paramCaps,
+    paramReads,
+    paramWrites,
     capabilities,
     reads,
     writes,
@@ -660,23 +678,31 @@ function skipTrivia(tokens: Token[], i: number): number {
 /**
  * Build the TypeScript-compatible args string from the args token range.
  *
- * Two transformations applied:
+ * Three transformations applied:
  * 1. Botscript `->` (arrow token) → TypeScript `=>` (function type arrow).
  * 2. `uses { cap, … }` annotations on function-typed parameters are stripped
  *    from the emitted text and their capability names collected into `paramCaps`.
+ * 3. `reads { label, … }` and `writes { label, … }` annotations on
+ *    function-typed parameters are stripped and collected into `paramReads` /
+ *    `paramWrites`.
  *
- * The stripping is position-independent: any `uses { }` inside the args list
- * is treated as a parameter effect annotation. This is safe because `uses` is
- * a botscript keyword and cannot appear as an identifier in TypeScript types or
- * default value expressions.
+ * The stripping is position-independent: any effect annotation inside the args
+ * list is treated as a parameter effect annotation. This is safe because the
+ * stripping only activates on the specific `uses { ... }` / `reads { ... }` /
+ * `writes { ... }` syntax pattern — a keyword/ident token immediately followed
+ * by a `{...}` block — not on bare `reads` or `writes` identifiers elsewhere in
+ * TypeScript type positions (e.g. `reads` as a field name in an object type).
  */
 function buildArgsTs(
   tokens: Token[],
   from: number,
   to: number,
-): { text: string; paramCaps: string[] } {
+  src?: string,
+): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[] } {
   let out = "";
   const paramCaps: string[] = [];
+  const paramReads: string[] = [];
+  const paramWrites: string[] = [];
   let i = from;
   while (i < to) {
     const t = tokens[i]!;
@@ -686,17 +712,32 @@ function buildArgsTs(
       i++;
       continue;
     }
-    // Strip `uses { caps }` and collect the declared capabilities.
-    if (t.kind === "keyword" && t.keyword === "uses") {
+    // Strip effect annotations (`uses`/`reads`/`writes`) and collect their labels.
+    // Note: `uses` is a lexer keyword (kind="keyword"), but `reads` and `writes`
+    // are treated as identifiers (kind="ident") by the lexer.
+    const isUses = t.kind === "keyword" && t.keyword === "uses";
+    const isReads = t.kind === "ident" && t.text === "reads";
+    const isWrites = t.kind === "ident" && t.text === "writes";
+    if (isUses || isReads || isWrites) {
       const j = skipTrivia(tokens, i + 1);
       const open = tokens[j];
       if (open && open.kind === "open" && open.text === "{" && open.matchedAt !== undefined) {
-        const caps = parseCapList(tokens, j + 1, open.matchedAt);
-        for (const c of caps) paramCaps.push(c);
+        if (isUses) {
+          const labels = parseCapList(tokens, j + 1, open.matchedAt);
+          for (const c of labels) paramCaps.push(c);
+        } else {
+          // parseLabelList validates that all tokens are plain identifiers and
+          // fires SYN001 (via src) on invalid labels like `reads { "cache" }`.
+          const labels = parseLabelList(tokens, j + 1, open.matchedAt, src);
+          if (isReads) {
+            for (const l of labels) paramReads.push(l);
+          } else {
+            for (const l of labels) paramWrites.push(l);
+          }
+        }
         i = open.matchedAt + 1;
-        // Consume any whitespace that separated `uses { … }` from the `->`.
-        // Without this, a space before `->` would remain and the emitted TS
-        // would read `(action: ()  => string)` (double space). Cosmetic only.
+        // Consume whitespace that separated the annotation from the `->` to
+        // avoid double-spacing in the emitted TypeScript output.
         while (i < to && tokens[i]?.kind === "whitespace") i++;
         continue;
       }
@@ -704,7 +745,7 @@ function buildArgsTs(
     out += t.text;
     i++;
   }
-  return { text: out, paramCaps };
+  return { text: out, paramCaps, paramReads, paramWrites };
 }
 
 function sliceText(tokens: Token[], from: number, to: number): string {

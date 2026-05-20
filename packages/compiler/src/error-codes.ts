@@ -226,6 +226,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.7\n" +
       "fn withRetry(action: () uses { net } -> string) uses { net } -> string = action()",
   },
+  EFF003: {
+    code: "EFF003",
+    title: "outer fn declares narrower reads than a callback parameter",
+    rule:
+      "if a function-typed parameter declares `reads { labels }`, the containing fn must declare at least those read labels — " +
+      "accepting a resource-reading callback without propagating its reads hides the dependency surface from callers",
+    idiom:
+      "a fn's read-dependency surface is the union of its own reads and the reads its callback parameters may exercise",
+    rewrite:
+      "fn name(cb: () reads { label } -> T) reads { …existing, label } -> ...",
+    example:
+      "// before — accepts reads-annotated callback but outer fn declares no reads\n" +
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) -> string = loader()\n\n" +
+      "// after — outer fn propagates the reads surface of its callback\n" +
+      "?bs 0.9\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string = loader()",
+  },
+  EFF004: {
+    code: "EFF004",
+    title: "outer fn declares narrower writes than a callback parameter",
+    rule:
+      "if a function-typed parameter declares `writes { labels }`, the containing fn must declare at least those write labels — " +
+      "accepting a resource-writing callback without propagating its writes hides the dependency surface from callers",
+    idiom:
+      "a fn's write-dependency surface is the union of its own writes and the writes its callback parameters may exercise",
+    rewrite:
+      "fn name(cb: () writes { label } -> T) writes { …existing, label } -> ...",
+    example:
+      "// before — accepts writes-annotated callback but outer fn declares no writes\n" +
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) -> void { recorder() }\n\n" +
+      "// after — outer fn propagates the writes surface of its callback\n" +
+      "?bs 0.9\n" +
+      "fn withMetrics(recorder: () writes { metrics } -> void) writes { metrics } -> void { recorder() }",
+  },
   RES001: {
     code: "RES001",
     title: "Result.try block has no body",

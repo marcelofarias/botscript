@@ -18,6 +18,22 @@ goes behind a new pin.
   - Over-declaration is always allowed (conservative declarations are harmless).
   - Only same-file calls are tracked (consistent with cap-check).
 
+- **EFF003 / EFF004 — `reads {}` / `writes {}` on callback parameters.**
+  From `?bs 0.9`, when a function-typed parameter carries a `reads { label }` or
+  `writes { label }` annotation, the containing fn must declare at least those
+  labels in its own `reads {}` / `writes {}` clause. Closes the "callback
+  resource-leak" vector: a higher-order fn that accepts a resource-reading or
+  resource-writing callback can no longer advertise a narrower dependency surface
+  than it can exercise. Extends the same principle as EFF002 (`uses {}` on
+  callbacks, `?bs 0.7`) to the resource-dependency annotations introduced in
+  `?bs 0.8`.
+  - `reads {}` / `writes {}` annotations are stripped from the emitted TypeScript
+    output (same as `uses {}`).
+  - EFF003 fires when a callback's declared reads are not a subset of the outer
+    fn's declared reads.
+  - EFF004 fires when a callback's declared writes are not a subset of the outer
+    fn's declared writes.
+
 - **CAP003 — capability asserted in unsafe fn (non-blocking warning).**
   From `?bs 0.9`, the compiler emits a `warning` (not an error) when a
   `uses {}` declaration appears on an `unsafe fn`. The capability inference
