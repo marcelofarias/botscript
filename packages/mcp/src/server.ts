@@ -53,7 +53,7 @@ export function createServer(): Server {
     {
       name: "transform",
       description:
-        "Compile a .bs source string to TypeScript. On success, returns { ok: true, code, forms, version }. On failure, returns { ok: false, diagnostics } where each diagnostic has { code, file?, line, column, message, rule?, idiom?, rewrite? }.",
+        "Compile a .bs source string to TypeScript. On success, returns { ok: true, code, forms, version, warnings } where warnings is an array of non-blocking diagnostics (e.g. CAP003). On failure, returns { ok: false, diagnostics } where each diagnostic has { code, file?, line, column, message, rule?, idiom?, rewrite? }.",
       inputSchema: {
         type: "object",
         properties: {
