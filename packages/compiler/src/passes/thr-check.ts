@@ -160,7 +160,10 @@ function mkError(src: string, rec: FnRecord, missingLabels: string[]): Botscript
       ? formatPath(firstPath.next)
       : pathStr;
 
-  const currentDecl = [...rec.declaredThrows].join(", ");
+  const currentDeclStr =
+    rec.declaredThrows.size === 0
+      ? "no throws clause"
+      : `throws { ${[...rec.declaredThrows].sort().join(", ")} }`;
 
   const proposed = [...new Set([...rec.declaredThrows, ...missingLabels])].sort().join(", ");
 
@@ -176,7 +179,7 @@ function mkError(src: string, rec: FnRecord, missingLabels: string[]): Botscript
 
   const message =
     `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
-    `but '${rec.decl.name}' only declares throws { ${currentDecl} }${otherTail}`;
+    `but '${rec.decl.name}' declares ${currentDeclStr}${otherTail}`;
 
   const callPath = `call path: ${pathStr}`;
   const nameEnd = rec.decl.nameStart + rec.decl.name.length;
