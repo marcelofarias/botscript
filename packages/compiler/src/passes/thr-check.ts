@@ -160,10 +160,7 @@ function mkError(src: string, rec: FnRecord, missingLabels: string[]): Botscript
       ? formatPath(firstPath.next)
       : pathStr;
 
-  const currentDecl =
-    rec.declaredThrows.size === 0
-      ? "(none)"
-      : [...rec.declaredThrows].join(", ");
+  const currentDecl = [...rec.declaredThrows].join(", ");
 
   const proposed = [...new Set([...rec.declaredThrows, ...missingLabels])].sort().join(", ");
 

@@ -248,7 +248,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "each fn header clause (reads {}, writes {}, throws {}, intent:) may appear at most once; " +
       "labels inside reads/writes/throws must be plain identifiers, not quoted strings",
     idiom:
-      "declare each resource dependency or intent claim exactly once; " +
+      "declare each resource dependency, throws declaration, or intent claim exactly once; " +
       "merge duplicate lists rather than repeating the clause",
     rewrite:
       "fn name(...) reads { cache, db } writes { metrics } -> ...",
