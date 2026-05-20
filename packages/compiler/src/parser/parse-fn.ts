@@ -76,8 +76,9 @@ export interface FnDecl {
   writes?: string[];
   /**
    * Optional declarative exception list, e.g. `throws { HttpError, TimeoutError }`. Each
-   * element is an ident naming an exception type the function (or its callees) may throw.
-   * Transitively enforced from `?bs 0.9` (THR001). Stripped from TS output.
+   * element is an ident naming an exception type the function (or its same-file statically
+   * resolved callees) may throw. Only same-file calls are tracked — cross-module and
+   * dynamic dispatch are not. Transitively enforced from `?bs 0.9` (THR001). Stripped from TS output.
    */
   throws?: string[];
   /**
