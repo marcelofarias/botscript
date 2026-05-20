@@ -158,7 +158,7 @@ function findFirstCapabilityUse(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
   );
 
-  for (let i = fn.tokenStart; i < fn.tokenEnd; i++) {
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;

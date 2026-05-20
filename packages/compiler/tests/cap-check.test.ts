@@ -307,3 +307,28 @@ describe("static capability check (0.2)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: stdlib namespace in parameter type annotation must not fire
+// ---------------------------------------------------------------------------
+
+describe("cap-check: no false positive for stdlib namespace in parameter type", () => {
+  it("does not fire CAP001 when stdlib namespace appears in parameter type annotation", () => {
+    // `http.Client` is a type annotation, not a capability call. Scanning from
+    // fn.tokenStart used to flag this as http.x and fire CAP001.
+    const src = "?bs 0.9\nfn handleReq(client: http.Client) -> string = \"ok\"\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does not fire CAP001 when stdlib namespace appears only in return type annotation", () => {
+    // Return type `http.Client` is a type annotation, not a capability call.
+    // No stdlib call in the body — should compile clean.
+    const src = "?bs 0.9\nfn makeClient() -> http.Client = \"placeholder\"\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("still fires CAP001 when stdlib call is in the body (not the header)", () => {
+    const src = "?bs 0.9\nfn fetchData(url: string) -> string {\n  http.get(url)\n}\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+});
