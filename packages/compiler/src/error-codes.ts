@@ -402,7 +402,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn process(\n" +
       "  items: string[],\n" +
-      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      "  handler: (s: string) throws { NetworkError } -> void\n" +
       ") -> void {   // THR003: missing throws { NetworkError }\n" +
       "  handler(items[0])\n" +
       "}\n\n" +
@@ -410,7 +410,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn process(\n" +
       "  items: string[],\n" +
-      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      "  handler: (s: string) throws { NetworkError } -> void\n" +
       ") throws { NetworkError } -> void {\n" +
       "  handler(items[0])\n" +
       "}",

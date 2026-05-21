@@ -381,7 +381,7 @@ describe("THR003 — callback parameter throws not covered by containing fn", ()
     expect(out).toContain("=> string");
   });
 
-  it("collects throws from multiple callback parameters, fires on first missing", () => {
+  it("collects throws from multiple callback parameters, fires when any are missing", () => {
     const src =
       "?bs 0.9\n" +
       "fn both(\n" +

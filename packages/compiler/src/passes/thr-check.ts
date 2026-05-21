@@ -334,12 +334,7 @@ function mkThr003Error(
       ? "no throws clause"
       : `throws { ${[...declared].sort().join(", ")} }`;
   const proposed = [...new Set([...declared, ...missingThrows])].sort().join(", ");
-  const firstMissing = missingThrows[0]!;
-  const otherMissing = missingThrows.slice(1);
-  const otherTail =
-    otherMissing.length > 0
-      ? `; also missing: ${otherMissing.map((t) => `"${t}"`).join(", ")}`
-      : "";
+  const missingStr = missingThrows.join(", ");
 
   return new BotscriptError([{
     code: "THR003",
@@ -350,8 +345,8 @@ function mkThr003Error(
     start: decl.fnKeywordStart,
     end: nameEnd,
     message:
-      `fn '${decl.name}' accepts callback parameter(s) that declare throws { ${firstMissing} } ` +
-      `but '${decl.name}' declares ${currentDeclStr}${otherTail}`,
+      `fn '${decl.name}' accepts callback parameter(s) that together declare throws { ${missingStr} } ` +
+      `but '${decl.name}' declares ${currentDeclStr}`,
     rule: entry.rule,
     idiom: entry.idiom,
     rewrite: `fn ${decl.name}(...) throws { ${proposed} } -> ...`,

@@ -544,7 +544,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.9\n" +
         "fn process(\n" +
         "  items: string[],\n" +
-        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        "  handler: (s: string) throws { NetworkError } -> void\n" +
         ") -> void {\n" +
         "  handler(items[0])\n" +
         "}\n",
@@ -552,7 +552,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.9\n" +
         "fn process(\n" +
         "  items: string[],\n" +
-        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        "  handler: (s: string) throws { NetworkError } -> void\n" +
         ") throws { NetworkError } -> void {\n" +
         "  handler(items[0])\n" +
         "}\n",
