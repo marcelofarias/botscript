@@ -357,4 +357,34 @@ describe("UNS003 takes precedence over UNS005 for malformed unsafe blocks", () =
       expect(err.diagnostics?.[0]?.code).toBe("UNS003");
     }
   });
+
+  it("fires UNS003 (not UNS005) for unsafe \"reason\" await ns.method() (missing {})", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) uses { net } -> string {\n" +
+      "  unsafe \"trust me\" await http.get(url)\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ code: string }> };
+      expect(err.diagnostics?.[0]?.code).toBe("UNS003");
+    }
+  });
+
+  it("fires UNS003 (not UNS005) for unsafe \"reason\" (ns.method()) (missing {})", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) uses { net } -> string {\n" +
+      "  unsafe \"trust me\" (http.get(url))\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ code: string }> };
+      expect(err.diagnostics?.[0]?.code).toBe("UNS003");
+    }
+  });
 });

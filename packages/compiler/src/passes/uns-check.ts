@@ -219,7 +219,15 @@ function isTrivia(k: string): boolean {
 
 function isMalformedUnsafeExpr(tokens: Token[], callIdx: number): boolean {
   let i = callIdx - 1;
-  while (i >= 0 && isTrivia(tokens[i]!.kind)) i--;
+  // Skip trivia, await, and grouping parens between the call and the reason string.
+  // Handles: `unsafe "r" ns.call()`, `unsafe "r" await ns.call()`, `unsafe "r" (ns.call())`.
+  while (i >= 0) {
+    const t = tokens[i]!;
+    if (isTrivia(t.kind)) { i--; continue; }
+    if (t.kind === "ident" && t.text === "await") { i--; continue; }
+    if (t.kind === "open" && t.text === "(") { i--; continue; }
+    break;
+  }
   if (i < 0 || tokens[i]?.kind !== "string") return false;
   i--;
   while (i >= 0 && isTrivia(tokens[i]!.kind)) i--;
