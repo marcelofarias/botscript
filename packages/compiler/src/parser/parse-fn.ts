@@ -699,7 +699,7 @@ function skipTrivia(tokens: Token[], i: number): number {
 /**
  * Build the TypeScript-compatible args string from the args token range.
  *
- * Three transformations applied:
+ * Four transformations applied:
  * 1. Botscript `->` (arrow token) → TypeScript `=>` (function type arrow).
  * 2. `uses { cap, … }` annotations on function-typed parameters are stripped
  *    from the emitted text and their capability names collected into `paramCaps`.
