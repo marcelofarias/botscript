@@ -278,10 +278,6 @@ function checkBodyErrors(
     if (declaredThrows.has(typeName)) continue;
 
     const { line, column } = locationOf(src, tok.start);
-    const currentDeclStr =
-      declaredThrows.size === 0
-        ? "no throws clause"
-        : `throws { ${[...declaredThrows].sort().join(", ")} }`;
     const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
 
     return new BotscriptError([{
