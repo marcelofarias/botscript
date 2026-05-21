@@ -706,13 +706,15 @@ function skipTrivia(tokens: Token[], i: number): number {
  * 3. `reads { label, … }` and `writes { label, … }` annotations on
  *    function-typed parameters are stripped and collected into `paramReads` /
  *    `paramWrites`.
+ * 4. `throws { Type, … }` annotations on function-typed parameters are stripped
+ *    from the emitted text and their type names collected into `paramThrows`.
  *
  * The stripping is position-independent: any effect annotation inside the args
  * list is treated as a parameter effect annotation. This is safe because the
  * stripping only activates on the specific `uses { ... }` / `reads { ... }` /
- * `writes { ... }` syntax pattern — a keyword/ident token immediately followed
- * by a `{...}` block — not on bare `reads` or `writes` identifiers elsewhere in
- * TypeScript type positions (e.g. `reads` as a field name in an object type).
+ * `writes { ... }` / `throws { ... }` syntax pattern — a keyword/ident token
+ * immediately followed by a `{...}` block — not on bare identifiers elsewhere
+ * in TypeScript type positions (e.g. `reads` as a field name in an object type).
  */
 function buildArgsTs(
   tokens: Token[],
