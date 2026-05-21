@@ -25,6 +25,7 @@ import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
+import { nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 /** stdlib namespace -> capability it consumes. */
@@ -470,25 +471,6 @@ function insideAny(idx: number, ranges: FnDecl[]): boolean {
     if (idx >= r.tokenStart && idx < r.tokenEnd) return true;
   }
   return false;
-}
-
-function nextSignificant(tokens: Token[], from: number): number {
-  let i = from;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (!t) return i;
-    if (
-      t.kind === "whitespace" ||
-      t.kind === "newline" ||
-      t.kind === "lineComment" ||
-      t.kind === "blockComment"
-    ) {
-      i++;
-      continue;
-    }
-    return i;
-  }
-  return i;
 }
 
 function nextIdent(tokens: Token[], dotIdx: number): string | null {
