@@ -442,6 +442,45 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn loadUser(id: string) reads { cache } -> string = getFromCache(id)\n",
     },
   },
+  MAT001: {
+    code: "MAT001",
+    title: "non-exhaustive match on Result — missing ok or err arm",
+    body:
+      "From `?bs 0.9`, a `match` expression that explicitly handles the `ok` or `err` tag " +
+      "must also handle the opposing tag (or include a wildcard `_` arm).\n\n" +
+      "This fires when you match on a Result value but leave one path unhandled:\n\n" +
+      "```\n" +
+      "// MAT001: match on Result is missing 'err' arm\n" +
+      "match http.get(url) {\n" +
+      "  ok { value } -> value.body\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Suppression mechanisms (in order of preference):**\n\n" +
+      "1. **Explicit err arm** — handle the error case directly:\n" +
+      "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     err { e } -> err(e.message)\n   }\n   ```\n\n" +
+      "2. **Wildcard arm** — use `_` when you want to coerce or ignore the missing case:\n" +
+      "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     _ -> err(\"request failed\")\n   }\n   ```\n\n" +
+      "The check is scoped to the `ok`/`err` tag vocabulary — it fires only when at least one " +
+      "of those tags is explicitly named in an arm. User-defined tagged unions with different " +
+      "tag names are not affected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchData(url: string) uses { net } -> string {\n" +
+        "  match http.get(url) {\n" +
+        "    ok { value } -> value.body\n" +
+        "  }\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
+        "  match http.get(url) {\n" +
+        "    ok { value } -> ok(value.body)\n" +
+        "    err { e } -> err(e.message)\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   DEP002: {
     code: "DEP002",
     title: "fn transitively writes a resource category not declared in its header",

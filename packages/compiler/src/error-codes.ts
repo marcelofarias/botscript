@@ -364,6 +364,34 @@ const E: Record<string, ErrorCodeEntry> = {
       "  handler(items[0])\n" +
       "}",
   },
+  MAT001: {
+    code: "MAT001",
+    title: "non-exhaustive match on Result — missing ok or err arm",
+    rule:
+      "a match expression that explicitly handles the `ok` or `err` tag must also handle the other; " +
+      "add the missing arm or a wildcard `_` to make the match exhaustive",
+    idiom:
+      "prefer explicit `ok` and `err` arms over a wildcard when the error type carries useful context — " +
+      "a wildcard silently discards the payload",
+    rewrite:
+      "add 'err { e } -> ...' arm or '_ -> ...' wildcard",
+    example:
+      "// before — match on Result is missing the err arm\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> string {\n" +
+      "  match http.get(`/users/${id}`) {\n" +
+      "    ok { value } -> value.body  // MAT001: missing err arm\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(`/users/${id}`) {\n" +
+      "    ok { value } -> ok(value.body)\n" +
+      "    err { e } -> err(e.message)\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",

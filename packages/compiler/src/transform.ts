@@ -13,6 +13,7 @@ import { passThrCheck } from "./passes/thr-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
 import { passMatch } from "./passes/match.js";
+import { passMatCheck } from "./passes/mat-check.js";
 import { passPrimer } from "./passes/primer.js";
 import { passResultTry } from "./passes/result-try.js";
 import { passTaggedUnion } from "./passes/tagged-union.js";
@@ -77,6 +78,9 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "depCheck", fn: passDepCheck, minVersion: "0.9" },
   // thrCheck: transitivity enforcement for throws {} annotations (THR001).
   { name: "thrCheck", fn: passThrCheck, minVersion: "0.9" },
+  // matCheck: exhaustiveness check on Result match (MAT001) — fires when a
+  // match explicitly handles ok or err but omits the other without a wildcard.
+  { name: "matCheck", fn: passMatCheck, minVersion: "0.9" },
   // capAssert: non-blocking warning (CAP003) when a `uses {}` claim appears on
   // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
   // Runs before capCheck so capCheck still validates the claim's content.
