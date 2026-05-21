@@ -332,7 +332,7 @@ describe("cap-check: no false positive for stdlib namespace in parameter type", 
     // fires because uses { net } is absent.
     const src =
       "?bs 0.9\nfn fetchData(url: string) -> Result<string, string> {\n" +
-      "  match http.get(url) {\n    ok { value } -> value\n    err { error } -> error\n  }\n}\n";
+      "  match http.get(url) {\n    ok { value } -> ok(value)\n    err { error } -> err(error)\n  }\n}\n";
     expect(() => t(src)).toThrow(/CAP001/);
   });
 });
