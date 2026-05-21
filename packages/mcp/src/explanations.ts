@@ -450,13 +450,17 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "must also handle the opposing tag (or include a wildcard `_` arm).\n\n" +
       "This fires when you match on a Result value but leave one path unhandled:\n\n" +
       "```\n" +
-      "// MAT001: match on Result is missing 'err' arm\n" +
+      "// MAT001: missing 'err' arm\n" +
       "match http.get(url) {\n" +
       "  ok { value } -> value.body\n" +
+      "}\n\n" +
+      "// MAT001: missing 'ok' arm\n" +
+      "match result {\n" +
+      "  err { e } -> err(e)\n" +
       "}\n" +
       "```\n\n" +
       "**Suppression mechanisms (in order of preference):**\n\n" +
-      "1. **Explicit err arm** — handle the error case directly:\n" +
+      "1. **Add the missing arm** — handle both success and failure explicitly:\n" +
       "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     err { e } -> err(e.message)\n   }\n   ```\n\n" +
       "2. **Wildcard arm** — use `_` when you want to coerce or ignore the missing case:\n" +
       "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     _ -> err(\"request failed\")\n   }\n   ```\n\n" +

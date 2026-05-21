@@ -374,7 +374,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "prefer explicit `ok` and `err` arms over a wildcard when the error type carries useful context — " +
       "a wildcard silently discards the payload",
     rewrite:
-      "add 'err { e } -> ...' arm or '_ -> ...' wildcard",
+      "add the missing 'ok { v } -> ...' or 'err { e } -> ...' arm, or a '_ -> ...' wildcard",
     example:
       "// before — match on Result is missing the err arm\n" +
       "?bs 0.9\n" +

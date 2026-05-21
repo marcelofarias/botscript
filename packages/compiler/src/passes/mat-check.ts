@@ -52,6 +52,8 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     const matchStart = tokens[expr.start]!.start;
     const { line, column } = locationOf(src, matchStart);
     const missing = hasOk ? "err" : "ok";
+    const missingPattern = missing === "err" ? "'err { e } -> ...'" : "'ok { v } -> ...'";
+    const rewrite = `add ${missingPattern} arm or a '_ -> ...' wildcard`;
 
     throw new BotscriptError([{
       code: "MAT001",
@@ -64,7 +66,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
       message: `match on Result is missing '${missing}' arm — add '${missing} { ... } -> ...' or a wildcard '_ -> ...' arm`,
       rule: entry.rule,
       idiom: entry.idiom,
-      rewrite: entry.rewrite,
+      rewrite,
     }]);
   }
 
