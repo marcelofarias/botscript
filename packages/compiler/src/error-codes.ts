@@ -281,10 +281,10 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN001",
     title: "duplicate or invalid fn header clause",
     rule:
-      "each fn header clause (reads {}, writes {}, intent:) may appear at most once; " +
-      "labels inside reads/writes must be plain identifiers, not quoted strings",
+      "each fn header clause (reads {}, writes {}, throws {}, intent:) may appear at most once; " +
+      "labels inside reads/writes/throws must be plain identifiers, not quoted strings",
     idiom:
-      "declare each resource dependency or intent claim exactly once; " +
+      "declare each resource dependency, throws declaration, or intent claim exactly once; " +
       "merge duplicate lists rather than repeating the clause",
     rewrite:
       "fn name(...) reads { cache, db } writes { metrics } -> ...",
@@ -335,6 +335,27 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
       "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }",
+  },
+  THR001: {
+    code: "THR001",
+    title: "fn transitively throws an exception type not declared in its header",
+    rule:
+      "if fn A calls fn B (directly or transitively) and B declares `throws { X }`, " +
+      "then A must also declare `throws { X }` — the throws surface must be complete at every call layer",
+    idiom:
+      "a fn's throws declaration is the union of its own declared throws plus the throws of everything it calls; " +
+      "add the missing exception type to the caller's `throws { }` clause",
+    rewrite:
+      "fn name(...) throws { …existing, MissingError } -> ...",
+    example:
+      "// before — loadUser calls fetchRemote which throws { HttpError }, but loadUser doesn't declare it\n" +
+      "?bs 0.9\n" +
+      "fn fetchRemote(id: string) throws { HttpError } -> string = id\n" +
+      "fn loadUser(id: string) -> string = fetchRemote(id)  // THR001\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn fetchRemote(id: string) throws { HttpError } -> string = id\n" +
+      "fn loadUser(id: string) throws { HttpError } -> string = fetchRemote(id)",
   },
 };
 
