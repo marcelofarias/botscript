@@ -387,4 +387,23 @@ describe("UNS003 takes precedence over UNS005 for malformed unsafe blocks", () =
       expect(err.diagnostics?.[0]?.code).toBe("UNS003");
     }
   });
+
+  it("fires UNS003 (not UNS005) for unsafe \"reason\" foo(ns.method()) — wrapped call", () => {
+    // `unsafe "reason" foo(http.get(url))` — the stdlib call is inside a
+    // wrapper function, but the unsafe block is still missing `{ ... }`.
+    // isMalformedUnsafeExpr must scan past the wrapper ident and parens to
+    // detect the enclosing unsafe expression and suppress UNS005.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) uses { net } -> string {\n" +
+      "  unsafe \"trust me\" log(http.get(url))\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ code: string }> };
+      expect(err.diagnostics?.[0]?.code).toBe("UNS003");
+    }
+  });
 });
