@@ -37,6 +37,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./cap-check.js";
+import { computeNesting } from "./_callgraph.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -212,12 +213,16 @@ function collectUnsafeBlockRanges(tokens: Token[], out: CharRange[]): void {
  * passUnsafe will fire UNS003 (missing body) for this form — suppress UNS005
  * so the more specific diagnostic wins.
  */
+function isTrivia(k: string): boolean {
+  return k === "whitespace" || k === "newline" || k === "lineComment" || k === "blockComment";
+}
+
 function isMalformedUnsafeExpr(tokens: Token[], callIdx: number): boolean {
   let i = callIdx - 1;
-  while (i >= 0 && (tokens[i]?.kind === "whitespace" || tokens[i]?.kind === "newline")) i--;
+  while (i >= 0 && isTrivia(tokens[i]!.kind)) i--;
   if (i < 0 || tokens[i]?.kind !== "string") return false;
   i--;
-  while (i >= 0 && (tokens[i]?.kind === "whitespace" || tokens[i]?.kind === "newline")) i--;
+  while (i >= 0 && isTrivia(tokens[i]!.kind)) i--;
   const t = tokens[i];
   return !!(t && t.kind === "keyword" && t.keyword === "unsafe");
 }
@@ -323,20 +328,3 @@ function insideAnyChar(offset: number, ranges: CharRange[]): boolean {
   return false;
 }
 
-function computeNesting(decls: FnDecl[]): Map<FnDecl, FnDecl[]> {
-  const inner = new Map<FnDecl, FnDecl[]>();
-  for (const d of decls) inner.set(d, []);
-
-  const sorted = [...decls].sort((a, b) => a.tokenStart - b.tokenStart);
-  const stack: FnDecl[] = [];
-
-  for (const d of sorted) {
-    while (stack.length > 0 && stack[stack.length - 1]!.tokenEnd <= d.tokenStart) {
-      stack.pop();
-    }
-    for (const ancestor of stack) inner.get(ancestor)!.push(d);
-    stack.push(d);
-  }
-
-  return inner;
-}
