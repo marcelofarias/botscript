@@ -183,9 +183,13 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
     ? `'${leaf}' which throws { ${firstLabel} }`
     : `${displayPath} — '${leaf}' throws { ${firstLabel} }`;
 
+  const declSuffix =
+    rec.declaredThrows.size === 0
+      ? `has no throws clause`
+      : `only declares ${currentDeclStr}`;
   const message =
     `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
-    `but '${rec.decl.name}' declares ${currentDeclStr}${otherTail}`;
+    `but '${rec.decl.name}' ${declSuffix}${otherTail}`;
 
   const callPath = `call path: ${pathStr}`;
   const nameEnd = rec.decl.nameStart + rec.decl.name.length;
@@ -289,8 +293,9 @@ function checkBodyErrors(
       start: tok.start,
       end: tok.end,
       message:
-        `fn '${fn.name}' constructs err(${typeName}...) but '${typeName}' ` +
-        `is not in ${currentDeclStr}`,
+        declaredThrows.size === 0
+          ? `fn '${fn.name}' constructs err(${typeName}...) but has no throws clause`
+          : `fn '${fn.name}' constructs err(${typeName}...) but '${typeName}' is not declared in throws { ${[...declaredThrows].sort().join(", ")} }`,
       rule: entry.rule,
       idiom: entry.idiom,
       rewrite: `fn ${fn.name}(...) throws { ${proposed} } -> ...`,
