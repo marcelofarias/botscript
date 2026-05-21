@@ -348,7 +348,7 @@ function mkThr003Error(
     end: nameEnd,
     message:
       `fn '${decl.name}' accepts callback parameter(s) that together declare throws { ${missingStr} } ` +
-      `but '${decl.name}' declares ${currentDeclStr}`,
+      `but '${decl.name}' ${decl.throws === undefined ? "has no throws clause" : `declares ${currentDeclStr}`}`,
     rule: entry.rule,
     idiom: entry.idiom,
     rewrite: `fn ${decl.name}(...) throws { ${proposed} } -> ...`,
