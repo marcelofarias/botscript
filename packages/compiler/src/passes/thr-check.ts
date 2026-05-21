@@ -330,9 +330,11 @@ function mkThr003Error(
   const nameEnd = decl.nameStart + decl.name.length;
 
   const currentDeclStr =
-    declared.size === 0
+    decl.throws === undefined
       ? "no throws clause"
-      : `throws { ${[...declared].sort().join(", ")} }`;
+      : declared.size === 0
+        ? "throws {} (empty)"
+        : `throws { ${[...declared].sort().join(", ")} }`;
   const proposed = [...new Set([...declared, ...missingThrows])].sort().join(", ");
   const missingStr = missingThrows.join(", ");
 
