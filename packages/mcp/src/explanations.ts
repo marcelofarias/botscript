@@ -463,6 +463,64 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }\n",
     },
   },
+  THR001: {
+    code: "THR001",
+    title: "fn transitively throws an exception type not declared in its header",
+    body:
+      "THR001 fires from `?bs 0.9` when fn A calls fn B (directly or transitively, same file) " +
+      "and B declares `throws { X }` that A's own `throws { }` clause does not include.\n\n" +
+      "The throws declaration is the caller's contract: reading A's header should tell you every " +
+      "exception type A (or anything it calls) may produce. Without the transitivity rule, callers " +
+      "of A see an incomplete failure surface — they match on A's declared throws and miss the " +
+      "types that bubble up from deeper in the call graph.\n\n" +
+      "Over-declaration is intentionally allowed: a fn may declare `throws { X, Y }` even if it " +
+      "only calls fns that throw `{ X }`. Conservative declarations are safe; under-declarations " +
+      "are not.\n\n" +
+      "THR001 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchRemote(id: string) throws { HttpError } -> string = id\n" +
+        "fn loadUser(id: string) -> string = fetchRemote(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn fetchRemote(id: string) throws { HttpError } -> string = id\n" +
+        "fn loadUser(id: string) throws { HttpError } -> string = fetchRemote(id)\n",
+    },
+  },
+  THR002: {
+    code: "THR002",
+    title: "fn body constructs an error type absent from its throws declaration",
+    body:
+      "THR002 fires from `?bs 0.9` when a fn body contains `err(TypeName(...))`, " +
+      "`err(new TypeName(...))`, or bare `err(TypeName)` where TypeName (a CapCase " +
+      "identifier) is not present in the fn's own `throws { }` clause.\n\n" +
+      "This is the producer-side complement to THR001. THR001 ensures callers propagate the " +
+      "throws surface; THR002 ensures the fn actually declares what it produces. Without it, " +
+      "a fn can silently return an error type its callers cannot match — exhaustive match arms " +
+      "for the undeclared type will be permanently dead code.\n\n" +
+      "**Scope:** token-based detection only. Direct construction patterns are caught:\n" +
+      "- `err(HttpError(msg))` → detects `HttpError`\n" +
+      "- `err(new ParseError(...))` → detects `ParseError`\n" +
+      "- `err(BuildError)` → detects `BuildError` (bare ref, not a call)\n\n" +
+      "Indirect patterns (`err(e)` where `e` carries a type) require inference and are " +
+      "intentionally out of scope.\n\n" +
+      "THR002 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn parseConfig(s: string) throws { ParseError } -> Result<string, string> {\n" +
+        "  if (bad) err(NetworkError(\"timed out\"))\n" +
+        "  else ok(s)\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn parseConfig(s: string) throws { ParseError, NetworkError } -> Result<string, string> {\n" +
+        "  if (bad) err(NetworkError(\"timed out\"))\n" +
+        "  else ok(s)\n" +
+        "}\n",
+    },
+  },
   THR003: {
     code: "THR003",
     title: "outer fn declares narrower throws than a callback parameter",

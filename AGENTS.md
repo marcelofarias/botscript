@@ -194,6 +194,8 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | RES001 | (0.3+) `Result.try` / `Result.tryAsync` with no body. | `Result.try { <body that may throw> }`. |
 | INT001 | (0.7+) A fn declares `intent: "pure"` but also has `uses { … }`. (0.8+) Also fires when `intent: "pure"` is combined with `reads { … }` or `writes { … }`. Pure functions may not declare capabilities or resource dependencies. | Either drop the conflicting header clause(s) or change the intent to reflect the actual behaviour. |
 | SYN001 | Duplicate fn header clause (e.g. two `reads { }` on the same fn, or two `intent:`), or a label inside `reads {}` / `writes {}` that is not a plain identifier. `parseFn` is version-agnostic, so SYN001 fires whenever a duplicate clause is written regardless of the `?bs` pin. | Declare each header clause once; merge label lists rather than repeating the clause; use bare identifiers (not quoted strings) as labels. |
+| THR001 | (0.9+) A fn (or a same-file callee, transitively) throws an exception type not declared in the fn's `throws {}`. If `loadUser` calls `fetchRow throws { NetworkError }`, `loadUser` must also declare `throws { NetworkError }`. | Add the missing type(s) to `throws {}` at each level of the call chain. |
+| THR002 | (0.9+) A fn body directly constructs `err(TypeName(...))`, `err(new TypeName(...))`, or `err(TypeName)` where `TypeName` (CapCase) is not declared in the fn's own `throws {}` clause. Producer-side complement to THR001. | Add `TypeName` to the fn's `throws {}`, or change the error construction to use a declared type. |
 
 When you add a new compiler error, allocate the next free code in the same
 range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
