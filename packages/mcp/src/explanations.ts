@@ -556,6 +556,60 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         ") throws { NetworkError } -> void { handler(items[0]) }\n",
     },
   },
+  VER001: {
+    code: "VER001",
+    title: "reads {} / writes {} declared below the ?bs 0.9 enforcement floor",
+    body:
+      "From `?bs 0.9`, the compiler enforces that `reads {}` / `writes {}` annotations are " +
+      "transitively consistent across same-file calls (DEP001/DEP002). Below that version, " +
+      "the annotations are parsed and accepted silently — they are documentation, not verified claims.\n\n" +
+      "VER001 fires as a **warning** (non-blocking) when a non-empty `reads {}` or `writes {}` " +
+      "clause is declared on a fn in a file pinned below `?bs 0.9`. A reviewer reading the " +
+      "header would reasonably assume the compiler has checked the transitivity claim — it has not.\n\n" +
+      "The most common scenario: a team in mid-upgrade writes `reads { userDb }` annotations " +
+      "while still on `?bs 0.8`, intending to enforce later. VER001 makes the lack of " +
+      "enforcement visible so reviewers are not given false assurance.\n\n" +
+      "**Empty clauses are not flagged.** `reads {}` (no labels) on an old-pin file is likely " +
+      "an intentional forward-declaration placeholder and does not create false assurance.\n\n" +
+      "The fix is to upgrade the `?bs` pin to `0.9` (which activates DEP001/DEP002 enforcement) " +
+      "or to leave the annotation in place knowing it is documentation-only until the upgrade.",
+    example: {
+      fails:
+        "?bs 0.8\n" +
+        "fn loadUser(id: string) reads { userDb } -> string = id\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn loadUser(id: string) reads { userDb } -> string = id\n",
+    },
+  },
+  VER002: {
+    code: "VER002",
+    title: "throws {} declared below the ?bs 0.9 enforcement floor",
+    body:
+      "From `?bs 0.9`, the compiler enforces that `throws {}` annotations are transitively " +
+      "consistent across same-file calls (THR001) and that fn bodies do not construct error " +
+      "types absent from the declaration (THR002). Below that version, the annotations are " +
+      "parsed and accepted silently — they are documentation, not verified claims.\n\n" +
+      "VER002 fires as a **warning** (non-blocking) when a non-empty `throws {}` clause is " +
+      "declared on a fn in a file pinned below `?bs 0.9`. A reviewer reading the header would " +
+      "reasonably assume the compiler has checked the transitivity claim — it has not.\n\n" +
+      "The most common scenario: a team writes `throws { NetworkError }` annotations while " +
+      "still on `?bs 0.8`, intending to enforce at upgrade time. When they finally pin to " +
+      "`?bs 0.9`, they may discover the entire call graph needs new declarations — a large, " +
+      "surprising diff. VER002 makes this risk visible before the upgrade.\n\n" +
+      "**Empty clauses are not flagged.** `throws {}` (no types) on an old-pin file is likely " +
+      "an intentional forward-declaration placeholder and does not create false assurance.\n\n" +
+      "The fix is to upgrade the `?bs` pin to `0.9` (which activates THR001/THR002 enforcement) " +
+      "or to leave the annotation knowing it is documentation-only until the upgrade.",
+    example: {
+      fails:
+        "?bs 0.8\n" +
+        "fn loadUser(id: string) throws { NetworkError } -> string = id\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn loadUser(id: string) throws { NetworkError } -> string = id\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();
