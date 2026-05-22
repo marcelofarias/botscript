@@ -178,7 +178,7 @@ claude mcp add botscript -- npx -y @mbfarias/botscript-mcp
 | ----------- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `primer`    | (no args)                              | The canonical language primer (same text the `?primer` directive emits).                            |
 | `transform` | `{ source: string, filename?: string }` | `{ ok: true, code, forms, version }` on success, or `{ ok: false, diagnostics: [...] }` on failure. |
-| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`, `CAP002`, `UNS001`–`UNS004`, `RES001`, `FMT001`, `INT001`, `SYN001`) plus a fails/passes example pair. |
+| `explain`   | `{ code: string }`                     | Long-form explanation for a stable diagnostic code (`BS001`, `BS002`, `CAP001`, `CAP002`, `UNS001`–`UNS004`, `RES001`, `FMT001`, `INT001`, `SYN001`, `THR002`) plus a fails/passes example pair. |
 
 A bot's loop becomes deterministic: `transform` → if `ok=false`, read
 `diagnostics[0].code` → `explain(code)` → apply `rewrite` → `transform` again.
