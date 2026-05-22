@@ -18,7 +18,7 @@
  *           is flagging an omission.
  *
  *           Suppression mechanisms:
- *             1. Wrap in `match` to handle both Ok and Err arms.
+ *             1. Wrap in `match` to handle both ok and err arms.
  *             2. Use `unsafe "<reason>" { ... }` to accept the uncertainty
  *                with a written explanation.
  *             3. Declare the containing fn as `unsafe "<reason>" fn` when
@@ -37,7 +37,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./cap-check.js";
-import { computeNesting } from "./_callgraph.js";
+import { computeNesting, nextSignificant } from "./_callgraph.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -90,10 +90,13 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
       if (!tok || tok.kind !== "ident") continue;
       if (!STDLIB_CAPS.has(tok.text)) continue;
 
-      // Must be `stdlib.method(` — confirm the shape before acting.
+      // Must be `stdlib.method(` or `stdlib?.method(` — confirm the shape before acting.
       const dotIdx = nextSignificant(tokens, i + 1);
       const dotTok = tokens[dotIdx];
-      if (!dotTok || dotTok.kind !== "punct" || dotTok.text !== ".") continue;
+      if (
+        !dotTok ||
+        !((dotTok.kind === "punct" && dotTok.text === ".") || dotTok.kind === "questionDot")
+      ) continue;
 
       const memberIdx = nextSignificant(tokens, dotIdx + 1);
       const memberTok = tokens[memberIdx];
@@ -311,25 +314,6 @@ function isDirectMatchSubject(tokens: Token[], callIdx: number, closingParenIdx?
     return t.kind === "open" && t.text === "{";
   }
   return false;
-}
-
-function nextSignificant(tokens: Token[], start: number): number {
-  let i = start;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (!t) return i;
-    if (
-      t.kind === "whitespace" ||
-      t.kind === "newline" ||
-      t.kind === "lineComment" ||
-      t.kind === "blockComment"
-    ) {
-      i++;
-      continue;
-    }
-    return i;
-  }
-  return i;
 }
 
 function insideAnyChar(offset: number, ranges: CharRange[]): boolean {
