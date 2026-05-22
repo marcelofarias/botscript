@@ -28,7 +28,7 @@
  * an old-pin file is likely an intentional forward-declaration placeholder
  * and does not create false assurance.
  *
- *   ?bs 0.9+  This pass is not run (enforcement is active, no warning needed).
+ *   ?bs 0.9+  This pass is a no-op (enforcement is active, no warning needed).
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -54,15 +54,15 @@ export function passVerCheck(src: string, version: VersionInfo): VerCheckResult 
   const ver002 = getErrorCode("VER002")!;
 
   for (const { decl } of program.fns) {
-    const hasUnenforceReads = (decl.reads?.length ?? 0) > 0;
-    const hasUnenforceWrites = (decl.writes?.length ?? 0) > 0;
-    const hasUnenforceThrows = (decl.throws?.length ?? 0) > 0;
+    const hasUnenforcedReads = (decl.reads?.length ?? 0) > 0;
+    const hasUnenforcedWrites = (decl.writes?.length ?? 0) > 0;
+    const hasUnenforcedThrows = (decl.throws?.length ?? 0) > 0;
 
-    if (hasUnenforceReads || hasUnenforceWrites) {
+    if (hasUnenforcedReads || hasUnenforcedWrites) {
       const { line, column } = locationOf(src, decl.fnKeywordStart);
       const clauses: string[] = [];
-      if (hasUnenforceReads) clauses.push(`reads { ${decl.reads!.join(", ")} }`);
-      if (hasUnenforceWrites) clauses.push(`writes { ${decl.writes!.join(", ")} }`);
+      if (hasUnenforcedReads) clauses.push(`reads { ${decl.reads!.join(", ")} }`);
+      if (hasUnenforcedWrites) clauses.push(`writes { ${decl.writes!.join(", ")} }`);
       const clauseStr = clauses.join(" / ");
 
       warnings.push({
@@ -82,7 +82,7 @@ export function passVerCheck(src: string, version: VersionInfo): VerCheckResult 
       });
     }
 
-    if (hasUnenforceThrows) {
+    if (hasUnenforcedThrows) {
       const { line, column } = locationOf(src, decl.fnKeywordStart);
       const throwsStr = `throws { ${decl.throws!.join(", ")} }`;
 

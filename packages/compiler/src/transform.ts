@@ -65,7 +65,7 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   { name: "intentCheck", fn: passIntentCheck, minVersion: "0.7" },
   // verCheck: non-blocking warning (VER001/VER002) when reads/writes/throws
   // annotations are declared below their enforcement floor (?bs 0.9). Runs
-  // early so it can see the full, unmodified header. Not run at 0.9+ because
+  // early so it can see the full, unmodified header. No-op at 0.9+ because
   // the enforcement passes (depCheck, thrCheck) already validate the claims.
   { name: "verCheck", fn: passVerCheck },
   // effCheck: header-level check that the outer fn's capabilities cover the
