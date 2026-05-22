@@ -166,11 +166,6 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
       ? formatPath(firstPath.next)
       : pathStr;
 
-  const currentDeclStr =
-    rec.declaredThrows.size === 0
-      ? "no throws clause"
-      : `throws { ${[...rec.declaredThrows].sort().join(", ")} }`;
-
   const proposed = [...new Set([...rec.declaredThrows, ...missingLabels])].sort().join(", ");
 
   const otherMissing = missingLabels.slice(1);
@@ -186,7 +181,7 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
   const declSuffix =
     rec.declaredThrows.size === 0
       ? `has no throws clause`
-      : `only declares ${currentDeclStr}`;
+      : `has throws { ${[...rec.declaredThrows].sort().join(", ")} } but not { ${missingLabels.join(", ")} }`;
   const message =
     `fn '${rec.decl.name}'${transitively} calls ${callDescription}, ` +
     `but '${rec.decl.name}' ${declSuffix}${otherTail}`;

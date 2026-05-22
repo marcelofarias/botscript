@@ -282,6 +282,22 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).toThrow(/THR002/);
   });
 
+  it("fires with 'has no throws clause' message when fn has no throws annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parse(s: string) -> Result<string, string> {\n" +
+      "  err(ParseError(\"bad\"))\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ code: string; message: string }> };
+      expect(err.diagnostics?.[0]?.code).toBe("THR002");
+      expect(err.diagnostics?.[0]?.message).toMatch(/has no throws clause/);
+    }
+  });
+
   it("does not fire for err call inside an inner fn that itself declares the type", () => {
     const src =
       "?bs 0.9\n" +
