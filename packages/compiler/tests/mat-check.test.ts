@@ -99,7 +99,7 @@ describe("MAT001: suppressed when exhaustive", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
-  it("does not fire for a match with no ok/err arms (user-defined tags)", () => {
+  it("does not fire for a match with no ok/err tag arms (non-ok/err patterns)", () => {
     const src =
       "?bs 0.9\n" +
       "fn classify(x: number) -> string {\n" +
