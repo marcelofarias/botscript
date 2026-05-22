@@ -75,7 +75,7 @@ describe("MAT001: suppressed when exhaustive", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
-  it("does not fire when a wildcard arm is present (no ok)", () => {
+  it("does not fire when a wildcard arm covers the missing err", () => {
     const src =
       "?bs 0.9\n" +
       "fn fetchData(url: string) uses { net } -> Result<string, string> {\n" +
@@ -87,7 +87,7 @@ describe("MAT001: suppressed when exhaustive", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
-  it("does not fire when a wildcard arm is present (no err)", () => {
+  it("does not fire when a wildcard arm covers the missing ok", () => {
     const src =
       "?bs 0.9\n" +
       "fn fetchData(url: string) uses { net } -> string {\n" +
