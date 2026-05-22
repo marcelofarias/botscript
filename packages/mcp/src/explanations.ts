@@ -460,8 +460,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "}\n" +
       "```\n\n" +
       "**Suppression mechanisms (in order of preference):**\n\n" +
-      "1. **Add the missing arm** — handle both success and failure explicitly:\n" +
-      "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     err { e } -> err(e.message)\n   }\n   ```\n\n" +
+      "1. **Add the missing arm** — handle both arms explicitly (add whichever is absent):\n" +
+      "   ```\n   // missing err arm:\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     err { e } -> err(e.message)\n   }\n\n   // missing ok arm:\n   match result {\n     ok { v } -> v.body\n     err { e } -> err(e)\n   }\n   ```\n\n" +
       "2. **Wildcard arm** — use `_` when you want to coerce or ignore the missing case:\n" +
       "   ```\n   match http.get(url) {\n     ok { value } -> ok(value.body)\n     _ -> err(\"request failed\")\n   }\n   ```\n\n" +
       "The check is scoped to the `ok`/`err` tag vocabulary — it fires only when at least one " +
