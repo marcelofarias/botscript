@@ -125,6 +125,9 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
       const ns = tok.text;
       const member = memberTok.text;
 
+      const isOptChain = dotTok.kind === "questionDot";
+      const accessOp = isOptChain ? "?." : ".";
+      const callExpr = `${ns}${accessOp}${member}`;
       const closingParen = parenTok.matchedAt !== undefined ? tokens[parenTok.matchedAt] : undefined;
       diagnostics.push({
         code: "UNS005",
@@ -135,18 +138,18 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
         start: tok.start,
         end: closingParen?.end ?? memberTok.end,
         message:
-          `'${ns}.${member}(...)' is an external call with no declared result contract — ` +
+          `'${callExpr}(...)' is an external call with no declared result contract — ` +
           `the return value may be structurally typed but semantically incorrect`,
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite:
           `// option A — match on the result (handles both ok and err):\n` +
-          `match ${ns}.${member}(...) {\n` +
+          `match ${callExpr}(...) {\n` +
           `  ok { value } -> { /* use value */ }\n` +
           `  err { error } -> { /* handle error */ }\n` +
           `}\n\n` +
           `// option B — accept the uncertainty with a written reason:\n` +
-          `unsafe "I know what ${ns}.${member} returns here" { ${ns}.${member}(...) }`,
+          `unsafe "I know what ${callExpr} returns here" { ${callExpr}(...) }`,
       });
 
       // Do not advance past the closing paren — inner stdlib calls in the
@@ -230,6 +233,7 @@ function isMalformedUnsafeExpr(tokens: Token[], callIdx: number): boolean {
     if (isTrivia(t.kind)) { i--; continue; }
     if (t.kind === "ident") { i--; continue; }
     if (t.kind === "punct" && t.text === ".") { i--; continue; }
+    if (t.kind === "questionDot") { i--; continue; }
     if (t.kind === "open" && t.text === "(") { i--; continue; }
     if (t.kind === "close" && t.text === ")") { i--; continue; }
     break;
