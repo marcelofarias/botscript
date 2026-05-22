@@ -587,8 +587,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     title: "throws {} declared below the ?bs 0.9 enforcement floor",
     body:
       "From `?bs 0.9`, the compiler enforces that `throws {}` annotations are transitively " +
-      "consistent across same-file calls (THR001) and that fn bodies do not construct error " +
-      "types absent from the declaration (THR002). Below that version, the annotations are " +
+      "consistent across same-file calls (THR001). Below that version, the annotations are " +
       "parsed and accepted silently — they are documentation, not verified claims.\n\n" +
       "VER002 fires as a **warning** (non-blocking) when a non-empty `throws {}` clause is " +
       "declared on a fn in a file pinned below `?bs 0.9`. A reviewer reading the header would " +
@@ -599,7 +598,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "surprising diff. VER002 makes this risk visible before the upgrade.\n\n" +
       "**Empty clauses are not flagged.** `throws {}` (no types) on an old-pin file is likely " +
       "an intentional forward-declaration placeholder and does not create false assurance.\n\n" +
-      "The fix is to upgrade the `?bs` pin to `0.9` (which activates THR001/THR002 enforcement) " +
+      "The fix is to upgrade the `?bs` pin to `0.9` (which activates THR001 enforcement) " +
       "or to leave the annotation knowing it is documentation-only until the upgrade.",
     example: {
       fails:

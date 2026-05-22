@@ -6,7 +6,7 @@
  *
  *   VER001  reads {} / writes {} present but DEP001/DEP002 is not enforced
  *           (file pinned below ?bs 0.9).
- *   VER002  throws {} present but THR001/THR002 is not enforced (file pinned
+ *   VER002  throws {} present but THR001 is not enforced (file pinned
  *           below ?bs 0.9).
  */
 
@@ -88,7 +88,7 @@ describe("VER002: fires as a warning for throws below 0.9", () => {
     expect(warns[0]!.message).toMatch(/loadUser/);
     expect(warns[0]!.message).toMatch(/throws \{ NetworkError \}/);
     expect(warns[0]!.message).toMatch(/0\.8/);
-    expect(warns[0]!.message).toMatch(/THR001\/THR002/);
+    expect(warns[0]!.message).toMatch(/THR001/);
     expect(warns[0]!.message).toMatch(/unenforced/);
   });
 
@@ -203,6 +203,40 @@ describe("VER001 / VER002: silent at ?bs 0.9", () => {
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "VER001" || w.code === "VER002");
     expect(warns).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nested fn declarations
+// ---------------------------------------------------------------------------
+
+describe("VER001 / VER002: warns on nested fn declarations", () => {
+  it("emits VER001 for nested fn with reads below 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn outer(id: string) -> string {\n" +
+      "  fn inner(x: string) reads { db } -> string { x }\n" +
+      "  inner(id)\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toMatch(/inner/);
+    expect(warns[0]!.message).toMatch(/reads \{ db \}/);
+  });
+
+  it("emits VER002 for nested fn with throws below 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn outer(id: string) -> string {\n" +
+      "  fn inner(x: string) throws { NetworkError } -> string { x }\n" +
+      "  inner(id)\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER002");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toMatch(/inner/);
+    expect(warns[0]!.message).toMatch(/throws \{ NetworkError \}/);
   });
 });
 

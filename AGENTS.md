@@ -205,7 +205,7 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | THR002 | (0.9+) A fn body directly constructs `err(TypeName(...))`, `err(new TypeName(...))`, or `err(TypeName)` where `TypeName` (CapCase) is not declared in the fn's own `throws {}` clause. Producer-side complement to THR001. | Add `TypeName` to the fn's `throws {}`, or change the error construction to use a declared type. |
 | THR003 | (0.9+) A callback parameter declares `throws { … }` types not covered by the outer fn's `throws {}`. Same structural rule as THR001 applied to callback parameters. | Add the missing type(s) to the outer fn's `throws {}`, or narrow the callback annotation. |
 | VER001 | (warning, < 0.9) A non-empty `reads {}` or `writes {}` clause is declared on a fn in a file pinned below `?bs 0.9`. DEP001/DEP002 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.9` to activate enforcement, or leave it knowing it is unenforced. |
-| VER002 | (warning, < 0.9) A non-empty `throws {}` clause is declared on a fn in a file pinned below `?bs 0.9`. THR001/THR002 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.9` to activate enforcement, or leave it knowing it is unenforced. |
+| VER002 | (warning, < 0.9) A non-empty `throws {}` clause is declared on a fn in a file pinned below `?bs 0.9`. THR001 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.9` to activate enforcement, or leave it knowing it is unenforced. |
 
 When you add a new compiler error, allocate the next free code in the same
 range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
