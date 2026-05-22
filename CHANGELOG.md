@@ -34,6 +34,16 @@ goes behind a new pin.
   - EFF004 fires when a callback's declared writes are not a subset of the outer
     fn's declared writes.
 
+- **THR003 — `throws {}` on callback parameters.**
+  From `?bs 0.9`, when a function-typed parameter carries a `throws { X }` annotation,
+  the containing fn must declare at least those exception types in its own `throws {}`
+  clause. Calling the callback can surface X — the outer fn cannot advertise a narrower
+  throws surface than it can exercise. Closes the "callback throws-leak" vector, completing
+  the trilogy with EFF002 (`uses {}`) and EFF003/EFF004 (`reads {}`/`writes {}`).
+  - `throws {}` annotations on callback parameter types are stripped from emitted TypeScript.
+  - THR003 fires when any callback parameter's declared throws are not a subset of the
+    outer fn's declared throws.
+
 - **CAP003 — capability asserted in unsafe fn (non-blocking warning).**
   From `?bs 0.9`, the compiler emits a `warning` (not an error) when a
   `uses {}` declaration appears on an `unsafe fn`. The capability inference

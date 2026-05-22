@@ -463,6 +463,41 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }\n",
     },
   },
+  THR003: {
+    code: "THR003",
+    title: "outer fn declares narrower throws than a callback parameter",
+    body:
+      "A function-typed parameter can carry a `throws { X }` annotation declaring which " +
+      "exception types the callback may produce. The outer function that accepts that " +
+      "callback must declare at least those exception types in its own `throws {}` clause.\n\n" +
+      "Without this rule, a higher-order fn that accepts a throwing callback can advertise " +
+      "a narrower throws surface than it can actually exercise. A caller reading the outer " +
+      "fn's header sees no `throws {}` and concludes the call is infallible — but invoking " +
+      "the callback may produce NetworkError, ParseError, or any other declared type.\n\n" +
+      "THR003 is the `throws`-variant of EFF003/EFF004. It gates on `?bs 0.9`. The outer " +
+      "fn does not need to throw directly — it just needs to declare the exception types so " +
+      "callers have an accurate throws surface.\n\n" +
+      "Suppression: add the missing exception type(s) to the outer fn's `throws {}` clause, " +
+      "or remove the `throws {}` annotation from the callback parameter type if it is " +
+      "intentionally not propagated (e.g., the callback's exceptions are caught internally).",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "// THR003: process accepts a callback that declares throws { NetworkError },\n" +
+        "// but process itself declares no throws\n" +
+        "fn process(\n" +
+        "  items: string[],\n" +
+        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        ") -> void { handler(items[0]) }\n",
+      passes:
+        "?bs 0.9\n" +
+        "// Fixed: outer fn declares the throws surface its callback may exercise\n" +
+        "fn process(\n" +
+        "  items: string[],\n" +
+        "  handler: fn(string) throws { NetworkError } -> void\n" +
+        ") throws { NetworkError } -> void { handler(items[0]) }\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();

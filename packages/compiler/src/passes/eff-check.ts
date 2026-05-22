@@ -14,14 +14,19 @@
  *            requires closure-level type inference and is out of scope for
  *            this pass. It is reserved for a future version.
  *
- *   ?bs 0.9  EFF003 / EFF004 added. Same principle as EFF002 but for
- *            `reads {}` and `writes {}` annotations on callback parameters.
+ *   ?bs 0.9  EFF003 / EFF004 / THR003 added. Same principle as EFF002 but for
+ *            `reads {}`, `writes {}`, and `throws {}` annotations on callbacks.
  *
  *            EFF003  A function-typed parameter carries `reads { labels }`,
  *                    but the containing fn does not declare those read labels.
  *
  *            EFF004  A function-typed parameter carries `writes { labels }`,
  *                    but the containing fn does not declare those write labels.
+ *
+ *            THR003  A function-typed parameter carries `throws { X }`,
+ *                    but the containing fn does not declare `throws { X }`.
+ *                    Calling the callback can surface X — the outer fn's
+ *                    throws surface must cover it.
  *
  * Background (issue #56):
  *   The pure-intent check (INT001/INT002) and the capability check (CAP001)
@@ -132,6 +137,34 @@ export function passEffCheck(src: string, version: VersionInfo): string {
             idiom: entry.idiom,
             rewrite:
               `fn ${decl.name}(...) writes { ${[...declaredWrites, ...uniqueMissing].join(", ")} } -> ...`,
+          });
+        }
+      }
+
+      // THR003: throws {} on callback not propagated to outer fn.
+      if (decl.paramThrows.length > 0) {
+        const declaredThrows = new Set(decl.throws ?? []);
+        const uniqueMissing = [...new Set(decl.paramThrows.filter((t) => !declaredThrows.has(t)))];
+        if (uniqueMissing.length > 0) {
+          const entry = getErrorCode("THR003")!;
+          const loc = locationOf(src, decl.fnKeywordStart);
+          const paramThrowsStr = [...new Set(decl.paramThrows)].join(", ");
+          diagnostics.push({
+            code: "THR003",
+            severity: "error",
+            file: null,
+            line: loc.line,
+            column: loc.column,
+            start: decl.fnKeywordStart,
+            end: decl.fnKeywordStart + decl.name.length + 3,
+            message:
+              `fn '${decl.name}' accepts callback parameter(s) that declare throws { ${paramThrowsStr} } ` +
+              `but only declares throws ${declaredThrows.size > 0 ? `{ ${[...declaredThrows].join(", ")} }` : "{}"} — ` +
+              `missing: { ${uniqueMissing.join(", ")} }`,
+            rule: entry.rule,
+            idiom: entry.idiom,
+            rewrite:
+              `fn ${decl.name}(...) throws { ${[...declaredThrows, ...uniqueMissing].join(", ")} } -> ...`,
           });
         }
       }

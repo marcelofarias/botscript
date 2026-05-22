@@ -336,6 +336,34 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
       "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }",
   },
+  THR003: {
+    code: "THR003",
+    title: "outer fn declares narrower throws than a callback parameter",
+    rule:
+      "if a function-typed parameter declares `throws { X }`, the containing fn must declare at least those " +
+      "exception types — calling the callback can surface X, so the outer fn's throws surface must cover it",
+    idiom:
+      "a fn's throws surface is the union of its own declared throws and the throws its callback parameters may exercise",
+    rewrite:
+      "fn name(handler: () throws { X } -> T) throws { …existing, X } -> ...",
+    example:
+      "// before — accepts a throwing callback but outer fn declares no throws\n" +
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      ") -> void {   // THR003: missing throws { NetworkError }\n" +
+      "  handler(items[0])\n" +
+      "}\n\n" +
+      "// after — outer fn declares the throws its callback may exercise\n" +
+      "?bs 0.9\n" +
+      "fn process(\n" +
+      "  items: string[],\n" +
+      "  handler: fn(string) throws { NetworkError } -> void\n" +
+      ") throws { NetworkError } -> void {\n" +
+      "  handler(items[0])\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",
