@@ -62,7 +62,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
       line,
       column,
       start: matchStart,
-      end: tokens[expr.end - 1]?.end ?? matchStart,
+      end: tokens[expr.start]!.end,
       message: `match on Result is missing '${missing}' arm — add '${missing} { ... } -> ...' or a wildcard '_ -> ...' arm`,
       rule: entry.rule,
       idiom: entry.idiom,

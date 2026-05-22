@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { transform, BotscriptError } from "../src/transform.js";
+import { transform } from "../src/transform.js";
 
 function compile(src: string): string {
   return transform(src).code;
