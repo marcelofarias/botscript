@@ -412,6 +412,44 @@ const E: Record<string, ErrorCodeEntry> = {
       "  else ok(s)\n" +
       "}",
   },
+  VER001: {
+    code: "VER001",
+    title: "reads {} / writes {} declared below the ?bs 0.9 enforcement floor — annotation is unenforced",
+    rule:
+      "DEP001/DEP002 (reads/writes transitivity) are enforced from `?bs 0.9`; a non-empty `reads {}` or " +
+      "`writes {}` clause on a file pinned below 0.9 is accepted but not verified — it is documentation only",
+    idiom:
+      "annotate now if you intend to enforce later, but know that reviewers reading the header " +
+      "cannot assume the compiler has checked it; upgrade the pin to `?bs 0.9` to activate enforcement",
+    rewrite:
+      "upgrade pin to `?bs 0.9` to activate DEP001/DEP002 enforcement",
+    example:
+      "// before — reads {} at ?bs 0.8 is documentation only (VER001 warning)\n" +
+      "?bs 0.8\n" +
+      "fn loadUser(id: string) reads { userDb } -> string = id\n\n" +
+      "// after — enforcement active\n" +
+      "?bs 0.9\n" +
+      "fn loadUser(id: string) reads { userDb } -> string = id",
+  },
+  VER002: {
+    code: "VER002",
+    title: "throws {} declared below the ?bs 0.9 enforcement floor — annotation is unenforced",
+    rule:
+      "THR001 (throws transitivity) is enforced from `?bs 0.9`; a non-empty " +
+      "`throws {}` clause on a file pinned below 0.9 is accepted but not verified — it is documentation only",
+    idiom:
+      "annotate now if you intend to enforce later, but know that reviewers reading the header " +
+      "cannot assume the compiler has checked it; upgrade the pin to `?bs 0.9` to activate enforcement",
+    rewrite:
+      "upgrade pin to `?bs 0.9` to activate THR001 enforcement",
+    example:
+      "// before — throws {} at ?bs 0.8 is documentation only (VER002 warning)\n" +
+      "?bs 0.8\n" +
+      "fn loadUser(id: string) throws { NetworkError } -> string = id\n\n" +
+      "// after — enforcement active\n" +
+      "?bs 0.9\n" +
+      "fn loadUser(id: string) throws { NetworkError } -> string = id",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
