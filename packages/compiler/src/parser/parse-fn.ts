@@ -73,6 +73,14 @@ export interface FnDecl {
    * Example: `(cb: () writes { metrics } -> void)` → `["metrics"]`
    */
   paramWrites: string[];
+  /**
+   * Union of all exception types declared in `throws { … }` annotations on
+   * function-typed parameters. Empty when no parameter carries a throws annotation.
+   * Used by `passEffCheck` (THR003). Gated on `?bs 0.9`.
+   *
+   * Example: `(handler: () throws { NetworkError } -> void)` → `["NetworkError"]`
+   */
+  paramThrows: string[];
   capabilities: string[];
   /**
    * Optional declarative read-dependency list, e.g. `reads { cache, db }`. Each
@@ -264,7 +272,7 @@ export function parseFn(
   if (!argsOpen || argsOpen.kind !== "open" || argsOpen.text !== "(" || argsOpen.matchedAt === undefined) return null;
   const argsClose = argsOpen.matchedAt;
   const args = sliceText(tokens, i, argsClose + 1);
-  const { text: argsTs, paramCaps, paramReads, paramWrites } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
+  const { text: argsTs, paramCaps, paramReads, paramWrites, paramThrows } = buildArgsTs(tokens, i, argsClose + 1, opts.src);
   i = argsClose + 1;
   i = skipTrivia(tokens, i);
 
@@ -521,6 +529,7 @@ export function parseFn(
     paramCaps,
     paramReads,
     paramWrites,
+    paramThrows,
     capabilities,
     reads,
     writes,
@@ -694,27 +703,26 @@ function skipTrivia(tokens: Token[], i: number): number {
  * 1. Botscript `->` (arrow token) → TypeScript `=>` (function type arrow).
  * 2. `uses { cap, … }` annotations on function-typed parameters are stripped
  *    from the emitted text and their capability names collected into `paramCaps`.
- * 3. `reads { label, … }` and `writes { label, … }` annotations on
- *    function-typed parameters are stripped and collected into `paramReads` /
- *    `paramWrites`.
+ * 3. `reads { label, … }`, `writes { label, … }`, and `throws { label, … }`
+ *    annotations on function-typed parameters are stripped and collected into
+ *    `paramReads` / `paramWrites` / `paramThrows`.
  *
  * The stripping is position-independent: any effect annotation inside the args
  * list is treated as a parameter effect annotation. This is safe because the
- * stripping only activates on the specific `uses { ... }` / `reads { ... }` /
- * `writes { ... }` syntax pattern — a keyword/ident token immediately followed
- * by a `{...}` block — not on bare `reads` or `writes` identifiers elsewhere in
- * TypeScript type positions (e.g. `reads` as a field name in an object type).
+ * stripping only activates on the specific keyword/ident immediately followed
+ * by a `{...}` block — not on bare identifiers in TypeScript type positions.
  */
 function buildArgsTs(
   tokens: Token[],
   from: number,
   to: number,
   src?: string,
-): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[] } {
+): { text: string; paramCaps: string[]; paramReads: string[]; paramWrites: string[]; paramThrows: string[] } {
   let out = "";
   const paramCaps: string[] = [];
   const paramReads: string[] = [];
   const paramWrites: string[] = [];
+  const paramThrows: string[] = [];
   let i = from;
   while (i < to) {
     const t = tokens[i]!;
@@ -724,13 +732,14 @@ function buildArgsTs(
       i++;
       continue;
     }
-    // Strip effect annotations (`uses`/`reads`/`writes`) and collect their labels.
-    // Note: `uses` is a lexer keyword (kind="keyword"), but `reads` and `writes`
-    // are treated as identifiers (kind="ident") by the lexer.
+    // Strip effect annotations (`uses`/`reads`/`writes`/`throws`) and collect labels.
+    // Note: `uses` is a lexer keyword (kind="keyword"); `reads`, `writes`, and
+    // `throws` are all treated as identifiers (kind="ident") by the lexer.
     const isUses = t.kind === "keyword" && t.keyword === "uses";
     const isReads = t.kind === "ident" && t.text === "reads";
     const isWrites = t.kind === "ident" && t.text === "writes";
-    if (isUses || isReads || isWrites) {
+    const isThrows = t.kind === "ident" && t.text === "throws";
+    if (isUses || isReads || isWrites || isThrows) {
       const j = skipTrivia(tokens, i + 1);
       const open = tokens[j];
       if (open && open.kind === "open" && open.text === "{" && open.matchedAt !== undefined) {
@@ -743,8 +752,10 @@ function buildArgsTs(
           const labels = parseLabelList(tokens, j + 1, open.matchedAt, src);
           if (isReads) {
             for (const l of labels) paramReads.push(l);
-          } else {
+          } else if (isWrites) {
             for (const l of labels) paramWrites.push(l);
+          } else {
+            for (const l of labels) paramThrows.push(l);
           }
         }
         i = open.matchedAt + 1;
@@ -757,7 +768,7 @@ function buildArgsTs(
     out += t.text;
     i++;
   }
-  return { text: out, paramCaps, paramReads, paramWrites };
+  return { text: out, paramCaps, paramReads, paramWrites, paramThrows };
 }
 
 function sliceText(tokens: Token[], from: number, to: number): string {
