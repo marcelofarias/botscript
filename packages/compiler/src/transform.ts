@@ -23,10 +23,20 @@ import { passBareAs } from "./passes/bare-as.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
 import { atLeast, passVersion, type VersionInfo } from "./passes/version.js";
+import type { ModuleEffects } from "./module-effects.js";
+
+export type { FnEffectSurface, ModuleEffects } from "./module-effects.js";
 
 export interface TransformOptions {
   /** Source filename for diagnostics. Optional. */
   filename?: string;
+  /**
+   * Effect declarations for functions imported from other modules. When
+   * provided, DEP001/DEP002/THR001 transitivity extends across file
+   * boundaries: a caller that omits a read/write/throws label declared in
+   * `moduleEffects` gets the same diagnostic it would for a same-file callee.
+   */
+  moduleEffects?: ModuleEffects;
 }
 
 export interface TransformResult {
@@ -118,7 +128,21 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
     let code = versioned;
     const forms: string[] = [];
     const allWarnings: Diagnostic[] = [];
-    for (const pass of PASS_PIPELINE) {
+
+    // When moduleEffects is provided, substitute closures for dep/thr passes
+    // so they can consult the cross-file effect surface.
+    const mods = opts.moduleEffects;
+    const effectivePipeline: ReadonlyArray<PipelineEntry> = mods
+      ? PASS_PIPELINE.map((e): PipelineEntry => {
+          if (e.name === "depCheck")
+            return { ...e, fn: (s: string, v: VersionInfo) => passDepCheck(s, v, mods) };
+          if (e.name === "thrCheck")
+            return { ...e, fn: (s: string, v: VersionInfo) => passThrCheck(s, v, mods) };
+          return e;
+        })
+      : PASS_PIPELINE;
+
+    for (const pass of effectivePipeline) {
       if (pass.minVersion && !atLeast(version.resolved, pass.minVersion)) continue;
       const result = pass.fn(code, version);
       if (typeof result === "string") {

@@ -21,10 +21,12 @@
  *
  *   DEP002  writes under-declared: same for writes { ... }.
  *
- * Only same-file call resolution is performed (same as cap-check). External
- * calls, dynamic dispatch, and higher-order function arguments are not
- * tracked — the rule is "the declaration is the authority; transitive static
- * calls must be covered."
+ * Same-file call resolution is performed by default. Cross-file calls are
+ * opaque unless the caller provides a `moduleEffects` map (via
+ * `TransformOptions.moduleEffects`): any function listed there is treated as
+ * if its declaration were in the current file, so a caller that omits its
+ * reads/writes labels fires DEP001/DEP002 exactly as for a same-file callee.
+ * Dynamic dispatch and higher-order function arguments are not tracked.
  *
  * Over-declaration is intentionally NOT checked here. The reads/writes labels
  * are user-defined strings; unlike stdlib capability names, the compiler has
@@ -40,6 +42,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, collectCallees } from "./_callgraph.js";
+import type { ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +66,11 @@ interface FnRecord {
 // Entry point
 // ---------------------------------------------------------------------------
 
-export function passDepCheck(src: string, version: VersionInfo): string {
+export function passDepCheck(
+  src: string,
+  version: VersionInfo,
+  moduleEffects?: ModuleEffects,
+): string {
   if (!atLeast(version.resolved, "0.9")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
@@ -73,10 +80,27 @@ export function passDepCheck(src: string, version: VersionInfo): string {
 
   if (decls.length === 0) return src;
 
+  // Build maps for external (cross-file) effect declarations.
+  const extReads = new Map<string, Set<string>>();
+  const extWrites = new Map<string, Set<string>>();
+  if (moduleEffects) {
+    for (const [name, eff] of Object.entries(moduleEffects)) {
+      if (eff.reads?.length) extReads.set(name, new Set(eff.reads));
+      if (eff.writes?.length) extWrites.set(name, new Set(eff.writes));
+    }
+  }
+
   // 1. Build per-fn records.
   const records = new Map<FnDecl, FnRecord>();
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
+
+  // Include external function names in the callee scan so cross-file calls
+  // appear in the callees set and are picked up in the closure below.
+  const allCalleeNames =
+    extReads.size > 0 || extWrites.size > 0
+      ? new Set([...fnNames, ...extReads.keys(), ...extWrites.keys()])
+      : fnNames;
 
   // Precompute each fn's nested (descendant) decls once via a single sweep,
   // instead of an O(n²) `decls.filter` per fn. Each `inner` list comes out
@@ -85,7 +109,7 @@ export function passDepCheck(src: string, version: VersionInfo): string {
 
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const callees = collectCallees(tokens, decl, inner, allCalleeNames);
     records.set(decl, {
       decl,
       declaredReads: new Set(decl.reads ?? []),
@@ -110,34 +134,67 @@ export function passDepCheck(src: string, version: VersionInfo): string {
   }
 
   // 3. Fixed-point closure: propagate callees' transitive sets back to callers.
+  //    Same-file callees are resolved via `records`; external callees via the
+  //    `extReads` / `extWrites` maps seeded from `moduleEffects`.
   let changed = true;
   while (changed) {
     changed = false;
     for (const rec of records.values()) {
       for (const calleeName of rec.callees) {
+        // Same-file callee.
         const calleeDecls = declsByName.get(calleeName);
-        if (!calleeDecls) continue;
-        for (const calleeDecl of calleeDecls) {
-          if (calleeDecl === rec.decl) continue;
-          const callee = records.get(calleeDecl);
-          if (!callee) continue;
-          for (const [label, path] of callee.transitiveReads) {
+        if (calleeDecls) {
+          for (const calleeDecl of calleeDecls) {
+            if (calleeDecl === rec.decl) continue;
+            const callee = records.get(calleeDecl);
+            if (!callee) continue;
+            for (const [label, path] of callee.transitiveReads) {
+              if (rec.transitiveReads.has(label)) continue;
+              rec.transitiveReads.set(label, {
+                kind: "via",
+                fnName: rec.decl.name,
+                callee: calleeName,
+                next: path,
+              });
+              changed = true;
+            }
+            for (const [label, path] of callee.transitiveWrites) {
+              if (rec.transitiveWrites.has(label)) continue;
+              rec.transitiveWrites.set(label, {
+                kind: "via",
+                fnName: rec.decl.name,
+                callee: calleeName,
+                next: path,
+              });
+              changed = true;
+            }
+          }
+          continue;
+        }
+
+        // External callee from moduleEffects.
+        const extR = extReads.get(calleeName);
+        if (extR) {
+          for (const label of extR) {
             if (rec.transitiveReads.has(label)) continue;
             rec.transitiveReads.set(label, {
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: path,
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }
-          for (const [label, path] of callee.transitiveWrites) {
+        }
+        const extW = extWrites.get(calleeName);
+        if (extW) {
+          for (const label of extW) {
             if (rec.transitiveWrites.has(label)) continue;
             rec.transitiveWrites.set(label, {
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: path,
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }
