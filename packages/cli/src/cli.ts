@@ -10,9 +10,10 @@ import {
   formatSource,
   getErrorCode,
   listErrorCodes,
+  parseProgram,
   transform,
 } from "@mbfarias/botscript-compiler";
-import type { Diagnostic } from "@mbfarias/botscript-compiler";
+import type { Diagnostic, FnEffectSurface, ModuleEffects } from "@mbfarias/botscript-compiler";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -133,12 +134,13 @@ async function buildCmd(args: string[]): Promise<void> {
     }
     return;
   }
+  const moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
   const written: string[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
     let code: string;
     try {
-      ({ code } = transform(src, { filename: f }));
+      ({ code } = transform(src, { filename: f, moduleEffects }));
     } catch (e) {
       if (e instanceof BotscriptError) {
         emitBuildErr({ ok: false, diagnostics: [...e.diagnostics] }, format);
@@ -222,11 +224,12 @@ async function checkCmd(args: string[]): Promise<void> {
     }
     return;
   }
+  const moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
   const allDiagnostics: Diagnostic[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
     try {
-      transform(src, { filename: f });
+      transform(src, { filename: f, moduleEffects });
     } catch (e) {
       if (e instanceof BotscriptError) {
         allDiagnostics.push(...e.diagnostics);
@@ -411,6 +414,34 @@ function explainCmd(args: string[]): void {
     exit(2);
   }
   stdout.write(formatExplain(entry) + "\n");
+}
+
+async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
+  const effects: Record<string, FnEffectSurface> = {};
+  for (const f of files) {
+    let src: string;
+    try {
+      src = await readFile(f, "utf8");
+    } catch {
+      continue;
+    }
+    try {
+      const program = parseProgram(src, { allowGenerics: true });
+      for (const stmt of program.fns) {
+        const { decl } = stmt;
+        const surface: FnEffectSurface = {};
+        if (decl.reads?.length) surface.reads = decl.reads;
+        if (decl.writes?.length) surface.writes = decl.writes;
+        if (decl.throws?.length) surface.throws = decl.throws;
+        if (Object.keys(surface).length > 0) {
+          effects[decl.name] = surface;
+        }
+      }
+    } catch {
+      // Malformed file — skip; cross-file checking degrades gracefully
+    }
+  }
+  return effects;
 }
 
 async function collectBs(root: string): Promise<string[]> {

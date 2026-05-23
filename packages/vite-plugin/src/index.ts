@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { dirname, resolve as resolvePath } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, join, resolve as resolvePath } from "node:path";
 
-import { transform } from "@mbfarias/botscript-compiler";
+import { parseProgram, transform } from "@mbfarias/botscript-compiler";
+import type { FnEffectSurface, ModuleEffects } from "@mbfarias/botscript-compiler";
 import type { Plugin } from "vite";
 
 export interface BotscriptPluginOptions {
@@ -14,6 +16,54 @@ export interface BotscriptPluginOptions {
    * a per-project resolver shim.
    */
   resolveJsToBs?: boolean;
+}
+
+async function collectBsFiles(root: string, extensions: string[]): Promise<string[]> {
+  const out: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const p = join(root, e.name);
+    if (e.isDirectory()) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      out.push(...(await collectBsFiles(p, extensions)));
+    } else if (e.isFile() && extensions.some((ext) => e.name.endsWith(ext))) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
+  const effects: Record<string, FnEffectSurface> = {};
+  for (const f of files) {
+    let src: string;
+    try {
+      src = await readFile(f, "utf8");
+    } catch {
+      continue;
+    }
+    try {
+      const program = parseProgram(src, { allowGenerics: true });
+      for (const stmt of program.fns) {
+        const { decl } = stmt;
+        const surface: FnEffectSurface = {};
+        if (decl.reads?.length) surface.reads = decl.reads;
+        if (decl.writes?.length) surface.writes = decl.writes;
+        if (decl.throws?.length) surface.throws = decl.throws;
+        if (Object.keys(surface).length > 0) {
+          effects[decl.name] = surface;
+        }
+      }
+    } catch {
+      // Malformed file — skip; cross-file checking degrades gracefully
+    }
+  }
+  return effects;
 }
 
 /**
@@ -30,9 +80,26 @@ export interface BotscriptPluginOptions {
 export default function botscript(options: BotscriptPluginOptions = {}): Plugin {
   const extensions = options.extensions ?? [".bs"];
   const resolveJsToBs = options.resolveJsToBs ?? true;
+  let moduleEffects: ModuleEffects | undefined;
+  let root: string | undefined;
   return {
     name: "botscript",
     enforce: "pre",
+    configResolved(config) {
+      root = config.root;
+    },
+    async buildStart() {
+      if (!root) return;
+      const files = await collectBsFiles(root, extensions);
+      moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+    },
+    async watchChange(id) {
+      if (!root) return;
+      if (!extensions.some((ext) => id.endsWith(ext))) return;
+      // Rebuild the effect map when any .bs file changes.
+      const files = await collectBsFiles(root, extensions);
+      moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+    },
     config(userConfig) {
       // Auto-add `.bs` to resolve.extensions so users don't have to. We put it
       // first so extensionless imports prefer `.bs` over `.ts/.js` siblings,
@@ -72,7 +139,7 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
     async transform(code, id) {
       const cleanId = id.split("?")[0] ?? id;
       if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
-      const { code: transformed } = transform(code, { filename: id });
+      const { code: transformed } = transform(code, { filename: id, moduleEffects });
       // Hand the result to esbuild as TSX so JSX inside .bs files works.
       // esbuild ships with Vite, so this import does not add an extra dep.
       const esbuild = await import("esbuild");
