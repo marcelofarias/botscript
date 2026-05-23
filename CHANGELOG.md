@@ -22,6 +22,14 @@ goes behind a new pin.
   cannot match. Indirect patterns (`err(e)` where `e`'s type is inferred)
   are out of scope.
 
+- **MAT001 — non-exhaustive Result match.**
+  From `?bs 0.9`, a `match` expression that explicitly handles the `ok` or `err`
+  tag must also handle the opposing tag (or include a wildcard `_` arm). Fires
+  when the `ok`/`err` tag vocabulary is used but one side is left unhandled.
+  Suppression: add the missing arm explicitly, or use a wildcard `_` arm.
+  The check is scoped to the `ok`/`err` vocabulary — user-defined tagged unions
+  with other tag names are unaffected.
+
 - **DEP001 / DEP002 — `reads {}` / `writes {}` transitivity enforcement.**
   From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
   file) and B declares `reads { x }` (or `writes { x }`), then A must also
