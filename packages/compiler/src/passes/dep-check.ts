@@ -178,9 +178,10 @@ export function passDepCheck(
           for (const label of extR) {
             if (rec.transitiveReads.has(label)) continue;
             rec.transitiveReads.set(label, {
-              kind: "declared",
-              fnName: calleeName,
-              label,
+              kind: "via",
+              fnName: rec.decl.name,
+              callee: calleeName,
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }
@@ -190,9 +191,10 @@ export function passDepCheck(
           for (const label of extW) {
             if (rec.transitiveWrites.has(label)) continue;
             rec.transitiveWrites.set(label, {
-              kind: "declared",
-              fnName: calleeName,
-              label,
+              kind: "via",
+              fnName: rec.decl.name,
+              callee: calleeName,
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }

@@ -142,9 +142,10 @@ export function passThrCheck(
           for (const label of extT) {
             if (rec.transitiveThrows.has(label)) continue;
             rec.transitiveThrows.set(label, {
-              kind: "declared",
-              fnName: calleeName,
-              label,
+              kind: "via",
+              fnName: rec.decl.name,
+              callee: calleeName,
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }

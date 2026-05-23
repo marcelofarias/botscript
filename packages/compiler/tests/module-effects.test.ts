@@ -27,6 +27,10 @@ describe("DEP001: cross-file reads via moduleEffects", () => {
     const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
     expect(() => compile(src, mods)).toThrow("DEP001");
     expect(() => compile(src, mods)).toThrow(/fetchRow.*reads \{ userDb \}/);
+    // Direct external call: must say "calls" not "transitively calls",
+    // and the call path must include the caller name.
+    expect(() => compile(src, mods)).toThrow(/fn 'loadUser' calls 'fetchRow'/);
+    expect(() => compile(src, mods)).toThrow(/call path: loadUser -> fetchRow/);
   });
 
   it("passes when caller declares the reads label from moduleEffects", () => {
@@ -83,6 +87,8 @@ describe("DEP002: cross-file writes via moduleEffects", () => {
     const mods: ModuleEffects = { persistRow: { writes: ["userDb"] } };
     expect(() => compile(src, mods)).toThrow("DEP002");
     expect(() => compile(src, mods)).toThrow(/persistRow.*writes \{ userDb \}/);
+    expect(() => compile(src, mods)).toThrow(/fn 'saveUser' calls 'persistRow'/);
+    expect(() => compile(src, mods)).toThrow(/call path: saveUser -> persistRow/);
   });
 
   it("passes when caller declares the writes label from moduleEffects", () => {
@@ -106,6 +112,8 @@ describe("THR001: cross-file throws via moduleEffects", () => {
     const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
     expect(() => compile(src, mods)).toThrow("THR001");
     expect(() => compile(src, mods)).toThrow(/fetchRow.*throws \{ NetworkError \}/);
+    expect(() => compile(src, mods)).toThrow(/fn 'loadUser' calls 'fetchRow'/);
+    expect(() => compile(src, mods)).toThrow(/call path: loadUser -> fetchRow/);
   });
 
   it("passes when caller declares the throws type from moduleEffects", () => {
