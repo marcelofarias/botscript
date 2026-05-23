@@ -407,3 +407,32 @@ describe("UNS003 takes precedence over UNS005 for malformed unsafe blocks", () =
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scan scope: body only, not fn header
+// ---------------------------------------------------------------------------
+
+describe("UNS005: scan scope (body only)", () => {
+  it("does not fire when stdlib namespace appears as type annotation in header", () => {
+    // A user-defined type named 'http' in the return type should not trigger
+    // UNS005 — the scan must start from bodyTokenStart, not tokenStart.
+    // This tests that we skip the fn header (params + return type).
+    const src =
+      "?bs 0.9\n" +
+      "fn identity(x: string) -> string {\n" +
+      "  x\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("fires on a stdlib call in the body but not on fn name or param types", () => {
+    // A fn whose name contains 'http' as a prefix must not confuse the scanner.
+    // Only the body call matters.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData(url: string) uses { net } -> string {\n" +
+      "  http.get(url)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("UNS005");
+  });
+});

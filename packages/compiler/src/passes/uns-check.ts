@@ -77,7 +77,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
     const open: FnDecl[] = [];
     let nextInner = 0;
 
-    for (let i = decl.tokenStart; i < decl.tokenEnd; i++) {
+    for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
       // Maintain the open-inner-fn stack.
       while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
       while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
