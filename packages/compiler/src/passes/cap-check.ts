@@ -28,8 +28,8 @@ import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
-/** stdlib namespace -> capability it consumes. */
-const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
+/** stdlib namespace -> capability it consumes. Canonical source; import from here to avoid drift. */
+export const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
   http: "net",
   time: "time",
   random: "random",

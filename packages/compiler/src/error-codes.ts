@@ -77,8 +77,11 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// No CAP003: regular fn with the same claim is compiler-verified\n" +
       "?bs 0.9\n" +
-      "fn callApi(url: string) uses { net } -> string {\n" +
-      "  http.get(url)  // CAP001/CAP002 apply normally\n" +
+      "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(`fetch failed: ${error}`)\n" +
+      "  }\n" +
       "}",
   },
   UNS001: {
@@ -142,6 +145,36 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       "?bs 0.5\n" +
       'const u = unsafe "Response.json() returns any" { data as User };',
+  },
+  UNS005: {
+    code: "UNS005",
+    title: "external call without declared result contract",
+    rule:
+      "a stdlib capability call (http.x, fs.x, time.x, etc.) must have a declared result contract " +
+      "at the call site — wrap in `match` to make success and failure paths explicit, use " +
+      "`unsafe \"<reason>\" { ... }` to accept the uncertainty with a written explanation, or " +
+      "declare the containing fn as `unsafe \"<reason>\" fn` when the entire body is the escape hatch",
+    idiom:
+      "prefer match over bare stdlib calls — " +
+      "`match ns.method(...)` makes both success and failure paths explicit; " +
+      "use `unsafe` only when you are certain about the shape and want to document why",
+    rewrite:
+      "match ns.method(...) {\n  ok { value } -> { /* use value */ }\n  err { error } -> { /* handle error */ }\n}",
+    example:
+      "// before — UNS005: no contract on what http.get returns\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> string {\n" +
+      "  const data = http.get(`/users/${id}`);\n" +
+      "  data\n" +
+      "}\n\n" +
+      "// after — result contract via match\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(`/users/${id}`) {\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(`fetch failed: ${error}`)\n" +
+      "  }\n" +
+      "}",
   },
   FMT001: {
     code: "FMT001",

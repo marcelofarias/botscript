@@ -328,7 +328,11 @@ describe("cap-check: no false positive for stdlib namespace in parameter type", 
   });
 
   it("still fires CAP001 when stdlib call is in the body (not the header)", () => {
-    const src = "?bs 0.9\nfn fetchData(url: string) -> string {\n  http.get(url)\n}\n";
+    // Wrap in match to suppress UNS005 (which runs before cap-check); CAP001 still
+    // fires because uses { net } is absent.
+    const src =
+      "?bs 0.9\nfn fetchData(url: string) -> Result<string, string> {\n" +
+      "  match http.get(url) {\n    ok { value } -> ok(value)\n    err { error } -> err(error)\n  }\n}\n";
     expect(() => t(src)).toThrow(/CAP001/);
   });
 });

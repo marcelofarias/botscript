@@ -59,8 +59,11 @@ describe("CAP003: does not fire for regular fns", () => {
   it("does not warn for a regular fn with uses clause", () => {
     const src =
       "?bs 0.9\n" +
-      "fn callApi(url: string) uses { net } -> string {\n" +
-      "  http.get(url)\n" +
+      "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
+      "  }\n" +
       "}\n";
     const result = transform(src);
     const cap3 = result.warnings.filter((w) => w.code === "CAP003");
@@ -81,8 +84,8 @@ describe("CAP003: does not fire for regular fns", () => {
   it("does not warn for regular fn at ?bs 0.9", () => {
     const src =
       "?bs 0.9\n" +
-      "fn now() uses { time } -> number {\n" +
-      "  time.now()\n" +
+      'fn now() uses { time } -> number {\n' +
+      '  unsafe "time.now returns a plain number" { time.now() }\n' +
       "}\n";
     const result = transform(src);
     const cap3 = result.warnings.filter((w) => w.code === "CAP003");
@@ -126,8 +129,11 @@ describe("CAP003: multiple fns", () => {
   it("fires for each unsafe fn with uses, not for safe fns", () => {
     const src =
       "?bs 0.9\n" +
-      "fn safeOne(url: string) uses { net } -> string {\n" +
-      "  http.get(url)\n" +
+      "fn safeOne(url: string) uses { net } -> Result<string, string> {\n" +
+      "  match http.get(url) {\n" +
+      "    ok { value } -> ok(value)\n" +
+      "    err { error } -> err(error)\n" +
+      "  }\n" +
       "}\n" +
       "unsafe \"adapter one\" fn unsafeOne(url: string) uses { net } -> string {\n" +
       "  http.get(url)\n" +

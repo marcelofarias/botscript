@@ -104,8 +104,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
       passes:
         "?bs 0.9\n" +
-        "fn callApi(url: string) uses { net } -> string {\n" +
-        "  http.get(url)\n" +
+        "fn callApi(url: string) uses { net } -> Result<string, string> {\n" +
+        "  match http.get(url) {\n" +
+        "    ok { value } -> ok(value)\n" +
+        "    err { error } -> err(error)\n" +
+        "  }\n" +
         "}\n",
     },
   },
@@ -181,6 +184,47 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes:
         "?bs 0.5\n" +
         "const u = unsafe \"third-party Response.json() returns any\" { data as User };\n",
+    },
+  },
+  UNS005: {
+    code: "UNS005",
+    title: "external call without declared result contract",
+    body:
+      "UNS005 fires when a stdlib capability call (`http.x`, `fs.x`, `time.x`, `random.x`, " +
+      "`stdout.x`, `stderr.x`) has no declared result contract at the call site. The return " +
+      "value may be structurally typed correctly — the compiler sees a `string` or `Result<T, E>` " +
+      "— but be semantically incorrect in ways only the runtime context can detect.\n\n" +
+      "UNS005 is **compiler-inferred**, not programmer-applied. Unlike UNS001–UNS004 which fire " +
+      "on malformed `unsafe` blocks, UNS005 fires on ordinary-looking external calls. A reviewer " +
+      "can tell at a glance whether the author made a deliberate choice (unsafe block) or the " +
+      "compiler is flagging an omission.\n\n" +
+      "**Suppression mechanisms (in order of preference):**\n\n" +
+      "1. **match** — wrap the call as the direct match subject:\n" +
+      "   ```\n   match http.get(url) {\n     ok { value } -> ...\n     err { error } -> ...\n   }\n   ```\n" +
+      "   Both success and failure paths are explicit. " +
+      "`match await http.get(url)` is also accepted (await is transparent).\n\n" +
+      "2. **unsafe block** — `unsafe \"I know what X returns\" { ns.method(...) }` accepts the " +
+      "uncertainty with a written explanation. The reason becomes the review record on the call.\n\n" +
+      "3. **unsafe fn** — `unsafe \"reason\" fn name(...) -> T { ns.method(...) }` suppresses UNS005 " +
+      "for the entire fn body. Use when the fn itself is the module's single safe adapter for the call.\n\n" +
+      "4. **(Future) ensures annotation** — when `ensures: \"...\"` lands in a future version, " +
+      "declaring it on the callee's header will suppress UNS005 for all call sites.\n\n" +
+      "UNS005 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) uses { net } -> string {\n" +
+        "  const data = http.get(`/users/${id}`);\n" +
+        "  data\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) uses { net } -> Result<string, string> {\n" +
+        "  match http.get(`/users/${id}`) {\n" +
+        "    ok { value } -> ok(value)\n" +
+        "    err { error } -> err(`fetch failed: ${error}`)\n" +
+        "  }\n" +
+        "}\n",
     },
   },
   INT001: {

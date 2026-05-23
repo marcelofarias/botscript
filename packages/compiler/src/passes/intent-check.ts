@@ -37,16 +37,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-
-/** stdlib namespace -> capability it consumes (subset mirrored from cap-check). */
-const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
-  http: "net",
-  time: "time",
-  random: "random",
-  fs: "fs",
-  stdout: "stdout",
-  stderr: "stderr",
-};
+import { STDLIB_TO_CAP } from "./cap-check.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;

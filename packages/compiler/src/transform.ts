@@ -12,6 +12,7 @@ import { passDepCheck } from "./passes/dep-check.js";
 import { passThrCheck } from "./passes/thr-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
+import { passUnsCheck } from "./passes/uns-check.js";
 import { passMatch } from "./passes/match.js";
 import { passMatCheck } from "./passes/mat-check.js";
 import { passPrimer } from "./passes/primer.js";
@@ -95,6 +96,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
   // Runs before capCheck so capCheck still validates the claim's content.
   { name: "capAssert", fn: passCapAssert, minVersion: "0.9" },
+  // unsCheck: fires UNS005 on stdlib capability calls with no declared result
+  // contract (no match, no unsafe block). Must run before passUnsafe, which
+  // rewrites the source and erases unsafe keywords used as suppression markers.
+  { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
