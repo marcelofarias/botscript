@@ -18,9 +18,11 @@
  *           (`err(e)` where e's type is inferred) are out of scope — token-based
  *           detection only.
  *
- * Only same-file call resolution is performed for THR001 (same as cap-check /
- * dep-check). Over-declaration is intentionally NOT checked — a caller may
- * conservatively declare more exception types than it strictly needs.
+ * Same-file call resolution is performed by default. Cross-file calls extend
+ * THR001 transitivity when a `moduleEffects` map is provided via
+ * `TransformOptions.moduleEffects`. Over-declaration is intentionally NOT
+ * checked — a caller may conservatively declare more exception types than
+ * it strictly needs.
  */
 
 import { BotscriptError } from "../diagnostics.js";
@@ -31,6 +33,7 @@ import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
 import { computeNesting, collectCallees, nextSignificant, prevSignificant } from "./_callgraph.js";
+import type { ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,7 +54,11 @@ interface FnRecord {
 // Entry point
 // ---------------------------------------------------------------------------
 
-export function passThrCheck(src: string, version: VersionInfo): string {
+export function passThrCheck(
+  src: string,
+  version: VersionInfo,
+  moduleEffects?: ModuleEffects,
+): string {
   if (!atLeast(version.resolved, "0.9")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
@@ -61,14 +68,28 @@ export function passThrCheck(src: string, version: VersionInfo): string {
 
   if (decls.length === 0) return src;
 
+  // Build map for external (cross-file) throws declarations.
+  const extThrows = new Map<string, Set<string>>();
+  if (moduleEffects) {
+    for (const [name, eff] of Object.entries(moduleEffects)) {
+      if (eff.throws?.length) extThrows.set(name, new Set(eff.throws));
+    }
+  }
+
   const records = new Map<FnDecl, FnRecord>();
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
+
+  const allCalleeNames =
+    extThrows.size > 0
+      ? new Set([...fnNames, ...extThrows.keys()])
+      : fnNames;
+
   const innerByDecl = computeNesting(decls);
 
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const callees = collectCallees(tokens, decl, inner, allCalleeNames);
     records.set(decl, {
       decl,
       declaredThrows: new Set(decl.throws ?? []),
@@ -87,25 +108,43 @@ export function passThrCheck(src: string, version: VersionInfo): string {
     }
   }
 
-  // Fixed-point closure.
+  // Fixed-point closure. Same-file callees via `records`; external callees
+  // via `extThrows` from `moduleEffects`.
   let changed = true;
   while (changed) {
     changed = false;
     for (const rec of records.values()) {
       for (const calleeName of rec.callees) {
+        // Same-file callee.
         const calleeDecls = declsByName.get(calleeName);
-        if (!calleeDecls) continue;
-        for (const calleeDecl of calleeDecls) {
-          if (calleeDecl === rec.decl) continue;
-          const callee = records.get(calleeDecl);
-          if (!callee) continue;
-          for (const [label, path] of callee.transitiveThrows) {
+        if (calleeDecls) {
+          for (const calleeDecl of calleeDecls) {
+            if (calleeDecl === rec.decl) continue;
+            const callee = records.get(calleeDecl);
+            if (!callee) continue;
+            for (const [label, path] of callee.transitiveThrows) {
+              if (rec.transitiveThrows.has(label)) continue;
+              rec.transitiveThrows.set(label, {
+                kind: "via",
+                fnName: rec.decl.name,
+                callee: calleeName,
+                next: path,
+              });
+              changed = true;
+            }
+          }
+          continue;
+        }
+
+        // External callee from moduleEffects.
+        const extT = extThrows.get(calleeName);
+        if (extT) {
+          for (const label of extT) {
             if (rec.transitiveThrows.has(label)) continue;
             rec.transitiveThrows.set(label, {
-              kind: "via",
-              fnName: rec.decl.name,
-              callee: calleeName,
-              next: path,
+              kind: "declared",
+              fnName: calleeName,
+              label,
             });
             changed = true;
           }

@@ -7,6 +7,16 @@ goes behind a new pin.
 ## ?bs 0.9 — unreleased
 
 ### Added
+- **`moduleEffects` option — cross-file effect transitivity.**
+  `transform(src, { moduleEffects })` now accepts a `ModuleEffects` map that
+  declares the effect surface of imported functions. When provided,
+  DEP001/DEP002 and THR001 extend their transitivity checks across file
+  boundaries: if a caller calls `fetchRow` and `moduleEffects.fetchRow`
+  declares `reads: ["userDb"]`, the caller must also declare
+  `reads { userDb }` — exactly as if `fetchRow` were defined in the same file.
+  Cross-file calls without a `moduleEffects` entry remain opaque (no change
+  from existing behaviour). `FnEffectSurface` and `ModuleEffects` are exported
+  from the compiler package.
 - **THR001 — `throws {}` transitivity enforcement.**
   From `?bs 0.9`, the compiler enforces that if fn A calls fn B (in the same
   file) and B declares `throws { X }`, then A must also declare `throws { X }`.
