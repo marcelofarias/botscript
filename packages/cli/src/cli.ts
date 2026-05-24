@@ -11,7 +11,6 @@ import {
   formatSource,
   getErrorCode,
   listErrorCodes,
-  parseProgram,
   transform,
 } from "@mbfarias/botscript-compiler";
 import type { Diagnostic, ModuleEffects } from "@mbfarias/botscript-compiler";
