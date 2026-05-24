@@ -453,7 +453,7 @@ async function collectBs(root: string, strict = false): Promise<string[]> {
       );
     return out;
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {

@@ -1,4 +1,5 @@
 import { parseProgram } from "./parser/parse.js";
+import type { Token } from "./parser/lex.js";
 
 /**
  * Declared effect surface of a single exported function from another module.
@@ -42,7 +43,7 @@ export function mergeEffectSurface(
 }
 
 /**
- * Scan a `.bs` source for exported function names.
+ * Scan a token stream for exported function names.
  *
  * Handles two forms:
  *   - trailing lists:  export { name1, name2 }
@@ -51,32 +52,86 @@ export function mergeEffectSurface(
  * Type-only exports (`export type { … }`, `export type Foo = …`) are ignored
  * because they cannot be called.
  *
+ * Operates over the lexer token stream so string/template/comment content is
+ * never misread as a real export statement.
+ *
  * Returns the set of exported names, or null when the source contains no
  * export statements at all — the null sentinel means "include everything"
  * (plain script with no module boundary, backward-compatible with the
  * pre-export-filtering behavior).
  */
-function scanExports(src: string): Set<string> | null {
+function scanExports(tokens: readonly Token[]): Set<string> | null {
   const names = new Set<string>();
   let hasExport = false;
 
-  // export { name1, name2 as alias, ... } — skip export type { ... }
-  const listRe = /\bexport\s+(?!type[\s{])\{([^}]*)\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = listRe.exec(src)) !== null) {
-    hasExport = true;
-    for (const item of m[1]!.split(",")) {
-      // Each item may be "name" or "name as alias" — we want the source name.
-      const name = item.trim().split(/\s+/)[0]?.trim();
-      if (name && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) names.add(name);
-    }
+  /** Advance past whitespace and newline tokens. */
+  function skipWs(i: number): number {
+    while (
+      i < tokens.length &&
+      (tokens[i]!.kind === "whitespace" || tokens[i]!.kind === "newline")
+    )
+      i++;
+    return i;
   }
 
-  // export fn name(  or  export function name(
-  const inlineRe = /\bexport\s+(?:fn|function)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[(<]/g;
-  while ((m = inlineRe.exec(src)) !== null) {
-    hasExport = true;
-    names.add(m[1]!);
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    // Only care about `export` appearing as a top-level ident (not inside
+    // strings, templates, comments, or other non-code tokens).
+    if (t.kind !== "ident" || t.text !== "export") continue;
+
+    const j = skipWs(i + 1);
+    if (j >= tokens.length) continue;
+    const next = tokens[j]!;
+
+    // `export type …` — skip type-only forms; they are not callable and do
+    // not flip a file into "module mode" for effect-surface purposes.
+    if (next.kind === "ident" && next.text === "type") {
+      continue;
+    }
+
+    // `export fn name(` or `export function name(`
+    if (
+      (next.kind === "keyword" && next.text === "fn") ||
+      (next.kind === "ident" && next.text === "function")
+    ) {
+      hasExport = true;
+      const k = skipWs(j + 1);
+      if (k < tokens.length && tokens[k]!.kind === "ident") {
+        names.add(tokens[k]!.text);
+      }
+      continue;
+    }
+
+    // `export { name1, name2 as alias, ... }`
+    if (next.kind === "open" && next.text === "{") {
+      hasExport = true;
+      // matchedAt points to the closing `}` token index in the stream
+      const closeIdx = next.matchedAt ?? tokens.length;
+      let k = j + 1;
+      while (k < closeIdx) {
+        const tk = tokens[k]!;
+        if (tk.kind === "ident") {
+          const name = tk.text;
+          // Look ahead for optional `as alias` — source name is the one before `as`
+          let m = skipWs(k + 1);
+          if (
+            m < closeIdx &&
+            tokens[m]!.kind === "ident" &&
+            tokens[m]!.text === "as"
+          ) {
+            // Skip the alias ident; source name is `name`
+            m = skipWs(m + 1);
+            k = m + 1;
+          } else {
+            k++;
+          }
+          names.add(name);
+          continue;
+        }
+        k++;
+      }
+    }
   }
 
   return hasExport ? names : null;
@@ -115,7 +170,7 @@ export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
       continue;
     }
     // null → no export statements → include all fns (script / no-module-boundary mode)
-    const exported = scanExports(src);
+    const exported = scanExports(program.tokens);
     for (const stmt of program.fns) {
       const { decl } = stmt;
       if (exported !== null && !exported.has(decl.name)) continue;

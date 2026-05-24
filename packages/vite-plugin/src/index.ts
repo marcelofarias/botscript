@@ -26,7 +26,7 @@ async function collectBsFiles(root: string, extensions: string[]): Promise<strin
   } catch {
     return out;
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {
