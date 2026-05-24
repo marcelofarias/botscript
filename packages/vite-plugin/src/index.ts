@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
-import { parseProgram, transform } from "@mbfarias/botscript-compiler";
-import type { FnEffectSurface, ModuleEffects } from "@mbfarias/botscript-compiler";
+import { buildModuleEffects, transform } from "@mbfarias/botscript-compiler";
+import type { ModuleEffects } from "@mbfarias/botscript-compiler";
 import type { Plugin } from "vite";
 
 export interface BotscriptPluginOptions {
@@ -39,45 +39,20 @@ async function collectBsFiles(root: string, extensions: string[]): Promise<strin
   return out;
 }
 
-function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSurface {
-  const merged: FnEffectSurface = {};
-  const reads = [...new Set([...(a.reads ?? []), ...(b.reads ?? [])])];
-  const writes = [...new Set([...(a.writes ?? []), ...(b.writes ?? [])])];
-  const throws = [...new Set([...(a.throws ?? []), ...(b.throws ?? [])])];
-  if (reads.length) merged.reads = reads;
-  if (writes.length) merged.writes = writes;
-  if (throws.length) merged.throws = throws;
-  return merged;
-}
-
-async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
-  const effects = Object.create(null) as Record<string, FnEffectSurface>;
+// Read the project's `.bs` files and build their cross-file effect map. File
+// IO lives here; the parse/merge/keying logic is shared with the CLI via the
+// compiler's buildModuleEffects so the two integrations cannot drift.
+// Unreadable files are skipped so a single bad file can't break dev.
+async function loadModuleEffects(files: string[]): Promise<ModuleEffects> {
+  const sources: string[] = [];
   for (const f of files) {
-    let src: string;
     try {
-      src = await readFile(f, "utf8");
+      sources.push(await readFile(f, "utf8"));
     } catch {
-      continue;
-    }
-    try {
-      const program = parseProgram(src, { allowGenerics: true });
-      for (const stmt of program.fns) {
-        const { decl } = stmt;
-        const surface: FnEffectSurface = {};
-        if (decl.reads?.length) surface.reads = decl.reads;
-        if (decl.writes?.length) surface.writes = decl.writes;
-        if (decl.throws?.length) surface.throws = decl.throws;
-        if (Object.keys(surface).length > 0) {
-          effects[decl.name] = Object.hasOwn(effects, decl.name)
-            ? mergeEffectSurface(effects[decl.name]!, surface)
-            : surface;
-        }
-      }
-    } catch {
-      // Malformed file — skip; cross-file checking degrades gracefully
+      // Unreadable file — skip; cross-file checking degrades gracefully.
     }
   }
-  return effects;
+  return buildModuleEffects(sources);
 }
 
 /**
@@ -106,7 +81,7 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
     async buildStart() {
       if (!root) return;
       const files = await collectBsFiles(root, extensions);
-      moduleEffects = await buildModuleEffects(files);
+      moduleEffects = await loadModuleEffects(files);
     },
     watchChange(id) {
       if (!root) return;
@@ -115,7 +90,7 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
       clearTimeout(watchDebounce);
       watchDebounce = setTimeout(async () => {
         const files = await collectBsFiles(root!, extensions);
-        moduleEffects = await buildModuleEffects(files);
+        moduleEffects = await loadModuleEffects(files);
       }, 200);
     },
     config(userConfig) {

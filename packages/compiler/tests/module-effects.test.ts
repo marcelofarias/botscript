@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { transform } from "../src/transform.js";
+import { buildModuleEffects } from "../src/module-effects.js";
 import type { ModuleEffects } from "../src/module-effects.js";
 
 function compile(src: string, moduleEffects?: ModuleEffects): string {
@@ -177,5 +178,52 @@ describe("combined reads and throws from one external fn", () => {
       "fn loadUser(id: string) reads { userDb } throws { NetworkError } -> Result<string, string> = fetchRow(id)\n";
     const mods: ModuleEffects = { fetchRow: { reads: ["userDb"], throws: ["NetworkError"] } };
     expect(() => compile(src, mods)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildModuleEffects: the shared builder behind the CLI + Vite plugin.
+// Locks the contract those integrations depend on so it can't silently drift.
+// ---------------------------------------------------------------------------
+
+describe("buildModuleEffects builder", () => {
+  it("extracts declared reads/writes/throws keyed by fn name", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\n" +
+        "fn fetchRow(id: string) reads { userDb } throws { NetworkError } -> Result<string, string> = unsafe(id)\n",
+    ]);
+    expect(effects.fetchRow).toEqual({ reads: ["userDb"], throws: ["NetworkError"] });
+  });
+
+  it("merges same-name declarations across sources instead of clobbering", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn save(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+      "?bs 0.9\nfn save(x: string) writes { cache } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    expect(effects.save).toEqual({ reads: ["db"], writes: ["cache"] });
+  });
+
+  it("skips malformed sources so checking degrades gracefully", () => {
+    const effects = buildModuleEffects([
+      "this is not botscript {{{",
+      "?bs 0.9\nfn ok(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    expect(Object.keys(effects)).toEqual(["ok"]);
+  });
+
+  it("is immune to prototype-pollution via adversarial fn names", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn __proto__(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    // The polluted key must not leak onto Object.prototype.
+    expect(({} as Record<string, unknown>).db).toBeUndefined();
+    expect(Object.hasOwn(effects, "__proto__")).toBe(true);
+  });
+
+  it("omits fns with no declared effects", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn pure(x: string) -> string = x\n",
+    ]);
+    expect(Object.keys(effects)).toEqual([]);
   });
 });

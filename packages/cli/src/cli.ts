@@ -6,6 +6,7 @@ import { exit, stderr, stdout } from "node:process";
 import {
   BotscriptError,
   PRIMER,
+  buildModuleEffects,
   formatExplain,
   formatSource,
   getErrorCode,
@@ -13,7 +14,7 @@ import {
   parseProgram,
   transform,
 } from "@mbfarias/botscript-compiler";
-import type { Diagnostic, FnEffectSurface, ModuleEffects } from "@mbfarias/botscript-compiler";
+import type { Diagnostic, ModuleEffects } from "@mbfarias/botscript-compiler";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -137,7 +138,7 @@ async function buildCmd(args: string[]): Promise<void> {
   // Scan the project directory (not just the files being compiled) so that
   // single-file invocations still get cross-file DEP001/DEP002/THR001 checks.
   const effectFiles = inputStat.isDirectory() ? files : await collectBs(baseDir);
-  const moduleEffects = await buildModuleEffects(effectFiles);
+  const moduleEffects = await loadModuleEffects(effectFiles);
   const written: string[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
@@ -228,7 +229,7 @@ async function checkCmd(args: string[]): Promise<void> {
     return;
   }
   const effectFiles = inputStat.isDirectory() ? files : await collectBs(dirname(inputAbs));
-  const moduleEffects = await buildModuleEffects(effectFiles);
+  const moduleEffects = await loadModuleEffects(effectFiles);
   const allDiagnostics: Diagnostic[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
@@ -420,45 +421,20 @@ function explainCmd(args: string[]): void {
   stdout.write(formatExplain(entry) + "\n");
 }
 
-function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSurface {
-  const merged: FnEffectSurface = {};
-  const reads = [...new Set([...(a.reads ?? []), ...(b.reads ?? [])])];
-  const writes = [...new Set([...(a.writes ?? []), ...(b.writes ?? [])])];
-  const throws = [...new Set([...(a.throws ?? []), ...(b.throws ?? [])])];
-  if (reads.length) merged.reads = reads;
-  if (writes.length) merged.writes = writes;
-  if (throws.length) merged.throws = throws;
-  return merged;
-}
-
-async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
-  const effects = Object.create(null) as Record<string, FnEffectSurface>;
+// Read a set of project `.bs` files and build their cross-file effect map.
+// File IO lives here; the parse/merge/keying logic is shared with the Vite
+// plugin via the compiler's buildModuleEffects so the two cannot drift.
+// Unreadable files are skipped so a single bad file can't break a build.
+async function loadModuleEffects(files: string[]): Promise<ModuleEffects> {
+  const sources: string[] = [];
   for (const f of files) {
-    let src: string;
     try {
-      src = await readFile(f, "utf8");
+      sources.push(await readFile(f, "utf8"));
     } catch {
-      continue;
-    }
-    try {
-      const program = parseProgram(src, { allowGenerics: true });
-      for (const stmt of program.fns) {
-        const { decl } = stmt;
-        const surface: FnEffectSurface = {};
-        if (decl.reads?.length) surface.reads = decl.reads;
-        if (decl.writes?.length) surface.writes = decl.writes;
-        if (decl.throws?.length) surface.throws = decl.throws;
-        if (Object.keys(surface).length > 0) {
-          effects[decl.name] = Object.hasOwn(effects, decl.name)
-            ? mergeEffectSurface(effects[decl.name]!, surface)
-            : surface;
-        }
-      }
-    } catch {
-      // Malformed file — skip; cross-file checking degrades gracefully
+      // Unreadable file — skip; cross-file checking degrades gracefully.
     }
   }
-  return effects;
+  return buildModuleEffects(sources);
 }
 
 async function collectBs(root: string): Promise<string[]> {
