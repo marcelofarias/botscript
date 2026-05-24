@@ -51,7 +51,7 @@ function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSur
 }
 
 async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
-  const effects: Record<string, FnEffectSurface> = {};
+  const effects = Object.create(null) as Record<string, FnEffectSurface>;
   for (const f of files) {
     let src: string;
     try {
@@ -68,7 +68,7 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
         if (decl.writes?.length) surface.writes = decl.writes;
         if (decl.throws?.length) surface.throws = decl.throws;
         if (Object.keys(surface).length > 0) {
-          effects[decl.name] = decl.name in effects
+          effects[decl.name] = Object.hasOwn(effects, decl.name)
             ? mergeEffectSurface(effects[decl.name]!, surface)
             : surface;
         }

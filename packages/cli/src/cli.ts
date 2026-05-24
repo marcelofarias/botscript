@@ -432,7 +432,7 @@ function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSur
 }
 
 async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
-  const effects: Record<string, FnEffectSurface> = {};
+  const effects = Object.create(null) as Record<string, FnEffectSurface>;
   for (const f of files) {
     let src: string;
     try {
@@ -449,7 +449,7 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
         if (decl.writes?.length) surface.writes = decl.writes;
         if (decl.throws?.length) surface.throws = decl.throws;
         if (Object.keys(surface).length > 0) {
-          effects[decl.name] = decl.name in effects
+          effects[decl.name] = Object.hasOwn(effects, decl.name)
             ? mergeEffectSurface(effects[decl.name]!, surface)
             : surface;
         }
@@ -463,9 +463,13 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
 
 async function collectBs(root: string): Promise<string[]> {
   const out: string[] = [];
-  const entries = (await readdir(root, { withFileTypes: true })).sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {
