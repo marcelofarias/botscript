@@ -280,6 +280,17 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "priv")).toBe(false);
   });
 
+  it("treats export const … as an export-presence signal (module mode)", () => {
+    // A value export that isn't `fn` / `{ … }` must still flip hasExport so
+    // non-exported helper fns are excluded from the effect map.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "export const VERSION = '1.0.0'\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
   it("does not merge private helpers across files with the same name", () => {
     const fileA =
       "?bs 0.9\n" +

@@ -114,12 +114,16 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
       continue;
     }
 
+    // Any non-type export (fn, const, default, *, …) flips the file into
+    // module mode. We set this unconditionally here and then extract callable
+    // names only from the forms we understand (fn / { … }).
+    hasExport = true;
+
     // `export fn name(` or `export function name(`
     if (
       (next.kind === "keyword" && next.text === "fn") ||
       (next.kind === "ident" && next.text === "function")
     ) {
-      hasExport = true;
       const k = skipWs(j + 1);
       if (k < tokens.length && tokens[k]!.kind === "ident") {
         names.add(tokens[k]!.text);
@@ -129,7 +133,6 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
 
     // `export { name1, name2 as alias, ... }`
     if (next.kind === "open" && next.text === "{") {
-      hasExport = true;
       // matchedAt points to the closing `}` token index in the stream
       const closeIdx = next.matchedAt ?? tokens.length;
       let k = j + 1;
