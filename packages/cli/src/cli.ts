@@ -120,7 +120,7 @@ async function buildCmd(args: string[]): Promise<void> {
   let files: string[];
   let baseDir: string;
   if (inputStat.isDirectory()) {
-    files = await collectBs(inputAbs);
+    files = await collectBs(inputAbs, true);
     baseDir = inputAbs;
   } else {
     files = [inputAbs];
@@ -218,7 +218,7 @@ async function checkCmd(args: string[]): Promise<void> {
   const { input, format } = parseCheckArgs(args);
   const inputAbs = resolve(input);
   const inputStat = await stat(inputAbs);
-  const files = inputStat.isDirectory() ? await collectBs(inputAbs) : [inputAbs];
+  const files = inputStat.isDirectory() ? await collectBs(inputAbs, true) : [inputAbs];
   if (files.length === 0) {
     if (format === "json") {
       stdout.write(JSON.stringify({ ok: true, checked: 0, files: [] } satisfies CheckOk) + "\n");
@@ -306,7 +306,7 @@ async function fmtCmd(args: string[]): Promise<void> {
   const inputAbs = resolve(input);
   const inputStat = await stat(inputAbs);
   const isDir = inputStat.isDirectory();
-  const files = isDir ? await collectBs(inputAbs) : [inputAbs];
+  const files = isDir ? await collectBs(inputAbs, true) : [inputAbs];
 
   // A directory + no explicit mode defaults to --write. A single file + no
   // explicit mode prints to stdout (gofmt-style).
@@ -436,12 +436,21 @@ async function loadModuleEffects(files: string[]): Promise<ModuleEffects> {
   return buildModuleEffects(sources);
 }
 
-async function collectBs(root: string): Promise<string[]> {
+// strict=true is used for primary file discovery (build/check/fmt): an
+// unreadable root directory is a hard error, not a silent empty result.
+// strict=false (default) is used for moduleEffects scanning: a missing or
+// unreadable directory degrades gracefully without breaking compilation.
+// Subdirectory failures are always silently skipped in both modes.
+async function collectBs(root: string, strict = false): Promise<string[]> {
   const out: string[] = [];
   let entries;
   try {
     entries = await readdir(root, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (strict)
+      throw new Error(
+        `cannot read directory ${root}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     return out;
   }
   entries.sort((a, b) => a.name.localeCompare(b.name));
