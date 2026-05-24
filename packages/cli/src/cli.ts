@@ -134,7 +134,10 @@ async function buildCmd(args: string[]): Promise<void> {
     }
     return;
   }
-  const moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+  // Scan the project directory (not just the files being compiled) so that
+  // single-file invocations still get cross-file DEP001/DEP002/THR001 checks.
+  const effectFiles = inputStat.isDirectory() ? files : await collectBs(baseDir);
+  const moduleEffects = await buildModuleEffects(effectFiles);
   const written: string[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
@@ -224,7 +227,8 @@ async function checkCmd(args: string[]): Promise<void> {
     }
     return;
   }
-  const moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+  const effectFiles = inputStat.isDirectory() ? files : await collectBs(dirname(inputAbs));
+  const moduleEffects = await buildModuleEffects(effectFiles);
   const allDiagnostics: Diagnostic[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
@@ -416,6 +420,17 @@ function explainCmd(args: string[]): void {
   stdout.write(formatExplain(entry) + "\n");
 }
 
+function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSurface {
+  const merged: FnEffectSurface = {};
+  const reads = [...new Set([...(a.reads ?? []), ...(b.reads ?? [])])];
+  const writes = [...new Set([...(a.writes ?? []), ...(b.writes ?? [])])];
+  const throws = [...new Set([...(a.throws ?? []), ...(b.throws ?? [])])];
+  if (reads.length) merged.reads = reads;
+  if (writes.length) merged.writes = writes;
+  if (throws.length) merged.throws = throws;
+  return merged;
+}
+
 async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
   const effects: Record<string, FnEffectSurface> = {};
   for (const f of files) {
@@ -434,7 +449,9 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
         if (decl.writes?.length) surface.writes = decl.writes;
         if (decl.throws?.length) surface.throws = decl.throws;
         if (Object.keys(surface).length > 0) {
-          effects[decl.name] = surface;
+          effects[decl.name] = decl.name in effects
+            ? mergeEffectSurface(effects[decl.name]!, surface)
+            : surface;
         }
       }
     } catch {
@@ -446,7 +463,9 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
 
 async function collectBs(root: string): Promise<string[]> {
   const out: string[] = [];
-  const entries = await readdir(root, { withFileTypes: true });
+  const entries = (await readdir(root, { withFileTypes: true })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {

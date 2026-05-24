@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
 import { parseProgram, transform } from "@mbfarias/botscript-compiler";
@@ -26,6 +26,7 @@ async function collectBsFiles(root: string, extensions: string[]): Promise<strin
   } catch {
     return out;
   }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {
@@ -36,6 +37,17 @@ async function collectBsFiles(root: string, extensions: string[]): Promise<strin
     }
   }
   return out;
+}
+
+function mergeEffectSurface(a: FnEffectSurface, b: FnEffectSurface): FnEffectSurface {
+  const merged: FnEffectSurface = {};
+  const reads = [...new Set([...(a.reads ?? []), ...(b.reads ?? [])])];
+  const writes = [...new Set([...(a.writes ?? []), ...(b.writes ?? [])])];
+  const throws = [...new Set([...(a.throws ?? []), ...(b.throws ?? [])])];
+  if (reads.length) merged.reads = reads;
+  if (writes.length) merged.writes = writes;
+  if (throws.length) merged.throws = throws;
+  return merged;
 }
 
 async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
@@ -56,7 +68,9 @@ async function buildModuleEffects(files: string[]): Promise<ModuleEffects> {
         if (decl.writes?.length) surface.writes = decl.writes;
         if (decl.throws?.length) surface.throws = decl.throws;
         if (Object.keys(surface).length > 0) {
-          effects[decl.name] = surface;
+          effects[decl.name] = decl.name in effects
+            ? mergeEffectSurface(effects[decl.name]!, surface)
+            : surface;
         }
       }
     } catch {
@@ -82,6 +96,7 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
   const resolveJsToBs = options.resolveJsToBs ?? true;
   let moduleEffects: ModuleEffects | undefined;
   let root: string | undefined;
+  let watchDebounce: ReturnType<typeof setTimeout> | undefined;
   return {
     name: "botscript",
     enforce: "pre",
@@ -91,14 +106,17 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
     async buildStart() {
       if (!root) return;
       const files = await collectBsFiles(root, extensions);
-      moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+      moduleEffects = await buildModuleEffects(files);
     },
-    async watchChange(id) {
+    watchChange(id) {
       if (!root) return;
       if (!extensions.some((ext) => id.endsWith(ext))) return;
-      // Rebuild the effect map when any .bs file changes.
-      const files = await collectBsFiles(root, extensions);
-      moduleEffects = files.length > 1 ? await buildModuleEffects(files) : undefined;
+      // Debounce rebuilds so rapid saves don't trigger N full re-scans.
+      clearTimeout(watchDebounce);
+      watchDebounce = setTimeout(async () => {
+        const files = await collectBsFiles(root!, extensions);
+        moduleEffects = await buildModuleEffects(files);
+      }, 200);
     },
     config(userConfig) {
       // Auto-add `.bs` to resolve.extensions so users don't have to. We put it
