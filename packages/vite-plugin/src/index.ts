@@ -98,7 +98,7 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
     watchChange(id) {
       if (!root) return;
       if (!extensions.some((ext) => id.endsWith(ext))) return;
-      // Debounce rebuilds so rapid saves don't trigger N full re-scans.
+      // Debounce re-scans so rapid saves don't trigger N full effect-map rebuilds.
       clearTimeout(watchDebounce);
       watchDebounce = setTimeout(() => void rescan(), 200);
     },

@@ -64,20 +64,44 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
   const names = new Set<string>();
   let hasExport = false;
 
-  /** Advance past whitespace and newline tokens. */
+  /** Advance past whitespace, newline, and comment tokens. */
   function skipWs(i: number): number {
-    while (
-      i < tokens.length &&
-      (tokens[i]!.kind === "whitespace" || tokens[i]!.kind === "newline")
-    )
-      i++;
+    while (i < tokens.length) {
+      const k = tokens[i]!.kind;
+      if (
+        k === "whitespace" ||
+        k === "newline" ||
+        k === "lineComment" ||
+        k === "blockComment"
+      ) {
+        i++;
+      } else {
+        break;
+      }
+    }
     return i;
   }
 
+  // Track brace/paren/bracket nesting so we only act on `export` at the
+  // top level (depth 0). An `export` identifier inside a function body must
+  // not be treated as a module export statement.
+  let depth = 0;
+
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
-    // Only care about `export` appearing as a top-level ident (not inside
-    // strings, templates, comments, or other non-code tokens).
+
+    if (t.kind === "open") {
+      depth++;
+      continue;
+    }
+    if (t.kind === "close") {
+      if (depth > 0) depth--;
+      continue;
+    }
+
+    // Only care about `export` appearing as a top-level ident (depth 0, not
+    // inside strings, templates, comments, or other non-code tokens).
+    if (depth !== 0) continue;
     if (t.kind !== "ident" || t.text !== "export") continue;
 
     const j = skipWs(i + 1);

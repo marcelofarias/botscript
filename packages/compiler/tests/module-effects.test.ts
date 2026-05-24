@@ -268,6 +268,18 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "internal")).toBe(true);
   });
 
+  it("recognises export with block-comment trivia before the export list", () => {
+    // `export /* comment */ { pub }` — skipWs must skip block comments
+    const src =
+      "?bs 0.9\n" +
+      "fn priv(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export /* trailing list */ { pub }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "priv")).toBe(false);
+  });
+
   it("does not merge private helpers across files with the same name", () => {
     const fileA =
       "?bs 0.9\n" +
