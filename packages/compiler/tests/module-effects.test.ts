@@ -226,4 +226,63 @@ describe("buildModuleEffects builder", () => {
     ]);
     expect(Object.keys(effects)).toEqual([]);
   });
+
+  it("includes only exported fns when the source has export statements", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn _priv(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export { pub }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "_priv")).toBe(false);
+  });
+
+  it("includes all fns when the source has no export statements (script mode)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn a(x: string) reads { db } -> string = unsafe(x)\n" +
+      "fn b(x: string) writes { cache } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "a")).toBe(true);
+    expect(Object.hasOwn(effects, "b")).toBe(true);
+  });
+
+  it("handles inline export fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export fn fetchUser(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchUser")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("does not treat export type { ... } as an export-presence signal", () => {
+    // A file with only type exports should behave like a script (include all fns)
+    const src =
+      "?bs 0.9\n" +
+      "fn internal(x: string) reads { db } -> string = unsafe(x)\n" +
+      "export type { Config }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "internal")).toBe(true);
+  });
+
+  it("does not merge private helpers across files with the same name", () => {
+    const fileA =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pubA(x: string) reads { aDb } -> string = helper(x)\n" +
+      "export { pubA }\n";
+    const fileB =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { otherDb } -> string = unsafe(x)\n" +
+      "fn pubB(x: string) reads { bDb } -> string = helper(x)\n" +
+      "export { pubB }\n";
+    const effects = buildModuleEffects([fileA, fileB]);
+    // private helpers should be excluded; no merged "helper" entry
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+    expect(effects.pubA).toEqual({ reads: ["aDb"] });
+    expect(effects.pubB).toEqual({ reads: ["bDb"] });
+  });
 });
