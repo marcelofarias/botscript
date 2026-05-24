@@ -73,8 +73,17 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
   let root: string | undefined;
   let watchDebounce: ReturnType<typeof setTimeout> | undefined;
   // Monotonic token so out-of-order scans can't clobber a newer result: a scan
-  // only commits if it is still the most recent one started.
+  // only commits if it is still the most recent one started. Shared by the
+  // initial buildStart scan and every debounced watchChange scan.
   let scanGen = 0;
+  async function rescan(): Promise<void> {
+    if (!root) return;
+    const gen = ++scanGen;
+    const files = await collectBsFiles(root, extensions);
+    const effects = await loadModuleEffects(files);
+    // Drop the result if a newer scan started while this one was running.
+    if (gen === scanGen) moduleEffects = effects;
+  }
   return {
     name: "botscript",
     enforce: "pre",
@@ -82,23 +91,16 @@ export default function botscript(options: BotscriptPluginOptions = {}): Plugin 
       root = config.root;
     },
     async buildStart() {
-      if (!root) return;
-      const files = await collectBsFiles(root, extensions);
-      moduleEffects = await loadModuleEffects(files);
+      // Guarded like watchChange: if a watch-triggered scan races this initial
+      // scan, only the most-recently-started one commits its result.
+      await rescan();
     },
     watchChange(id) {
       if (!root) return;
       if (!extensions.some((ext) => id.endsWith(ext))) return;
       // Debounce rebuilds so rapid saves don't trigger N full re-scans.
       clearTimeout(watchDebounce);
-      watchDebounce = setTimeout(async () => {
-        const gen = ++scanGen;
-        const files = await collectBsFiles(root!, extensions);
-        const effects = await loadModuleEffects(files);
-        // Drop the result if a newer scan started while this one was running,
-        // so a slow older scan can't overwrite fresher effects.
-        if (gen === scanGen) moduleEffects = effects;
-      }, 200);
+      watchDebounce = setTimeout(() => void rescan(), 200);
     },
     config(userConfig) {
       // Auto-add `.bs` to resolve.extensions so users don't have to. We put it

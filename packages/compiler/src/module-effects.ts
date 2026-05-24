@@ -55,6 +55,12 @@ export function mergeEffectSurface(
  *
  * Pass sources in a stable order (callers sort their file lists) so the merged
  * result is deterministic across platforms.
+ *
+ * Known limitation: every top-level `fn` is included, not just exported ones.
+ * botscript exports via trailing `export { … }` statements that the shallow
+ * parser does not yet surface, so visibility can't be honored here today. In
+ * practice this only matters if two files declare a same-name *private* helper
+ * with differing effects; tracked for a follow-up alongside alias-aware keying.
  */
 export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
   const effects = Object.create(null) as Record<string, FnEffectSurface>;
