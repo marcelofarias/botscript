@@ -153,7 +153,9 @@ export function passThrCheck(
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: { kind: "declared", fnName: resolvedCallee, label },
+              // Report the call-site name the source actually uses (the alias),
+              // not the resolved declared name, so the call path is accurate.
+              next: { kind: "declared", fnName: calleeName, label },
             });
             changed = true;
           }
