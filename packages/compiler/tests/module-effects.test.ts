@@ -291,6 +291,36 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "helper")).toBe(false);
   });
 
+  it("handles export async fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export async fn fetchUser(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchUser")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("handles export unsafe \"reason\" fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export unsafe \"legacy\" fn fetchRow(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchRow")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("handles export async unsafe \"reason\" fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export async unsafe \"legacy\" fn fetchRow(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchRow")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
   it("does not merge private helpers across files with the same name", () => {
     const fileA =
       "?bs 0.9\n" +

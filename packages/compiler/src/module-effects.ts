@@ -119,16 +119,39 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
     // names only from the forms we understand (fn / { … }).
     hasExport = true;
 
-    // `export fn name(` or `export function name(`
-    if (
-      (next.kind === "keyword" && next.text === "fn") ||
-      (next.kind === "ident" && next.text === "function")
-    ) {
-      const k = skipWs(j + 1);
-      if (k < tokens.length && tokens[k]!.kind === "ident") {
-        names.add(tokens[k]!.text);
+    // `export [async] [unsafe "reason"] fn name(` or `export function name(`
+    // Advance past optional modifiers (async, unsafe "reason") in any order
+    // before checking for the fn/function keyword.
+    {
+      let k = j;
+      let advanced = true;
+      while (advanced) {
+        advanced = false;
+        const cur = tokens[k];
+        if (!cur) break;
+        if (cur.kind === "keyword" && cur.text === "async") {
+          k = skipWs(k + 1);
+          advanced = true;
+        } else if (cur.kind === "keyword" && cur.text === "unsafe") {
+          const m = skipWs(k + 1);
+          if (m < tokens.length && tokens[m]!.kind === "string") {
+            k = skipWs(m + 1);
+            advanced = true;
+          }
+        }
       }
-      continue;
+      const modToken = tokens[k];
+      if (
+        modToken &&
+        ((modToken.kind === "keyword" && modToken.text === "fn") ||
+          (modToken.kind === "ident" && modToken.text === "function"))
+      ) {
+        const nameIdx = skipWs(k + 1);
+        if (nameIdx < tokens.length && tokens[nameIdx]!.kind === "ident") {
+          names.add(tokens[nameIdx]!.text);
+        }
+        continue;
+      }
     }
 
     // `export { name1, name2 as alias, ... }`
