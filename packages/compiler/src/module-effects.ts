@@ -287,12 +287,25 @@ export function buildImportAliasMap(tokens: readonly Token[]): Map<string, strin
       if (k >= closeIdx) break;
       const nameTok = tokens[k]!;
       if (nameTok.kind !== "ident") { k++; continue; }
-      // Per-specifier type import (`import { type Foo as Bar }`): not callable,
-      // so skip the whole specifier rather than registering a value alias.
+      // Per-specifier type import (`import { type Foo as Bar }`): not callable;
+      // skip the declared name AND any `as alias` clause so neither "Foo" nor
+      // "Bar" is inspected as a potential value alias.
       if (nameTok.text === "type") {
         const after = skipWs(k + 1);
         if (after < closeIdx && tokens[after]!.kind === "ident") {
-          k = after + 1;
+          let skip = after + 1;
+          const asPos = skipWs(skip);
+          if (
+            asPos < closeIdx &&
+            tokens[asPos]!.kind === "ident" &&
+            tokens[asPos]!.text === "as"
+          ) {
+            const aliasPos = skipWs(asPos + 1);
+            if (aliasPos < closeIdx && tokens[aliasPos]!.kind === "ident") {
+              skip = aliasPos + 1;
+            }
+          }
+          k = skip;
           continue;
         }
       }
