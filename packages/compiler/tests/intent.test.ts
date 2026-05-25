@@ -284,6 +284,150 @@ describe("INT002 — pure intent violated in body (?bs 0.7+)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// INT003 — idempotent intent vs non-idempotent capability in uses {}
+// ---------------------------------------------------------------------------
+
+describe("INT003 — idempotent intent vs uses { random | time } (?bs 0.7+)", () => {
+  it("fires INT003 when intent is 'idempotent' and uses { time }", () => {
+    const src = `?bs 0.7\nfn expireAt(ttl: number) uses { time } intent: "idempotent" -> number = ttl\n`;
+    expect(() => t(src)).toThrow(/INT003/);
+  });
+
+  it("fires INT003 when intent is 'idempotent' and uses { random }", () => {
+    const src = `?bs 0.7\nfn generateId(prefix: string) uses { random } intent: "idempotent" -> string = prefix\n`;
+    expect(() => t(src)).toThrow(/INT003/);
+  });
+
+  it("fires INT003 when both random and time are declared", () => {
+    const src = `?bs 0.7\nfn bad() uses { random, time } intent: "idempotent" -> number = 0\n`;
+    expect(() => t(src)).toThrow(/INT003/);
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT003");
+      expect(d.message).toContain("random");
+      expect(d.message).toContain("time");
+    }
+  });
+
+  it("does NOT fire INT003 when intent is 'idempotent' and uses { net }", () => {
+    // net is idempotent-compatible — retrying a GET is safe.
+    // CAP002 may fire because the body doesn't call http.get; we only care INT003 doesn't.
+    const src = `?bs 0.7\nfn fetch(id: string) uses { net } intent: "idempotent" -> string = id\n`;
+    expect(() => t(src)).not.toThrow(/INT003/);
+  });
+
+  it("does NOT fire INT003 when intent is 'idempotent' and uses { fs }", () => {
+    const src = `?bs 0.7\nfn readConfig() uses { fs } intent: "idempotent" -> string = ""\n`;
+    expect(() => t(src)).not.toThrow(/INT003/);
+  });
+
+  it("does NOT fire INT003 when intent does not contain 'idempotent'", () => {
+    const src = `?bs 0.7\nfn stamp() uses { time } intent: "writes" -> number = 0\n`;
+    expect(() => t(src)).not.toThrow(/INT003/);
+  });
+
+  it("does NOT fire INT003 when intent contains 'non-idempotent' (hyphen boundary)", () => {
+    // "non-idempotent" should NOT match the idempotent claim
+    const src = `?bs 0.7\nfn stamp() uses { time } intent: "non-idempotent" -> number = 0\n`;
+    expect(() => t(src)).not.toThrow(/INT003/);
+  });
+
+  it("diagnostic carries rule, idiom, rewrite, line, column, start, end", () => {
+    const src = `?bs 0.7\nfn expireAt(ttl: number) uses { time } intent: "idempotent" -> number = ttl\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT003");
+      expect(d.rule).toBeTruthy();
+      expect(d.idiom).toBeTruthy();
+      expect(d.rewrite).toBeTruthy();
+      expect(d.line).toBeGreaterThan(0);
+      expect(d.column).toBeGreaterThan(0);
+      expect(d.start).toBeTypeOf("number");
+      expect(d.end).toBeTypeOf("number");
+    }
+  });
+
+  it("INT003 subsumes INT004 when uses {} also declares the capability", () => {
+    // When the header conflict fires (INT003), the body check (INT004) should not fire too.
+    // Expression body avoids FMT001 (canonical form requires = expr for non-void).
+    const src = `?bs 0.7\nfn bad(ttl: number) uses { time } intent: "idempotent" -> number = time.now() + ttl\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT003");
+      expect(err.diagnostics.length).toBe(1);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INT004 — idempotent intent violated in body (under-declaration variant)
+// ---------------------------------------------------------------------------
+
+describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)", () => {
+  it("fires INT004 when pure idempotent fn body calls time.now()", () => {
+    // Expression body — block body with return would fire FMT001 first.
+    const src = `?bs 0.7\nfn expireAt(ttl: number) intent: "idempotent" -> number = time.now() + ttl\n`;
+    expect(() => t(src)).toThrow(/INT004/);
+  });
+
+  it("fires INT004 when idempotent fn body calls random.float()", () => {
+    const src = `?bs 0.7\nfn generateId(prefix: string) intent: "idempotent" -> string = prefix + random.float()\n`;
+    expect(() => t(src)).toThrow(/INT004/);
+  });
+
+  it("diagnostic message includes fn name, namespace.member, and non-idempotent rationale", () => {
+    const src = `?bs 0.7\nfn stamp(prefix: string) intent: "idempotent" -> string = prefix + random.float()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT004");
+      expect(d.message).toContain("stamp");
+      expect(d.message).toContain("random.float");
+      expect(d.rule).toBeTruthy();
+      expect(d.idiom).toBeTruthy();
+      expect(d.rewrite).toBeTruthy();
+    }
+  });
+
+  it("does NOT fire INT004 when idempotent fn body has no non-idempotent calls", () => {
+    // CAP002 may fire because body doesn't call http.get; we only care INT004 doesn't fire.
+    const src = `?bs 0.7\nfn fetch(id: string) uses { net } intent: "idempotent" -> string = id\n`;
+    expect(() => t(src)).not.toThrow(/INT004/);
+  });
+
+  it("does NOT fire INT004 when body uses time inside a nested fn", () => {
+    // INT004 must not fire for the outer fn when time is only in the inner fn's body.
+    const src = `?bs 0.7\nfn outer() intent: "idempotent" -> void {\n  fn inner() uses { time } -> number = time.now();\n}\n`;
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      for (const d of err.diagnostics) {
+        expect(d.code).not.toBe("INT004");
+      }
+    }
+  });
+
+  it("does NOT fire INT004 on pre-0.7 pins", () => {
+    const src = `?bs 0.1\nfn stamp() intent: "idempotent" -> number = time.now()\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // INT001 extended: reads {} / writes {} also contradict "pure" intent
 // ---------------------------------------------------------------------------
 

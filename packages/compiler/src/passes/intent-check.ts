@@ -19,7 +19,18 @@
  *                      pure and declares nothing, but the body lies.
  *                      (body-level verification — fires when INT001 does not)
  *
- *            Planned for future versions: idempotent, total, monotonic, …
+ *              INT003  intent contains "idempotent" but the function declares
+ *                      `random` or `time` in its `uses { ... }` clause. Both
+ *                      namespaces produce different values on each call, so any
+ *                      fn that uses them is inherently non-idempotent.
+ *                      (header-level consistency check)
+ *
+ *              INT004  intent contains "idempotent" but the function body
+ *                      directly references `random` or `time` without declaring
+ *                      the capability (under-declaration variant of INT003).
+ *                      (body-level verification — fires when INT003 does not)
+ *
+ *            Planned for future versions: total, monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
  *   ?bs 0.8  INT001 extended: also fires when `reads { ... }` or `writes { ... }`
@@ -56,8 +67,34 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // is still treated as an intent clause being present.
     if (decl.intent === undefined) continue;
 
-    if (!containsPureClaim(decl.intent)) continue;
+    // Each claim is checked independently — a fn may carry several
+    // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
+    if (containsPureClaim(decl.intent)) {
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
+    }
+    if (containsIdempotentClaim(decl.intent)) {
+      checkIdempotentClaim(decl, src, tokens, allDecls, diagnostics);
+    }
+  }
 
+  if (diagnostics.length > 0) {
+    throw new BotscriptError(diagnostics);
+  }
+
+  return src;
+}
+
+/**
+ * "pure" claim: INT001 (header conflict) and INT002 (body under-declaration).
+ */
+function checkPureClaim(
+  decl: FnDecl,
+  src: string,
+  tokens: Token[],
+  allDecls: FnDecl[],
+  checksReadsWrites: boolean,
+  diagnostics: Diagnostic[],
+): void {
     const hasUses = decl.capabilities.length > 0;
     const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
     const hasWrites = checksReadsWrites && (decl.writes?.length ?? 0) > 0;
@@ -83,7 +120,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         line: loc.line,
         column: loc.column,
         start: intentStart,
-        end: intentStart + decl.intent.length + 2,
+        end: intentStart + decl.intent!.length + 2,
         message:
           `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
           `pure functions may not consume external resources or have resource dependencies`,
@@ -94,7 +131,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
           `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
       });
       // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
-      continue;
+      return;
     }
 
     // INT002: intent claims "pure", uses {} is empty (and reads/writes are
@@ -112,7 +149,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         line: loc.line,
         column: loc.column,
         start: intentStart,
-        end: intentStart + decl.intent.length + 2,
+        end: intentStart + decl.intent!.length + 2,
         message:
           `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
           `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
@@ -126,13 +163,87 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
           `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
       });
     }
+}
+
+// Capabilities whose values change on every call — fundamentally non-idempotent.
+const NON_IDEMPOTENT = new Set(["random", "time"]);
+
+/**
+ * "idempotent" claim: INT003 (header conflict) and INT004 (body under-declaration).
+ *
+ * An idempotent fn is safe to retry: same inputs → same observable result.
+ * `random` and `time` break that — they yield different values per call — so a
+ * fn that declares or directly calls either cannot honour the claim. Other
+ * capabilities (net, fs, …) are fine: they can be replayed with the same effect.
+ */
+function checkIdempotentClaim(
+  decl: FnDecl,
+  src: string,
+  tokens: Token[],
+  allDecls: FnDecl[],
+  diagnostics: Diagnostic[],
+): void {
+  // INT003: header-level — uses { } declares a non-idempotent capability.
+  const nonIdem = decl.capabilities.filter((c) => NON_IDEMPOTENT.has(c));
+  if (nonIdem.length > 0) {
+    const entry = getErrorCode("INT003")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const capsStr = nonIdem.join(", ");
+    diagnostics.push({
+      code: "INT003",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'idempotent' but declares uses { ${capsStr} } — ` +
+        `${capsStr} produce${nonIdem.length === 1 ? "s" : ""} different values on each call, ` +
+        `making the function non-idempotent`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the non-idempotent capability:\n` +
+        `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
+        `// option B — remove the idempotent intent claim:\n` +
+        `fn ${decl.name}(...) uses { ${capsStr} } -> ...`,
+    });
+    // INT003 already fired — header conflict subsumes the body check.
+    return;
   }
 
-  if (diagnostics.length > 0) {
-    throw new BotscriptError(diagnostics);
+  // INT004: body-level under-declaration — body directly references a
+  // non-idempotent namespace that is not declared in uses { }.
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, (ns) =>
+    NON_IDEMPOTENT.has(ns),
+  );
+  if (bodyUse) {
+    const entry = getErrorCode("INT004")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    diagnostics.push({
+      code: "INT004",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' declares intent: "idempotent" but body directly calls ` +
+        `'${bodyUse.namespace}.${bodyUse.member}' which produces a different value on each call — ` +
+        `idempotent functions must be safe to retry with the same result`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the non-idempotent call from the body:\n` +
+        `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
+        `// option B — declare the capability and remove the idempotent claim:\n` +
+        `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
+    });
   }
-
-  return src;
 }
 
 /**
@@ -143,6 +254,7 @@ function findFirstCapabilityUse(
   tokens: Token[],
   fn: FnDecl,
   allDecls: FnDecl[],
+  filter?: (namespace: string) => boolean,
 ): { capability: string; namespace: string; member: string } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
@@ -155,6 +267,7 @@ function findFirstCapabilityUse(
     if (!tok || tok.kind !== "ident") continue;
     const cap = STDLIB_TO_CAP[tok.text];
     if (!cap) continue;
+    if (filter && !filter(tok.text)) continue;
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
     if (next?.kind !== "punct" || next.text !== ".") continue;
@@ -204,5 +317,15 @@ function nextIdent(tokens: Token[], dotIdx: number): string | null {
 function containsPureClaim(intent: string): boolean {
   // Case-insensitive: "Pure", "PURE", "pure function" all carry the same claim.
   return /(?<![a-zA-Z0-9_-])pure(?![a-zA-Z0-9_-])/i.test(intent);
+}
+
+/**
+ * True when the intent string contains the word "idempotent" as a whole token.
+ * Matches: "idempotent", "idempotent and pure", "Idempotent". Does NOT match
+ * substrings inside other identifiers (e.g. "non-idempotent" is excluded via
+ * the `-` boundary, since that is a negation, not a claim).
+ */
+function containsIdempotentClaim(intent: string): boolean {
+  return /(?<![a-zA-Z0-9_-])idempotent(?![a-zA-Z0-9_-])/i.test(intent);
 }
 
