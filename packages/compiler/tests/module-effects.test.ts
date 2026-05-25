@@ -182,6 +182,61 @@ describe("combined reads and throws from one external fn", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Aliased imports: import { fetchRow as fetchUser } from "./db.bs"
+// DEP001/DEP002/THR001 must fire even when the call site uses a local alias.
+// ---------------------------------------------------------------------------
+
+describe("aliased imports: DEP001/DEP002/THR001 with import aliases", () => {
+  it("DEP001 fires when caller uses aliased name and omits reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+
+  it("DEP001 passes when caller uses aliased name and declares reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) reads { userDb } -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("DEP002 fires when caller uses aliased name and omits writes label", () => {
+    const src =
+      '?bs 0.9\nimport { persistRow as saveUser } from "./db.bs"\n' +
+      "fn updateUser(id: string) -> string = saveUser(id)\n";
+    const mods: ModuleEffects = { persistRow: { writes: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP002");
+  });
+
+  it("THR001 fires when caller uses aliased name and omits throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).toThrow("THR001");
+  });
+
+  it("THR001 passes when caller uses aliased name and declares throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) throws { NetworkError } -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("un-aliased import still works (no regression)", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchRow(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildModuleEffects: the shared builder behind the CLI + Vite plugin.
 // Locks the contract those integrations depend on so it can't silently drift.
 // ---------------------------------------------------------------------------

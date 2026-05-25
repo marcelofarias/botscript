@@ -42,7 +42,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, collectCallees } from "./_callgraph.js";
-import type { ModuleEffects } from "../module-effects.js";
+import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +80,10 @@ export function passDepCheck(
 
   if (decls.length === 0) return src;
 
+  // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
+  // to `fetchUser` in this file should look up `fetchRow` in moduleEffects.
+  const importAliases = moduleEffects ? buildImportAliasMap(tokens) : new Map<string, string>();
+
   // Build maps for external (cross-file) effect declarations.
   const extReads = new Map<string, Set<string>>();
   const extWrites = new Map<string, Set<string>>();
@@ -95,11 +99,12 @@ export function passDepCheck(
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
 
-  // Include external function names in the callee scan so cross-file calls
-  // appear in the callees set and are picked up in the closure below.
+  // Include external function names (and their local aliases) in the callee
+  // scan so cross-file calls appear in the callees set.
+  const aliasedLocalNames = new Set(importAliases.keys());
   const allCalleeNames =
-    extReads.size > 0 || extWrites.size > 0
-      ? new Set([...fnNames, ...extReads.keys(), ...extWrites.keys()])
+    extReads.size > 0 || extWrites.size > 0 || aliasedLocalNames.size > 0
+      ? new Set([...fnNames, ...extReads.keys(), ...extWrites.keys(), ...aliasedLocalNames])
       : fnNames;
 
   // Precompute each fn's nested (descendant) decls once via a single sweep,
@@ -172,8 +177,11 @@ export function passDepCheck(
           continue;
         }
 
-        // External callee from moduleEffects.
-        const extR = extReads.get(calleeName);
+        // External callee from moduleEffects. Resolve import aliases first:
+        // `import { fetchRow as fetchUser }` means calleeName="fetchUser"
+        // should look up "fetchRow" in extReads/extWrites.
+        const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+        const extR = extReads.get(resolvedCallee);
         if (extR) {
           for (const label of extR) {
             if (rec.transitiveReads.has(label)) continue;
@@ -181,12 +189,12 @@ export function passDepCheck(
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: { kind: "declared", fnName: calleeName, label },
+              next: { kind: "declared", fnName: resolvedCallee, label },
             });
             changed = true;
           }
         }
-        const extW = extWrites.get(calleeName);
+        const extW = extWrites.get(resolvedCallee);
         if (extW) {
           for (const label of extW) {
             if (rec.transitiveWrites.has(label)) continue;
@@ -194,7 +202,7 @@ export function passDepCheck(
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: { kind: "declared", fnName: calleeName, label },
+              next: { kind: "declared", fnName: resolvedCallee, label },
             });
             changed = true;
           }

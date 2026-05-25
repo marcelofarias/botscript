@@ -33,7 +33,7 @@ import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
 import { computeNesting, collectCallees, nextSignificant, prevSignificant } from "./_callgraph.js";
-import type { ModuleEffects } from "../module-effects.js";
+import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +68,10 @@ export function passThrCheck(
 
   if (decls.length === 0) return src;
 
+  // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
+  // to `fetchUser` should look up `fetchRow` in moduleEffects.
+  const importAliases = moduleEffects ? buildImportAliasMap(tokens) : new Map<string, string>();
+
   // Build map for external (cross-file) throws declarations.
   const extThrows = new Map<string, Set<string>>();
   if (moduleEffects) {
@@ -80,9 +84,10 @@ export function passThrCheck(
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
 
+  const aliasedLocalNames = new Set(importAliases.keys());
   const allCalleeNames =
-    extThrows.size > 0
-      ? new Set([...fnNames, ...extThrows.keys()])
+    extThrows.size > 0 || aliasedLocalNames.size > 0
+      ? new Set([...fnNames, ...extThrows.keys(), ...aliasedLocalNames])
       : fnNames;
 
   const innerByDecl = computeNesting(decls);
@@ -136,8 +141,11 @@ export function passThrCheck(
           continue;
         }
 
-        // External callee from moduleEffects.
-        const extT = extThrows.get(calleeName);
+        // External callee from moduleEffects. Resolve import aliases first:
+        // `import { fetchRow as fetchUser }` means calleeName="fetchUser"
+        // should look up "fetchRow" in extThrows.
+        const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+        const extT = extThrows.get(resolvedCallee);
         if (extT) {
           for (const label of extT) {
             if (rec.transitiveThrows.has(label)) continue;
@@ -145,7 +153,7 @@ export function passThrCheck(
               kind: "via",
               fnName: rec.decl.name,
               callee: calleeName,
-              next: { kind: "declared", fnName: calleeName, label },
+              next: { kind: "declared", fnName: resolvedCallee, label },
             });
             changed = true;
           }
