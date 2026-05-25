@@ -321,6 +321,38 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "helper")).toBe(false);
   });
 
+  it("does not treat re-export { foo } from 'x' as a local export (no local fn excluded)", () => {
+    // export { foo } from "x" re-exports a foreign binding.
+    // A local helper with the same name must NOT be treated as exported.
+    const src =
+      "?bs 0.9\n" +
+      "fn foo(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      'export { pub }\nexport { foo } from "./other.bs"\n';
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "foo")).toBe(false); // local helper excluded
+  });
+
+  it("handles unmatched open brace in export { gracefully (no EOF scan)", () => {
+    // Malformed export { without closing } — matchedAt is undefined.
+    // Must not scan to EOF and collect unrelated identifiers.
+    const src =
+      "?bs 0.9\n" +
+      "fn legit(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export { legit\n" + // intentionally unmatched
+      "fn unrelated(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    // Should not throw — degrades gracefully.
+    let effects: ReturnType<typeof buildModuleEffects>;
+    expect(() => {
+      effects = buildModuleEffects([src]);
+    }).not.toThrow();
+    // "unrelated" must not have been swept up as an exported name.
+    // (legit may or may not appear depending on parse; the key invariant is
+    // that broken brace handling doesn't pollute the exported set.)
+    expect(Object.hasOwn(effects!, "unrelated")).toBe(false);
+  });
+
   it("does not merge private helpers across files with the same name", () => {
     const fileA =
       "?bs 0.9\n" +

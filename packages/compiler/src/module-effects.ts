@@ -154,10 +154,23 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
       }
     }
 
-    // `export { name1, name2 as alias, ... }`
+    // `export { name1, name2 as alias, ... }` — local re-exports only.
+    // `export { foo } from "x"` is a re-export of a foreign binding; those
+    // names are not locally declared, so skip them to avoid polluting the
+    // local-export set and incorrectly treating same-named private helpers
+    // as exported. Also bail on unmatched `{` (syntax error) rather than
+    // scanning to EOF and collecting unrelated identifiers.
     if (next.kind === "open" && next.text === "{") {
-      // matchedAt points to the closing `}` token index in the stream
-      const closeIdx = next.matchedAt ?? tokens.length;
+      const closeIdx = next.matchedAt;
+      if (closeIdx === undefined) continue; // malformed brace — bail
+      const afterClose = skipWs(closeIdx + 1);
+      if (
+        afterClose < tokens.length &&
+        tokens[afterClose]!.kind === "ident" &&
+        tokens[afterClose]!.text === "from"
+      ) {
+        continue; // re-export from another module — not a local binding
+      }
       let k = j + 1;
       while (k < closeIdx) {
         const tk = tokens[k]!;
