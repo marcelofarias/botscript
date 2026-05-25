@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { transform } from "../src/transform.js";
+import { buildModuleEffects } from "../src/module-effects.js";
 import type { ModuleEffects } from "../src/module-effects.js";
 
 function compile(src: string, moduleEffects?: ModuleEffects): string {
@@ -177,5 +178,286 @@ describe("combined reads and throws from one external fn", () => {
       "fn loadUser(id: string) reads { userDb } throws { NetworkError } -> Result<string, string> = fetchRow(id)\n";
     const mods: ModuleEffects = { fetchRow: { reads: ["userDb"], throws: ["NetworkError"] } };
     expect(() => compile(src, mods)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Aliased imports: import { fetchRow as fetchUser } from "./db.bs"
+// DEP001/DEP002/THR001 must fire even when the call site uses a local alias.
+// ---------------------------------------------------------------------------
+
+describe("aliased imports: DEP001/DEP002/THR001 with import aliases", () => {
+  it("DEP001 fires when caller uses aliased name and omits reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+
+  it("DEP001 passes when caller uses aliased name and declares reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) reads { userDb } -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("DEP002 fires when caller uses aliased name and omits writes label", () => {
+    const src =
+      '?bs 0.9\nimport { persistRow as saveUser } from "./db.bs"\n' +
+      "fn updateUser(id: string) -> string = saveUser(id)\n";
+    const mods: ModuleEffects = { persistRow: { writes: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP002");
+  });
+
+  it("THR001 fires when caller uses aliased name and omits throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).toThrow("THR001");
+  });
+
+  it("THR001 passes when caller uses aliased name and declares throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) throws { NetworkError } -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("un-aliased import still works (no regression)", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchRow(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+
+  it("reports the call-site alias (not the declared name) in the diagnostic", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    // The source calls `fetchUser`, so the message and call path must say so.
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+    expect(() => compile(src, mods)).toThrow(/call path: loadUser -> fetchUser/);
+    // It must not leak the resolved declared name into the call path.
+    expect(() => compile(src, mods)).not.toThrow(/-> fetchRow/);
+  });
+
+  it("ignores per-specifier type imports while resolving value aliases", () => {
+    // `type Config as Cfg` is not callable and must not be registered as an
+    // alias; the value alias `fetchRow as fetchUser` in the same import must
+    // still resolve so DEP001 fires.
+    const src =
+      '?bs 0.9\nimport { type Config as Cfg, fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+  });
+
+  it("resolves aliases in a combined default + named import", () => {
+    // `import Default, { X as Y } from ...` — the alias map must skip the
+    // default binding and still register the named alias so DEP001 fires.
+    const src =
+      '?bs 0.9\nimport db, { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildModuleEffects: the shared builder behind the CLI + Vite plugin.
+// Locks the contract those integrations depend on so it can't silently drift.
+// ---------------------------------------------------------------------------
+
+describe("buildModuleEffects builder", () => {
+  it("extracts declared reads/writes/throws keyed by fn name", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\n" +
+        "fn fetchRow(id: string) reads { userDb } throws { NetworkError } -> Result<string, string> = unsafe(id)\n",
+    ]);
+    expect(effects.fetchRow).toEqual({ reads: ["userDb"], throws: ["NetworkError"] });
+  });
+
+  it("merges same-name declarations across sources instead of clobbering", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn save(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+      "?bs 0.9\nfn save(x: string) writes { cache } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    expect(effects.save).toEqual({ reads: ["db"], writes: ["cache"] });
+  });
+
+  it("skips malformed sources so checking degrades gracefully", () => {
+    const effects = buildModuleEffects([
+      "this is not botscript {{{",
+      "?bs 0.9\nfn ok(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    expect(Object.keys(effects)).toEqual(["ok"]);
+  });
+
+  it("is immune to prototype-pollution via adversarial fn names", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn __proto__(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
+    ]);
+    // The polluted key must not leak onto Object.prototype.
+    expect(({} as Record<string, unknown>).db).toBeUndefined();
+    expect(Object.hasOwn(effects, "__proto__")).toBe(true);
+  });
+
+  it("omits fns with no declared effects", () => {
+    const effects = buildModuleEffects([
+      "?bs 0.9\nfn pure(x: string) -> string = x\n",
+    ]);
+    expect(Object.keys(effects)).toEqual([]);
+  });
+
+  it("includes only exported fns when the source has export statements", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn _priv(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export { pub }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "_priv")).toBe(false);
+  });
+
+  it("includes all fns when the source has no export statements (script mode)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn a(x: string) reads { db } -> string = unsafe(x)\n" +
+      "fn b(x: string) writes { cache } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "a")).toBe(true);
+    expect(Object.hasOwn(effects, "b")).toBe(true);
+  });
+
+  it("handles inline export fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export fn fetchUser(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchUser")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("does not treat export type { ... } as an export-presence signal", () => {
+    // A file with only type exports should behave like a script (include all fns)
+    const src =
+      "?bs 0.9\n" +
+      "fn internal(x: string) reads { db } -> string = unsafe(x)\n" +
+      "export type { Config }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "internal")).toBe(true);
+  });
+
+  it("recognises export with block-comment trivia before the export list", () => {
+    // `export /* comment */ { pub }` — skipWs must skip block comments
+    const src =
+      "?bs 0.9\n" +
+      "fn priv(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export /* trailing list */ { pub }\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "priv")).toBe(false);
+  });
+
+  it("treats export const … as an export-presence signal (module mode)", () => {
+    // A value export that isn't `fn` / `{ … }` must still flip hasExport so
+    // non-exported helper fns are excluded from the effect map.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "export const VERSION = '1.0.0'\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("handles export async fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export async fn fetchUser(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchUser")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("handles export unsafe \"reason\" fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export unsafe \"legacy\" fn fetchRow(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchRow")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("handles export async unsafe \"reason\" fn syntax", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export async unsafe \"legacy\" fn fetchRow(id: string) reads { userDb } -> string = unsafe(id)\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "fetchRow")).toBe(true);
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+  });
+
+  it("does not treat re-export { foo } from 'x' as a local export (no local fn excluded)", () => {
+    // export { foo } from "x" re-exports a foreign binding.
+    // A local helper with the same name must NOT be treated as exported.
+    const src =
+      "?bs 0.9\n" +
+      "fn foo(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pub(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      'export { pub }\nexport { foo } from "./other.bs"\n';
+    const effects = buildModuleEffects([src]);
+    expect(Object.hasOwn(effects, "pub")).toBe(true);
+    expect(Object.hasOwn(effects, "foo")).toBe(false); // local helper excluded
+  });
+
+  it("handles unmatched open brace in export { gracefully (no EOF scan)", () => {
+    // Malformed export { without closing } — matchedAt is undefined.
+    // Must not scan to EOF and collect unrelated identifiers.
+    const src =
+      "?bs 0.9\n" +
+      "fn legit(x: string) reads { userDb } -> string = unsafe(x)\n" +
+      "export { legit\n" + // intentionally unmatched
+      "fn unrelated(x: string) reads { secretDb } -> string = unsafe(x)\n";
+    // Should not throw — degrades gracefully.
+    let effects: ReturnType<typeof buildModuleEffects>;
+    expect(() => {
+      effects = buildModuleEffects([src]);
+    }).not.toThrow();
+    // "unrelated" must not have been swept up as an exported name.
+    // (legit may or may not appear depending on parse; the key invariant is
+    // that broken brace handling doesn't pollute the exported set.)
+    expect(Object.hasOwn(effects!, "unrelated")).toBe(false);
+  });
+
+  it("does not merge private helpers across files with the same name", () => {
+    const fileA =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { secretDb } -> string = unsafe(x)\n" +
+      "fn pubA(x: string) reads { aDb } -> string = helper(x)\n" +
+      "export { pubA }\n";
+    const fileB =
+      "?bs 0.9\n" +
+      "fn helper(x: string) reads { otherDb } -> string = unsafe(x)\n" +
+      "fn pubB(x: string) reads { bDb } -> string = helper(x)\n" +
+      "export { pubB }\n";
+    const effects = buildModuleEffects([fileA, fileB]);
+    // private helpers should be excluded; no merged "helper" entry
+    expect(Object.hasOwn(effects, "helper")).toBe(false);
+    expect(effects.pubA).toEqual({ reads: ["aDb"] });
+    expect(effects.pubB).toEqual({ reads: ["bDb"] });
   });
 });

@@ -1,6 +1,7 @@
 export { transform } from "./transform.js";
 export type { TransformOptions, TransformResult } from "./transform.js";
 export type { FnEffectSurface, ModuleEffects } from "./module-effects.js";
+export { buildModuleEffects, mergeEffectSurface } from "./module-effects.js";
 export { PRIMER, primerAsComment } from "./primer.js";
 export { CapabilityCheckError } from "./passes/cap-check.js";
 export { BotscriptError, formatDiagnostic, formatDiagnostics } from "./diagnostics.js";

@@ -6,13 +6,14 @@ import { exit, stderr, stdout } from "node:process";
 import {
   BotscriptError,
   PRIMER,
+  buildModuleEffects,
   formatExplain,
   formatSource,
   getErrorCode,
   listErrorCodes,
   transform,
 } from "@mbfarias/botscript-compiler";
-import type { Diagnostic } from "@mbfarias/botscript-compiler";
+import type { Diagnostic, ModuleEffects } from "@mbfarias/botscript-compiler";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -119,7 +120,7 @@ async function buildCmd(args: string[]): Promise<void> {
   let files: string[];
   let baseDir: string;
   if (inputStat.isDirectory()) {
-    files = await collectBs(inputAbs);
+    files = await collectBs(inputAbs, true);
     baseDir = inputAbs;
   } else {
     files = [inputAbs];
@@ -133,12 +134,16 @@ async function buildCmd(args: string[]): Promise<void> {
     }
     return;
   }
+  // Scan the project directory (not just the files being compiled) so that
+  // single-file invocations still get cross-file DEP001/DEP002/THR001 checks.
+  const effectFiles = inputStat.isDirectory() ? files : await collectBs(baseDir);
+  const moduleEffects = await loadModuleEffects(effectFiles);
   const written: string[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
     let code: string;
     try {
-      ({ code } = transform(src, { filename: f }));
+      ({ code } = transform(src, { filename: f, moduleEffects }));
     } catch (e) {
       if (e instanceof BotscriptError) {
         emitBuildErr({ ok: false, diagnostics: [...e.diagnostics] }, format);
@@ -213,7 +218,7 @@ async function checkCmd(args: string[]): Promise<void> {
   const { input, format } = parseCheckArgs(args);
   const inputAbs = resolve(input);
   const inputStat = await stat(inputAbs);
-  const files = inputStat.isDirectory() ? await collectBs(inputAbs) : [inputAbs];
+  const files = inputStat.isDirectory() ? await collectBs(inputAbs, true) : [inputAbs];
   if (files.length === 0) {
     if (format === "json") {
       stdout.write(JSON.stringify({ ok: true, checked: 0, files: [] } satisfies CheckOk) + "\n");
@@ -222,11 +227,13 @@ async function checkCmd(args: string[]): Promise<void> {
     }
     return;
   }
+  const effectFiles = inputStat.isDirectory() ? files : await collectBs(dirname(inputAbs));
+  const moduleEffects = await loadModuleEffects(effectFiles);
   const allDiagnostics: Diagnostic[] = [];
   for (const f of files) {
     const src = await readFile(f, "utf8");
     try {
-      transform(src, { filename: f });
+      transform(src, { filename: f, moduleEffects });
     } catch (e) {
       if (e instanceof BotscriptError) {
         allDiagnostics.push(...e.diagnostics);
@@ -299,7 +306,7 @@ async function fmtCmd(args: string[]): Promise<void> {
   const inputAbs = resolve(input);
   const inputStat = await stat(inputAbs);
   const isDir = inputStat.isDirectory();
-  const files = isDir ? await collectBs(inputAbs) : [inputAbs];
+  const files = isDir ? await collectBs(inputAbs, true) : [inputAbs];
 
   // A directory + no explicit mode defaults to --write. A single file + no
   // explicit mode prints to stdout (gofmt-style).
@@ -413,9 +420,40 @@ function explainCmd(args: string[]): void {
   stdout.write(formatExplain(entry) + "\n");
 }
 
-async function collectBs(root: string): Promise<string[]> {
+// Read a set of project `.bs` files and build their cross-file effect map.
+// File IO lives here; the parse/merge/keying logic is shared with the Vite
+// plugin via the compiler's buildModuleEffects so the two cannot drift.
+// Unreadable files are skipped so a single bad file can't break a build.
+async function loadModuleEffects(files: string[]): Promise<ModuleEffects> {
+  const sources: string[] = [];
+  for (const f of files) {
+    try {
+      sources.push(await readFile(f, "utf8"));
+    } catch {
+      // Unreadable file — skip; cross-file checking degrades gracefully.
+    }
+  }
+  return buildModuleEffects(sources);
+}
+
+// strict=true is used for primary file discovery (build/check/fmt): an
+// unreadable root directory is a hard error, not a silent empty result.
+// strict=false (default) is used for moduleEffects scanning: a missing or
+// unreadable directory degrades gracefully without breaking compilation.
+// Subdirectory failures are always silently skipped in both modes.
+async function collectBs(root: string, strict = false): Promise<string[]> {
   const out: string[] = [];
-  const entries = await readdir(root, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (err) {
+    if (strict)
+      throw new Error(
+        `cannot read directory ${root}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    return out;
+  }
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) {
