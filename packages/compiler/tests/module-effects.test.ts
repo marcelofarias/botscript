@@ -258,6 +258,17 @@ describe("aliased imports: DEP001/DEP002/THR001 with import aliases", () => {
     expect(() => compile(src, mods)).toThrow("DEP001");
     expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
   });
+
+  it("resolves aliases in a combined default + named import", () => {
+    // `import Default, { X as Y } from ...` — the alias map must skip the
+    // default binding and still register the named alias so DEP001 fires.
+    const src =
+      '?bs 0.9\nimport db, { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+  });
 });
 
 // ---------------------------------------------------------------------------

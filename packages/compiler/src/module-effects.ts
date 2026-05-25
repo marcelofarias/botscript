@@ -245,9 +245,31 @@ export function buildImportAliasMap(tokens: readonly Token[]): Map<string, strin
     // `import type { ... }` — type imports are not callable; skip.
     if (next.kind === "ident" && next.text === "type") continue;
 
-    // Only care about named imports: `import { X as Y, ... } from "..."`.
-    if (next.kind !== "open" || next.text !== "{") continue;
-    const closeIdx = next.matchedAt;
+    // Find the `{` for named imports. Handles two forms:
+    //   `import { X as Y } from "..."`
+    //   `import Default, { X as Y } from "..."` (default + named combined)
+    let bracePos: number;
+    if (next.kind === "open" && next.text === "{") {
+      bracePos = j;
+    } else {
+      // Possibly `import Default, { ... }` — skip default binding and comma.
+      const commaPos = skipWs(j + 1);
+      if (
+        commaPos >= tokens.length ||
+        tokens[commaPos]!.kind !== "punct" ||
+        tokens[commaPos]!.text !== ","
+      ) continue;
+      const afterComma = skipWs(commaPos + 1);
+      if (
+        afterComma >= tokens.length ||
+        tokens[afterComma]!.kind !== "open" ||
+        tokens[afterComma]!.text !== "{"
+      ) continue;
+      bracePos = afterComma;
+    }
+
+    const braceTok = tokens[bracePos]!;
+    const closeIdx = braceTok.matchedAt;
     if (closeIdx === undefined) continue; // malformed
 
     // Verify there's a `from` after the closing brace (sanity check).
@@ -259,7 +281,7 @@ export function buildImportAliasMap(tokens: readonly Token[]): Map<string, strin
     ) continue;
 
     // Scan inside { ... } for `name as alias` pairs.
-    let k = j + 1;
+    let k = bracePos + 1;
     while (k < closeIdx) {
       k = skipWs(k);
       if (k >= closeIdx) break;
