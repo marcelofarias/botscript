@@ -201,6 +201,136 @@ function scanExports(tokens: readonly Token[]): Set<string> | null {
 }
 
 /**
+ * Scan a token stream for import aliases declared in the current file.
+ *
+ * Handles `import { X as Y, A } from "..."` and skips type imports
+ * (`import type { ... }`). Namespace and default imports carry no alias that
+ * would shadow a function name in moduleEffects, so they are ignored.
+ *
+ * Returns a map from local alias → declared (exported) name, e.g.:
+ *   `import { fetchRow as fetchUser } from "./db.bs"`
+ *   → Map { "fetchUser" → "fetchRow" }
+ *
+ * Only names that are actually aliased (have an `as` clause) are included;
+ * un-renamed imports (`import { fetchRow }`) need no mapping.
+ *
+ * Operates at depth 0 only (top-level statements) — import declarations
+ * never appear inside function bodies in valid botscript.
+ */
+export function buildImportAliasMap(tokens: readonly Token[]): Map<string, string> {
+  const aliases = new Map<string, string>(); // localAlias → declaredName
+  let depth = 0;
+
+  function skipWs(i: number): number {
+    while (i < tokens.length) {
+      const k = tokens[i]!.kind;
+      if (k === "whitespace" || k === "newline" || k === "lineComment" || k === "blockComment") i++;
+      else break;
+    }
+    return i;
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+
+    if (t.kind === "open") { depth++; continue; }
+    if (t.kind === "close") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (t.kind !== "ident" || t.text !== "import") continue;
+
+    const j = skipWs(i + 1);
+    if (j >= tokens.length) continue;
+    const next = tokens[j]!;
+
+    // `import type { ... }` — type imports are not callable; skip.
+    if (next.kind === "ident" && next.text === "type") continue;
+
+    // Find the `{` for named imports. Handles two forms:
+    //   `import { X as Y } from "..."`
+    //   `import Default, { X as Y } from "..."` (default + named combined)
+    let bracePos: number;
+    if (next.kind === "open" && next.text === "{") {
+      bracePos = j;
+    } else {
+      // Possibly `import Default, { ... }` — skip default binding and comma.
+      const commaPos = skipWs(j + 1);
+      if (
+        commaPos >= tokens.length ||
+        tokens[commaPos]!.kind !== "punct" ||
+        tokens[commaPos]!.text !== ","
+      ) continue;
+      const afterComma = skipWs(commaPos + 1);
+      if (
+        afterComma >= tokens.length ||
+        tokens[afterComma]!.kind !== "open" ||
+        tokens[afterComma]!.text !== "{"
+      ) continue;
+      bracePos = afterComma;
+    }
+
+    const braceTok = tokens[bracePos]!;
+    const closeIdx = braceTok.matchedAt;
+    if (closeIdx === undefined) continue; // malformed
+
+    // Verify there's a `from` after the closing brace (sanity check).
+    const afterClose = skipWs(closeIdx + 1);
+    if (
+      afterClose >= tokens.length ||
+      tokens[afterClose]!.kind !== "ident" ||
+      tokens[afterClose]!.text !== "from"
+    ) continue;
+
+    // Scan inside { ... } for `name as alias` pairs.
+    let k = bracePos + 1;
+    while (k < closeIdx) {
+      k = skipWs(k);
+      if (k >= closeIdx) break;
+      const nameTok = tokens[k]!;
+      if (nameTok.kind !== "ident") { k++; continue; }
+      // Per-specifier type import (`import { type Foo as Bar }`): not callable;
+      // skip the declared name AND any `as alias` clause so neither "Foo" nor
+      // "Bar" is inspected as a potential value alias.
+      if (nameTok.text === "type") {
+        const after = skipWs(k + 1);
+        if (after < closeIdx && tokens[after]!.kind === "ident") {
+          let skip = after + 1;
+          const asPos = skipWs(skip);
+          if (
+            asPos < closeIdx &&
+            tokens[asPos]!.kind === "ident" &&
+            tokens[asPos]!.text === "as"
+          ) {
+            const aliasPos = skipWs(asPos + 1);
+            if (aliasPos < closeIdx && tokens[aliasPos]!.kind === "ident") {
+              skip = aliasPos + 1;
+            }
+          }
+          k = skip;
+          continue;
+        }
+      }
+      const declaredName = nameTok.text;
+      const m = skipWs(k + 1);
+      if (
+        m < closeIdx &&
+        tokens[m]!.kind === "ident" &&
+        tokens[m]!.text === "as"
+      ) {
+        const aliasIdx = skipWs(m + 1);
+        if (aliasIdx < closeIdx && tokens[aliasIdx]!.kind === "ident") {
+          aliases.set(tokens[aliasIdx]!.text, declaredName);
+          k = aliasIdx + 1;
+          continue;
+        }
+      }
+      k++;
+    }
+  }
+
+  return aliases;
+}
+
+/**
  * Build a {@link ModuleEffects} map from a set of `.bs` source strings.
  *
  * Shared by the CLI and the Vite plugin so the parse/merge/keying behavior

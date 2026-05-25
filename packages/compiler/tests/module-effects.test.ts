@@ -182,6 +182,96 @@ describe("combined reads and throws from one external fn", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Aliased imports: import { fetchRow as fetchUser } from "./db.bs"
+// DEP001/DEP002/THR001 must fire even when the call site uses a local alias.
+// ---------------------------------------------------------------------------
+
+describe("aliased imports: DEP001/DEP002/THR001 with import aliases", () => {
+  it("DEP001 fires when caller uses aliased name and omits reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+
+  it("DEP001 passes when caller uses aliased name and declares reads label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) reads { userDb } -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("DEP002 fires when caller uses aliased name and omits writes label", () => {
+    const src =
+      '?bs 0.9\nimport { persistRow as saveUser } from "./db.bs"\n' +
+      "fn updateUser(id: string) -> string = saveUser(id)\n";
+    const mods: ModuleEffects = { persistRow: { writes: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP002");
+  });
+
+  it("THR001 fires when caller uses aliased name and omits throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).toThrow("THR001");
+  });
+
+  it("THR001 passes when caller uses aliased name and declares throws label", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) throws { NetworkError } -> Result<string, string> = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { throws: ["NetworkError"] } };
+    expect(() => compile(src, mods)).not.toThrow();
+  });
+
+  it("un-aliased import still works (no regression)", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchRow(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+  });
+
+  it("reports the call-site alias (not the declared name) in the diagnostic", () => {
+    const src =
+      '?bs 0.9\nimport { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    // The source calls `fetchUser`, so the message and call path must say so.
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+    expect(() => compile(src, mods)).toThrow(/call path: loadUser -> fetchUser/);
+    // It must not leak the resolved declared name into the call path.
+    expect(() => compile(src, mods)).not.toThrow(/-> fetchRow/);
+  });
+
+  it("ignores per-specifier type imports while resolving value aliases", () => {
+    // `type Config as Cfg` is not callable and must not be registered as an
+    // alias; the value alias `fetchRow as fetchUser` in the same import must
+    // still resolve so DEP001 fires.
+    const src =
+      '?bs 0.9\nimport { type Config as Cfg, fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+  });
+
+  it("resolves aliases in a combined default + named import", () => {
+    // `import Default, { X as Y } from ...` — the alias map must skip the
+    // default binding and still register the named alias so DEP001 fires.
+    const src =
+      '?bs 0.9\nimport db, { fetchRow as fetchUser } from "./db.bs"\n' +
+      "fn loadUser(id: string) -> string = fetchUser(id)\n";
+    const mods: ModuleEffects = { fetchRow: { reads: ["userDb"] } };
+    expect(() => compile(src, mods)).toThrow("DEP001");
+    expect(() => compile(src, mods)).toThrow(/calls 'fetchUser'/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildModuleEffects: the shared builder behind the CLI + Vite plugin.
 // Locks the contract those integrations depend on so it can't silently drift.
 // ---------------------------------------------------------------------------
