@@ -253,8 +253,9 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "// option A — remove the non-idempotent capability:\n" +
       "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
-      "// option B — remove the idempotent intent claim:\n" +
-      "fn name(args) uses { random } -> type = ...",
+      "// option B — remove the idempotent intent claim (keep whichever of\n" +
+      "// random/time the fn actually declares):\n" +
+      "fn name(args) uses { time } -> type = ...   // or `uses { random }`",
     example:
       "// before — fn claims idempotent but uses time (non-idempotent); INT003 fires\n" +
       "?bs 0.7\n" +
@@ -274,8 +275,9 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "// option A — remove the non-idempotent call from the body:\n" +
       "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
-      "// option B — declare the capability and remove the idempotent intent claim:\n" +
-      "fn name(args) uses { random } -> type = ...",
+      "// option B — declare the capability and remove the idempotent intent claim\n" +
+      "// (use whichever of random/time the body actually calls):\n" +
+      "fn name(args) uses { random } -> type = ...   // or `uses { time }`",
     example:
       "// before — fn claims idempotent but body calls random.next; INT004 fires\n" +
       "?bs 0.7\n" +

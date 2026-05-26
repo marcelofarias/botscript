@@ -303,9 +303,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "and `time.now()` advances. A function that declares both `uses { random }` or `uses { time }` " +
       "and `intent: \"idempotent\"` is making a claim the header already disproves.\n\n" +
       "This is a header-level check: it compares the `uses {}` clause against the intent string " +
-      "without inspecting the body. Other capabilities (`net`, `fs`, `process`, `stdout`, `stderr`) " +
-      "are idempotent-compatible — a network read or file read can return the same result on retry — " +
-      "and are not flagged by INT003. Only `random` and `time` are structurally non-idempotent.\n\n" +
+      "without inspecting the body. Only `random` and `time` are structurally non-idempotent, so " +
+      "they are the only capabilities INT003 flags. Other capabilities (e.g. `net`, `fs`) are not " +
+      "flagged — a network read or file read can return the same result on retry. Note this is a " +
+      "narrow header heuristic, not a proof of idempotence: INT003 does not vouch that a fn using " +
+      "`net`/`fs`/`process`/`stdout`/`stderr` is actually idempotent (a write is not), only that it " +
+      "makes no inherently non-idempotent capability claim.\n\n" +
       "INT003 is gated on `?bs 0.7`. Files on earlier pins are not checked. The body-level complement " +
       "is INT004, which fires when the `uses {}` clause is absent but the body still directly calls " +
       "`random.*` or `time.*`.",
