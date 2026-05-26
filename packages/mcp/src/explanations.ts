@@ -733,6 +733,26 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn loadUser(id: string) reads { userDb } -> string = id\n",
     },
   },
+  ALI001: {
+    code: "ALI001",
+    title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
+    body:
+      "ALI001 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
+      "has a stdlib namespace identifier as the first token of the RHS, but the form is " +
+      "non-trivial — so static alias tracking is NOT guaranteed.\n\n" +
+      "From `?bs 0.8`, the compiler tracks direct top-level bindings like `const t = time` " +
+      "and `const t = (time)`, so `t.now()` is checked against `time`'s capability. But " +
+      "non-trivial forms — operator expressions (`time + 1`), member accesses (`time.now`), " +
+      "calls (`time()`) — are not tracked. If you use the binding as if it were the namespace, " +
+      "the capability and intent checks will not see the alias and the checks will be bypassed.\n\n" +
+      "**What to do:** use a direct binding (`const t = time`) to alias a stdlib namespace, " +
+      "or reference the canonical name directly instead of creating an alias.\n\n" +
+      "ALI001 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.8\nconst t = time.now\n",
+      passes: "?bs 0.8\nconst t = time\n",
+    },
+  },
   VER002: {
     code: "VER002",
     title: "throws {} declared below the ?bs 0.9 enforcement floor",

@@ -45,6 +45,7 @@ describe("botscript-mcp explanations", () => {
     // Stable contract: every diagnostic code emitted by the compiler must
     // have an entry in EXPLANATIONS so `explain` can answer for it.
     expect(KNOWN_CODES).toEqual([
+      "ALI001",
       "BS001",
       "BS002",
       "CAP001",

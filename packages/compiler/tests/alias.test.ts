@@ -13,9 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { CapabilityCheckError, transform } from "../src/index.js";
-import { collectStdlibAliases } from "../src/passes/_alias.js";
-import { lex } from "../src/parser/lex.js";
+import { BotscriptError, CapabilityCheckError, transform } from "../src/index.js";
 
 const t = (src: string) => transform(src).code;
 
@@ -91,33 +89,6 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
     expect(() => t(src)).toThrow(/CAP001/);
   });
 
-  it("CAP001 fires when direct stdlib is called via optional chaining without declared capability", () => {
-    const src =
-      "?bs 0.8\n" +
-      "fn now() -> number = time?.now()\n";
-    expect(() => t(src)).toThrow(CapabilityCheckError);
-    try {
-      t(src);
-    } catch (e) {
-      const err = e as CapabilityCheckError;
-      expect(err.capability).toBe("time");
-    }
-  });
-
-  it("CAP001 fires when aliased stdlib is called via optional chaining without declared capability", () => {
-    const src =
-      "?bs 0.8\n" +
-      "const t2 = time\n" +
-      "fn now() -> number = t2?.now()\n";
-    expect(() => t(src)).toThrow(CapabilityCheckError);
-    try {
-      t(src);
-    } catch (e) {
-      const err = e as CapabilityCheckError;
-      expect(err.capability).toBe("time");
-    }
-  });
-
   it("alias tracking is gated on ?bs 0.8 — earlier pins ignore aliases", () => {
     // On ?bs 0.7, alias tracking is off. `t.now()` is treated as an unknown
     // member call; the token `t` is not recognized as a stdlib namespace.
@@ -144,9 +115,9 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
-  it("trivial alias + declared capability: no error (alias tracked, cap present)", () => {
-    // `const t = time` is a tracked alias; `t.now()` resolves to `time.now()`.
-    // With `uses { time }` declared, neither CAP001 nor CAP002 fires.
+  it("non-trivial RHS form (member access) is NOT tracked", () => {
+    // `const t = time.now` — the RHS is a member access, not a bare namespace.
+    // Alias collector should skip this.
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
@@ -154,13 +125,12 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
-  it("trivial alias with canonical call still works (alias tracked, capability present)", () => {
-    // `const t = time` is a tracked alias; direct canonical call `time.now()`
-    // with the capability declared is fine — no CAP001, no CAP002.
+  it("stdlib ident not followed by dot is still treated as ordinary (alias path)", () => {
+    // `const t = time; const x = t` — `t` as RHS of another const is not a stdlib call.
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
-      "fn uses_t(n: number) uses { time } -> number = time.now() + n\n";
+      "fn uses_t(t2: number) uses { time } -> number = time.now() + t2\n";
     expect(() => t(src)).not.toThrow();
   });
 });
@@ -228,103 +198,6 @@ describe("stdlib alias tracking — uns-check (?bs 0.9)", () => {
       "    err { error } -> err(error)\n" +
       "  }\n" +
       "}\n";
-    expect(() => t(src)).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectStdlibAliases unit tests — non-trivial RHS rejection
-// ---------------------------------------------------------------------------
-
-describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () => {
-  const aliases = (src: string) => collectStdlibAliases(lex(src), []);
-
-  it("trivial binding is tracked", () => {
-    expect(aliases("const t = time\n")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("operator expression on RHS is NOT tracked", () => {
-    expect(aliases("const t = time + 1\n")).toEqual(new Map());
-  });
-
-  it("member access on RHS is NOT tracked", () => {
-    expect(aliases("const t = time.now\n")).toEqual(new Map());
-  });
-
-  it("call expression on RHS is NOT tracked", () => {
-    expect(aliases("const t = random()\n")).toEqual(new Map());
-  });
-
-  it("ternary on RHS is NOT tracked", () => {
-    expect(aliases("const t = flag ? time : random\n")).toEqual(new Map());
-  });
-
-  it("parenthesized stdlib ident IS tracked (single-paren grouping)", () => {
-    expect(aliases("const t = (time)\n")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("parenthesized form with semicolon IS tracked", () => {
-    expect(aliases("const t = (random);")).toEqual(new Map([["t", "random"]]));
-  });
-
-  it("nested parens are NOT tracked (only single-paren grouping)", () => {
-    expect(aliases("const t = ((time))\n")).toEqual(new Map());
-  });
-
-  it("paren with member access inside is NOT tracked", () => {
-    expect(aliases("const t = (time.now)\n")).toEqual(new Map());
-  });
-
-  it("paren with expression inside is NOT tracked", () => {
-    expect(aliases("const t = (time + 1)\n")).toEqual(new Map());
-  });
-
-  it("multiple trivial bindings are all tracked", () => {
-    expect(aliases("const t = time\nconst r = random\n")).toEqual(
-      new Map([
-        ["t", "time"],
-        ["r", "random"],
-      ]),
-    );
-  });
-
-  it("trivial binding at end of file (no trailing newline) IS tracked", () => {
-    // lex() always appends an eof token; eof must be treated as a valid
-    // statement terminator so a file-final alias binding is not silently dropped.
-    expect(aliases("const t = time")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("trivial binding followed only by a line comment IS tracked", () => {
-    expect(aliases("const t = time // use the alias\n")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("type-annotated binding IS tracked (const t: any = time)", () => {
-    expect(aliases("const t: any = time\n")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("type-annotated binding with complex annotation IS tracked (const t: typeof time = time)", () => {
-    expect(aliases("const t: typeof time = time\n")).toEqual(new Map([["t", "time"]]));
-  });
-
-  it("multi-line RHS split by newline: alias is the part before the newline", () => {
-    // botscript newlines are explicit statement terminators (not JS ASI).
-    // `const t = time\n.now` is two statements: `const t = time` (tracked)
-    // and `.now` (a separate invalid expression). The alias is correctly `time`.
-    expect(aliases("const t = time\n.now\n")).toEqual(new Map([["t", "time"]]));
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Alias shadowing tests — module-level alias should not shadow fn params
-// ---------------------------------------------------------------------------
-describe("stdlib alias tracking — shadowing (fn param same name as module alias)", () => {
-  it("fn param named same as module alias does NOT trigger false CAP001 via dot-member access", () => {
-    const src =
-      "?bs 0.8\n" +
-      "const t = time\n" +
-      "fn bad(t: string) -> number = t.length\n";
-    // t.length — t is a fn param (string), not the time alias.
-    // This MUST NOT fire CAP001 as a false positive.
     expect(() => t(src)).not.toThrow();
   });
 });

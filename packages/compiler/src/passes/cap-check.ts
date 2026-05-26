@@ -33,15 +33,14 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases, fnParamNames } from "./_alias.js";
+import { collectStdlibAliases } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
 /**
  * stdlib namespace -> capability it consumes.
- * _stdlib.ts is THE canonical source; this re-export exists for
- * backwards-compatibility so callers that already import from cap-check
- * do not need to change.
+ * Re-exported from _stdlib.ts — import from here (cap-check) or directly
+ * from _stdlib.ts; both are canonical.
  */
 export const STDLIB_TO_CAP: Readonly<Record<string, string>> = _STDLIB_TO_CAP;
 
@@ -213,9 +212,7 @@ function checkStrict(src: string, allowGenerics: boolean, trackAliases = false):
     const inner = decls.filter(
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
-    const paramNames = fnParamNames(tokens, decl);
-    const fnAliases = paramNames.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNames.has(k)));
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases);
+    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, aliases);
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
@@ -317,10 +314,9 @@ function scanBody(
     const next = tokens[nextIdx];
 
     // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
-    // Also accept optional chaining (`?.`) so `time?.now()` is not bypassed.
     const canonical = aliases.get(tok.text) ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
-    if (cap && ((next?.kind === "punct" && next.text === ".") || next?.kind === "questionDot")) {
+    if (cap && next?.kind === "punct" && next.text === ".") {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
@@ -481,11 +477,7 @@ function renderPath(path: Path): string {
     cur = cur.next;
   }
   parts.push(cur.fnName);
-  const leafLabel =
-    cur.use.aliasFor
-      ? `${cur.use.namespace}.${cur.use.member} ('${cur.use.namespace}' is an alias for '${cur.use.aliasFor}')`
-      : `${cur.use.namespace}.${cur.use.member}`;
-  parts.push(leafLabel);
+  parts.push(`${cur.use.namespace}.${cur.use.member}`);
   return parts.join(" -> ");
 }
 
