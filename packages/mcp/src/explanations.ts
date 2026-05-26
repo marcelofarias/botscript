@@ -312,20 +312,14 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number {\n" +
-        "  return time.now() + ttl\n" +
-        "}\n",
+        "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number = time.now() + ttl\n",
       passes:
         "// option A — remove the non-idempotent capability (make it truly idempotent)\n" +
         "?bs 0.7\n" +
-        "fn expireAt(ttl: number, now: number) intent: \"idempotent\" -> number {\n" +
-        "  return now + ttl\n" +
-        "}\n\n" +
+        "fn expireAt(ttl: number, now: number) intent: \"idempotent\" -> number = now + ttl\n\n" +
         "// option B — remove the idempotent claim and keep the time capability\n" +
         "?bs 0.7\n" +
-        "fn expireAt(ttl: number) uses { time } -> number {\n" +
-        "  return time.now() + ttl\n" +
-        "}\n",
+        "fn expireAt(ttl: number) uses { time } -> number = time.now() + ttl\n",
     },
   },
   INT004: {
@@ -347,20 +341,14 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn generateId(prefix: string) intent: \"idempotent\" -> string {\n" +
-        "  return prefix + random.next()\n" +
-        "}\n",
+        "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n",
       passes:
         "// option A — remove the non-idempotent call (make it truly idempotent)\n" +
         "?bs 0.7\n" +
-        "fn generateId(prefix: string, suffix: string) intent: \"idempotent\" -> string {\n" +
-        "  return prefix + suffix\n" +
-        "}\n\n" +
+        "fn generateId(prefix: string, suffix: string) intent: \"idempotent\" -> string = prefix + suffix\n\n" +
         "// option B — remove the idempotent claim and declare the capability\n" +
         "?bs 0.7\n" +
-        "fn generateId(prefix: string) uses { random } -> string {\n" +
-        "  return prefix + random.next()\n" +
-        "}\n",
+        "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()\n",
     },
   },
   FMT001: {

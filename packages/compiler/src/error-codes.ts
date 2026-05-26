@@ -256,16 +256,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "// option B — remove the idempotent intent claim:\n" +
       "fn name(args) uses { random } -> type = ...",
     example:
-      "// before — fn claims idempotent but uses time (non-idempotent)\n" +
+      "// before — fn claims idempotent but uses time (non-idempotent); INT003 fires\n" +
       "?bs 0.7\n" +
-      "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number {\n" +
-      "  return time.now() + ttl  // INT003: time makes this non-idempotent\n" +
-      "}\n\n" +
+      "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number = time.now() + ttl\n\n" +
       "// after — remove the idempotent claim (fn has time-dependent output)\n" +
       "?bs 0.7\n" +
-      "fn expireAt(ttl: number) uses { time } -> number {\n" +
-      "  return time.now() + ttl\n" +
-      "}",
+      "fn expireAt(ttl: number) uses { time } -> number = time.now() + ttl",
   },
   INT004: {
     code: "INT004",
@@ -281,16 +277,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "// option B — declare the capability and remove the idempotent intent claim:\n" +
       "fn name(args) uses { random } -> type = ...",
     example:
-      "// before — fn claims idempotent but body calls random.next (non-idempotent)\n" +
+      "// before — fn claims idempotent but body calls random.next; INT004 fires\n" +
       "?bs 0.7\n" +
-      "fn generateId(prefix: string) intent: \"idempotent\" -> string {\n" +
-      "  return prefix + random.next()  // INT004: body uses random without declaration\n" +
-      "}\n\n" +
+      "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n\n" +
       "// after — remove the idempotent claim and declare the capability\n" +
       "?bs 0.7\n" +
-      "fn generateId(prefix: string) uses { random } -> string {\n" +
-      "  return prefix + random.next()\n" +
-      "}",
+      "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()",
   },
   EFF002: {
     code: "EFF002",
