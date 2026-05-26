@@ -300,7 +300,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "An `intent: \"idempotent\"` clause is a retry contract: the caller may re-send the " +
       "request on failure and expect the same observable result. `random` and `time` capabilities " +
       "break that contract by definition — `random.next()` returns a different value on every call, " +
-      "and `time.now()` advances. A function that declares both `uses { random }` or `uses { time }` " +
+      "and `time.now()` advances. A function that declares either `uses { random }` or `uses { time }` " +
       "and `intent: \"idempotent\"` is making a claim the header already disproves.\n\n" +
       "This is a header-level check: it compares the `uses {}` clause against the intent string " +
       "without inspecting the body. Only `random` and `time` are structurally non-idempotent, so " +

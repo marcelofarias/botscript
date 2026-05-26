@@ -174,7 +174,8 @@ const NON_IDEMPOTENT = new Set(["random", "time"]);
  * An idempotent fn is safe to retry: same inputs → same observable result.
  * `random` and `time` break that — they yield different values per call — so a
  * fn that declares or directly calls either cannot honour the claim. Other
- * capabilities (net, fs, …) are fine: they can be replayed with the same effect.
+ * capabilities (net, fs, …) are not structurally flagged — INT003 is a narrow
+ * header heuristic, not a proof of idempotence.
  */
 function checkIdempotentClaim(
   decl: FnDecl,
@@ -189,7 +190,8 @@ function checkIdempotentClaim(
     const entry = getErrorCode("INT003")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
-    const capsStr = nonIdem.join(", ");
+    const nonIdemStr = nonIdem.join(", ");
+    const allCapsStr = decl.capabilities.join(", ");
     diagnostics.push({
       code: "INT003",
       severity: "error",
@@ -199,8 +201,8 @@ function checkIdempotentClaim(
       start: intentStart,
       end: intentStart + decl.intent!.length + 2,
       message:
-        `fn '${decl.name}' intent claims 'idempotent' but declares uses { ${capsStr} } — ` +
-        `${capsStr} produce${nonIdem.length === 1 ? "s" : ""} different values on each call, ` +
+        `fn '${decl.name}' intent claims 'idempotent' but declares uses { ${allCapsStr} } — ` +
+        `${nonIdemStr} produce${nonIdem.length === 1 ? "s" : ""} different values on each call, ` +
         `making the function non-idempotent`,
       rule: entry.rule,
       idiom: entry.idiom,
@@ -208,7 +210,7 @@ function checkIdempotentClaim(
         `// option A — remove the non-idempotent capability:\n` +
         `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
         `// option B — remove the idempotent intent claim:\n` +
-        `fn ${decl.name}(...) uses { ${capsStr} } -> ...`,
+        `fn ${decl.name}(...) uses { ${allCapsStr} } -> ...`,
     });
     // INT003 already fired — header conflict subsumes the body check.
     return;
@@ -223,6 +225,7 @@ function checkIdempotentClaim(
     const entry = getErrorCode("INT004")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
+    const proposedCaps = [...decl.capabilities, bodyUse.capability].join(", ");
     diagnostics.push({
       code: "INT004",
       severity: "error",
@@ -241,7 +244,7 @@ function checkIdempotentClaim(
         `// option A — remove the non-idempotent call from the body:\n` +
         `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
         `// option B — declare the capability and remove the idempotent claim:\n` +
-        `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
+        `fn ${decl.name}(...) uses { ${proposedCaps} } -> ...`,
     });
   }
 }
