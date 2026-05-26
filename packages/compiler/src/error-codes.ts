@@ -251,10 +251,10 @@ const E: Record<string, ErrorCodeEntry> = {
     idiom:
       "idempotent = safe to retry; `random` and `time` are inherently non-idempotent — remove them from `uses {}` or change the intent",
     rewrite:
-      "// option A — remove the non-idempotent capability:\n" +
-      "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
-      "// option B — remove the idempotent intent claim (preserve any other\n" +
-      "// existing capabilities alongside the non-idempotent one):\n" +
+      "// option A — remove the non-idempotent capability (keep any other caps):\n" +
+      "fn name(args) uses { …other-caps } intent: \"idempotent\" -> type = ...\n\n" +
+      "// option B — remove the idempotent intent claim (preserve all caps, including\n" +
+      "// the non-idempotent one alongside any others):\n" +
       "fn name(args) uses { …other-caps, time } -> type = ...   // or `uses { …other-caps, random }`",
     example:
       "// before — fn claims idempotent but uses time (non-idempotent); INT003 fires\n" +

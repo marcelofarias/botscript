@@ -313,7 +313,7 @@ describe("INT003 — idempotent intent vs uses { random | time } (?bs 0.7+)", ()
   });
 
   it("does NOT fire INT003 when intent is 'idempotent' and uses { net }", () => {
-    // net is idempotent-compatible — retrying a GET is safe.
+    // INT003 only flags `random`/`time`; `net` is not structurally flagged by this check.
     // CAP002 may fire because the body doesn't call http.get; we only care INT003 doesn't.
     const src = `?bs 0.7\nfn fetch(id: string) uses { net } intent: "idempotent" -> string = id\n`;
     expect(() => t(src)).not.toThrow(/INT003/);

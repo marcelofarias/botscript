@@ -192,6 +192,8 @@ function checkIdempotentClaim(
     const loc = locationOf(src, intentStart);
     const nonIdemStr = nonIdem.join(", ");
     const allCapsStr = decl.capabilities.join(", ");
+    const remainingCaps = decl.capabilities.filter((c) => !NON_IDEMPOTENT.has(c));
+    const optionAUses = remainingCaps.length > 0 ? ` uses { ${remainingCaps.join(", ")} }` : "";
     diagnostics.push({
       code: "INT003",
       severity: "error",
@@ -207,8 +209,8 @@ function checkIdempotentClaim(
       rule: entry.rule,
       idiom: entry.idiom,
       rewrite:
-        `// option A — remove the non-idempotent capability:\n` +
-        `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
+        `// option A — remove the non-idempotent capability (preserve other caps):\n` +
+        `fn ${decl.name}(...)${optionAUses} intent: "idempotent" -> ...\n\n` +
         `// option B — remove the idempotent intent claim:\n` +
         `fn ${decl.name}(...) uses { ${allCapsStr} } -> ...`,
     });
