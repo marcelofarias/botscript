@@ -192,7 +192,7 @@ describe("INT002 — pure intent violated in body (?bs 0.7+)", () => {
 
   it("fires INT002 for random, fs, stdout, stderr capabilities in body", () => {
     const cases: [string, string][] = [
-      ["random", "random.float()"],
+      ["random", "random.next()"],
       ["fs", "fs.readFile(\"x\")"],
     ];
     for (const [cap, expr] of cases) {
@@ -380,13 +380,13 @@ describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)
     expect(() => t(src)).toThrow(/INT004/);
   });
 
-  it("fires INT004 when idempotent fn body calls random.float()", () => {
-    const src = `?bs 0.7\nfn generateId(prefix: string) intent: "idempotent" -> string = prefix + random.float()\n`;
+  it("fires INT004 when idempotent fn body calls random.next()", () => {
+    const src = `?bs 0.7\nfn generateId(prefix: string) intent: "idempotent" -> string = prefix + random.next()\n`;
     expect(() => t(src)).toThrow(/INT004/);
   });
 
   it("diagnostic message includes fn name, namespace.member, and non-idempotent rationale", () => {
-    const src = `?bs 0.7\nfn stamp(prefix: string) intent: "idempotent" -> string = prefix + random.float()\n`;
+    const src = `?bs 0.7\nfn stamp(prefix: string) intent: "idempotent" -> string = prefix + random.next()\n`;
     try {
       t(src);
       expect.fail("should have thrown");
@@ -395,7 +395,7 @@ describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)
       const d = err.diagnostics[0]!;
       expect(d.code).toBe("INT004");
       expect(d.message).toContain("stamp");
-      expect(d.message).toContain("random.float");
+      expect(d.message).toContain("random.next");
       expect(d.rule).toBeTruthy();
       expect(d.idiom).toBeTruthy();
       expect(d.rewrite).toBeTruthy();

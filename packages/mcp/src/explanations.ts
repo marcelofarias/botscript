@@ -293,6 +293,76 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn drainSecrets(id: string) uses { net } -> string = http.get(\"/s/\" + id)\n",
     },
   },
+  INT003: {
+    code: "INT003",
+    title: "intent declares 'idempotent' but function uses a non-idempotent capability",
+    body:
+      "An `intent: \"idempotent\"` clause is a retry contract: the caller may re-send the " +
+      "request on failure and expect the same observable result. `random` and `time` capabilities " +
+      "break that contract by definition — `random.next()` returns a different value on every call, " +
+      "and `time.now()` advances. A function that declares both `uses { random }` or `uses { time }` " +
+      "and `intent: \"idempotent\"` is making a claim the header already disproves.\n\n" +
+      "This is a header-level check: it compares the `uses {}` clause against the intent string " +
+      "without inspecting the body. Other capabilities (`net`, `fs`, `process`, `stdout`, `stderr`) " +
+      "are idempotent-compatible — a network read or file read can return the same result on retry — " +
+      "and are not flagged by INT003. Only `random` and `time` are structurally non-idempotent.\n\n" +
+      "INT003 is gated on `?bs 0.7`. Files on earlier pins are not checked. The body-level complement " +
+      "is INT004, which fires when the `uses {}` clause is absent but the body still directly calls " +
+      "`random.*` or `time.*`.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number {\n" +
+        "  return time.now() + ttl\n" +
+        "}\n",
+      passes:
+        "// option A — remove the non-idempotent capability (make it truly idempotent)\n" +
+        "?bs 0.7\n" +
+        "fn expireAt(ttl: number, now: number) intent: \"idempotent\" -> number {\n" +
+        "  return now + ttl\n" +
+        "}\n\n" +
+        "// option B — remove the idempotent claim and keep the time capability\n" +
+        "?bs 0.7\n" +
+        "fn expireAt(ttl: number) uses { time } -> number {\n" +
+        "  return time.now() + ttl\n" +
+        "}\n",
+    },
+  },
+  INT004: {
+    code: "INT004",
+    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability",
+    body:
+      "INT004 is the body-level complement to INT003. INT003 catches the case where " +
+      "`intent: \"idempotent\"` and `uses { random }` or `uses { time }` are both present in " +
+      "the header (an obvious contradiction). INT004 catches the subtler case: the header looks " +
+      "fine (no `random` or `time` in `uses {}`), but the function body directly references " +
+      "`random.*` or `time.*` without declaring them.\n\n" +
+      "This matters because INT003 is a header-level check — it compares clauses to each other " +
+      "but does not look at the body. A function can declare `intent: \"idempotent\"` and an empty " +
+      "`uses {}` clause while still calling `random.next()` directly in the body. INT004 closes " +
+      "that gap. INT003 takes priority: if both header and body are inconsistent, only INT003 fires.\n\n" +
+      "The check scans the fn body's own token range for direct `random.*` or `time.*` references, " +
+      "excluding nested `fn` declarations. It does not do transitive call-graph inference.\n\n" +
+      "INT004 is gated on `?bs 0.7` (same gate as INT003). Files on earlier pins are not checked.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn generateId(prefix: string) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + random.next()\n" +
+        "}\n",
+      passes:
+        "// option A — remove the non-idempotent call (make it truly idempotent)\n" +
+        "?bs 0.7\n" +
+        "fn generateId(prefix: string, suffix: string) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + suffix\n" +
+        "}\n\n" +
+        "// option B — remove the idempotent claim and declare the capability\n" +
+        "?bs 0.7\n" +
+        "fn generateId(prefix: string) uses { random } -> string {\n" +
+        "  return prefix + random.next()\n" +
+        "}\n",
+    },
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

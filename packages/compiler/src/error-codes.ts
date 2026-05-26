@@ -281,15 +281,15 @@ const E: Record<string, ErrorCodeEntry> = {
       "// option B — declare the capability and remove the idempotent intent claim:\n" +
       "fn name(args) uses { random } -> type = ...",
     example:
-      "// before — fn claims idempotent but body calls random.float (non-idempotent)\n" +
+      "// before — fn claims idempotent but body calls random.next (non-idempotent)\n" +
       "?bs 0.7\n" +
       "fn generateId(prefix: string) intent: \"idempotent\" -> string {\n" +
-      "  return prefix + random.float()  // INT004: body uses random without declaration\n" +
+      "  return prefix + random.next()  // INT004: body uses random without declaration\n" +
       "}\n\n" +
       "// after — remove the idempotent claim and declare the capability\n" +
       "?bs 0.7\n" +
       "fn generateId(prefix: string) uses { random } -> string {\n" +
-      "  return prefix + random.float()\n" +
+      "  return prefix + random.next()\n" +
       "}",
   },
   EFF002: {
