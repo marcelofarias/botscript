@@ -260,4 +260,21 @@ describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () =>
       ]),
     );
   });
+
+  it("trivial binding at end of file (no trailing newline) IS tracked", () => {
+    // lex() always appends an eof token; eof must be treated as a valid
+    // statement terminator so a file-final alias binding is not silently dropped.
+    expect(aliases("const t = time")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("trivial binding followed only by a line comment IS tracked", () => {
+    expect(aliases("const t = time // use the alias\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("multi-line RHS split by newline: alias is the part before the newline", () => {
+    // botscript newlines are explicit statement terminators (not JS ASI).
+    // `const t = time\n.now` is two statements: `const t = time` (tracked)
+    // and `.now` (a separate invalid expression). The alias is correctly `time`.
+    expect(aliases("const t = time\n.now\n")).toEqual(new Map([["t", "time"]]));
+  });
 });

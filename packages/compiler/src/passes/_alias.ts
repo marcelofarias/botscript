@@ -100,6 +100,7 @@ export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<s
       afterRhs &&
       afterRhs.kind !== "newline" &&
       afterRhs.kind !== "lineComment" &&
+      afterRhs.kind !== "eof" &&
       !(afterRhs.kind === "punct" && afterRhs.text === ";")
     ) {
       continue;
