@@ -36,7 +36,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import { STDLIB_TO_CAP } from "./cap-check.js";
+import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
 import { collectStdlibAliases } from "./_alias.js";
 

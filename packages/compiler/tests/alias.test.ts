@@ -14,6 +14,8 @@
 import { describe, expect, it } from "vitest";
 
 import { BotscriptError, CapabilityCheckError, transform } from "../src/index.js";
+import { collectStdlibAliases } from "../src/passes/_alias.js";
+import { lex } from "../src/parser/lex.js";
 
 const t = (src: string) => transform(src).code;
 
@@ -115,9 +117,9 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
-  it("non-trivial RHS form (member access) is NOT tracked", () => {
-    // `const t = time.now` — the RHS is a member access, not a bare namespace.
-    // Alias collector should skip this.
+  it("trivial alias + declared capability: no error (alias tracked, cap present)", () => {
+    // `const t = time` is a tracked alias; `t.now()` resolves to `time.now()`.
+    // With `uses { time }` declared, neither CAP001 nor CAP002 fires.
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
@@ -125,12 +127,13 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
-  it("stdlib ident not followed by dot is still treated as ordinary (alias path)", () => {
-    // `const t = time; const x = t` — `t` as RHS of another const is not a stdlib call.
+  it("trivial alias with canonical call still works (alias tracked, capability present)", () => {
+    // `const t = time` is a tracked alias; direct canonical call `time.now()`
+    // with the capability declared is fine — no CAP001, no CAP002.
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
-      "fn uses_t(t2: number) uses { time } -> number = time.now() + t2\n";
+      "fn uses_t(n: number) uses { time } -> number = time.now() + n\n";
     expect(() => t(src)).not.toThrow();
   });
 });
@@ -199,5 +202,42 @@ describe("stdlib alias tracking — uns-check (?bs 0.9)", () => {
       "  }\n" +
       "}\n";
     expect(() => t(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectStdlibAliases unit tests — non-trivial RHS rejection
+// ---------------------------------------------------------------------------
+
+describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () => {
+  const aliases = (src: string) => collectStdlibAliases(lex(src), []);
+
+  it("trivial binding is tracked", () => {
+    expect(aliases("const t = time\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("operator expression on RHS is NOT tracked", () => {
+    expect(aliases("const t = time + 1\n")).toEqual(new Map());
+  });
+
+  it("member access on RHS is NOT tracked", () => {
+    expect(aliases("const t = time.now\n")).toEqual(new Map());
+  });
+
+  it("call expression on RHS is NOT tracked", () => {
+    expect(aliases("const t = random()\n")).toEqual(new Map());
+  });
+
+  it("ternary on RHS is NOT tracked", () => {
+    expect(aliases("const t = flag ? time : random\n")).toEqual(new Map());
+  });
+
+  it("multiple trivial bindings are all tracked", () => {
+    expect(aliases("const t = time\nconst r = random\n")).toEqual(
+      new Map([
+        ["t", "time"],
+        ["r", "random"],
+      ]),
+    );
   });
 });
