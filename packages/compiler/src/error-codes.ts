@@ -247,15 +247,15 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "a function whose intent contains 'idempotent' must not declare `random` or `time` in its `uses {}` — " +
       "random and time capabilities produce different values on each call, making the function non-idempotent; " +
-      "idempotent functions may still declare net, fs, or other capabilities that can be called repeatedly with the same effect",
+      "only `random` and `time` are flagged as inherently non-idempotent — other capabilities are not structurally flagged by this check",
     idiom:
       "idempotent = safe to retry; `random` and `time` are inherently non-idempotent — remove them from `uses {}` or change the intent",
     rewrite:
       "// option A — remove the non-idempotent capability:\n" +
       "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
-      "// option B — remove the idempotent intent claim (keep whichever of\n" +
-      "// random/time the fn actually declares):\n" +
-      "fn name(args) uses { time } -> type = ...   // or `uses { random }`",
+      "// option B — remove the idempotent intent claim (preserve any other\n" +
+      "// existing capabilities alongside the non-idempotent one):\n" +
+      "fn name(args) uses { …other-caps, time } -> type = ...   // or `uses { …other-caps, random }`",
     example:
       "// before — fn claims idempotent but uses time (non-idempotent); INT003 fires\n" +
       "?bs 0.7\n" +
@@ -276,8 +276,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "// option A — remove the non-idempotent call from the body:\n" +
       "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
       "// option B — declare the capability and remove the idempotent intent claim\n" +
-      "// (use whichever of random/time the body actually calls):\n" +
-      "fn name(args) uses { random } -> type = ...   // or `uses { time }`",
+      "// (preserve any other existing capabilities alongside the non-idempotent one):\n" +
+      "fn name(args) uses { …other-caps, random } -> type = ...   // or `uses { …other-caps, time }`",
     example:
       "// before — fn claims idempotent but body calls random.next; INT004 fires\n" +
       "?bs 0.7\n" +
