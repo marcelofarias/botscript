@@ -477,7 +477,11 @@ function renderPath(path: Path): string {
     cur = cur.next;
   }
   parts.push(cur.fnName);
-  parts.push(`${cur.use.namespace}.${cur.use.member}`);
+  const leafLabel =
+    cur.use.aliasFor
+      ? `${cur.use.namespace}.${cur.use.member} ('${cur.use.namespace}' is an alias for '${cur.use.aliasFor}')`
+      : `${cur.use.namespace}.${cur.use.member}`;
+  parts.push(leafLabel);
   return parts.join(" -> ");
 }
 

@@ -43,14 +43,24 @@ export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<s
     const rhsTok = tokens[rhsIdx];
     if (!rhsTok || rhsTok.kind !== "ident" || !STDLIB_NAMES.has(rhsTok.text)) continue;
 
-    // Reject `const x = stdlib.method` (member access) or `const x = stdlib()`
-    const afterRhsIdx = nextSignificant(tokens, rhsIdx + 1);
-    const afterRhs = tokens[afterRhsIdx];
+    // Accept only a clean end-of-statement after the stdlib ident.
+    // Skip whitespace and block comments, then require newline, line comment,
+    // or semicolon. This rejects operators (`time + 1`), member access
+    // (`time.now`), calls (`time()`), ternaries, and any other continuation.
+    let afterIdx = rhsIdx + 1;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" ||
+        tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
     if (
       afterRhs &&
-      ((afterRhs.kind === "punct" && afterRhs.text === ".") ||
-        afterRhs.kind === "questionDot" ||
-        (afterRhs.kind === "open" && afterRhs.text === "("))
+      afterRhs.kind !== "newline" &&
+      afterRhs.kind !== "lineComment" &&
+      !(afterRhs.kind === "punct" && afterRhs.text === ";")
     ) {
       continue;
     }
