@@ -232,6 +232,26 @@ describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () =>
     expect(aliases("const t = flag ? time : random\n")).toEqual(new Map());
   });
 
+  it("parenthesized stdlib ident IS tracked (single-paren grouping)", () => {
+    expect(aliases("const t = (time)\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("parenthesized form with semicolon IS tracked", () => {
+    expect(aliases("const t = (random);")).toEqual(new Map([["t", "random"]]));
+  });
+
+  it("nested parens are NOT tracked (only single-paren grouping)", () => {
+    expect(aliases("const t = ((time))\n")).toEqual(new Map());
+  });
+
+  it("paren with member access inside is NOT tracked", () => {
+    expect(aliases("const t = (time.now)\n")).toEqual(new Map());
+  });
+
+  it("paren with expression inside is NOT tracked", () => {
+    expect(aliases("const t = (time + 1)\n")).toEqual(new Map());
+  });
+
   it("multiple trivial bindings are all tracked", () => {
     expect(aliases("const t = time\nconst r = random\n")).toEqual(
       new Map([
