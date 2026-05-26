@@ -49,15 +49,18 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./cap-check.js";
+import { collectStdlibAliases } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const checksReadsWrites = atLeast(version.resolved, "0.8");
+  const trackAliases = atLeast(version.resolved, "0.8");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const allDecls = program.fns.map((s) => s.decl);
+  const aliases = trackAliases ? collectStdlibAliases(tokens, allDecls) : new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
 
   for (const slot of program.fns) {
@@ -70,10 +73,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, diagnostics);
+      checkIdempotentClaim(decl, src, tokens, allDecls, aliases, diagnostics);
     }
   }
 
@@ -93,6 +96,7 @@ function checkPureClaim(
   tokens: Token[],
   allDecls: FnDecl[],
   checksReadsWrites: boolean,
+  aliases: Map<string, string>,
   diagnostics: Diagnostic[],
 ): void {
   const hasUses = decl.capabilities.length > 0;
@@ -137,7 +141,7 @@ function checkPureClaim(
   // INT002: intent claims "pure", uses {} is empty (and reads/writes are
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, aliases);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -182,6 +186,7 @@ function checkIdempotentClaim(
   src: string,
   tokens: Token[],
   allDecls: FnDecl[],
+  aliases: Map<string, string>,
   diagnostics: Diagnostic[],
 ): void {
   // INT003: header-level — uses { } declares a non-idempotent capability.
@@ -220,7 +225,7 @@ function checkIdempotentClaim(
 
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, (ns) =>
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, aliases, (ns) =>
     NON_IDEMPOTENT.has(ns),
   );
   if (bodyUse) {
@@ -254,11 +259,13 @@ function checkIdempotentClaim(
 /**
  * Scan the fn body for a direct stdlib capability reference, excluding inner
  * fn declarations. Returns the first match or null if the body is clean.
+ * Resolves module-level aliases (e.g. `const t = time`) when `aliases` is provided.
  */
 function findFirstCapabilityUse(
   tokens: Token[],
   fn: FnDecl,
   allDecls: FnDecl[],
+  aliases: Map<string, string> = new Map(),
   filter?: (namespace: string) => boolean,
 ): { capability: string; namespace: string; member: string } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
@@ -270,9 +277,10 @@ function findFirstCapabilityUse(
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
-    const cap = STDLIB_TO_CAP[tok.text];
+    const canonical = aliases.get(tok.text) ?? tok.text;
+    const cap = STDLIB_TO_CAP[canonical];
     if (!cap) continue;
-    if (filter && !filter(tok.text)) continue;
+    if (filter && !filter(canonical)) continue;
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
     if (next?.kind !== "punct" || next.text !== ".") continue;

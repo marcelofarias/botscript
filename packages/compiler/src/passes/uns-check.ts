@@ -38,6 +38,7 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./cap-check.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
+import { collectStdlibAliases } from "./_alias.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -67,6 +68,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
     }
   }
 
+  const aliases = collectStdlibAliases(tokens, decls);
   const innerByDecl = computeNesting(decls);
   const diagnostics: Diagnostic[] = [];
 
@@ -88,7 +90,8 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
       const tok = tokens[i];
       if (!tok || tok.kind !== "ident") continue;
-      if (!STDLIB_CAPS.has(tok.text)) continue;
+      const canonical = aliases.get(tok.text) ?? tok.text;
+      if (!STDLIB_CAPS.has(canonical)) continue;
 
       // Must be `stdlib.method(` or `stdlib?.method(` — confirm the shape before acting.
       const dotIdx = nextSignificant(tokens, i + 1);
