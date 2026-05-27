@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { BotscriptError, CapabilityCheckError, transform } from "../src/index.js";
+import { CapabilityCheckError, transform } from "../src/index.js";
 import { collectStdlibAliases } from "../src/passes/_alias.js";
 import { lex } from "../src/parser/lex.js";
 
@@ -89,6 +89,33 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
       "fn noDecl() -> number = t.now() + r.next()\n";
     // Both time and random are missing — at least one CAP001 fires.
     expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("CAP001 fires when direct stdlib is called via optional chaining without declared capability", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn now() -> number = time?.now()\n";
+    expect(() => t(src)).toThrow(CapabilityCheckError);
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as CapabilityCheckError;
+      expect(err.capability).toBe("time");
+    }
+  });
+
+  it("CAP001 fires when aliased stdlib is called via optional chaining without declared capability", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t2 = time\n" +
+      "fn now() -> number = t2?.now()\n";
+    expect(() => t(src)).toThrow(CapabilityCheckError);
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as CapabilityCheckError;
+      expect(err.capability).toBe("time");
+    }
   });
 
   it("alias tracking is gated on ?bs 0.8 — earlier pins ignore aliases", () => {
@@ -269,6 +296,14 @@ describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () =>
 
   it("trivial binding followed only by a line comment IS tracked", () => {
     expect(aliases("const t = time // use the alias\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("type-annotated binding IS tracked (const t: any = time)", () => {
+    expect(aliases("const t: any = time\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("type-annotated binding with complex annotation IS tracked (const t: typeof time = time)", () => {
+    expect(aliases("const t: typeof time = time\n")).toEqual(new Map([["t", "time"]]));
   });
 
   it("multi-line RHS split by newline: alias is the part before the newline", () => {

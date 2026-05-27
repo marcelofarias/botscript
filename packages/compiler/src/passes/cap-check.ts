@@ -39,8 +39,9 @@ import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
 /**
  * stdlib namespace -> capability it consumes.
- * Re-exported from _stdlib.ts — import from here (cap-check) or directly
- * from _stdlib.ts; both are canonical.
+ * _stdlib.ts is THE canonical source; this re-export exists for
+ * backwards-compatibility so callers that already import from cap-check
+ * do not need to change.
  */
 export const STDLIB_TO_CAP: Readonly<Record<string, string>> = _STDLIB_TO_CAP;
 
@@ -314,9 +315,10 @@ function scanBody(
     const next = tokens[nextIdx];
 
     // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
+    // Also accept optional chaining (`?.`) so `time?.now()` is not bypassed.
     const canonical = aliases.get(tok.text) ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
-    if (cap && next?.kind === "punct" && next.text === ".") {
+    if (cap && ((next?.kind === "punct" && next.text === ".") || next?.kind === "questionDot")) {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
