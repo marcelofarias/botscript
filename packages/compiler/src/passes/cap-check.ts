@@ -33,7 +33,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases } from "./_alias.js";
+import { collectStdlibAliases, fnParamNames } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
@@ -305,6 +305,10 @@ function scanBody(
   const callNames = new Set<string>();
   const fnNames = new Set(decls.map((d) => d.name));
 
+  // Filter module-level aliases: params shadow module-level alias names.
+  const paramNs = fnParamNames(tokens, fn);
+  const fnAliases = paramNs.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs.has(k)));
+
   for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
@@ -314,9 +318,10 @@ function scanBody(
     const next = tokens[nextIdx];
 
     // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
-    const canonical = aliases.get(tok.text) ?? tok.text;
+    // Accepts both `.` and `?.` (optional chaining) as member-access operators.
+    const canonical = fnAliases.get(tok.text) ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
-    if (cap && next?.kind === "punct" && next.text === ".") {
+    if (cap && (next?.kind === "questionDot" || (next?.kind === "punct" && next.text === "."))) {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
@@ -477,7 +482,8 @@ function renderPath(path: Path): string {
     cur = cur.next;
   }
   parts.push(cur.fnName);
-  parts.push(`${cur.use.namespace}.${cur.use.member}`);
+  const leafNs = cur.use.aliasFor ?? cur.use.namespace;
+  parts.push(`${leafNs}.${cur.use.member}`);
   return parts.join(" -> ");
 }
 

@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { BotscriptError, CapabilityCheckError, transform } from "../src/index.js";
+import { CapabilityCheckError, transform } from "../src/index.js";
 
 const t = (src: string) => transform(src).code;
 
@@ -117,20 +117,43 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
 
   it("non-trivial RHS form (member access) is NOT tracked", () => {
     // `const t = time.now` — the RHS is a member access, not a bare namespace.
-    // Alias collector should skip this.
+    // Alias collector skips this; `t` is not in the alias map, so CAP001 does
+    // NOT fire even though `uses { time }` is absent.
     const src =
       "?bs 0.8\n" +
-      "const t = time\n" +
-      "fn now() uses { time } -> number = t.now()\n";
+      "const t = time.now\n" +
+      "fn now() -> number = t.now()\n";
     expect(() => t(src)).not.toThrow();
   });
 
-  it("stdlib ident not followed by dot is still treated as ordinary (alias path)", () => {
-    // `const t = time; const x = t` — `t` as RHS of another const is not a stdlib call.
+  it("chain alias is NOT tracked — const x = t where t is an alias", () => {
+    // `const x = t` where `t` is itself an alias for `time` — chains are not
+    // tracked. `x.now()` should NOT trigger CAP001 (x is not in the alias map).
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
-      "fn uses_t(t2: number) uses { time } -> number = time.now() + t2\n";
+      "const x = t\n" +
+      "fn now() -> number = x.now()\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("optional chaining (time?.now()) is treated as a stdlib capability use", () => {
+    // `time?.now()` uses optional-chaining syntax but is still a `time` capability
+    // use. CAP001 fires when `uses { time }` is absent.
+    const src =
+      "?bs 0.8\n" +
+      "fn tick() -> number = time?.now()\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("fn parameter shadowing module-level alias does not cause false CAP001", () => {
+    // `const t = time` at module level, but `fn f(t: string)` rebinds `t`
+    // as a string parameter. `t.length` inside the fn should NOT be treated
+    // as a `time` stdlib call.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(t: string) -> number = t.length\n";
     expect(() => t(src)).not.toThrow();
   });
 });

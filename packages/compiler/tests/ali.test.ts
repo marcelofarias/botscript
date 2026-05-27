@@ -58,6 +58,17 @@ describe("ALI001: fires on non-trivial RHS forms", () => {
     const src = "?bs 0.8\nconst t = time.now\n";
     expect(() => transform(src)).not.toThrow();
   });
+
+  it("fires for parenthesized non-trivial form (const t = (time.now))", () => {
+    // `(time.now)` inside parens still names a member, not the namespace —
+    // ALI001 must fire even with the outer parens.
+    const src = "?bs 0.8\nconst t = (time.now)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.severity).toBe("warning");
+    expect(warns[0]!.message).toContain("time");
+  });
 });
 
 // ---------------------------------------------------------------------------

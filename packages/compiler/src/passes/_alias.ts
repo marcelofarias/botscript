@@ -228,8 +228,15 @@ export function collectAliasWarningCandidates(
       const closeIdx = nextSignificant(tokens, innerIdx + 1);
       const closeTok = tokens[closeIdx];
       if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
-        // Non-trivial: something else inside the parens after the stdlib ident
-        // This isn't a simple grouping — skip for now (not the targeted form)
+        // Non-trivial paren form: e.g. `const t = (time.now)` — emit ALI001.
+        if (closeTok) {
+          candidates.push({
+            name: nameTok.text,
+            stdlibName: innerTok.text,
+            start: constStart,
+            end: closeTok.end,
+          });
+        }
         continue;
       }
       // It IS the single-paren grouping form — check if it's trivial (clean end)

@@ -744,7 +744,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "and `const t = (time)`, so `t.now()` is checked against `time`'s capability. But " +
       "non-trivial forms — operator expressions (`time + 1`), member accesses (`time.now`), " +
       "calls (`time()`) — are not tracked. If you use the binding as if it were the namespace, " +
-      "the capability and intent checks will not see the alias and the checks will be bypassed.\n\n" +
+      "the capability checks (CAP001/CAP002), intent checks (INT001–INT004), and UNS005 will not see the alias and the checks will be bypassed.\n\n" +
       "**What to do:** use a direct binding (`const t = time`) to alias a stdlib namespace, " +
       "or reference the canonical name directly instead of creating an alias.\n\n" +
       "ALI001 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
