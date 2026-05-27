@@ -6,7 +6,6 @@
 
 import { type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
@@ -15,8 +14,8 @@ import { collectAliasWarningCandidates } from "./_alias.js";
 export function passAliCheck(src: string, version: VersionInfo): { code: string; warnings: Diagnostic[] } {
   if (!atLeast(version.resolved, "0.8")) return { code: src, warnings: [] };
 
-  const tokens = lex(src);
   const program = parseProgram(src, { allowGenerics: true });
+  const { tokens } = program;
   const decls = program.fns.map((s) => s.decl);
   const candidates = collectAliasWarningCandidates(tokens, decls);
 
