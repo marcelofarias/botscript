@@ -156,6 +156,19 @@ describe("stdlib alias tracking — cap-check (?bs 0.8)", () => {
       "fn f(t: string) -> number = t.length\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("local const binding inside fn body shadows module-level alias — no false CAP001", () => {
+    // `const t = time` at module level, but fn body has `const t = "hello"`.
+    // `t.length` should NOT be treated as a `time` stdlib call.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f() -> number {\n" +
+      "  const t = \"hello\"\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------

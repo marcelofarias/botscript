@@ -33,7 +33,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases, fnParamNames } from "./_alias.js";
+import { collectStdlibAliases, fnBodyLocalNames, fnParamNames } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
@@ -305,9 +305,12 @@ function scanBody(
   const callNames = new Set<string>();
   const fnNames = new Set(decls.map((d) => d.name));
 
-  // Filter module-level aliases: params shadow module-level alias names.
+  // Filter module-level aliases: params and local const bindings shadow them.
   const paramNs = fnParamNames(tokens, fn);
-  const fnAliases = paramNs.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs.has(k)));
+  const localNs = fnBodyLocalNames(tokens, fn);
+  const shadows = paramNs.size === 0 && localNs.size === 0 ? null
+    : new Set([...paramNs, ...localNs]);
+  const fnAliases = shadows === null ? aliases : new Map([...aliases].filter(([k]) => !shadows.has(k)));
 
   for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;

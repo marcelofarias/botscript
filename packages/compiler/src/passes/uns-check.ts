@@ -38,7 +38,7 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases, fnParamNames } from "./_alias.js";
+import { collectStdlibAliases, fnBodyLocalNames, fnParamNames } from "./_alias.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -75,9 +75,11 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
 
-    // Filter module-level aliases: params shadow module-level alias names.
+    // Filter module-level aliases: params and local const bindings shadow them.
     const paramNs = fnParamNames(tokens, decl);
-    const declAliases = paramNs.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs.has(k)));
+    const localNs = fnBodyLocalNames(tokens, decl);
+    const shadows = paramNs.size === 0 && localNs.size === 0 ? null : new Set([...paramNs, ...localNs]);
+    const declAliases = shadows === null ? aliases : new Map([...aliases].filter(([k]) => !shadows.has(k)));
 
     // Cursor-based inner-fn exclusion (same pattern as dep-check).
     const open: FnDecl[] = [];
