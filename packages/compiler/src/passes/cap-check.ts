@@ -33,7 +33,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases } from "./_alias.js";
+import { collectStdlibAliases, fnParamNames } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
@@ -213,7 +213,9 @@ function checkStrict(src: string, allowGenerics: boolean, trackAliases = false):
     const inner = decls.filter(
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, aliases);
+    const paramNames = fnParamNames(tokens, decl);
+    const fnAliases = paramNames.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNames.has(k)));
+    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases);
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),

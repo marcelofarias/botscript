@@ -38,7 +38,7 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
-import { collectStdlibAliases } from "./_alias.js";
+import { collectStdlibAliases, fnParamNames } from "./_alias.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -74,6 +74,8 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
+    const paramNs = fnParamNames(tokens, decl);
+    const declAliases = paramNs.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs.has(k)));
 
     // Cursor-based inner-fn exclusion (same pattern as dep-check).
     const open: FnDecl[] = [];
@@ -90,7 +92,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
       const tok = tokens[i];
       if (!tok || tok.kind !== "ident") continue;
-      const canonical = aliases.get(tok.text) ?? tok.text;
+      const canonical = declAliases.get(tok.text) ?? tok.text;
       if (!STDLIB_CAPS.has(canonical)) continue;
 
       // Must be `stdlib.method(` or `stdlib?.method(` — confirm the shape before acting.
