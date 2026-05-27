@@ -313,3 +313,18 @@ describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () =>
     expect(aliases("const t = time\n.now\n")).toEqual(new Map([["t", "time"]]));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Alias shadowing tests — module-level alias should not shadow fn params
+// ---------------------------------------------------------------------------
+describe("stdlib alias tracking — shadowing (fn param same name as module alias)", () => {
+  it("fn param named same as module alias does NOT trigger false CAP001 via dot-member access", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn bad(t: string) -> number = t.length\n";
+    // t.length — t is a fn param (string), not the time alias.
+    // This MUST NOT fire CAP001 as a false positive.
+    expect(() => t(src)).not.toThrow();
+  });
+});

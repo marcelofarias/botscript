@@ -49,7 +49,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
-import { collectStdlibAliases } from "./_alias.js";
+import { collectStdlibAliases, fnParamNames } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
@@ -141,7 +141,9 @@ function checkPureClaim(
   // INT002: intent claims "pure", uses {} is empty (and reads/writes are
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, aliases);
+  const paramNs = fnParamNames(tokens, decl);
+  const declAliases = paramNs.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs.has(k)));
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -225,7 +227,9 @@ function checkIdempotentClaim(
 
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, aliases, (ns) =>
+  const paramNs4 = fnParamNames(tokens, decl);
+  const declAliases4 = paramNs4.size === 0 ? aliases : new Map([...aliases].filter(([k]) => !paramNs4.has(k)));
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases4, (ns) =>
     NON_IDEMPOTENT.has(ns),
   );
   if (bodyUse) {

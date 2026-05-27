@@ -158,3 +158,53 @@ function insideAnyFn(tokenIdx: number, fns: FnDecl[]): boolean {
   }
   return false;
 }
+
+/**
+ * Return the set of parameter names declared in `fn`'s signature.
+ * These names shadow any module-level alias, so alias resolution must skip them.
+ *
+ * Scans tokens from `fn.tokenStart` to `fn.bodyTokenStart` (exclusive), finds
+ * the outer `(…)` parameter list, and collects idents at depth 1 that are
+ * immediately followed by `:`.
+ */
+export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
+  const names = new Set<string>();
+  const end = fn.bodyTokenStart ?? fn.tokenEnd;
+  let depth = 0;
+
+  for (let i = fn.tokenStart; i < end; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind === "whitespace" || tok.kind === "newline" || tok.kind === "lineComment" || tok.kind === "blockComment") continue;
+
+    if (depth === 0) {
+      if (tok.kind === "open" && tok.text === "(") depth = 1;
+      continue;
+    }
+
+    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "<")) ||
+        (tok.kind === "punct" && tok.text === "<")) {
+      depth++;
+    } else if ((tok.kind === "close" && (tok.text === ")" || tok.text === ">")) ||
+               (tok.kind === "punct" && tok.text === ">")) {
+      depth--;
+      if (depth === 0) break;
+    } else if (depth === 1 && tok.kind === "ident") {
+      const next = nextNonTrivia(tokens, i + 1, end);
+      if (next && next.kind === "punct" && next.text === ":") {
+        names.add(tok.text);
+      }
+    }
+  }
+
+  return names;
+}
+
+function nextNonTrivia(tokens: Token[], from: number, end: number): Token | undefined {
+  for (let i = from; i < end; i++) {
+    const t = tokens[i];
+    if (!t) return undefined;
+    if (t.kind !== "whitespace" && t.kind !== "newline" && t.kind !== "lineComment" && t.kind !== "blockComment") return t;
+  }
+  return undefined;
+}
