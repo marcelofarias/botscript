@@ -23,8 +23,10 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * Tokens inside any fn range are excluded — this is module-scope only.
  *
  * Accepted forms:
- *   const t = time         — bare stdlib ident
- *   const t = (time)       — single-paren grouping (trivially equivalent)
+ *   const t = time              — bare stdlib ident
+ *   const t = (time)            — single-paren grouping (trivially equivalent)
+ *   const t: SomeType = time    — type-annotated binding (annotation skipped)
+ *   const t: typeof time = time — complex type annotation (scan forward to `=`)
  *
  * Rejected forms (stay on the canonical-name tripwire):
  *   const t = time.now     — member access
@@ -45,14 +47,44 @@ export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<s
     if (!tok || tok.kind !== "ident" || tok.text !== "const") continue;
     if (insideAnyFn(i, fnRanges)) continue;
 
-    // const <name> = <rhs>
+    // const <name>[: <type>] = <rhs>
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
     if (!nameTok || nameTok.kind !== "ident") continue;
 
-    const eqIdx = nextSignificant(tokens, nameIdx + 1);
-    const eqTok = tokens[eqIdx];
-    if (!eqTok || eqTok.kind !== "eq") continue;
+    // Find the `=` token, skipping over an optional type annotation.
+    // If the next significant token after the name is `:`, scan forward
+    // until we hit `=` at nesting depth 0 (skipping `<>` generics and `()` parens).
+    const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
+    const afterNameTok = tokens[afterNameIdx];
+    let eqIdx = -1;
+    if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
+      // Skip type annotation: scan for `=` at depth 0, stopping at newline/eof.
+      let depth = 0;
+      for (let j = afterNameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if (
+          (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
+          (t.kind === "punct" && t.text === "<")
+        ) {
+          depth++;
+        } else if (
+          (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
+          (t.kind === "punct" && t.text === ">")
+        ) {
+          if (depth > 0) depth--;
+        } else if (t.kind === "eq" && depth === 0) {
+          eqIdx = j;
+          break;
+        }
+      }
+    } else if (afterNameTok && afterNameTok.kind === "eq") {
+      // No type annotation — next significant must be `=`.
+      eqIdx = afterNameIdx;
+    }
+    if (eqIdx === -1) continue;
 
     // Resolve the RHS to a bare stdlib ident, accepting either:
     //   const t = time          — direct ident
