@@ -12,6 +12,7 @@ import { passDepCheck } from "./passes/dep-check.js";
 import { passThrCheck } from "./passes/thr-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
+import { passAliCheck } from "./passes/ali-check.js";
 import { passUnsCheck } from "./passes/uns-check.js";
 import { passMatch } from "./passes/match.js";
 import { passMatCheck } from "./passes/mat-check.js";
@@ -75,6 +76,11 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // message "intent says pure but has uses { net }" is seen before the
   // transitive capability walk, which produces noisier output.
   { name: "intentCheck", fn: passIntentCheck, minVersion: "0.7" },
+  // aliCheck: non-blocking warning (ALI001) when a module-level const binding
+  // has a stdlib namespace ident on the RHS but in a non-trivial form that
+  // the alias tracker can't follow — author gets early feedback instead of
+  // silent mis-tracking.
+  { name: "aliCheck", fn: passAliCheck, minVersion: "0.8" },
   // verCheck: non-blocking warning (VER001/VER002) when reads/writes/throws
   // annotations are declared below their enforcement floor (?bs 0.9). Runs
   // early so it can see the full, unmodified header. No-op at 0.9+ because

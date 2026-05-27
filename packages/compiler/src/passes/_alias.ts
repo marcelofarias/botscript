@@ -161,6 +161,129 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
 }
 
 /**
+ * Collect module-level const bindings where the RHS starts with a stdlib namespace
+ * ident but is in a non-trivial form that the alias collector can't track.
+ *
+ * These are ALI001 candidates — the author may have intended to alias the namespace
+ * but the form is unsound for static tracking.
+ *
+ * Like collectStdlibAliases, uses brace depth to exclude tokens inside any
+ * braced block (fn bodies, test/unsafe blocks, etc.) — only module-scope bindings.
+ */
+export function collectAliasWarningCandidates(
+  tokens: Token[],
+): Array<{ name: string; stdlibName: string; start: number; end: number }> {
+  const candidates: Array<{ name: string; stdlibName: string; start: number; end: number }> = [];
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+
+    const constStart = tok.start;
+
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
+    const afterNameTok = tokens[afterNameIdx];
+    let eqIdx = -1;
+    if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
+      let typeDepth = 0;
+      for (let j = afterNameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if (
+          (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
+          (t.kind === "punct" && t.text === "<")
+        ) {
+          typeDepth++;
+        } else if (
+          (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
+          (t.kind === "punct" && t.text === ">")
+        ) {
+          if (typeDepth > 0) typeDepth--;
+        } else if (t.kind === "eq" && typeDepth === 0) {
+          eqIdx = j;
+          break;
+        }
+      }
+    } else if (afterNameTok && afterNameTok.kind === "eq") {
+      eqIdx = afterNameIdx;
+    }
+    if (eqIdx === -1) continue;
+
+    const rawRhsIdx = nextSignificant(tokens, eqIdx + 1);
+    const rawRhsTok = tokens[rawRhsIdx];
+    if (!rawRhsTok) continue;
+
+    let stdlibName: string;
+    let afterStdlibIdx: number;
+
+    if (rawRhsTok.kind === "ident" && STDLIB_NAMES.has(rawRhsTok.text)) {
+      stdlibName = rawRhsTok.text;
+      afterStdlibIdx = rawRhsIdx + 1;
+    } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
+      // Paren-wrapped RHS: find the first significant token inside.
+      // Only warn when that leading token IS a stdlib namespace (not arbitrary exprs).
+      const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
+      const innerTok = tokens[innerIdx];
+      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) continue;
+      const closeIdx = nextSignificant(tokens, innerIdx + 1);
+      const closeTok = tokens[closeIdx];
+      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
+        // Non-trivial paren: e.g. `const t = (time.now)` — emit ALI001.
+        if (closeTok) {
+          candidates.push({
+            name: nameTok.text,
+            stdlibName: innerTok.text,
+            start: constStart,
+            end: closeTok.end,
+          });
+        }
+        continue;
+      }
+      stdlibName = innerTok.text;
+      afterStdlibIdx = closeIdx + 1;
+    } else {
+      continue;
+    }
+
+    let afterIdx = afterStdlibIdx;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
+    const isTrivial =
+      !afterRhs ||
+      afterRhs.kind === "newline" ||
+      afterRhs.kind === "lineComment" ||
+      afterRhs.kind === "eof" ||
+      (afterRhs.kind === "punct" && afterRhs.text === ";");
+
+    if (isTrivial) continue;
+
+    candidates.push({
+      name: nameTok.text,
+      stdlibName,
+      start: constStart,
+      end: afterRhs.end,
+    });
+  }
+
+  return candidates;
+}
+
+/**
  * Return the set of parameter names declared in `fn`'s signature.
  * These names shadow any module-level alias, so alias resolution must skip them.
  *

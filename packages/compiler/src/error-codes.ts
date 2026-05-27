@@ -26,6 +26,23 @@ export interface ErrorCodeEntry {
 }
 
 const E: Record<string, ErrorCodeEntry> = {
+  ALI001: {
+    code: "ALI001",
+    title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
+    rule:
+      "a module-level `const <name> = <stdlib>` binding is only statically tracked when the RHS is a " +
+      "direct namespace reference; operator expressions, member accesses, calls, and other non-trivial forms " +
+      "are left on the canonical-name tripwire — capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), and UNS005 will not see the alias",
+    idiom: "use a direct binding (`const t = time`) to alias a stdlib namespace; reference the canonical name directly in all other cases",
+    rewrite:
+      "// option A — use a direct binding:\nconst <name> = <stdlib>\n\n" +
+      "// option B — remove the alias and use the canonical name directly:\n// (reference '<stdlib>' wherever you used '<name>')",
+    example:
+      "// before — non-trivial RHS; alias not tracked; ALI001 fires\n" +
+      "const t = time.now\n\n" +
+      "// after — direct binding; alias is tracked\n" +
+      "const t = time\n",
+  },
   CAP001: {
     code: "CAP001",
     title: "function calls a stdlib namespace whose capability is not declared",
