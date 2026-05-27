@@ -152,6 +152,129 @@ export function resolveAlias(name: string, aliases: Map<string, string>): string
   return aliases.get(name) ?? name;
 }
 
+/**
+ * Collect module-level const bindings where the RHS starts with a stdlib namespace
+ * ident but is in a non-trivial form that the alias collector can't track.
+ *
+ * These are ALI001 candidates — the author may have intended to alias the namespace
+ * but the form is unsound for static tracking.
+ */
+export function collectAliasWarningCandidates(
+  tokens: Token[],
+  fnRanges: FnDecl[],
+): Array<{ name: string; stdlibName: string; start: number; end: number }> {
+  const candidates: Array<{ name: string; stdlibName: string; start: number; end: number }> = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident" || tok.text !== "const") continue;
+    if (insideAnyFn(i, fnRanges)) continue;
+
+    const constStart = tok.start;
+
+    // const <name>[: <type>] = <rhs>
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    // Find the `=` token, skipping over an optional type annotation.
+    const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
+    const afterNameTok = tokens[afterNameIdx];
+    let eqIdx = -1;
+    if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
+      let depth = 0;
+      for (let j = afterNameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if (
+          (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
+          (t.kind === "punct" && t.text === "<")
+        ) {
+          depth++;
+        } else if (
+          (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
+          (t.kind === "punct" && t.text === ">")
+        ) {
+          if (depth > 0) depth--;
+        } else if (t.kind === "eq" && depth === 0) {
+          eqIdx = j;
+          break;
+        }
+      }
+    } else if (afterNameTok && afterNameTok.kind === "eq") {
+      eqIdx = afterNameIdx;
+    }
+    if (eqIdx === -1) continue;
+
+    // Look at the RHS
+    const rawRhsIdx = nextSignificant(tokens, eqIdx + 1);
+    const rawRhsTok = tokens[rawRhsIdx];
+    if (!rawRhsTok) continue;
+
+    let stdlibName: string;
+    let afterStdlibIdx: number;
+
+    if (rawRhsTok.kind === "ident" && STDLIB_NAMES.has(rawRhsTok.text)) {
+      // bare: const t = time...
+      stdlibName = rawRhsTok.text;
+      afterStdlibIdx = rawRhsIdx + 1;
+    } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
+      // grouping form: const t = (time...)
+      const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
+      const innerTok = tokens[innerIdx];
+      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) continue;
+      // Check if the close-paren follows immediately (trivial) or not (non-trivial)
+      const closeIdx = nextSignificant(tokens, innerIdx + 1);
+      const closeTok = tokens[closeIdx];
+      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
+        // Non-trivial: something else inside the parens after the stdlib ident
+        // This isn't a simple grouping — skip for now (not the targeted form)
+        continue;
+      }
+      // It IS the single-paren grouping form — check if it's trivial (clean end)
+      stdlibName = innerTok.text;
+      afterStdlibIdx = closeIdx + 1;
+    } else {
+      continue;
+    }
+
+    // Check if the form is trivial (would be tracked by collectStdlibAliases)
+    // Trivial: after the stdlib ident (or closing paren), next non-ws/blockComment
+    // is newline, lineComment, eof, or semicolon.
+    let afterIdx = afterStdlibIdx;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
+    const isTrivial =
+      !afterRhs ||
+      afterRhs.kind === "newline" ||
+      afterRhs.kind === "lineComment" ||
+      afterRhs.kind === "eof" ||
+      (afterRhs.kind === "punct" && afterRhs.text === ";");
+
+    if (isTrivial) {
+      // This is already tracked by collectStdlibAliases — skip
+      continue;
+    }
+
+    // Non-trivial form — this is an ALI001 candidate
+    // The end should be the end of the first non-trivial RHS token (afterRhs)
+    candidates.push({
+      name: nameTok.text,
+      stdlibName,
+      start: constStart,
+      end: afterRhs.end,
+    });
+  }
+
+  return candidates;
+}
+
 function insideAnyFn(tokenIdx: number, fns: FnDecl[]): boolean {
   for (const fn of fns) {
     if (tokenIdx >= fn.tokenStart && tokenIdx < fn.tokenEnd) return true;
