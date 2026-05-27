@@ -41,11 +41,15 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  */
 export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<string, string> {
   const aliases = new Map<string, string>();
+  let depth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
-    if (!tok || tok.kind !== "ident" || tok.text !== "const") continue;
-    if (insideAnyFn(i, fnRanges)) continue;
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
 
     // const <name>[: <type>] = <rhs>
     const nameIdx = nextSignificant(tokens, i + 1);
@@ -164,11 +168,15 @@ export function collectAliasWarningCandidates(
   fnRanges: FnDecl[],
 ): Array<{ name: string; stdlibName: string; start: number; end: number }> {
   const candidates: Array<{ name: string; stdlibName: string; start: number; end: number }> = [];
+  let depth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
-    if (!tok || tok.kind !== "ident" || tok.text !== "const") continue;
-    if (insideAnyFn(i, fnRanges)) continue;
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
 
     const constStart = tok.start;
 

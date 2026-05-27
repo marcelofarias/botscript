@@ -562,7 +562,7 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "a module-level `const <name> = <stdlib>` binding is only statically tracked when the RHS is a " +
       "direct namespace reference; operator expressions, member accesses, calls, and other non-trivial forms " +
-      "are left on the canonical-name tripwire — capability and intent checks will not see the alias",
+      "are left on the canonical-name tripwire — capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), and UNS005 will not see the alias",
     idiom: "use a direct binding (`const t = time`) to alias a stdlib namespace; reference the canonical name directly in all other cases",
     rewrite:
       "// option A — use a direct binding:\nconst <name> = <stdlib>\n\n" +

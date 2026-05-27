@@ -39,8 +39,8 @@ import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
 /**
  * stdlib namespace -> capability it consumes.
- * Re-exported from _stdlib.ts — import from here (cap-check) or directly
- * from _stdlib.ts; both are canonical.
+ * Re-exported from _stdlib.ts for backward compatibility — _stdlib.ts is
+ * the canonical source. Prefer importing from _stdlib.ts directly.
  */
 export const STDLIB_TO_CAP: Readonly<Record<string, string>> = _STDLIB_TO_CAP;
 
