@@ -238,3 +238,93 @@ describe("ALI001: warning fields", () => {
     expect(warn.start).toBeGreaterThanOrEqual(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ALI002: alias-of-alias chain warnings
+// ---------------------------------------------------------------------------
+
+describe("ALI002: fires on alias-of-alias chains", () => {
+  it("fires when const x = t and t is a tracked stdlib alias", () => {
+    // `const t = time` tracked; `const x = t` is a chain alias — ALI002 fires.
+    const src = "?bs 0.8\nconst t = time\nconst x = t\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.severity).toBe("warning");
+    expect(warns[0]!.message).toContain("x");
+    expect(warns[0]!.message).toContain("t");
+    expect(warns[0]!.message).toContain("time");
+    expect(warns[0]!.message).toContain("chain");
+  });
+
+  it("message contains the chain alias name, the intermediate alias, and the canonical stdlib name", () => {
+    const src = "?bs 0.8\nconst rng = random\nconst myRng = rng\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI002")!;
+    expect(warn.message).toContain("myRng");
+    expect(warn.message).toContain("rng");
+    expect(warn.message).toContain("random");
+    expect(warn.message).toMatch(/const myRng = random/);
+  });
+
+  it("warning is non-blocking — compilation succeeds", () => {
+    const src = "?bs 0.8\nconst t = time\nconst x = t\n";
+    expect(() => transform(src)).not.toThrow();
+  });
+
+  it("does not fire when the RHS is a direct stdlib name (const x = time)", () => {
+    // Direct binding — ALI001 would not fire, and ALI002 should not either.
+    const src = "?bs 0.8\nconst x = time\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not fire when const x = t and t is not a tracked alias", () => {
+    // `t` is not in the alias map (it was not `const t = <stdlib>`).
+    const src = "?bs 0.8\nconst t = 42\nconst x = t\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not fire when const x = t is inside a fn body (not module scope)", () => {
+    // Chain alias inside fn body — not at module scope, so ALI002 does not fire.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f() -> number {\n" +
+      "  const x = t\n" +
+      "  return x.now()\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("both ALI002 and ALI001 can fire in the same file", () => {
+    // `const t = time` (tracked), `const x = t` (ALI002), `const y = time.now` (ALI001).
+    const src = "?bs 0.8\nconst t = time\nconst x = t\nconst y = time.now\n";
+    const result = transform(src);
+    const ali001 = result.warnings.filter((w) => w.code === "ALI001");
+    const ali002 = result.warnings.filter((w) => w.code === "ALI002");
+    expect(ali001).toHaveLength(1);
+    expect(ali002).toHaveLength(1);
+  });
+
+  it("does not fire below ?bs 0.8 (version gate)", () => {
+    const src = "?bs 0.7\nconst t = time\nconst x = t\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("has rule, idiom, and rewrite fields from the error code registry", () => {
+    const src = "?bs 0.8\nconst t = time\nconst x = t\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI002")!;
+    expect(warn.rule).toBeTruthy();
+    expect(warn.idiom).toBeTruthy();
+    expect(warn.rewrite).toBeTruthy();
+  });
+});

@@ -46,6 +46,7 @@ describe("botscript-mcp explanations", () => {
     // have an entry in EXPLANATIONS so `explain` can answer for it.
     expect(KNOWN_CODES).toEqual([
       "ALI001",
+      "ALI002",
       "BS001",
       "BS002",
       "CAP001",

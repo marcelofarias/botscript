@@ -329,6 +329,81 @@ export function collectAliasWarningCandidates(
 }
 
 /**
+ * Collect module-level `const x = <alias>` bindings where `<alias>` is already
+ * in the tracked alias map (i.e., alias-of-alias chains).
+ *
+ * Example: `const t = time` (tracked), `const x = t` (chain — NOT tracked).
+ * `x.now()` would not be caught by cap/intent/uns checks. ALI002 warns so
+ * the author knows to use `const x = time` directly.
+ *
+ * Uses brace depth to restrict to module scope only.
+ */
+export function collectChainAliasWarningCandidates(
+  tokens: Token[],
+  aliases: Map<string, string>,
+): Array<{ name: string; aliasName: string; stdlibName: string; start: number; end: number }> {
+  const candidates: Array<{ name: string; aliasName: string; stdlibName: string; start: number; end: number }> = [];
+  if (aliases.size === 0) return candidates;
+
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+
+    const constStart = tok.start;
+
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    // Only a direct `const x = <ident>` form — no type annotation, no complex RHS.
+    const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
+    const afterNameTok = tokens[afterNameIdx];
+    if (!afterNameTok || afterNameTok.kind !== "eq") continue;
+
+    const rhsIdx = nextSignificant(tokens, afterNameIdx + 1);
+    const rhsTok = tokens[rhsIdx];
+    if (!rhsTok || rhsTok.kind !== "ident") continue;
+
+    // The RHS must be a tracked alias (not a stdlib name directly).
+    const stdlibName = aliases.get(rhsTok.text);
+    if (!stdlibName) continue;
+
+    // Confirm end-of-statement after the RHS ident.
+    let afterIdx = rhsIdx + 1;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
+    const isClean =
+      !afterRhs ||
+      afterRhs.kind === "newline" ||
+      afterRhs.kind === "lineComment" ||
+      afterRhs.kind === "eof" ||
+      (afterRhs.kind === "punct" && afterRhs.text === ";");
+    if (!isClean) continue;
+
+    candidates.push({
+      name: nameTok.text,
+      aliasName: rhsTok.text,
+      stdlibName,
+      start: constStart,
+      end: rhsTok.end,
+    });
+  }
+
+  return candidates;
+}
+
+/**
  * Collect module-level const bindings where the RHS starts with a stdlib namespace
  * ident but is in a non-trivial form that the alias collector can't track.
  *
