@@ -20,7 +20,10 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * Collect module-level `const <alias> = <stdlib_namespace>` bindings.
  *
  * Returns a map from alias name → canonical stdlib namespace (e.g. `"t" → "time"`).
- * Tokens inside any fn range are excluded — this is module-scope only.
+ * Tokens inside any braced block are excluded — brace depth is tracked as
+ * we scan, so fn bodies, `test "..." {}` blocks, `unsafe "..." {}` blocks,
+ * and any other `{...}` construct are all skipped. Only tokens at depth 0
+ * (true module scope) are considered.
  *
  * Accepted forms:
  *   const t = time              — bare stdlib ident
@@ -39,13 +42,17 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * and `.now` is a separate (invalid) expression. The statement-end check here
  * is correct for botscript source.
  */
-export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<string, string> {
+export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<string, string> {
   const aliases = new Map<string, string>();
+  let depth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
-    if (!tok || tok.kind !== "ident" || tok.text !== "const") continue;
-    if (insideAnyFn(i, fnRanges)) continue;
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+    if (depth !== 0) continue;
 
     // const <name>[: <type>] = <rhs>
     const nameIdx = nextSignificant(tokens, i + 1);
@@ -150,13 +157,6 @@ export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<s
  */
 export function resolveAlias(name: string, aliases: Map<string, string>): string {
   return aliases.get(name) ?? name;
-}
-
-function insideAnyFn(tokenIdx: number, fns: FnDecl[]): boolean {
-  for (const fn of fns) {
-    if (tokenIdx >= fn.tokenStart && tokenIdx < fn.tokenEnd) return true;
-  }
-  return false;
 }
 
 /**
