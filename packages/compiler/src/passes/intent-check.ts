@@ -95,74 +95,74 @@ function checkPureClaim(
   checksReadsWrites: boolean,
   diagnostics: Diagnostic[],
 ): void {
-    const hasUses = decl.capabilities.length > 0;
-    const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
-    const hasWrites = checksReadsWrites && (decl.writes?.length ?? 0) > 0;
+  const hasUses = decl.capabilities.length > 0;
+  const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
+  const hasWrites = checksReadsWrites && (decl.writes?.length ?? 0) > 0;
 
-    if (hasUses || hasReads || hasWrites) {
-      // INT001: header-level conflict — intent claims "pure" but the function
-      // has capability or (from 0.8) read/write resource declarations.
-      const entry = getErrorCode("INT001")!;
-      const intentStart = decl.intentStart!;
-      const loc = locationOf(src, intentStart);
+  if (hasUses || hasReads || hasWrites) {
+    // INT001: header-level conflict — intent claims "pure" but the function
+    // has capability or (from 0.8) read/write resource declarations.
+    const entry = getErrorCode("INT001")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
 
-      const parts: string[] = [];
-      if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
-      if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
-      if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
-      const conflictsStr = parts.join(", ");
-      const conflictsRewrite = parts.join(" ");
+    const parts: string[] = [];
+    if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
+    if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
+    if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
+    const conflictsStr = parts.join(", ");
+    const conflictsRewrite = parts.join(" ");
 
-      diagnostics.push({
-        code: "INT001",
-        severity: "error",
-        file: null,
-        line: loc.line,
-        column: loc.column,
-        start: intentStart,
-        end: intentStart + decl.intent!.length + 2,
-        message:
-          `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
-          `pure functions may not consume external resources or have resource dependencies`,
-        rule: entry.rule,
-        idiom: entry.idiom,
-        rewrite:
-          `// remove the conflicting header clauses (uses/reads/writes):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
-      });
-      // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
-      return;
-    }
+    diagnostics.push({
+      code: "INT001",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
+        `pure functions may not consume external resources or have resource dependencies`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// remove the conflicting header clauses (uses/reads/writes):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
+        `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
+    });
+    // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
+    return;
+  }
 
-    // INT002: intent claims "pure", uses {} is empty (and reads/writes are
-    // absent or not yet enforced), but the body directly references a stdlib
-    // capability. This is the under-declaration case that INT001 cannot catch.
-    const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
-    if (bodyUse) {
-      const entry = getErrorCode("INT002")!;
-      const intentStart = decl.intentStart!;
-      const loc = locationOf(src, intentStart);
-      diagnostics.push({
-        code: "INT002",
-        severity: "error",
-        file: null,
-        line: loc.line,
-        column: loc.column,
-        start: intentStart,
-        end: intentStart + decl.intent!.length + 2,
-        message:
-          `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
-          `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
-          `pure functions may not consume external resources`,
-        rule: entry.rule,
-        idiom: entry.idiom,
-        rewrite:
-          `// option A — remove the capability call from the body:\n` +
-          `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
-          `// option B — declare the capability and remove the pure claim:\n` +
-          `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
-      });
-    }
+  // INT002: intent claims "pure", uses {} is empty (and reads/writes are
+  // absent or not yet enforced), but the body directly references a stdlib
+  // capability. This is the under-declaration case that INT001 cannot catch.
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
+  if (bodyUse) {
+    const entry = getErrorCode("INT002")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    diagnostics.push({
+      code: "INT002",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
+        `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
+        `pure functions may not consume external resources`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the capability call from the body:\n` +
+        `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+        `// option B — declare the capability and remove the pure claim:\n` +
+        `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
+    });
+  }
 }
 
 // Capabilities whose values change on every call — fundamentally non-idempotent.
