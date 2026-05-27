@@ -200,6 +200,34 @@ describe("stdlib alias tracking — intent-check (?bs 0.8)", () => {
       "fn elapsed() intent: \"pure\" -> number = t.now()\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("INT002 fires when optional chaining `?.` is used with a canonical stdlib name (pure bypass)", () => {
+    // `time?.now()` must be caught by INT002 — optional chaining is not an escape hatch.
+    const src =
+      "?bs 0.8\n" +
+      "fn elapsed() intent: \"pure\" -> number = time?.now()\n";
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("INT002 fires when optional chaining `?.` is used with a stdlib alias (pure bypass)", () => {
+    // `const t = time; fn f() intent: "pure" -> ... = t?.now()`
+    // Without `?.` support in findFirstCapabilityUse, t?.now() would bypass INT002.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn elapsed() intent: \"pure\" -> number = t?.now()\n";
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("INT004 fires when optional chaining `?.` is used with a stdlib alias (idempotent bypass)", () => {
+    // `const r = random; fn f() intent: "idempotent" -> ... = r?.next()`
+    // Without `?.` support in findFirstCapabilityUse, r?.next() would bypass INT004.
+    const src =
+      "?bs 0.8\n" +
+      "const r = random\n" +
+      "fn token() intent: \"idempotent\" -> number = r?.next()\n";
+    expect(() => t(src)).toThrow(/INT004/);
+  });
 });
 
 // ---------------------------------------------------------------------------

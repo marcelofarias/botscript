@@ -66,8 +66,9 @@ export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<
     const afterNameTok = tokens[afterNameIdx];
     let eqIdx = -1;
     if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
-      // Skip type annotation: scan for `=` at depth 0, stopping at newline/eof.
-      let depth = 0;
+      // Skip type annotation: scan for `=` at nesting depth 0, stopping at newline/eof.
+      // Use a separate counter (typeDepth) to avoid shadowing the outer module-brace `depth`.
+      let typeDepth = 0;
       for (let j = afterNameIdx + 1; j < tokens.length; j++) {
         const t = tokens[j];
         if (!t) break;
@@ -76,13 +77,13 @@ export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<
           (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
           (t.kind === "punct" && t.text === "<")
         ) {
-          depth++;
+          typeDepth++;
         } else if (
           (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
           (t.kind === "punct" && t.text === ">")
         ) {
-          if (depth > 0) depth--;
-        } else if (t.kind === "eq" && depth === 0) {
+          if (typeDepth > 0) typeDepth--;
+        } else if (t.kind === "eq" && typeDepth === 0) {
           eqIdx = j;
           break;
         }
