@@ -20,7 +20,10 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * Collect module-level `const <alias> = <stdlib_namespace>` bindings.
  *
  * Returns a map from alias name → canonical stdlib namespace (e.g. `"t" → "time"`).
- * Tokens inside any fn range are excluded — this is module-scope only.
+ * Tokens inside any braced block are excluded — brace depth is tracked as
+ * we scan, so fn bodies, `test "..." {}` blocks, `unsafe "..." {}` blocks,
+ * and any other `{...}` construct are all skipped. Only tokens at depth 0
+ * (true module scope) are considered.
  *
  * Accepted forms:
  *   const t = time              — bare stdlib ident
@@ -39,7 +42,7 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * and `.now` is a separate (invalid) expression. The statement-end check here
  * is correct for botscript source.
  */
-export function collectStdlibAliases(tokens: Token[], fnRanges: FnDecl[]): Map<string, string> {
+export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<string, string> {
   const aliases = new Map<string, string>();
   let depth = 0;
 
@@ -162,10 +165,13 @@ export function resolveAlias(name: string, aliases: Map<string, string>): string
  *
  * These are ALI001 candidates — the author may have intended to alias the namespace
  * but the form is unsound for static tracking.
+ *
+ * Like collectStdlibAliases, uses brace depth to exclude tokens inside any
+ * braced block (fn bodies, test/unsafe blocks, etc.) — only module-scope bindings.
  */
 export function collectAliasWarningCandidates(
   tokens: Token[],
-  fnRanges: FnDecl[],
+  _fnRanges: FnDecl[],
 ): Array<{ name: string; stdlibName: string; start: number; end: number }> {
   const candidates: Array<{ name: string; stdlibName: string; start: number; end: number }> = [];
   let depth = 0;
@@ -288,13 +294,6 @@ export function collectAliasWarningCandidates(
   }
 
   return candidates;
-}
-
-function insideAnyFn(tokenIdx: number, fns: FnDecl[]): boolean {
-  for (const fn of fns) {
-    if (tokenIdx >= fn.tokenStart && tokenIdx < fn.tokenEnd) return true;
-  }
-  return false;
 }
 
 /**
