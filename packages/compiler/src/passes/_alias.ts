@@ -208,3 +208,29 @@ function nextNonTrivia(tokens: Token[], from: number, end: number): Token | unde
   }
   return undefined;
 }
+
+/**
+ * Return the set of names bound by `const <name> = ...` declarations anywhere
+ * in `fn`'s body. These locally-bound names shadow any module-level alias.
+ *
+ * Scans body tokens (from `fn.bodyTokenStart` to `fn.tokenEnd`) and collects
+ * every ident that immediately follows a `const` keyword, at any nesting depth.
+ */
+export function fnBodyLocalNames(tokens: Token[], fn: FnDecl): Set<string> {
+  const names = new Set<string>();
+  const start = fn.bodyTokenStart ?? fn.tokenStart;
+  const end = fn.tokenEnd;
+
+  for (let i = start; i < end; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (nameTok && nameTok.kind === "ident") {
+      names.add(nameTok.text);
+    }
+  }
+
+  return names;
+}

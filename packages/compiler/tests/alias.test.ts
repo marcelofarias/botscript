@@ -327,4 +327,17 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
     // This MUST NOT fire CAP001 as a false positive.
     expect(() => t(src)).not.toThrow();
   });
+
+  it("local const inside fn body named same as module alias does NOT trigger false CAP001", () => {
+    // `const t = time` at module level, but fn body rebinds `t` as a local string.
+    // `t.length` should NOT be treated as a `time` stdlib call.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f() -> number {\n" +
+      "  const t = \"hello\"\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });
