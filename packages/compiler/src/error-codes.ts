@@ -241,6 +241,51 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(\"/users/\" + id);\n" +
       "}",
   },
+  INT003: {
+    code: "INT003",
+    title: "intent declares 'idempotent' but function uses a non-idempotent capability",
+    rule:
+      "a function whose intent contains 'idempotent' must not declare `random` or `time` in its `uses {}` — " +
+      "random and time capabilities produce different values on each call, making the function non-idempotent; " +
+      "only `random` and `time` are flagged as inherently non-idempotent — other capabilities are not structurally flagged by this check",
+    idiom:
+      "idempotent = safe to retry; `random` and `time` are inherently non-idempotent — remove them from `uses {}` or change the intent",
+    rewrite:
+      "// option A — remove the non-idempotent capability (keep any other caps):\n" +
+      "fn name(args) uses { …other-caps } intent: \"idempotent\" -> type = ...\n\n" +
+      "// option B — remove the idempotent intent claim (preserve all caps, including\n" +
+      "// the non-idempotent one alongside any others):\n" +
+      "fn name(args) uses { …other-caps, time } -> type = ...   // or `uses { …other-caps, random }`",
+    example:
+      "// before — fn claims idempotent but uses time (non-idempotent); INT003 fires\n" +
+      "?bs 0.7\n" +
+      "fn expireAt(ttl: number) uses { time } intent: \"idempotent\" -> number = time.now() + ttl\n\n" +
+      "// after — remove the idempotent claim (fn has time-dependent output)\n" +
+      "?bs 0.7\n" +
+      "fn expireAt(ttl: number) uses { time } -> number = time.now() + ttl",
+  },
+  INT004: {
+    code: "INT004",
+    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability",
+    rule:
+      "a function declaring intent: \"idempotent\" must not directly reference `random` or `time` in its body — " +
+      "these stdlib namespaces produce different values on each invocation, making any function that uses them non-idempotent",
+    idiom:
+      "move the non-idempotent call out of the idempotent fn, or change the intent to reflect the actual behaviour",
+    rewrite:
+      "// option A — remove the non-idempotent call from the body:\n" +
+      "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
+      "// option B — declare the capability and remove the idempotent intent claim\n" +
+      "// (preserve any other existing capabilities alongside the non-idempotent one):\n" +
+      "fn name(args) uses { …other-caps, random } -> type = ...   // or `uses { …other-caps, time }`",
+    example:
+      "// before — fn claims idempotent but body calls random.next; INT004 fires\n" +
+      "?bs 0.7\n" +
+      "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n\n" +
+      "// after — remove the idempotent claim and declare the capability\n" +
+      "?bs 0.7\n" +
+      "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

@@ -69,6 +69,16 @@ additions below are the entire language surface.
   Under ?bs 0.7 the intent check adds:
     INT001  intent contains 'pure' but the function has capability declarations
             (uses {}). Pure functions may not consume external resources.
+    INT002  intent contains 'pure' but the body directly references a stdlib
+            capability (e.g. http.get, time.now). Fires when INT001 does not.
+    INT003  intent contains 'idempotent' but uses {} declares 'random' or
+            'time'. Both produce different values on each call — a fn that
+            uses them cannot be safely retried. Only 'random' and 'time' are
+            flagged; other capabilities are not structurally flagged by this
+            check (INT003 is a narrow heuristic, not a proof of idempotence).
+    INT004  intent contains 'idempotent' but the body directly references
+            'random' or 'time' without declaring them. Under-declaration
+            variant of INT003 — fires when INT003 does not.
   Under ?bs 0.8, INT001 also fires when 'pure' intent conflicts with
             read/write dependencies (reads {} / writes {}). Pure functions
             may have neither capabilities nor resource dependencies.
