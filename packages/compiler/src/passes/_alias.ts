@@ -81,9 +81,11 @@ export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<
           typeDepth++;
         } else if (
           (t.kind === "close" && t.text === ")") ||
-          (t.kind === "operator" && t.text === ">")
+          (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
         ) {
-          if (typeDepth > 0) typeDepth--;
+          // `>>` and `>>>` are lexed as single tokens; each char closes one generic level.
+          const closes = t.text.length;
+          typeDepth = Math.max(0, typeDepth - closes);
         } else if (t.kind === "eq" && typeDepth === 0) {
           eqIdx = j;
           break;
