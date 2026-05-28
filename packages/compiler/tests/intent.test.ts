@@ -302,6 +302,19 @@ describe("INT002 — optional-chaining bypass (?bs 0.8)", () => {
     const src = `?bs 0.7\nfn stamp() intent: "pure" -> number = time?.now()\n`;
     expect(() => t(src)).not.toThrow();
   });
+
+  it("INT002 message renders '?.' when optional chaining is the access operator", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "pure" -> number = time?.now()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT002");
+      expect(d.message).toContain("time?.now");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -455,6 +468,19 @@ describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)
   it("does NOT fire INT004 for time?.now() below ?bs 0.8 (not yet detected)", () => {
     const src = `?bs 0.7\nfn stamp() intent: "idempotent" -> number = time?.now()\n`;
     expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT004 message renders '?.' when optional chaining is the access operator", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "idempotent" -> number = time?.now()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT004");
+      expect(d.message).toContain("time?.now");
+    }
   });
 });
 
