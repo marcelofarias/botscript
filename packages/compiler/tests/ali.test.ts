@@ -69,6 +69,16 @@ describe("ALI001: fires on non-trivial RHS forms", () => {
     expect(warns[0]!.severity).toBe("warning");
     expect(warns[0]!.message).toContain("time");
   });
+
+  it("fires for doubly-nested paren form with continuation (const t = ((time)).now)", () => {
+    // `((time))` is not tracked (only single-paren grouping is), and `.now`
+    // makes it non-trivial — ALI001 should fire to flag the untracked form.
+    const src = "?bs 0.8\nconst t = ((time)).now\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -235,7 +235,26 @@ export function collectAliasWarningCandidates(
       // Only warn when that leading token IS a stdlib namespace (not arbitrary exprs).
       const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
       const innerTok = tokens[innerIdx];
-      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) continue;
+      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
+        // The first significant token inside the paren is not a bare stdlib ident.
+        // It could be nested parens (`((time)).now`) or something else. Scan the
+        // entire paren content for any stdlib ident — if found, it's a non-trivial
+        // form with a stdlib namespace inside, so emit ALI001.
+        const matchedCloseIdx = rawRhsTok.matchedAt;
+        if (matchedCloseIdx !== undefined) {
+          const nestedStdlib = findFirstStdlibInRange(tokens, rawRhsIdx + 1, matchedCloseIdx);
+          if (nestedStdlib) {
+            const matchedClose = tokens[matchedCloseIdx];
+            candidates.push({
+              name: nameTok.text,
+              stdlibName: nestedStdlib,
+              start: constStart,
+              end: matchedClose?.end ?? rawRhsTok.end,
+            });
+          }
+        }
+        continue;
+      }
       const closeIdx = nextSignificant(tokens, innerIdx + 1);
       const closeTok = tokens[closeIdx];
       if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
@@ -711,4 +730,13 @@ export function aliasesForFn(
     }
   }
   return result;
+}
+
+/** Scan tokens[from..to) for the first stdlib ident. Returns its name or null. */
+function findFirstStdlibInRange(tokens: Token[], from: number, to: number): string | null {
+  for (let i = from; i < to; i++) {
+    const t = tokens[i];
+    if (t && t.kind === "ident" && STDLIB_NAMES.has(t.text)) return t.text;
+  }
+  return null;
 }
