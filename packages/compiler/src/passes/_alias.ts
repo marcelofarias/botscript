@@ -494,15 +494,17 @@ export function collectAliasWarningCandidates(
         if (!t) break;
         if (t.kind === "newline" || t.kind === "eof") break;
         if (
-          (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
-          (t.kind === "punct" && t.text === "<")
+          (t.kind === "open" && t.text === "(") ||
+          (t.kind === "operator" && t.text === "<")
         ) {
           typeDepth++;
         } else if (
-          (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
-          (t.kind === "punct" && t.text === ">")
+          (t.kind === "close" && t.text === ")") ||
+          (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
         ) {
-          if (typeDepth > 0) typeDepth--;
+          // `>>` and `>>>` are lexed as single tokens; each char closes one generic level.
+          const closes = t.text.length;
+          typeDepth = Math.max(0, typeDepth - closes);
         } else if (t.kind === "eq" && typeDepth === 0) {
           eqIdx = j;
           break;

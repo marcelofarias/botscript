@@ -24,7 +24,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "ALI002 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
       "names an existing tracked stdlib alias on the RHS: `const x = t` where `t` is itself " +
       "an alias for a stdlib namespace (e.g. `const t = time`).\n\n" +
-      "Chain aliases are intentionally not tracked in `?bs 0.8`. Only direct bindings " +
+      "Chain aliases are intentionally not tracked from `?bs 0.8`. Only direct bindings " +
       "(`const x = time`) are followed. As a result, `x.now()` will not be detected by " +
       "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), or UNS005 — " +
       "the one-liner alias bypass is reintroduced.\n\n" +
