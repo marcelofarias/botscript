@@ -132,9 +132,6 @@ goes behind a new pin.
   non-trivial form (member access, operator, call, parenthesized non-trivial
   form) that static alias tracking cannot follow. Non-blocking; tells the author
   why `name.member()` won't be seen as a stdlib call by static checks.
-- **ALI002** (warning) — fires when `const x = <ident>` and `<ident>` is a
-  tracked stdlib alias. Chain aliases (`const t = time; const x = t`) are not
-  tracked; ALI002 makes that explicit so authors aren't silently surprised.
 
 ### Compat
 - `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`
