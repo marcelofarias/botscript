@@ -68,19 +68,20 @@ export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<
     if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
       // Skip type annotation: scan for `=` at nesting depth 0, stopping at newline/eof.
       // Use a separate counter (typeDepth) to avoid shadowing the outer module-brace `depth`.
+      // Note: `<`/`>` are emitted as `operator` tokens by the lexer, not `open`/`close`.
       let typeDepth = 0;
       for (let j = afterNameIdx + 1; j < tokens.length; j++) {
         const t = tokens[j];
         if (!t) break;
         if (t.kind === "newline" || t.kind === "eof") break;
         if (
-          (t.kind === "open" && (t.text === "(" || t.text === "<")) ||
-          (t.kind === "punct" && t.text === "<")
+          (t.kind === "open" && t.text === "(") ||
+          (t.kind === "operator" && t.text === "<")
         ) {
           typeDepth++;
         } else if (
-          (t.kind === "close" && (t.text === ")" || t.text === ">")) ||
-          (t.kind === "punct" && t.text === ">")
+          (t.kind === "close" && t.text === ")") ||
+          (t.kind === "operator" && t.text === ">")
         ) {
           if (typeDepth > 0) typeDepth--;
         } else if (t.kind === "eq" && typeDepth === 0) {
@@ -186,14 +187,15 @@ export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
       continue;
     }
 
-    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "<" || tok.text === "{")) ||
-        (tok.kind === "punct" && tok.text === "<")) {
+    // Note: `<`/`>` are emitted as `operator` tokens by the lexer, not `open`/`close`.
+    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "{")) ||
+        (tok.kind === "operator" && tok.text === "<")) {
       depth++;
     } else if (tok.kind === "close" && tok.text === ")") {
       depth--;
       if (depth === 0) break;
-    } else if ((tok.kind === "close" && (tok.text === "}" || tok.text === ">")) ||
-               (tok.kind === "punct" && tok.text === ">")) {
+    } else if ((tok.kind === "close" && tok.text === "}") ||
+               (tok.kind === "operator" && tok.text === ">")) {
       if (depth > 0) depth--;
     } else if (depth === 1 && tok.kind === "ident") {
       const next = nextNonTrivia(tokens, i + 1, end);

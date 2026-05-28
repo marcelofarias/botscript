@@ -73,10 +73,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, aliases, checksReadsWrites, diagnostics);
+      checkIdempotentClaim(decl, src, tokens, allDecls, aliases, diagnostics, trackAliases);
     }
   }
 
@@ -98,6 +98,7 @@ function checkPureClaim(
   checksReadsWrites: boolean,
   aliases: Map<string, string>,
   diagnostics: Diagnostic[],
+  acceptOptionalChain = false,
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -142,7 +143,7 @@ function checkPureClaim(
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
   const declAliases = aliasesForFn(tokens, decl, allDecls, aliases);
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, checksReadsWrites);
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, acceptOptionalChain);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -188,8 +189,8 @@ function checkIdempotentClaim(
   tokens: Token[],
   allDecls: FnDecl[],
   aliases: Map<string, string>,
-  checksReadsWrites: boolean,
   diagnostics: Diagnostic[],
+  acceptOptionalChain = false,
 ): void {
   // INT003: header-level — uses { } declares a non-idempotent capability.
   const nonIdem = decl.capabilities.filter((c) => NON_IDEMPOTENT.has(c));
@@ -229,7 +230,7 @@ function checkIdempotentClaim(
   // non-idempotent namespace that is not declared in uses { }.
   const declAliases4 = aliasesForFn(tokens, decl, allDecls, aliases);
   const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases4, (ns) =>
-    NON_IDEMPOTENT.has(ns), checksReadsWrites,
+    NON_IDEMPOTENT.has(ns), acceptOptionalChain,
   );
   if (bodyUse) {
     const entry = getErrorCode("INT004")!;
@@ -270,7 +271,7 @@ function findFirstCapabilityUse(
   allDecls: FnDecl[],
   aliases: Map<string, string> = new Map(),
   filter?: (namespace: string) => boolean,
-  checkOptionalChaining = false,
+  acceptOptionalChain = false,
 ): { capability: string; namespace: string; member: string; accessOp: string } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
@@ -288,7 +289,7 @@ function findFirstCapabilityUse(
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
     const isDot = next?.kind === "punct" && next.text === ".";
-    const isOptChain = checkOptionalChaining && next?.kind === "questionDot";
+    const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
     if (!isDot && !isOptChain) continue;
     const member = nextIdent(tokens, j) ?? "…";
     return { capability: cap, namespace: tok.text, member, accessOp: isDot ? "." : "?." };

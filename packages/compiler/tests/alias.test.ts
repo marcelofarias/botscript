@@ -226,6 +226,21 @@ describe("stdlib alias tracking — intent-check (?bs 0.8)", () => {
       "fn token() intent: \"idempotent\" -> number = r?.next()\n";
     expect(() => t(src)).toThrow(/INT004/);
   });
+
+  it("INT002 does NOT fire for `?.` on ?bs 0.7 — version-gate preserved", () => {
+    // Optional-chaining detection is gated on ?bs 0.8. Earlier pins keep prior behavior.
+    const src =
+      "?bs 0.7\n" +
+      "fn elapsed() intent: \"pure\" -> number = time?.now()\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("CAP001 does NOT fire for `?.` on ?bs 0.7 — version-gate preserved", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn now() -> number = time?.now()\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------

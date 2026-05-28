@@ -214,7 +214,7 @@ function checkStrict(src: string, allowGenerics: boolean, trackAliases = false):
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
     const fnAliases = aliasesForFn(tokens, decl, decls, aliases);
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases);
+    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases, trackAliases);
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
@@ -302,6 +302,7 @@ function scanBody(
   inner: FnDecl[],
   decls: FnDecl[],
   aliases: Map<string, string> = new Map(),
+  acceptOptionalChain = false,
 ): { direct: Map<string, DirectUse>; callNames: Set<string> } {
   const direct = new Map<string, DirectUse>();
   const callNames = new Set<string>();
@@ -316,10 +317,10 @@ function scanBody(
     const next = tokens[nextIdx];
 
     // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
-    // Also accept optional chaining (`?.`) so `time?.now()` is not bypassed.
+    // Optional chaining (`?.`) is also accepted from ?bs 0.8 (acceptOptionalChain).
     const canonical = aliases.get(tok.text) ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
-    if (cap && ((next?.kind === "punct" && next.text === ".") || next?.kind === "questionDot")) {
+    if (cap && ((next?.kind === "punct" && next.text === ".") || (acceptOptionalChain && next?.kind === "questionDot"))) {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
