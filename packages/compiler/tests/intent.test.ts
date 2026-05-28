@@ -284,6 +284,40 @@ describe("INT002 — pure intent violated in body (?bs 0.7+)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// INT002 — optional-chaining bypass (?bs 0.8+)
+// ---------------------------------------------------------------------------
+
+describe("INT002 — optional-chaining bypass (?bs 0.8)", () => {
+  it("fires INT002 when pure fn body calls time?.now() at ?bs 0.8", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "pure" -> number = time?.now()\n`;
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("fires INT002 when pure fn body calls random?.next() at ?bs 0.8", () => {
+    const src = `?bs 0.8\nfn roll() intent: "pure" -> number = random?.next()\n`;
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("does NOT fire INT002 for time?.now() below ?bs 0.8 (not yet detected)", () => {
+    const src = `?bs 0.7\nfn stamp() intent: "pure" -> number = time?.now()\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT002 message renders '?.' when optional chaining is the access operator", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "pure" -> number = time?.now()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT002");
+      expect(d.message).toContain("time?.now");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // INT003 — idempotent intent vs non-idempotent capability in uses {}
 // ---------------------------------------------------------------------------
 
@@ -424,6 +458,29 @@ describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)
   it("does NOT fire INT004 on pre-0.7 pins", () => {
     const src = `?bs 0.1\nfn stamp() intent: "idempotent" -> number = time.now()\n`;
     expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT004 when idempotent fn body calls time?.now() at ?bs 0.8", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "idempotent" -> number = time?.now()\n`;
+    expect(() => t(src)).toThrow(/INT004/);
+  });
+
+  it("does NOT fire INT004 for time?.now() below ?bs 0.8 (not yet detected)", () => {
+    const src = `?bs 0.7\nfn stamp() intent: "idempotent" -> number = time?.now()\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT004 message renders '?.' when optional chaining is the access operator", () => {
+    const src = `?bs 0.8\nfn stamp() intent: "idempotent" -> number = time?.now()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT004");
+      expect(d.message).toContain("time?.now");
+    }
   });
 });
 

@@ -73,7 +73,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, diagnostics);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
     }
   }
 
@@ -137,7 +137,7 @@ function checkPureClaim(
   // INT002: intent claims "pure", uses {} is empty (and reads/writes are
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls);
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, undefined, checksReadsWrites);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -152,7 +152,7 @@ function checkPureClaim(
       end: intentStart + decl.intent!.length + 2,
       message:
         `fn '${decl.name}' declares intent: "pure" but body directly calls ` +
-        `'${bodyUse.namespace}.${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
+        `'${bodyUse.namespace}${bodyUse.accessOp}${bodyUse.member}' which requires capability '${bodyUse.capability}' — ` +
         `pure functions may not consume external resources`,
       rule: entry.rule,
       idiom: entry.idiom,
@@ -182,6 +182,7 @@ function checkIdempotentClaim(
   src: string,
   tokens: Token[],
   allDecls: FnDecl[],
+  checksReadsWrites: boolean,
   diagnostics: Diagnostic[],
 ): void {
   // INT003: header-level — uses { } declares a non-idempotent capability.
@@ -221,7 +222,7 @@ function checkIdempotentClaim(
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
   const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, (ns) =>
-    NON_IDEMPOTENT.has(ns),
+    NON_IDEMPOTENT.has(ns), checksReadsWrites,
   );
   if (bodyUse) {
     const entry = getErrorCode("INT004")!;
@@ -238,7 +239,7 @@ function checkIdempotentClaim(
       end: intentStart + decl.intent!.length + 2,
       message:
         `fn '${decl.name}' declares intent: "idempotent" but body directly calls ` +
-        `'${bodyUse.namespace}.${bodyUse.member}' which produces a different value on each call — ` +
+        `'${bodyUse.namespace}${bodyUse.accessOp}${bodyUse.member}' which produces a different value on each call — ` +
         `idempotent functions must be safe to retry with the same result`,
       rule: entry.rule,
       idiom: entry.idiom,
@@ -260,7 +261,8 @@ function findFirstCapabilityUse(
   fn: FnDecl,
   allDecls: FnDecl[],
   filter?: (namespace: string) => boolean,
-): { capability: string; namespace: string; member: string } | null {
+  checkOptionalChaining = false,
+): { capability: string; namespace: string; member: string; accessOp: string } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
@@ -275,9 +277,11 @@ function findFirstCapabilityUse(
     if (filter && !filter(tok.text)) continue;
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
-    if (next?.kind !== "punct" || next.text !== ".") continue;
+    const isDot = next?.kind === "punct" && next.text === ".";
+    const isOptChain = checkOptionalChaining && next?.kind === "questionDot";
+    if (!isDot && !isOptChain) continue;
     const member = nextIdent(tokens, j) ?? "…";
-    return { capability: cap, namespace: tok.text, member };
+    return { capability: cap, namespace: tok.text, member, accessOp: isDot ? "." : "?." };
   }
   return null;
 }
