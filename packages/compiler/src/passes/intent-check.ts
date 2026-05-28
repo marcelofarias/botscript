@@ -49,7 +49,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
-import { collectStdlibAliases, fnBodyLocalNames, fnParamNames } from "./_alias.js";
+import { aliasesForFn, collectStdlibAliases } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
@@ -141,10 +141,7 @@ function checkPureClaim(
   // INT002: intent claims "pure", uses {} is empty (and reads/writes are
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
-  const paramNs = fnParamNames(tokens, decl);
-  const localNs = fnBodyLocalNames(tokens, decl);
-  const shadows2 = paramNs.size === 0 && localNs.size === 0 ? null : new Set([...paramNs, ...localNs]);
-  const declAliases = shadows2 === null ? aliases : new Map([...aliases].filter(([k]) => !shadows2.has(k)));
+  const declAliases = aliasesForFn(tokens, decl, allDecls, aliases);
   const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, checksReadsWrites);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
@@ -230,10 +227,7 @@ function checkIdempotentClaim(
 
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
-  const paramNs4 = fnParamNames(tokens, decl);
-  const localNs4 = fnBodyLocalNames(tokens, decl);
-  const shadows4 = paramNs4.size === 0 && localNs4.size === 0 ? null : new Set([...paramNs4, ...localNs4]);
-  const declAliases4 = shadows4 === null ? aliases : new Map([...aliases].filter(([k]) => !shadows4.has(k)));
+  const declAliases4 = aliasesForFn(tokens, decl, allDecls, aliases);
   const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases4, (ns) =>
     NON_IDEMPOTENT.has(ns), checksReadsWrites,
   );

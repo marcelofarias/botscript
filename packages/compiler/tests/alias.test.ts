@@ -180,15 +180,13 @@ describe("stdlib alias tracking — intent-check (?bs 0.8)", () => {
     expect(() => t(src)).toThrow(/INT002/);
   });
 
-  it("INT002 does not fire when aliased call is to an idempotent-compatible capability", () => {
-    // `net` capability via alias — pure still fires, but this confirms the
-    // alias of `http` is correctly resolved to `net` (same check applies).
+  it("INT001 fires when fn with aliased net capability also declares pure intent (header conflict)", () => {
+    // `net` capability via alias — alias is resolved to `net`, but INT001
+    // fires because of the pure + uses { net } header conflict, not INT002.
     const src =
       "?bs 0.8\n" +
       "const h = http\n" +
       "fn fetch(url: string) uses { net } intent: \"pure\" -> string = h.get(url)\n";
-    // INT001 fires: pure + uses { net }. But this is NOT about alias — it's
-    // the header conflict. We just confirm it throws.
     expect(() => t(src)).toThrow(/INT001/);
   });
 
