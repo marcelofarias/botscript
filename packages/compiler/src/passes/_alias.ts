@@ -239,14 +239,16 @@ export function collectAliasWarningCandidates(
       const closeTok = tokens[closeIdx];
       if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
         // Non-trivial paren: e.g. `const t = (time.now)` — emit ALI001.
-        if (closeTok) {
-          candidates.push({
-            name: nameTok.text,
-            stdlibName: innerTok.text,
-            start: constStart,
-            end: closeTok.end,
-          });
-        }
+        // Span to the matching `)` for the outer `(` (rawRhsTok.matchedAt)
+        // so the diagnostic covers the whole parenthesized expression.
+        const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
+        const diagEnd = matchedClose?.end ?? closeTok?.end ?? rawRhsTok.end;
+        candidates.push({
+          name: nameTok.text,
+          stdlibName: innerTok.text,
+          start: constStart,
+          end: diagEnd,
+        });
         continue;
       }
       stdlibName = innerTok.text;

@@ -123,6 +123,18 @@ goes behind a new pin.
   `intent: "pure"` alongside a non-empty `reads { }` or `writes { }` clause.
   Pure functions have no read/write dependencies, same way they have no
   capabilities.
+- **Module-level stdlib alias tracking** (`_alias.ts`) — a direct top-level
+  `const t = time` binding makes `t.now()` equivalent to `time.now()` for all
+  static checks (CAP001/CAP002, INT002/INT004, UNS005). Only trivial direct
+  bindings are tracked; non-trivial RHS forms stay on the canonical-name tripwire.
+- **ALI001** (warning) — fires when a module-level `const <name> = <stdlib>`
+  binding has the stdlib namespace ident as the first RHS token but in a
+  non-trivial form (member access, operator, call, parenthesized non-trivial
+  form) that static alias tracking cannot follow. Non-blocking; tells the author
+  why `name.member()` won't be seen as a stdlib call by static checks.
+- **ALI002** (warning) — fires when `const x = <ident>` and `<ident>` is a
+  tracked stdlib alias. Chain aliases (`const t = time; const x = t`) are not
+  tracked; ALI002 makes that explicit so authors aren't silently surprised.
 
 ### Compat
 - `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`
