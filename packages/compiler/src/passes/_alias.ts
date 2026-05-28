@@ -190,15 +190,20 @@ export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
     }
 
     // Note: `<`/`>` are emitted as `operator` tokens by the lexer, not `open`/`close`.
-    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "{")) ||
+    // `[`/`]` are `open`/`close` tokens and appear in array type annotations.
+    // `>>`/`>>>` are single operator tokens that close multiple generic levels.
+    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "{" || tok.text === "[")) ||
         (tok.kind === "operator" && tok.text === "<")) {
       depth++;
     } else if (tok.kind === "close" && tok.text === ")") {
       depth--;
       if (depth === 0) break;
-    } else if ((tok.kind === "close" && tok.text === "}") ||
-               (tok.kind === "operator" && tok.text === ">")) {
-      if (depth > 0) depth--;
+    } else if (
+      (tok.kind === "close" && (tok.text === "}" || tok.text === "]")) ||
+      (tok.kind === "operator" && (tok.text === ">" || tok.text === ">>" || tok.text === ">>>"))
+    ) {
+      const closes = tok.kind === "operator" ? tok.text.length : 1;
+      depth = Math.max(0, depth - closes);
     } else if (depth === 1 && tok.kind === "ident") {
       const next = nextNonTrivia(tokens, i + 1, end);
       if (next && next.kind === "punct" && next.text === ":") {
