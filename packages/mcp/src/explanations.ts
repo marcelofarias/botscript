@@ -52,8 +52,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "clause. Under ?bs 0.2 this is a direct-only check; under ?bs 0.3 the compiler also " +
       "propagates capabilities transitively across calls to other fns in the same file, " +
       "and the diagnostic names the path: `loadOne -> doFetch -> http.get`.\n\n" +
-      "Module-level aliasing (`const t = time; t.now()`) is undetected at 0.3–0.7 — the rule " +
-      "is: 'the canonical names are tripwires.' From ?bs 0.8 a direct top-level binding " +
+      "Module-level aliasing (`const t = time; t.now()`) is undetected pre-0.8 — the rule " +
+      "is: the canonical names are tripwires. From ?bs 0.8 a direct top-level binding " +
       "`const t = time` is tracked: `t.now()` resolves to `time.now()` and the diagnostic names " +
       "both (`'t' is an alias for 'time'`). Non-trivial RHS forms (member access, calls, " +
       "ternaries) and block-scoped aliases inside fn bodies stay on the tripwire. Cross-module " +

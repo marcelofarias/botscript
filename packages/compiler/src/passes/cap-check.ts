@@ -78,6 +78,8 @@ interface DirectUse {
   /** Set when `namespace` is a module-level alias; names the canonical stdlib namespace. */
   aliasFor?: string;
   member: string;
+  /** The member-access operator as it appears in source: '.' or '?.'. */
+  accessOp: "." | "?.";
   line: number;
   column: number;
   /** Source offset of the namespace token (UTF-16 code units, inclusive). */
@@ -320,7 +322,9 @@ function scanBody(
     // Optional chaining (`?.`) is also accepted from ?bs 0.8 (acceptOptionalChain).
     const canonical = aliases.get(tok.text) ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
-    if (cap && ((next?.kind === "punct" && next.text === ".") || (acceptOptionalChain && next?.kind === "questionDot"))) {
+    const isDot = next?.kind === "punct" && next.text === ".";
+    const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
+    if (cap && (isDot || isOptChain)) {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
@@ -328,6 +332,7 @@ function scanBody(
           capability: cap,
           namespace: tok.text,
           member: memberName,
+          accessOp: isDot ? "." : "?.",
           line,
           column,
           start: tok.start,
@@ -426,7 +431,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
       : "";
   const message = isTransitive
     ? `fn '${rec.decl.name}' transitively consumes capability '${repCap}' via ${pathStr}, but uses clause is { ${granted} }${tail}`
-    : `fn '${rec.decl.name}' calls '${leafUse.namespace}.${leafUse.member}'${aliasNote} which requires capability '${repCap}', but uses clause is { ${granted} }${tail}`;
+    : `fn '${rec.decl.name}' calls '${leafUse.namespace}${leafUse.accessOp}${leafUse.member}'${aliasNote} which requires capability '${repCap}', but uses clause is { ${granted} }${tail}`;
 
   const diagnostic: Diagnostic = {
     code: "CAP001",
@@ -437,7 +442,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
     start,
     end,
     message,
-    rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}.…')`}`,
+    rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}${leafUse.accessOp}…')`}`,
     idiom: entry.idiom,
     rewrite: `fn ${rec.decl.name}(...) uses { ${proposed} } -> ...`,
   };
@@ -483,8 +488,8 @@ function renderPath(path: Path): string {
   parts.push(cur.fnName);
   const leafLabel =
     cur.use.aliasFor
-      ? `${cur.use.namespace}.${cur.use.member} ('${cur.use.namespace}' is an alias for '${cur.use.aliasFor}')`
-      : `${cur.use.namespace}.${cur.use.member}`;
+      ? `${cur.use.namespace}${cur.use.accessOp}${cur.use.member} ('${cur.use.namespace}' is an alias for '${cur.use.aliasFor}')`
+      : `${cur.use.namespace}${cur.use.accessOp}${cur.use.member}`;
   parts.push(leafLabel);
   return parts.join(" -> ");
 }
