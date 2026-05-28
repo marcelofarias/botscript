@@ -390,6 +390,9 @@ export function aliasesForFn(
  * Scans tokens from `fn.tokenStart` to `fn.bodyTokenStart` (exclusive), finds
  * the outer `(…)` parameter list, and collects idents at depth 1 that are
  * immediately followed by `:`.
+ *
+ * Depth tracking includes `{` / `}` so that object/record type annotations
+ * (e.g. `opts: { x: number }`) don't contribute inner idents as param names.
  */
 export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
   const names = new Set<string>();
@@ -406,13 +409,15 @@ export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
       continue;
     }
 
-    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "<")) ||
+    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "<" || tok.text === "{")) ||
         (tok.kind === "punct" && tok.text === "<")) {
       depth++;
-    } else if ((tok.kind === "close" && (tok.text === ")" || tok.text === ">")) ||
-               (tok.kind === "punct" && tok.text === ">")) {
+    } else if (tok.kind === "close" && tok.text === ")") {
       depth--;
       if (depth === 0) break;
+    } else if ((tok.kind === "close" && (tok.text === "}" || tok.text === ">")) ||
+               (tok.kind === "punct" && tok.text === ">")) {
+      if (depth > 0) depth--;
     } else if (depth === 1 && tok.kind === "ident") {
       const next = nextNonTrivia(tokens, i + 1, end);
       if (next && next.kind === "punct" && next.text === ":") {
@@ -434,18 +439,32 @@ function nextNonTrivia(tokens: Token[], from: number, end: number): Token | unde
 }
 
 /**
- * Return the set of names bound by `const <name> = ...` declarations anywhere
- * in `fn`'s body. These locally-bound names shadow any module-level alias.
+ * Return the set of names bound by `const <name> = ...` declarations in
+ * `fn`'s immediate body. Tokens inside nested fn bodies are excluded — a
+ * `const` binding in an inner fn only shadows at that inner scope, not here.
  *
- * Scans body tokens (from `fn.bodyTokenStart` to `fn.tokenEnd`) and collects
- * every ident that immediately follows a `const` keyword, at any nesting depth.
+ * `nestedFns` should be the list of fn declarations whose token ranges fall
+ * entirely within `fn`'s range. When empty (default), no ranges are excluded.
  */
-export function fnBodyLocalNames(tokens: Token[], fn: FnDecl): Set<string> {
+export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[] = []): Set<string> {
   const names = new Set<string>();
   const start = fn.bodyTokenStart ?? fn.tokenStart;
   const end = fn.tokenEnd;
 
+  // Sort nested fns by start so we can advance a cursor rather than re-scan.
+  const sorted = [...nestedFns].sort((a, b) => a.tokenStart - b.tokenStart);
+  const open: FnDecl[] = [];
+  let nextNested = 0;
+
   for (let i = start; i < end; i++) {
+    // Maintain cursor: pop fns whose range has passed, push fns that have started.
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextNested < sorted.length && sorted[nextNested]!.tokenStart <= i) {
+      open.push(sorted[nextNested]!);
+      nextNested++;
+    }
+    if (open.length > 0) continue; // inside a nested fn — skip
+
     const tok = tokens[i];
     if (!tok) continue;
     if (tok.kind !== "ident" || tok.text !== "const") continue;
@@ -457,4 +476,42 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl): Set<string> {
   }
 
   return names;
+}
+
+/**
+ * Build a per-fn alias map that accounts for local shadowing.
+ *
+ * Filters `moduleAliases` to remove entries whose alias name is shadowed by
+ * a parameter or local `const` binding in `fn`. Also adds a sentinel entry
+ * for any canonical stdlib name that is locally bound (e.g. `const time = …`
+ * inside the fn body), so that direct `time.member` references are not
+ * mistakenly treated as capability calls.
+ *
+ * Nested fn ranges are computed from `allDecls` to avoid collecting shadows
+ * from inner fn bodies that don't affect the outer fn's scope.
+ */
+export function aliasesForFn(
+  tokens: Token[],
+  fn: FnDecl,
+  allDecls: FnDecl[],
+  moduleAliases: Map<string, string>,
+): Map<string, string> {
+  const nestedFns = allDecls.filter(
+    (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
+  );
+  const paramNs = fnParamNames(tokens, fn);
+  const localNs = fnBodyLocalNames(tokens, fn, nestedFns);
+  const shadows = new Set([...paramNs, ...localNs]);
+  if (shadows.size === 0) return moduleAliases;
+
+  const result = new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
+  // If a canonical stdlib name is shadowed (e.g. `const time = …`), a direct
+  // `time.member` reference should not be treated as a capability use.
+  // Map it to a sentinel value that STDLIB_TO_CAP will not recognise.
+  for (const shadow of shadows) {
+    if (STDLIB_NAMES.has(shadow)) {
+      result.set(shadow, "__local__");
+    }
+  }
+  return result;
 }
