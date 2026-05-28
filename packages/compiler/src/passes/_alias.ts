@@ -652,9 +652,13 @@ function nextNonTrivia(tokens: Token[], from: number, end: number): Token | unde
 }
 
 /**
- * Return the set of names bound by `const <name> = ...` declarations in
+ * Return the set of names bound by `const`/`let`/`var` declarations in
  * `fn`'s immediate body. Tokens inside nested fn bodies are excluded — a
- * `const` binding in an inner fn only shadows at that inner scope, not here.
+ * binding in an inner fn only shadows at that inner scope, not here.
+ *
+ * Handles simple bindings (`const t = ...`) and destructuring patterns
+ * (`const { a, b: c } = ...`, `const [a, b] = ...`) so that any local
+ * identifier that could shadow a module-level alias is captured.
  *
  * `nestedFns` should be the list of fn declarations whose token ranges fall
  * entirely within `fn`'s range. When empty (default), no ranges are excluded.
@@ -680,15 +684,82 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
 
     const tok = tokens[i];
     if (!tok) continue;
-    if (tok.kind !== "ident" || tok.text !== "const") continue;
+    if (tok.kind !== "ident") continue;
+    if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
+
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
-    if (nameTok && nameTok.kind === "ident") {
+    if (!nameTok) continue;
+
+    if (nameTok.kind === "ident") {
+      // Simple binding: `const x = ...`
       names.add(nameTok.text);
+    } else if (nameTok.kind === "open" && (nameTok.text === "{" || nameTok.text === "[")) {
+      // Destructuring pattern: collect bound names from `{ ... }` or `[ ... ]`.
+      collectDestructuredNames(tokens, nameIdx, end, names);
     }
   }
 
   return names;
+}
+
+/**
+ * Scan a destructuring pattern starting at the opening `{` or `[` token and
+ * add all locally-bound identifier names to `out`.
+ *
+ * For object patterns: `{ a, b: c, d = x }` → `a`, `c`, `d`
+ *   (after `:`, the next ident is the local name; otherwise the ident itself is)
+ * For array patterns: `[ a, b ]` → `a`, `b`
+ *
+ * Only the outermost pattern is scanned (nested patterns are uncommon for
+ * stdlib-alias shadowing and skipped for simplicity).
+ */
+function collectDestructuredNames(tokens: Token[], openIdx: number, end: number, out: Set<string>): void {
+  const openTok = tokens[openIdx];
+  if (!openTok) return;
+  const isObject = openTok.text === "{";
+  const closeChar = isObject ? "}" : "]";
+  let depth = 1;
+
+  let i = openIdx + 1;
+  while (i < end && depth > 0) {
+    const t = tokens[i];
+    if (!t) { i++; continue; }
+
+    // Track depth for nested destructuring.
+    if (t.kind === "open" && (t.text === "{" || t.text === "[")) { depth++; i++; continue; }
+    if (t.kind === "close" && (t.text === "}" || t.text === "]")) {
+      depth--;
+      i++;
+      continue;
+    }
+    if (depth > 1) { i++; continue; } // inside nested pattern — skip
+
+    if (t.kind !== "ident") { i++; continue; }
+
+    if (isObject) {
+      // In an object pattern, peek at the next significant token.
+      // If it's `:`, this ident is a key — the binding name follows the colon.
+      // If it's `,`/`}`/`=`, this ident is the binding name.
+      const peekIdx = nextSignificant(tokens, i + 1);
+      const peek = tokens[peekIdx];
+      if (peek?.kind === "punct" && peek.text === ":") {
+        // `key: localName` — advance past `:` and collect the next ident.
+        const localIdx = nextSignificant(tokens, peekIdx + 1);
+        const local = tokens[localIdx];
+        if (local?.kind === "ident") out.add(local.text);
+        i = localIdx + 1;
+      } else {
+        // `shorthand` or `shorthand = default` — the ident is the binding.
+        out.add(t.text);
+        i++;
+      }
+    } else {
+      // Array pattern: each ident is a binding.
+      out.add(t.text);
+      i++;
+    }
+  }
 }
 
 /**
