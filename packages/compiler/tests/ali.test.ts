@@ -327,4 +327,33 @@ describe("ALI002: fires on alias-of-alias chains", () => {
     expect(warn.idiom).toBeTruthy();
     expect(warn.rewrite).toBeTruthy();
   });
+
+  it("ALI002 fires for type-annotated chain alias `const x: any = t`", () => {
+    // `const x: any = t` where `t` is a tracked stdlib alias must still warn.
+    // The type annotation should not let the chain slip past ALI002.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x: any = t\n" +
+      "fn now() uses { time } -> number = t.now()\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("x");
+    expect(warns[0]!.message).toContain("t");
+  });
+
+  it("ALI002 fires for parenthesized chain alias `const x = (t)`", () => {
+    // `const x = (t)` where `t` is a tracked stdlib alias must warn.
+    // Trivial paren grouping is the same form as the direct binding.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x = (t)\n" +
+      "fn now() uses { time } -> number = t.now()\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("x");
+  });
 });

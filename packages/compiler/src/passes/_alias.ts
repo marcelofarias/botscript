@@ -361,21 +361,66 @@ export function collectChainAliasWarningCandidates(
     const nameTok = tokens[nameIdx];
     if (!nameTok || nameTok.kind !== "ident") continue;
 
-    // Only a direct `const x = <ident>` form — no type annotation, no complex RHS.
+    // Accept `const x = <alias>`, `const x: T = <alias>`, and `const x = (<alias>)`.
+    // Mirrors the same forms accepted by collectStdlibAliases for consistency.
     const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
     const afterNameTok = tokens[afterNameIdx];
-    if (!afterNameTok || afterNameTok.kind !== "eq") continue;
+    let eqIdx = -1;
+    if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
+      // Type-annotated: skip to the `=` at nesting depth 0.
+      // Note: `<`/`>` are `operator` tokens in the lexer, not `open`/`close`.
+      let typeDepth = 0;
+      for (let j = afterNameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if ((t.kind === "open" && t.text === "(") || (t.kind === "operator" && t.text === "<")) {
+          typeDepth++;
+        } else if ((t.kind === "close" && t.text === ")") || (t.kind === "operator" && t.text === ">")) {
+          if (typeDepth > 0) typeDepth--;
+        } else if (t.kind === "eq" && typeDepth === 0) {
+          eqIdx = j;
+          break;
+        }
+      }
+    } else if (afterNameTok && afterNameTok.kind === "eq") {
+      eqIdx = afterNameIdx;
+    }
+    if (eqIdx === -1) continue;
 
-    const rhsIdx = nextSignificant(tokens, afterNameIdx + 1);
-    const rhsTok = tokens[rhsIdx];
-    if (!rhsTok || rhsTok.kind !== "ident") continue;
+    const rawRhsIdx = nextSignificant(tokens, eqIdx + 1);
+    const rawRhsTok = tokens[rawRhsIdx];
+    if (!rawRhsTok) continue;
+
+    let rhsTok: Token;
+    let rhsCharEnd: number; // character offset for diagnostic `end`
+    let rhsTokenEnd: number; // token index for end-of-statement check
+
+    if (rawRhsTok.kind === "ident") {
+      rhsTok = rawRhsTok;
+      rhsCharEnd = rawRhsTok.end;
+      rhsTokenEnd = rawRhsIdx + 1;
+    } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
+      // Trivial grouping: `const x = (t)` — same as the direct form.
+      const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
+      const innerTok = tokens[innerIdx];
+      if (!innerTok || innerTok.kind !== "ident") continue;
+      const closeIdx = nextSignificant(tokens, innerIdx + 1);
+      const closeTok = tokens[closeIdx];
+      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") continue;
+      rhsTok = innerTok;
+      rhsCharEnd = closeTok.end;
+      rhsTokenEnd = closeIdx + 1;
+    } else {
+      continue;
+    }
 
     // The RHS must be a tracked alias (not a stdlib name directly).
     const stdlibName = aliases.get(rhsTok.text);
     if (!stdlibName) continue;
 
-    // Confirm end-of-statement after the RHS ident.
-    let afterIdx = rhsIdx + 1;
+    // Confirm end-of-statement after the RHS.
+    let afterIdx = rhsTokenEnd;
     while (
       afterIdx < tokens.length &&
       (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
@@ -396,7 +441,7 @@ export function collectChainAliasWarningCandidates(
       aliasName: rhsTok.text,
       stdlibName,
       start: constStart,
-      end: rhsTok.end,
+      end: rhsCharEnd,
     });
   }
 
