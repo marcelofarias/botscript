@@ -356,4 +356,18 @@ describe("ALI002: fires on alias-of-alias chains", () => {
     expect(warns.length).toBeGreaterThanOrEqual(1);
     expect(warns[0]!.message).toContain("x");
   });
+
+  it("ALI002 does NOT fire on `const x = time` when `const time = time` is in the file", () => {
+    // `const time = time` is a no-op binding whose alias name is itself a stdlib
+    // canonical name. collectStdlibAliases must skip it so it doesn't pollute the
+    // alias map, and ALI002 must not fire on a legitimate direct binding `const x = time`.
+    const src =
+      "?bs 0.8\n" +
+      "const time = time\n" +
+      "const x = time\n" +
+      "fn now() uses { time } -> number = x.now()\n";
+    const result = transform(src);
+    const ali002 = result.warnings.filter((w) => w.code === "ALI002");
+    expect(ali002).toHaveLength(0);
+  });
 });
