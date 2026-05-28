@@ -120,6 +120,15 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     const warns = result.warnings.filter((w) => w.code === "ALI001");
     expect(warns).toHaveLength(0);
   });
+
+  it("does not fire for parenthesized ternary starting with non-stdlib (const t = (flag ? time : null))", () => {
+    // The paren wraps an expression whose first token is a non-stdlib ident.
+    // ALI001 must NOT fire — only deeper-nested grouping like ((time)).now is flagged.
+    const src = "?bs 0.8\nconst t = (flag ? time : null)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

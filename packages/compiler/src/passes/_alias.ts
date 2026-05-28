@@ -237,20 +237,22 @@ export function collectAliasWarningCandidates(
       const innerTok = tokens[innerIdx];
       if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
         // The first significant token inside the paren is not a bare stdlib ident.
-        // It could be nested parens (`((time)).now`) or something else. Scan the
-        // entire paren content for any stdlib ident — if found, it's a non-trivial
-        // form with a stdlib namespace inside, so emit ALI001.
-        const matchedCloseIdx = rawRhsTok.matchedAt;
-        if (matchedCloseIdx !== undefined) {
-          const nestedStdlib = findFirstStdlibInRange(tokens, rawRhsIdx + 1, matchedCloseIdx);
-          if (nestedStdlib) {
-            const matchedClose = tokens[matchedCloseIdx];
-            candidates.push({
-              name: nameTok.text,
-              stdlibName: nestedStdlib,
-              start: constStart,
-              end: matchedClose?.end ?? rawRhsTok.end,
-            });
+        // Only emit ALI001 for deeper nesting like `((time)).now` — where the
+        // content itself starts with another `(`. Other forms (e.g. `(flag ? time
+        // : null)`) do not start with a stdlib namespace and are unrelated.
+        if (innerTok?.kind === "open" && innerTok.text === "(") {
+          const matchedCloseIdx = rawRhsTok.matchedAt;
+          if (matchedCloseIdx !== undefined) {
+            const nestedStdlib = findFirstStdlibInRange(tokens, rawRhsIdx + 1, matchedCloseIdx);
+            if (nestedStdlib) {
+              const matchedClose = tokens[matchedCloseIdx];
+              candidates.push({
+                name: nameTok.text,
+                stdlibName: nestedStdlib,
+                start: constStart,
+                end: matchedClose?.end ?? rawRhsTok.end,
+              });
+            }
           }
         }
         continue;
