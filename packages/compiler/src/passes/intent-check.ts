@@ -272,7 +272,7 @@ function findFirstCapabilityUse(
   aliases: Map<string, string> = new Map(),
   filter?: (namespace: string) => boolean,
   acceptOptionalChain = false,
-): { capability: string; namespace: string; member: string; accessOp: string } | null {
+): { capability: string; namespace: string; member: string; accessOp: "." | "?." } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,

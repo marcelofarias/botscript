@@ -68,8 +68,8 @@ export class CapabilityCheckError extends BotscriptError {
 }
 
 /**
- * One direct stdlib usage inside a fn body. We keep one per (cap, namespace)
- * pair so the diagnostic can point at the actual offending source location.
+ * One direct stdlib usage inside a fn body. We keep one per capability
+ * so the diagnostic can point at the actual offending source location.
  */
 interface DirectUse {
   capability: string;

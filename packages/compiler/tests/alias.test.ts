@@ -381,4 +381,61 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
       "}\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("local let inside fn body named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f() -> number {\n" +
+      "  let t = \"hello\"\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("local var inside fn body named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f() -> number {\n" +
+      "  var t = \"hello\"\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("object destructuring binding named same as module alias does NOT trigger false CAP001", () => {
+    // `const { t } = obj` — `t` is a local binding, not the `time` alias.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(obj: any) -> number {\n" +
+      "  const { t } = obj\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("object destructuring rename binding (`key: local`) named same as module alias does NOT trigger false CAP001", () => {
+    // `const { foo: t } = obj` — local `t` shadows the `time` alias.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(obj: any) -> number {\n" +
+      "  const { foo: t } = obj\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("array destructuring binding named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(arr: any) -> number {\n" +
+      "  const [t] = arr\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });
