@@ -57,6 +57,25 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.8\nconst t = time\nconst x = time\n",
     },
   },
+  ALI003: {
+    code: "ALI003",
+    title: "stdlib namespace destructuring — extracted member references are not tracked",
+    body:
+      "ALI003 is a **warning** (non-blocking) that fires when a module-level `const` " +
+      "object-destructuring pattern extracts members from a stdlib namespace: " +
+      "`const { now } = time`.\n\n" +
+      "Extracted member references lose their namespace context at the call site. " +
+      "`now()` is just an ordinary function call — the `time` tripwire never fires, so " +
+      "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), and " +
+      "UNS005 all miss it. The bypass is invisible and silent.\n\n" +
+      "**What to do:** use a direct namespace binding (`const t = time`) and call " +
+      "`t.now()` instead, or reference the canonical namespace directly (`time.now()`).\n\n" +
+      "ALI003 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.8\nconst { now } = time\n",
+      passes: "?bs 0.8\nconst t = time\n",
+    },
+  },
   BS001: {
     code: "BS001",
     title: "Malformed `?bs` directive",

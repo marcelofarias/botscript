@@ -60,6 +60,24 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after — direct binding; x is tracked\n" +
       "const x = time\n",
   },
+  ALI003: {
+    code: "ALI003",
+    title: "stdlib namespace destructuring — extracted member references are not tracked",
+    rule:
+      "object-destructuring a stdlib namespace (`const { now } = time`) produces bare ident references " +
+      "that no static check follows — capability checks (CAP001/CAP002), body-level intent checks " +
+      "(INT002/INT004), and UNS005 will not see the extracted member as a `time` reference; " +
+      "use a direct namespace binding or the canonical name directly",
+    idiom: "use a direct binding (`const t = time`) and call `t.now()` rather than destructuring `time`",
+    rewrite:
+      "// option A — direct namespace binding:\nconst t = time\n// ... then call t.now() instead of now()\n\n" +
+      "// option B — use the canonical namespace directly:\n// call time.now() instead of destructuring",
+    example:
+      "// before — destructuring; now() is not tracked; ALI003 fires\n" +
+      "const { now } = time\n\n" +
+      "// after — direct binding; t.now() is tracked\n" +
+      "const t = time\n",
+  },
   CAP001: {
     code: "CAP001",
     title: "function calls a stdlib namespace whose capability is not declared",

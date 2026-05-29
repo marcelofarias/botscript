@@ -47,6 +47,7 @@ describe("botscript-mcp explanations", () => {
     expect(KNOWN_CODES).toEqual([
       "ALI001",
       "ALI002",
+      "ALI003",
       "BS001",
       "BS002",
       "CAP001",

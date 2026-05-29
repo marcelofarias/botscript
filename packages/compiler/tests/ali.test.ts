@@ -433,3 +433,96 @@ describe("ALI002: fires on alias-of-alias chains", () => {
     expect(warns).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ALI003: stdlib namespace destructuring
+// ---------------------------------------------------------------------------
+
+describe("ALI003 — stdlib namespace destructuring (?bs 0.8)", () => {
+  it("ALI003 fires for `const { now } = time`", () => {
+    const src = "?bs 0.8\nconst { now } = time\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("ALI003 fires for `const { get, post } = http`", () => {
+    const src = "?bs 0.8\nconst { get, post } = http\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("http");
+  });
+
+  it("ALI003 fires for `const { next } = random`", () => {
+    const src = "?bs 0.8\nconst { next } = random\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("ALI003 does NOT fire below ?bs 0.8", () => {
+    const src = "?bs 0.7\nconst { now } = time\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI003 does NOT fire for plain namespace alias `const t = time`", () => {
+    const src = "?bs 0.8\nconst t = time\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI003 does NOT fire for array destructuring `const [a, b] = someArray`", () => {
+    const src = "?bs 0.8\nconst [a, b] = someArray\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI003 does NOT fire for object destructuring from a non-stdlib ident", () => {
+    const src = "?bs 0.8\nconst { x } = myObj\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI003 does NOT fire when destructuring is inside a fn body", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn f() -> number {\n" +
+      "  const { now } = time\n" +
+      "  return now()\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI003 warning has correct code, severity, and message fields", () => {
+    const src = "?bs 0.8\nconst { now } = time\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI003");
+    expect(warn).toBeDefined();
+    expect(warn!.severity).toBe("warning");
+    expect(warn!.message).toContain("time");
+    expect(warn!.rule).toBeTruthy();
+    expect(warn!.idiom).toBeTruthy();
+    expect(warn!.rewrite).toBeTruthy();
+  });
+
+  it("ALI003 and ALI001 can co-fire in the same file", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const { now } = time\n" +
+      "const t = time.method\n";
+    const result = transform(src);
+    const ali003 = result.warnings.filter((w) => w.code === "ALI003");
+    const ali001 = result.warnings.filter((w) => w.code === "ALI001");
+    expect(ali003.length).toBeGreaterThanOrEqual(1);
+    expect(ali001.length).toBeGreaterThanOrEqual(1);
+  });
+});

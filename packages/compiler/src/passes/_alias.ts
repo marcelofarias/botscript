@@ -329,6 +329,78 @@ export function collectAliasWarningCandidates(
 }
 
 /**
+ * Collect module-level `const { … } = <stdlib_namespace>` destructuring bindings.
+ *
+ * These are ALI003 candidates — extracting method references from a stdlib
+ * namespace produces idents that no static check follows. `const { now } = time`
+ * means `now()` is called without a receiver, so the `time` tripwire never fires
+ * (CAP001, INT002, UNS005 all miss it).
+ *
+ * Only object-destructuring `const { … } = <stdlib>` is flagged; array
+ * destructuring `const [a, b] = someArray` is not a stdlib bypass and is ignored.
+ * Bindings inside fn bodies are excluded via brace-depth tracking.
+ */
+export function collectDestructuringWarningCandidates(
+  tokens: Token[],
+): Array<{ stdlibName: string; start: number; end: number }> {
+  const candidates: Array<{ stdlibName: string; start: number; end: number }> = [];
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+
+    const constStart = tok.start;
+
+    // Next significant token must be `{` (object destructuring pattern).
+    const patternOpenIdx = nextSignificant(tokens, i + 1);
+    const patternOpenTok = tokens[patternOpenIdx];
+    if (!patternOpenTok || patternOpenTok.kind !== "open" || patternOpenTok.text !== "{") continue;
+
+    // Skip to the matching `}` of the destructuring pattern.
+    const matchedCloseIdx = (patternOpenTok as { matchedAt?: number }).matchedAt;
+    if (matchedCloseIdx === undefined) continue;
+    const closeTok = tokens[matchedCloseIdx];
+    if (!closeTok) continue;
+
+    // Next significant after `}` must be `=`.
+    const afterCloseIdx = nextSignificant(tokens, matchedCloseIdx + 1);
+    const afterCloseTok = tokens[afterCloseIdx];
+    if (!afterCloseTok || afterCloseTok.kind !== "eq") continue;
+
+    // RHS must be a direct stdlib namespace ident.
+    const rhsIdx = nextSignificant(tokens, afterCloseIdx + 1);
+    const rhsTok = tokens[rhsIdx];
+    if (!rhsTok || rhsTok.kind !== "ident" || !STDLIB_NAMES.has(rhsTok.text)) continue;
+
+    // Confirm clean end-of-statement after the stdlib ident.
+    let afterIdx = rhsIdx + 1;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
+    const isClean =
+      !afterRhs ||
+      afterRhs.kind === "newline" ||
+      afterRhs.kind === "lineComment" ||
+      afterRhs.kind === "eof" ||
+      (afterRhs.kind === "punct" && afterRhs.text === ";");
+    if (!isClean) continue;
+
+    candidates.push({ stdlibName: rhsTok.text, start: constStart, end: rhsTok.end });
+  }
+
+  return candidates;
+}
+
+/**
  * Collect module-level `const x = <alias>` bindings where `<alias>` is already
  * in the tracked alias map (i.e., alias-of-alias chains).
  *

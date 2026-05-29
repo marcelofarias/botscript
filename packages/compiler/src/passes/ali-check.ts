@@ -1,5 +1,5 @@
 /**
- * ALI001 / ALI002: stdlib namespace alias warnings.
+ * ALI001 / ALI002 / ALI003: stdlib namespace alias warnings.
  *
  * ALI001 — stdlib namespace aliased via a non-trivial expression (member access,
  *           operator, call). The alias is silently ignored by static checks.
@@ -8,7 +8,10 @@
  *           alias for a stdlib namespace. Chain aliases are not transitively tracked;
  *           `x.now()` won't be caught by cap/intent/uns checks.
  *
- * Both are warning-level (non-blocking). Gated on ?bs 0.8.
+ * ALI003 — stdlib namespace destructuring: `const { now } = time` extracts member
+ *           references that no static check follows. Non-blocking.
+ *
+ * All three are warning-level (non-blocking). Gated on ?bs 0.8.
  */
 
 import { type Diagnostic } from "../diagnostics.js";
@@ -20,6 +23,7 @@ import {
   collectStdlibAliases,
   collectAliasWarningCandidates,
   collectChainAliasWarningCandidates,
+  collectDestructuringWarningCandidates,
 } from "./_alias.js";
 
 export function passAliCheck(src: string, version: VersionInfo): { code: string; warnings: Diagnostic[] } {
@@ -74,6 +78,30 @@ export function passAliCheck(src: string, version: VersionInfo): { code: string;
           `'${c.name}' is an alias of tracked alias '${c.aliasName}' (→ '${c.stdlibName}') — ` +
           `chain aliases are not tracked; use a direct binding ` +
           `(\`const ${c.name} = ${c.stdlibName}\`) or the canonical namespace name directly`,
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite: entry.rewrite,
+      });
+    }
+  }
+
+  // ALI003: stdlib namespace destructuring (`const { now } = time`).
+  const ali003Candidates = collectDestructuringWarningCandidates(tokens);
+  if (ali003Candidates.length > 0) {
+    const entry = getErrorCode("ALI003")!;
+    for (const c of ali003Candidates) {
+      const loc = locationOf(src, c.start);
+      warnings.push({
+        code: "ALI003",
+        severity: "warning" as const,
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: c.start,
+        end: c.end,
+        message:
+          `destructuring '${c.stdlibName}' extracts member references that static checks won't follow — ` +
+          `use a direct binding (\`const t = ${c.stdlibName}\`) or the canonical namespace name directly`,
         rule: entry.rule,
         idiom: entry.idiom,
         rewrite: entry.rewrite,
