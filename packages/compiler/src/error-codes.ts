@@ -26,23 +26,6 @@ export interface ErrorCodeEntry {
 }
 
 const E: Record<string, ErrorCodeEntry> = {
-  ALI002: {
-    code: "ALI002",
-    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
-    rule:
-      "chain aliases are not transitively tracked: `const t = time` adds `t` to the alias map, " +
-      "but `const x = t` does NOT add `x` — capability checks (CAP001/CAP002), body-level intent checks " +
-      "(INT002/INT004), and UNS005 will not see `x` as a `time` reference",
-    idiom: "use a direct binding (`const x = time`) to alias a stdlib namespace; avoid aliasing existing aliases",
-    rewrite:
-      "// option A — bind directly to the stdlib namespace:\nconst x = time\n\n" +
-      "// option B — remove x and use the canonical name (or the tracked alias) directly",
-    example:
-      "// before — chain alias; x is not tracked; ALI002 fires\n" +
-      "const t = time\nconst x = t\n\n" +
-      "// after — direct binding; x is tracked\n" +
-      "const x = time\n",
-  },
   ALI001: {
     code: "ALI001",
     title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
@@ -59,6 +42,23 @@ const E: Record<string, ErrorCodeEntry> = {
       "const t = time.now\n\n" +
       "// after — direct binding; alias is tracked\n" +
       "const t = time\n",
+  },
+  ALI002: {
+    code: "ALI002",
+    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
+    rule:
+      "chain aliases are not transitively tracked: `const t = time` adds `t` to the alias map, " +
+      "but `const x = t` does NOT add `x` — capability checks (CAP001/CAP002), body-level intent checks " +
+      "(INT002/INT004), and UNS005 will not see `x` as a `time` reference",
+    idiom: "use a direct binding (`const x = time`) to alias a stdlib namespace; avoid aliasing existing aliases",
+    rewrite:
+      "// option A — bind directly to the stdlib namespace:\nconst x = time\n\n" +
+      "// option B — remove x and use the canonical name (or the tracked alias) directly",
+    example:
+      "// before — chain alias; x is not tracked; ALI002 fires\n" +
+      "const t = time\nconst x = t\n\n" +
+      "// after — direct binding; x is tracked\n" +
+      "const x = time\n",
   },
   CAP001: {
     code: "CAP001",

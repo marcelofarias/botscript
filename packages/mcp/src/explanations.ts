@@ -17,25 +17,6 @@ export interface Explanation {
 }
 
 export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
-  ALI002: {
-    code: "ALI002",
-    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
-    body:
-      "ALI002 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
-      "names an existing tracked stdlib alias on the RHS: `const x = t` where `t` is itself " +
-      "an alias for a stdlib namespace (e.g. `const t = time`).\n\n" +
-      "Chain aliases are intentionally not tracked from `?bs 0.8`. Only direct bindings " +
-      "(`const x = time`) are followed. As a result, `x.now()` will not be detected by " +
-      "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), or UNS005 — " +
-      "the one-liner alias bypass is reintroduced.\n\n" +
-      "**What to do:** bind directly to the stdlib namespace (`const x = time`) or reference " +
-      "the canonical name directly wherever you intended to use `x`.\n\n" +
-      "ALI002 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
-    example: {
-      fails: "?bs 0.8\nconst t = time\nconst x = t\n",
-      passes: "?bs 0.8\nconst t = time\nconst x = time\n",
-    },
-  },
   ALI001: {
     code: "ALI001",
     title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
@@ -55,6 +36,25 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails: "?bs 0.8\nconst t = time.now\n",
       passes: "?bs 0.8\nconst t = time\n",
+    },
+  },
+  ALI002: {
+    code: "ALI002",
+    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
+    body:
+      "ALI002 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
+      "names an existing tracked stdlib alias on the RHS: `const x = t` where `t` is itself " +
+      "an alias for a stdlib namespace (e.g. `const t = time`).\n\n" +
+      "Chain aliases are intentionally not tracked from `?bs 0.8`. Only direct bindings " +
+      "(`const x = time`) are followed. As a result, `x.now()` will not be detected by " +
+      "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), or UNS005 — " +
+      "the one-liner alias bypass is reintroduced.\n\n" +
+      "**What to do:** bind directly to the stdlib namespace (`const x = time`) or reference " +
+      "the canonical name directly wherever you intended to use `x`.\n\n" +
+      "ALI002 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.8\nconst t = time\nconst x = t\n",
+      passes: "?bs 0.8\nconst t = time\nconst x = time\n",
     },
   },
   BS001: {
