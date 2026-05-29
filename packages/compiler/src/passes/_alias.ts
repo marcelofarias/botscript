@@ -701,8 +701,8 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
  *   (after `:`, the next ident is the local name; otherwise the ident itself is)
  * For array patterns: `[ a, b ]` → `a`, `b`
  *
- * Only the outermost pattern is scanned (nested patterns are uncommon for
- * stdlib-alias shadowing and skipped for simplicity).
+ * Nested patterns (`{ key: { nested } }`, `{ key: [a, b] }`) are handled
+ * recursively so all bound names at every depth are collected.
  */
 function collectDestructuredNames(tokens: Token[], openIdx: number, end: number, out: Set<string>): void {
   const openTok = tokens[openIdx];
@@ -715,29 +715,46 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
     const t = tokens[i];
     if (!t) { i++; continue; }
 
-    // Track depth for nested destructuring.
     if (t.kind === "open" && (t.text === "{" || t.text === "[")) { depth++; i++; continue; }
     if (t.kind === "close" && (t.text === "}" || t.text === "]")) {
       depth--;
       i++;
       continue;
     }
-    if (depth > 1) { i++; continue; } // inside nested pattern — skip
+    if (depth > 1) { i++; continue; }
 
     if (t.kind !== "ident") { i++; continue; }
 
     if (isObject) {
       // In an object pattern, peek at the next significant token.
-      // If it's `:`, this ident is a key — the binding name follows the colon.
+      // If it's `:`, this ident is a key — the binding name (or nested pattern) follows.
       // If it's `,`/`}`/`=`, this ident is the binding name.
       const peekIdx = nextSignificant(tokens, i + 1);
       const peek = tokens[peekIdx];
       if (peek?.kind === "punct" && peek.text === ":") {
-        // `key: localName` — advance past `:` and collect the next ident.
         const localIdx = nextSignificant(tokens, peekIdx + 1);
         const local = tokens[localIdx];
-        if (local?.kind === "ident") out.add(local.text);
-        i = localIdx + 1;
+        if (local?.kind === "ident") {
+          // `key: localName` — simple rename binding.
+          out.add(local.text);
+          i = localIdx + 1;
+        } else if (local && local.kind === "open" && (local.text === "{" || local.text === "[")) {
+          // `key: { nested }` or `key: [nested]` — recurse into the nested pattern.
+          collectDestructuredNames(tokens, localIdx, end, out);
+          // Advance past the nested pattern in the outer depth tracking.
+          let nd = 1;
+          let j = localIdx + 1;
+          while (j < end && nd > 0) {
+            const jt = tokens[j];
+            if (!jt) { j++; continue; }
+            if (jt.kind === "open" && (jt.text === "{" || jt.text === "[")) nd++;
+            if (jt.kind === "close" && (jt.text === "}" || jt.text === "]")) nd--;
+            j++;
+          }
+          i = j;
+        } else {
+          i = localIdx !== undefined ? localIdx + 1 : peekIdx + 1;
+        }
       } else {
         // `shorthand` or `shorthand = default` — the ident is the binding.
         out.add(t.text);
@@ -755,10 +772,10 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
  * Build a per-fn alias map that accounts for local shadowing.
  *
  * Filters `moduleAliases` to remove entries whose alias name is shadowed by
- * a parameter or local `const`/`let`/`var` binding in `fn`. Canonical stdlib
- * names (`time`, `random`, etc.) are never in `moduleAliases` — they are
- * tripwires at every call site, even when locally rebound, so no sentinel is
- * needed.
+ * a parameter, local `const`/`let`/`var` binding, or nested fn declaration
+ * in `fn`. Canonical stdlib names (`time`, `random`, etc.) are never in
+ * `moduleAliases` — they are tripwires at every call site, even when locally
+ * rebound, so no sentinel is needed.
  *
  * Nested fn ranges are computed from `allDecls` to avoid collecting shadows
  * from inner fn bodies that don't affect the outer fn's scope.
@@ -772,9 +789,16 @@ export function aliasesForFn(
   const nestedFns = allDecls.filter(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
   );
+  // Direct-child nested fn names (not contained within another nested fn)
+  // introduce local bindings in `fn`'s scope that shadow module aliases.
+  const directNestedFnNames = nestedFns
+    .filter((g) => !nestedFns.some(
+      (other) => other !== g && other.tokenStart < g.tokenStart && other.tokenEnd > g.tokenEnd,
+    ))
+    .map((g) => g.name);
   const paramNs = fnParamNames(tokens, fn);
   const localNs = fnBodyLocalNames(tokens, fn, nestedFns);
-  const shadows = new Set([...paramNs, ...localNs]);
+  const shadows = new Set([...paramNs, ...localNs, ...directNestedFnNames]);
   if (shadows.size === 0) return moduleAliases;
 
   // Only filter module-level alias entries whose key is locally shadowed.

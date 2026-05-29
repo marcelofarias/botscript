@@ -461,9 +461,6 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
   });
 
   it("canonical stdlib name locally rebound does NOT suppress capability detection (tripwire rule)", () => {
-    // `const time = …` inside a fn body does NOT suppress the `time` tripwire.
-    // Canonical stdlib names remain capability tripwires regardless of local rebinding.
-    // Alias shadowing only suppresses module-level alias entries (e.g. `t → time`).
     const src =
       "?bs 0.8\n" +
       "fn f() -> number {\n" +
@@ -474,25 +471,16 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
   });
 
   it("canonical stdlib name as alias key at module scope is NOT collected (tripwire preserved)", () => {
-    // `const time = random` at module scope must NOT be recorded as `time → random`.
-    // Canonical names are unconditional tripwires — they must never be overridden.
-    // If recorded, `time.now()` would be mis-attributed as a `random` call and
-    // CAP001 would fail to fire (capability bypass).
     const src =
       "?bs 0.8\n" +
       "const time = random\n" +
       "fn f() capabilities: [\"time\"] -> number {\n" +
       "  return time.now()\n" +
       "}\n";
-    expect(() => t(src)).not.toThrow();
+    expect(() => t(src)).toThrow(/CAP001/);
   });
 
   it("const inside nested if-block does NOT suppress CAP001 for t.now() in outer fn scope", () => {
-    // `const t = time` at module level; fn body has `if (...) { const t = \"x\" }`
-    // inside a nested block. `t` in that nested block is block-scoped — it does
-    // NOT shadow the module-level alias for uses of `t` outside that block.
-    // fnBodyLocalNames must NOT add `t` from the nested block (braceDepth > 1),
-    // so `t.now()` in the outer fn body still resolves to `time.now()` → CAP001.
     const src =
       "?bs 0.8\n" +
       "const t = time\n" +
@@ -501,5 +489,27 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
       "  return t.now()\n" +
       "}\n";
     expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("nested destructuring binding named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(obj: any) -> number {\n" +
+      "  const { foo: { t } } = obj\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("nested fn declaration named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn outer() -> number {\n" +
+      "  fn t() -> number = 42\n" +
+      "  return t()\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
   });
 });

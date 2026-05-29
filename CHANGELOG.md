@@ -132,6 +132,14 @@ goes behind a new pin.
   non-trivial form (member access, operator, call, parenthesized non-trivial
   form) that static alias tracking cannot follow. Non-blocking; tells the author
   why `name.member()` won't be seen as a stdlib call by static checks.
+- **ALI002** (warning) — fires when a module-level `const x = <ident>` binding
+  creates an alias of an already-tracked stdlib alias (alias-of-alias chain).
+  Chain aliases are not tracked; warns the author to use a direct binding or the
+  canonical namespace name instead.
+- **ALI003** (warning) — fires when `const { … } = <stdlib_namespace>` appears
+  at module scope. Destructuring extracts member references that escape all
+  static checks (CAP001, INT002, UNS005); warns the author to use a direct
+  binding or the canonical namespace name.
 
 ### Compat
 - `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`
