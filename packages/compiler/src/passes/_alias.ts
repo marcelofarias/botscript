@@ -237,20 +237,30 @@ export function collectAliasWarningCandidates(
       const innerTok = tokens[innerIdx];
       if (innerTok?.kind === "open" && innerTok.text === "(") {
         // Doubly-nested paren: `const t = ((…))`.
-        // If the content trivially wraps a bare stdlib ident — e.g. `((time))` —
-        // treat it as tracked and fall through to the end-of-statement check.
-        // Non-trivial content (e.g. `((time)).now`, `((time + 1))`) fires ALI001.
+        // Only treat as trivially tracked when the inner `(stdlib)` is the
+        // ENTIRE content of the outer parens — i.e. the token immediately
+        // after the inner close paren IS the outer close paren.
+        // `((time) + 1)` and `((time).now)` must NOT be treated as tracked.
         const trivialStdlib = isParenWrappedStdlib(tokens, innerIdx);
-        if (trivialStdlib) {
-          // Trivially nested: treat as tracked. Set stdlibName and afterStdlibIdx
-          // to pass through the end-of-statement gate below.
+        const innerCloseIdx = (innerTok as { matchedAt?: number }).matchedAt;
+        const outerCloseIdx = rawRhsTok.matchedAt;
+        const innerFillsOuter =
+          trivialStdlib !== null &&
+          innerCloseIdx !== undefined &&
+          outerCloseIdx !== undefined &&
+          nextSignificant(tokens, innerCloseIdx + 1) === outerCloseIdx;
+        if (innerFillsOuter && trivialStdlib) {
+          // `((time))` — trivially tracked, fall through to end-of-statement check.
           stdlibName = trivialStdlib;
-          afterStdlibIdx = (rawRhsTok.matchedAt ?? rawRhsIdx) + 1;
-          // Fall through to end-of-statement check.
+          afterStdlibIdx = outerCloseIdx + 1;
         } else {
-          // Recursively check only the LEADING token after unwrapping parens.
-          // `((flag ? time : null))` must NOT warn — `flag` leads, not stdlib.
-          const nestedStdlib = leadingStdlibAfterParens(tokens, innerIdx);
+          // Non-trivial outer parens. Determine the stdlib name to report:
+          //   - `trivialStdlib` is set when inner `(stdlib)` exists but outer has more
+          //     content: `((time) + 1)`, `((time).now)`.
+          //   - Otherwise fall back to leadingStdlibAfterParens for deeply nested forms.
+          //   - `((flag ? time : null))` has no stdlib leading → no warning.
+          const nestedStdlib =
+            trivialStdlib ?? leadingStdlibAfterParens(tokens, innerIdx);
           if (nestedStdlib) {
             const matchedCloseIdx = rawRhsTok.matchedAt;
             const matchedClose = matchedCloseIdx !== undefined ? tokens[matchedCloseIdx] : undefined;
@@ -541,209 +551,6 @@ export function aliasesForFn(
   return new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
 }
 
-/**
- * Return the set of parameter names declared in `fn`'s signature.
- * These names shadow any module-level alias, so alias resolution must skip them.
- *
- * Scans tokens from `fn.tokenStart` to `fn.bodyTokenStart` (exclusive), finds
- * the outer `(…)` parameter list, and collects idents at depth 1 that are
- * immediately followed by `:`.
- *
- * Depth tracking includes `{` / `}` so that object/record type annotations
- * (e.g. `opts: { x: number }`) don't contribute inner idents as param names.
- */
-export function fnParamNames(tokens: Token[], fn: FnDecl): Set<string> {
-  const names = new Set<string>();
-  const end = fn.bodyTokenStart ?? fn.tokenEnd;
-  let depth = 0;
-
-  for (let i = fn.tokenStart; i < end; i++) {
-    const tok = tokens[i];
-    if (!tok) continue;
-    if (tok.kind === "whitespace" || tok.kind === "newline" || tok.kind === "lineComment" || tok.kind === "blockComment") continue;
-
-    if (depth === 0) {
-      if (tok.kind === "open" && tok.text === "(") depth = 1;
-      continue;
-    }
-
-    if ((tok.kind === "open" && (tok.text === "(" || tok.text === "<" || tok.text === "{")) ||
-        (tok.kind === "punct" && tok.text === "<")) {
-      depth++;
-    } else if (tok.kind === "close" && tok.text === ")") {
-      depth--;
-      if (depth === 0) break;
-    } else if ((tok.kind === "close" && (tok.text === "}" || tok.text === ">")) ||
-               (tok.kind === "punct" && tok.text === ">")) {
-      if (depth > 0) depth--;
-    } else if (depth === 1 && tok.kind === "ident") {
-      const next = nextNonTrivia(tokens, i + 1, end);
-      if (next && next.kind === "punct" && next.text === ":") {
-        names.add(tok.text);
-      }
-    }
-  }
-
-  return names;
-}
-
-function nextNonTrivia(tokens: Token[], from: number, end: number): Token | undefined {
-  for (let i = from; i < end; i++) {
-    const t = tokens[i];
-    if (!t) return undefined;
-    if (t.kind !== "whitespace" && t.kind !== "newline" && t.kind !== "lineComment" && t.kind !== "blockComment") return t;
-  }
-  return undefined;
-}
-
-/**
- * Return the set of names bound by `const`/`let`/`var` declarations in
- * `fn`'s immediate body. Tokens inside nested fn bodies are excluded — a
- * binding in an inner fn only shadows at that inner scope, not here.
- *
- * Handles simple bindings (`const t = ...`) and destructuring patterns
- * (`const { a, b: c } = ...`, `const [a, b] = ...`) so that any local
- * identifier that could shadow a module-level alias is captured.
- *
- * `nestedFns` should be the list of fn declarations whose token ranges fall
- * entirely within `fn`'s range. When empty (default), no ranges are excluded.
- */
-export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[] = []): Set<string> {
-  const names = new Set<string>();
-  const start = fn.bodyTokenStart ?? fn.tokenStart;
-  const end = fn.tokenEnd;
-
-  // Sort nested fns by start so we can advance a cursor rather than re-scan.
-  const sorted = [...nestedFns].sort((a, b) => a.tokenStart - b.tokenStart);
-  const open: FnDecl[] = [];
-  let nextNested = 0;
-
-  for (let i = start; i < end; i++) {
-    // Maintain cursor: pop fns whose range has passed, push fns that have started.
-    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
-    while (nextNested < sorted.length && sorted[nextNested]!.tokenStart <= i) {
-      open.push(sorted[nextNested]!);
-      nextNested++;
-    }
-    if (open.length > 0) continue; // inside a nested fn — skip
-
-    const tok = tokens[i];
-    if (!tok) continue;
-    if (tok.kind !== "ident") continue;
-    if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
-
-    const nameIdx = nextSignificant(tokens, i + 1);
-    const nameTok = tokens[nameIdx];
-    if (!nameTok) continue;
-
-    if (nameTok.kind === "ident") {
-      // Simple binding: `const x = ...`
-      names.add(nameTok.text);
-    } else if (nameTok.kind === "open" && (nameTok.text === "{" || nameTok.text === "[")) {
-      // Destructuring pattern: collect bound names from `{ ... }` or `[ ... ]`.
-      collectDestructuredNames(tokens, nameIdx, end, names);
-    }
-  }
-
-  return names;
-}
-
-/**
- * Scan a destructuring pattern starting at the opening `{` or `[` token and
- * add all locally-bound identifier names to `out`.
- *
- * For object patterns: `{ a, b: c, d = x }` → `a`, `c`, `d`
- *   (after `:`, the next ident is the local name; otherwise the ident itself is)
- * For array patterns: `[ a, b ]` → `a`, `b`
- *
- * Only the outermost pattern is scanned (nested patterns are uncommon for
- * stdlib-alias shadowing and skipped for simplicity).
- */
-function collectDestructuredNames(tokens: Token[], openIdx: number, end: number, out: Set<string>): void {
-  const openTok = tokens[openIdx];
-  if (!openTok) return;
-  const isObject = openTok.text === "{";
-  const closeChar = isObject ? "}" : "]";
-  let depth = 1;
-
-  let i = openIdx + 1;
-  while (i < end && depth > 0) {
-    const t = tokens[i];
-    if (!t) { i++; continue; }
-
-    // Track depth for nested destructuring.
-    if (t.kind === "open" && (t.text === "{" || t.text === "[")) { depth++; i++; continue; }
-    if (t.kind === "close" && (t.text === "}" || t.text === "]")) {
-      depth--;
-      i++;
-      continue;
-    }
-    if (depth > 1) { i++; continue; } // inside nested pattern — skip
-
-    if (t.kind !== "ident") { i++; continue; }
-
-    if (isObject) {
-      // In an object pattern, peek at the next significant token.
-      // If it's `:`, this ident is a key — the binding name follows the colon.
-      // If it's `,`/`}`/`=`, this ident is the binding name.
-      const peekIdx = nextSignificant(tokens, i + 1);
-      const peek = tokens[peekIdx];
-      if (peek?.kind === "punct" && peek.text === ":") {
-        // `key: localName` — advance past `:` and collect the next ident.
-        const localIdx = nextSignificant(tokens, peekIdx + 1);
-        const local = tokens[localIdx];
-        if (local?.kind === "ident") out.add(local.text);
-        i = localIdx + 1;
-      } else {
-        // `shorthand` or `shorthand = default` — the ident is the binding.
-        out.add(t.text);
-        i++;
-      }
-    } else {
-      // Array pattern: each ident is a binding.
-      out.add(t.text);
-      i++;
-    }
-  }
-}
-
-/**
- * Build a per-fn alias map that accounts for local shadowing.
- *
- * Filters `moduleAliases` to remove entries whose alias name is shadowed by
- * a parameter or local `const` binding in `fn`. Also adds a sentinel entry
- * for any canonical stdlib name that is locally bound (e.g. `const time = …`
- * inside the fn body), so that direct `time.member` references are not
- * mistakenly treated as capability calls.
- *
- * Nested fn ranges are computed from `allDecls` to avoid collecting shadows
- * from inner fn bodies that don't affect the outer fn's scope.
- */
-export function aliasesForFn(
-  tokens: Token[],
-  fn: FnDecl,
-  allDecls: FnDecl[],
-  moduleAliases: Map<string, string>,
-): Map<string, string> {
-  const nestedFns = allDecls.filter(
-    (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
-  );
-  const paramNs = fnParamNames(tokens, fn);
-  const localNs = fnBodyLocalNames(tokens, fn, nestedFns);
-  const shadows = new Set([...paramNs, ...localNs]);
-  if (shadows.size === 0) return moduleAliases;
-
-  const result = new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
-  // If a canonical stdlib name is shadowed (e.g. `const time = …`), a direct
-  // `time.member` reference should not be treated as a capability use.
-  // Map it to a sentinel value that STDLIB_TO_CAP will not recognise.
-  for (const shadow of shadows) {
-    if (STDLIB_NAMES.has(shadow)) {
-      result.set(shadow, "__local__");
-    }
-  }
-  return result;
-}
 
 /**
  * Return the stdlib name if `openIdx` (`(`) wraps ONLY a bare stdlib ident,

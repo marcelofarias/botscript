@@ -166,6 +166,26 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     expect(warns).toHaveLength(1);
     expect(warns[0]!.message).toContain("time");
   });
+
+  it("DOES fire when inner (stdlib) is followed by more content in outer parens (const t = ((time) + 1))", () => {
+    // Inner `(time)` is trivially tracked, but the outer parens contain more —
+    // `((time) + 1)` must fire ALI001, not be silently treated as tracked.
+    const src = "?bs 0.8\nconst t = ((time) + 1)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("DOES fire when inner (stdlib) is followed by member access in outer parens (const t = ((time).now))", () => {
+    // `((time).now)` — inner parens trivially wrap `time` but outer wraps a
+    // member expression; must fire ALI001.
+    const src = "?bs 0.8\nconst t = ((time).now)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
 });
 
 // ---------------------------------------------------------------------------
