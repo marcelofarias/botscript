@@ -406,16 +406,13 @@ export function collectChainAliasWarningCandidates(
       rhsCharEnd = rawRhsTok.end;
       rhsTokenEnd = rawRhsIdx + 1;
     } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
-      // Trivial grouping: `const x = (t)` — same as the direct form.
-      const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
-      const innerTok = tokens[innerIdx];
-      if (!innerTok || innerTok.kind !== "ident") continue;
-      const closeIdx = nextSignificant(tokens, innerIdx + 1);
-      const closeTok = tokens[closeIdx];
-      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") continue;
-      rhsTok = innerTok;
-      rhsCharEnd = closeTok.end;
-      rhsTokenEnd = closeIdx + 1;
+      // Trivial grouping: `const x = (t)`, `((t))`, `(((t)))`, etc.
+      // Recursively unwrap any depth of paren wrapping around a single ident.
+      const unwrapped = unwrapParenToIdent(tokens, rawRhsIdx);
+      if (!unwrapped) continue;
+      rhsTok = unwrapped.tok;
+      rhsCharEnd = unwrapped.charEnd;
+      rhsTokenEnd = unwrapped.tokenEnd;
     } else {
       continue;
     }
@@ -451,6 +448,40 @@ export function collectChainAliasWarningCandidates(
   }
 
   return candidates;
+}
+
+/**
+ * Recursively unwrap paren groups around a single ident, returning the inner
+ * ident token, its char-end, and the outer close-paren token index + 1.
+ *
+ * Handles `(t)`, `((t))`, `(((t)))` — any depth of trivial paren wrapping
+ * around a single bare ident. Returns null if the content is not a single ident
+ * (e.g. `(t.x)`, `((t + 1))`, `()`).
+ *
+ * `openIdx` must point to an `(` token.
+ */
+function unwrapParenToIdent(
+  tokens: Token[],
+  openIdx: number,
+): { tok: Token & { kind: "ident" }; charEnd: number; tokenEnd: number } | null {
+  const innerIdx = nextSignificant(tokens, openIdx + 1);
+  const innerTok = tokens[innerIdx];
+  if (!innerTok) return null;
+  if (innerTok.kind === "open" && innerTok.text === "(") {
+    // Recursively unwrap another paren level.
+    const inner = unwrapParenToIdent(tokens, innerIdx);
+    if (!inner) return null;
+    const outerCloseIdx = (tokens[openIdx] as { matchedAt?: number }).matchedAt;
+    if (outerCloseIdx === undefined) return null;
+    const outerClose = tokens[outerCloseIdx];
+    if (!outerClose) return null;
+    return { tok: inner.tok, charEnd: outerClose.end, tokenEnd: outerCloseIdx + 1 };
+  }
+  if (innerTok.kind !== "ident") return null;
+  const closeIdx = nextSignificant(tokens, innerIdx + 1);
+  const closeTok = tokens[closeIdx];
+  if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") return null;
+  return { tok: innerTok as Token & { kind: "ident" }, charEnd: closeTok.end, tokenEnd: closeIdx + 1 };
 }
 
 /**

@@ -370,4 +370,43 @@ describe("ALI002: fires on alias-of-alias chains", () => {
     const ali002 = result.warnings.filter((w) => w.code === "ALI002");
     expect(ali002).toHaveLength(0);
   });
+
+  it("ALI002 fires for doubly-parenthesized chain alias `const x = ((t))`", () => {
+    // `const x = ((t))` where `t` is a tracked stdlib alias — double paren wrapping
+    // is trivial and must still be recognized as a chain alias that fires ALI002.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x = ((t))\n" +
+      "fn now() uses { time } -> number = t.now()\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("x");
+    expect(warns[0]!.message).toContain("t");
+  });
+
+  it("ALI002 fires for triply-parenthesized chain alias `const x = (((t)))`", () => {
+    // Triple paren wrapping must also be recursively unwrapped.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x = (((t)))\n" +
+      "fn now() uses { time } -> number = t.now()\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("x");
+  });
+
+  it("ALI002 does NOT fire for `const x = ((nonAlias))`", () => {
+    // `nonAlias` is not a tracked stdlib alias, so even with double parens,
+    // no ALI002 should fire.
+    const src =
+      "?bs 0.8\n" +
+      "const x = ((nonAlias))\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
 });
