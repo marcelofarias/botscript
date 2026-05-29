@@ -303,7 +303,6 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
   const openTok = tokens[openIdx];
   if (!openTok) return;
   const isObject = openTok.text === "{";
-  const closeChar = isObject ? "}" : "]";
   let depth = 1;
 
   let i = openIdx + 1;
