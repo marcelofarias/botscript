@@ -138,6 +138,34 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     const warns = result.warnings.filter((w) => w.code === "ALI001");
     expect(warns).toHaveLength(0);
   });
+
+  it("does NOT fire for trivially double-parenthesized stdlib (const t = ((time)))", () => {
+    // `((time))` is trivially double-grouped — equivalent to `(time)`.
+    // It should be treated as a tracked alias, not an ALI001 warning.
+    const src = "?bs 0.8\nconst t = ((time))\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("DOES fire for doubly-parenthesized member access (const t = ((time.now)))", () => {
+    // `((time.now))` is NOT a trivial grouping — it wraps a member expression.
+    // ALI001 must fire because this is a non-trivial form.
+    const src = "?bs 0.8\nconst t = ((time.now))\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("DOES fire for doubly-parenthesized operator expression (const t = ((time + 1)))", () => {
+    // `((time + 1))` is a non-trivial expression — ALI001 must fire.
+    const src = "?bs 0.8\nconst t = ((time + 1))\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
 });
 
 // ---------------------------------------------------------------------------

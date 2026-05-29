@@ -235,12 +235,19 @@ export function collectAliasWarningCandidates(
       // Only warn when that leading token IS a stdlib namespace (not arbitrary exprs).
       const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
       const innerTok = tokens[innerIdx];
-      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
-        // The first significant token inside the paren is not a bare stdlib ident.
-        // Only emit ALI001 for deeper nesting like `((time)).now` — where the
-        // content itself starts with another `(`. Other forms (e.g. `(flag ? time
-        // : null)`) do not start with a stdlib namespace and are unrelated.
-        if (innerTok?.kind === "open" && innerTok.text === "(") {
+      if (innerTok?.kind === "open" && innerTok.text === "(") {
+        // Doubly-nested paren: `const t = ((…))`.
+        // If the content trivially wraps a bare stdlib ident — e.g. `((time))` —
+        // treat it as tracked and fall through to the end-of-statement check.
+        // Non-trivial content (e.g. `((time)).now`, `((time + 1))`) fires ALI001.
+        const trivialStdlib = isParenWrappedStdlib(tokens, innerIdx);
+        if (trivialStdlib) {
+          // Trivially nested: treat as tracked. Set stdlibName and afterStdlibIdx
+          // to pass through the end-of-statement gate below.
+          stdlibName = trivialStdlib;
+          afterStdlibIdx = (rawRhsTok.matchedAt ?? rawRhsIdx) + 1;
+          // Fall through to end-of-statement check.
+        } else {
           // Recursively check only the LEADING token after unwrapping parens.
           // `((flag ? time : null))` must NOT warn — `flag` leads, not stdlib.
           const nestedStdlib = leadingStdlibAfterParens(tokens, innerIdx);
@@ -254,27 +261,31 @@ export function collectAliasWarningCandidates(
               end: matchedClose?.end ?? rawRhsTok.end,
             });
           }
+          continue;
         }
+      } else if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
+        // First significant token inside the paren is neither a stdlib ident nor
+        // another `(`. Nothing to do here (e.g. `(flag ? time : null)`).
         continue;
+      } else {
+        // innerTok is a bare stdlib ident inside single parens.
+        const closeIdx = nextSignificant(tokens, innerIdx + 1);
+        const closeTok = tokens[closeIdx];
+        if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
+          // Non-trivial paren: e.g. `const t = (time.now)` — emit ALI001.
+          const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
+          const diagEnd = matchedClose?.end ?? closeTok?.end ?? rawRhsTok.end;
+          candidates.push({
+            name: nameTok.text,
+            stdlibName: innerTok.text,
+            start: constStart,
+            end: diagEnd,
+          });
+          continue;
+        }
+        stdlibName = innerTok.text;
+        afterStdlibIdx = closeIdx + 1;
       }
-      const closeIdx = nextSignificant(tokens, innerIdx + 1);
-      const closeTok = tokens[closeIdx];
-      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
-        // Non-trivial paren: e.g. `const t = (time.now)` — emit ALI001.
-        // Span to the matching `)` for the outer `(` (rawRhsTok.matchedAt)
-        // so the diagnostic covers the whole parenthesized expression.
-        const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
-        const diagEnd = matchedClose?.end ?? closeTok?.end ?? rawRhsTok.end;
-        candidates.push({
-          name: nameTok.text,
-          stdlibName: innerTok.text,
-          start: constStart,
-          end: diagEnd,
-        });
-        continue;
-      }
-      stdlibName = innerTok.text;
-      afterStdlibIdx = closeIdx + 1;
     } else {
       continue;
     }
@@ -732,6 +743,30 @@ export function aliasesForFn(
     }
   }
   return result;
+}
+
+/**
+ * Return the stdlib name if `openIdx` (`(`) wraps ONLY a bare stdlib ident,
+ * possibly through multiple paren levels.  Returns null otherwise.
+ *
+ *   (time)         → "time"
+ *   ((time))       → "time"
+ *   (time.now)     → null   (has a continuation after the ident)
+ *   ((flag?time:null)) → null   (leading token is not stdlib)
+ *
+ * `openIdx` must point to an `(` token.
+ */
+function isParenWrappedStdlib(tokens: Token[], openIdx: number): string | null {
+  const innerIdx = nextSignificant(tokens, openIdx + 1);
+  const innerTok = tokens[innerIdx];
+  if (!innerTok) return null;
+  if (innerTok.kind === "open" && innerTok.text === "(") {
+    return isParenWrappedStdlib(tokens, innerIdx);
+  }
+  if (innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) return null;
+  const closeIdx = nextSignificant(tokens, innerIdx + 1);
+  const closeTok = tokens[closeIdx];
+  return closeTok?.kind === "close" && closeTok.text === ")" ? innerTok.text : null;
 }
 
 /**
