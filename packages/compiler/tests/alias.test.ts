@@ -472,4 +472,20 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
       "}\n";
     expect(() => t(src)).toThrow(/CAP001/);
   });
+
+  it("const inside nested if-block does NOT suppress CAP001 for t.now() in outer fn scope", () => {
+    // `const t = time` at module level; fn body has `if (...) { const t = \"x\" }`
+    // inside a nested block. `t` in that nested block is block-scoped — it does
+    // NOT shadow the module-level alias for uses of `t` outside that block.
+    // fnBodyLocalNames must NOT add `t` from the nested block (braceDepth > 1),
+    // so `t.now()` in the outer fn body still resolves to `time.now()` → CAP001.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(flag: boolean) -> number {\n" +
+      "  if (flag) { const t = \"x\" }\n" +
+      "  return t.now()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
 });

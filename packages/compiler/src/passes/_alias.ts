@@ -238,6 +238,14 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
   const open: FnDecl[] = [];
   let nextNested = 0;
 
+  // Track brace depth within the fn body (not counting nested fn bodies, which
+  // are skipped by the `open` cursor above). braceDepth === 1 means we are
+  // directly inside the fn's own `{ }` — i.e. not inside any nested block.
+  // `const`/`let` are block-scoped, so we only collect them at braceDepth === 1
+  // (or 0 for expression-bodied fns that have no outer braces).
+  // `var` is function-scoped, so it is collected at any depth.
+  let braceDepth = 0;
+
   for (let i = start; i < end; i++) {
     // Maintain cursor: pop fns whose range has passed, push fns that have started.
     while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
@@ -249,8 +257,20 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
 
     const tok = tokens[i];
     if (!tok) continue;
+
+    // Track brace depth (only outside nested fns, handled above).
+    if (tok.kind === "open" && tok.text === "{") { braceDepth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { braceDepth--; continue; }
+
     if (tok.kind !== "ident") continue;
     if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
+
+    // `const`/`let` are block-scoped: only shadow at the directly-enclosing
+    // scope (braceDepth === 1, or 0 for expression-bodied fns). Bindings inside
+    // nested blocks (if/for/while/etc.) are block-scoped there, NOT here.
+    // `var` is function-scoped so it shadows regardless of nesting depth.
+    const isBlockScoped = tok.text === "const" || tok.text === "let";
+    if (isBlockScoped && braceDepth > 1) continue;
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
