@@ -241,18 +241,18 @@ export function collectAliasWarningCandidates(
         // content itself starts with another `(`. Other forms (e.g. `(flag ? time
         // : null)`) do not start with a stdlib namespace and are unrelated.
         if (innerTok?.kind === "open" && innerTok.text === "(") {
-          const matchedCloseIdx = rawRhsTok.matchedAt;
-          if (matchedCloseIdx !== undefined) {
-            const nestedStdlib = findFirstStdlibInRange(tokens, rawRhsIdx + 1, matchedCloseIdx);
-            if (nestedStdlib) {
-              const matchedClose = tokens[matchedCloseIdx];
-              candidates.push({
-                name: nameTok.text,
-                stdlibName: nestedStdlib,
-                start: constStart,
-                end: matchedClose?.end ?? rawRhsTok.end,
-              });
-            }
+          // Recursively check only the LEADING token after unwrapping parens.
+          // `((flag ? time : null))` must NOT warn — `flag` leads, not stdlib.
+          const nestedStdlib = leadingStdlibAfterParens(tokens, innerIdx);
+          if (nestedStdlib) {
+            const matchedCloseIdx = rawRhsTok.matchedAt;
+            const matchedClose = matchedCloseIdx !== undefined ? tokens[matchedCloseIdx] : undefined;
+            candidates.push({
+              name: nameTok.text,
+              stdlibName: nestedStdlib,
+              start: constStart,
+              end: matchedClose?.end ?? rawRhsTok.end,
+            });
           }
         }
         continue;
@@ -734,11 +734,22 @@ export function aliasesForFn(
   return result;
 }
 
-/** Scan tokens[from..to) for the first stdlib ident. Returns its name or null. */
-function findFirstStdlibInRange(tokens: Token[], from: number, to: number): string | null {
-  for (let i = from; i < to; i++) {
-    const t = tokens[i];
-    if (t && t.kind === "ident" && STDLIB_NAMES.has(t.text)) return t.text;
+/**
+ * Recursively unwrap leading parentheses and return the stdlib name if the
+ * leading token (after peeling any `(…)` nesting) is a bare stdlib namespace
+ * identifier; otherwise return null.
+ *
+ * `openIdx` must point to an `(` token. Only the LEADING token inside each
+ * paren level is inspected — `((flag ? time : null))` returns null because
+ * after unwrapping one level the leading token is `flag`, not stdlib.
+ */
+function leadingStdlibAfterParens(tokens: Token[], openIdx: number): string | null {
+  const innerIdx = nextSignificant(tokens, openIdx + 1);
+  const innerTok = tokens[innerIdx];
+  if (!innerTok) return null;
+  if (innerTok.kind === "open" && innerTok.text === "(") {
+    return leadingStdlibAfterParens(tokens, innerIdx);
   }
+  if (innerTok.kind === "ident" && STDLIB_NAMES.has(innerTok.text)) return innerTok.text;
   return null;
 }

@@ -129,6 +129,15 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     const warns = result.warnings.filter((w) => w.code === "ALI001");
     expect(warns).toHaveLength(0);
   });
+
+  it("does not fire for doubly-parenthesized ternary where stdlib is not the leading token (const t = ((flag ? time : null)))", () => {
+    // Double-paren wrapping must also check only the LEADING token after unwrapping.
+    // `flag` leads, not `time`, so ALI001 must NOT fire.
+    const src = "?bs 0.8\nconst t = ((flag ? time : null))\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
