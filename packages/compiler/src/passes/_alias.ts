@@ -362,7 +362,8 @@ export function collectChainAliasWarningCandidates(
     if (!nameTok || nameTok.kind !== "ident") continue;
 
     // Accept `const x = <alias>`, `const x: T = <alias>`, and `const x = (<alias>)`.
-    // Mirrors the same forms accepted by collectStdlibAliases for consistency.
+    // Note: paren-unwrapping here accepts any depth via unwrapParenToIdent,
+    // whereas collectStdlibAliases only accepts a single paren level.
     const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
     const afterNameTok = tokens[afterNameIdx];
     let eqIdx = -1;
@@ -471,8 +472,11 @@ function unwrapParenToIdent(
     // Recursively unwrap another paren level.
     const inner = unwrapParenToIdent(tokens, innerIdx);
     if (!inner) return null;
+    // Verify the inner group is the ONLY content of the outer parens:
+    // the next significant token after the inner close must be the outer close.
     const outerCloseIdx = (tokens[openIdx] as { matchedAt?: number }).matchedAt;
     if (outerCloseIdx === undefined) return null;
+    if (nextSignificant(tokens, inner.tokenEnd) !== outerCloseIdx) return null;
     const outerClose = tokens[outerCloseIdx];
     if (!outerClose) return null;
     return { tok: inner.tok, charEnd: outerClose.end, tokenEnd: outerCloseIdx + 1 };

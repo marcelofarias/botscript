@@ -409,4 +409,27 @@ describe("ALI002: fires on alias-of-alias chains", () => {
     const warns = result.warnings.filter((w) => w.code === "ALI002");
     expect(warns).toHaveLength(0);
   });
+
+  it("ALI002 does NOT fire for `const x = ((t) + 1)` — outer parens contain more than the alias", () => {
+    // `((t) + 1)` is not a trivial alias of `t` — the outer parens contain more.
+    // This was a false positive before the unwrapParenToIdent outer-content check.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x = ((t) + 1)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("ALI002 does NOT fire for `const x = ((t).now)` — outer parens contain a member expression", () => {
+    // `((t).now)` is a member expression, not a chain alias.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "const x = ((t).now)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI002");
+    expect(warns).toHaveLength(0);
+  });
 });
