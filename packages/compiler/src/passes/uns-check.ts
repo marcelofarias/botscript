@@ -68,7 +68,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
     }
   }
 
-  const aliases = collectStdlibAliases(tokens, decls);
+  const aliases = collectStdlibAliases(tokens);
   const innerByDecl = computeNesting(decls);
   const diagnostics: Diagnostic[] = [];
 

@@ -195,7 +195,7 @@ function checkStrict(src: string, allowGenerics: boolean, trackAliases = false):
   const decls = program.fns.map((s) => s.decl);
 
   // 2. Collect module-level stdlib aliases for ?bs 0.8+ (e.g. `const t = time`).
-  const aliases = trackAliases ? collectStdlibAliases(tokens, decls) : new Map<string, string>();
+  const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
 
   // 3. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
   //    fns surfaced, two helpers with the same name in different scopes are

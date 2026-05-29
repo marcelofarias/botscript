@@ -278,7 +278,7 @@ describe("stdlib alias tracking — uns-check (?bs 0.9)", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () => {
-  const aliases = (src: string) => collectStdlibAliases(lex(src), []);
+  const aliases = (src: string) => collectStdlibAliases(lex(src));
 
   it("trivial binding is tracked", () => {
     expect(aliases("const t = time\n")).toEqual(new Map([["t", "time"]]));

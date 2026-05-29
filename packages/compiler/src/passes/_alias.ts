@@ -42,7 +42,7 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  * and `.now` is a separate (invalid) expression. The statement-end check here
  * is correct for botscript source.
  */
-export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<string, string> {
+export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
   const aliases = new Map<string, string>();
   let depth = 0;
 
@@ -153,14 +153,6 @@ export function collectStdlibAliases(tokens: Token[], _fnRanges: FnDecl[]): Map<
   }
 
   return aliases;
-}
-
-/**
- * Resolve a token's text through the alias map to its canonical stdlib namespace.
- * Returns the canonical name if `name` is a tracked alias, or `name` itself otherwise.
- */
-export function resolveAlias(name: string, aliases: Map<string, string>): string {
-  return aliases.get(name) ?? name;
 }
 
 /**

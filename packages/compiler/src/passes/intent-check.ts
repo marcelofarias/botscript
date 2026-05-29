@@ -60,7 +60,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const allDecls = program.fns.map((s) => s.decl);
-  const aliases = trackAliases ? collectStdlibAliases(tokens, allDecls) : new Map<string, string>();
+  const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
 
   for (const slot of program.fns) {
