@@ -459,4 +459,17 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
       "fn f(t: string[]) -> number = t.length\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("canonical stdlib name locally rebound does NOT suppress capability detection (tripwire rule)", () => {
+    // `const time = …` inside a fn body does NOT suppress the `time` tripwire.
+    // Canonical stdlib names remain capability tripwires regardless of local rebinding.
+    // Alias shadowing only suppresses module-level alias entries (e.g. `t → time`).
+    const src =
+      "?bs 0.8\n" +
+      "fn f() -> number {\n" +
+      "  const time = 42\n" +
+      "  return time.now()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
 });

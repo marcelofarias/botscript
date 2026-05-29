@@ -331,10 +331,10 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
  * Build a per-fn alias map that accounts for local shadowing.
  *
  * Filters `moduleAliases` to remove entries whose alias name is shadowed by
- * a parameter or local `const` binding in `fn`. Also adds a sentinel entry
- * for any canonical stdlib name that is locally bound (e.g. `const time = …`
- * inside the fn body), so that direct `time.member` references are not
- * mistakenly treated as capability calls.
+ * a parameter or local `const`/`let`/`var` binding in `fn`. Canonical stdlib
+ * names (`time`, `random`, etc.) are never in `moduleAliases` — they are
+ * tripwires at every call site, even when locally rebound, so no sentinel is
+ * needed.
  *
  * Nested fn ranges are computed from `allDecls` to avoid collecting shadows
  * from inner fn bodies that don't affect the outer fn's scope.
@@ -353,14 +353,8 @@ export function aliasesForFn(
   const shadows = new Set([...paramNs, ...localNs]);
   if (shadows.size === 0) return moduleAliases;
 
-  const result = new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
-  // If a canonical stdlib name is shadowed (e.g. `const time = …`), a direct
-  // `time.member` reference should not be treated as a capability use.
-  // Map it to a sentinel value that STDLIB_TO_CAP will not recognise.
-  for (const shadow of shadows) {
-    if (STDLIB_NAMES.has(shadow)) {
-      result.set(shadow, "__local__");
-    }
-  }
-  return result;
+  // Only filter module-level alias entries whose key is locally shadowed.
+  // Canonical stdlib names are not in moduleAliases, so they remain tripwires
+  // in STDLIB_TO_CAP lookups regardless of local rebinding.
+  return new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
 }
