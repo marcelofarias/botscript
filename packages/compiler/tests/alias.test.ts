@@ -473,6 +473,20 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
     expect(() => t(src)).toThrow(/CAP001/);
   });
 
+  it("canonical stdlib name as alias key at module scope is NOT collected (tripwire preserved)", () => {
+    // `const time = random` at module scope must NOT be recorded as `time → random`.
+    // Canonical names are unconditional tripwires — they must never be overridden.
+    // If recorded, `time.now()` would be mis-attributed as a `random` call and
+    // CAP001 would fail to fire (capability bypass).
+    const src =
+      "?bs 0.8\n" +
+      "const time = random\n" +
+      "fn f() capabilities: [\"time\"] -> number {\n" +
+      "  return time.now()\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("const inside nested if-block does NOT suppress CAP001 for t.now() in outer fn scope", () => {
     // `const t = time` at module level; fn body has `if (...) { const t = \"x\" }`
     // inside a nested block. `t` in that nested block is block-scoped — it does

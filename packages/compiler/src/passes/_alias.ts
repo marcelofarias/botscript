@@ -149,6 +149,11 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       continue;
     }
 
+    // Skip if the alias name itself is a canonical stdlib namespace.
+    // Canonical names must remain unconditional tripwires — recording `time → random`
+    // would cause later passes to mis-attribute `time.now()` as a `random` call.
+    if (STDLIB_NAMES.has(nameTok.text)) continue;
+
     aliases.set(nameTok.text, stdlibTok.text);
   }
 
