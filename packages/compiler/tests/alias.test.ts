@@ -471,10 +471,25 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
   });
 
   it("canonical stdlib name as alias key at module scope is NOT collected (tripwire preserved)", () => {
+    // `const time = random` — alias skipped because `time` is a canonical name.
+    // The `time` tripwire still applies: `time.now()` counts as using the `time`
+    // capability. With `capabilities: ["time"]` declared, no CAP001 fires.
     const src =
       "?bs 0.8\n" +
       "const time = random\n" +
       "fn f() capabilities: [\"time\"] -> number {\n" +
+      "  return time.now()\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("canonical stdlib name as alias key — undeclared capability still fires CAP001", () => {
+    // Without declaring any capability, `time.now()` still fires CAP001 via the
+    // canonical `time` tripwire, regardless of the `const time = random` binding.
+    const src =
+      "?bs 0.8\n" +
+      "const time = random\n" +
+      "fn f() -> number {\n" +
       "  return time.now()\n" +
       "}\n";
     expect(() => t(src)).toThrow(/CAP001/);

@@ -525,4 +525,28 @@ describe("ALI003 — stdlib namespace destructuring (?bs 0.8)", () => {
     expect(ali003.length).toBeGreaterThanOrEqual(1);
     expect(ali001.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("ALI003 fires for paren-wrapped RHS `const { now } = (time)`", () => {
+    const src = "?bs 0.8\nconst { now } = (time)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBe(1);
+    expect(warns[0]?.message).toContain("time");
+  });
+
+  it("ALI003 fires for type-annotated destructuring `const { now }: any = time`", () => {
+    const src = "?bs 0.8\nconst { now }: any = time\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBe(1);
+    expect(warns[0]?.message).toContain("time");
+  });
+
+  it("ALI003 fires for type-annotated destructuring with paren-wrapped RHS", () => {
+    const src = "?bs 0.8\nconst { now }: any = (time)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBe(1);
+    expect(warns[0]?.message).toContain("time");
+  });
 });

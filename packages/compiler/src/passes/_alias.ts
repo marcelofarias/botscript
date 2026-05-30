@@ -367,18 +367,53 @@ export function collectDestructuringWarningCandidates(
     const closeTok = tokens[matchedCloseIdx];
     if (!closeTok) continue;
 
-    // Next significant after `}` must be `=`.
+    // Find `=`. If the next significant token after `}` is `:`, skip the type
+    // annotation (same logic as collectStdlibAliases) to find `=` at depth 0.
     const afterCloseIdx = nextSignificant(tokens, matchedCloseIdx + 1);
     const afterCloseTok = tokens[afterCloseIdx];
-    if (!afterCloseTok || afterCloseTok.kind !== "eq") continue;
+    let eqIdx = -1;
+    if (afterCloseTok && afterCloseTok.kind === "eq") {
+      eqIdx = afterCloseIdx;
+    } else if (afterCloseTok && afterCloseTok.kind === "punct" && afterCloseTok.text === ":") {
+      let typeDepth = 0;
+      for (let j = afterCloseIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if (
+          (t.kind === "open" && t.text === "(") ||
+          (t.kind === "operator" && t.text === "<")
+        ) { typeDepth++; }
+        else if (
+          (t.kind === "close" && t.text === ")") ||
+          (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+        ) { typeDepth = Math.max(0, typeDepth - t.text.length); }
+        else if (t.kind === "eq" && typeDepth === 0) { eqIdx = j; break; }
+      }
+    }
+    if (eqIdx === -1) continue;
 
-    // RHS must be a direct stdlib namespace ident.
-    const rhsIdx = nextSignificant(tokens, afterCloseIdx + 1);
-    const rhsTok = tokens[rhsIdx];
-    if (!rhsTok || rhsTok.kind !== "ident" || !STDLIB_NAMES.has(rhsTok.text)) continue;
+    // RHS must be a direct stdlib namespace ident, optionally paren-wrapped.
+    const rawRhsIdx = nextSignificant(tokens, eqIdx + 1);
+    const rawRhsTok = tokens[rawRhsIdx];
+    if (!rawRhsTok) continue;
 
-    // Confirm clean end-of-statement after the stdlib ident.
-    let afterIdx = rhsIdx + 1;
+    let stdlibTok: Token;
+    let rhsTokenEnd: number;
+    if (rawRhsTok.kind === "ident" && STDLIB_NAMES.has(rawRhsTok.text)) {
+      stdlibTok = rawRhsTok;
+      rhsTokenEnd = rawRhsIdx + 1;
+    } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
+      const unwrapped = unwrapParenToIdent(tokens, rawRhsIdx);
+      if (!unwrapped || !STDLIB_NAMES.has(unwrapped.tok.text)) continue;
+      stdlibTok = unwrapped.tok;
+      rhsTokenEnd = unwrapped.tokenEnd;
+    } else {
+      continue;
+    }
+
+    // Confirm clean end-of-statement after the RHS.
+    let afterIdx = rhsTokenEnd;
     while (
       afterIdx < tokens.length &&
       (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
@@ -394,7 +429,7 @@ export function collectDestructuringWarningCandidates(
       (afterRhs.kind === "punct" && afterRhs.text === ";");
     if (!isClean) continue;
 
-    candidates.push({ stdlibName: rhsTok.text, start: constStart, end: rhsTok.end });
+    candidates.push({ stdlibName: stdlibTok.text, start: constStart, end: stdlibTok.end });
   }
 
   return candidates;
