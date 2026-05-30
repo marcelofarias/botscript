@@ -539,6 +539,22 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
     expect(() => t(src)).toThrow(/CAP001/);
   });
 
+  it("const inside nested if-block DOES suppress the alias for uses INSIDE that block — no false CAP001", () => {
+    // `const t = obj` inside the if-block shadows the module alias `const t = time`.
+    // `t.length` inside the block should NOT fire CAP001 — it's the local `t`, not `time`.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(flag: boolean, obj: any) -> number {\n" +
+      "  if (flag) {\n" +
+      "    const t = obj\n" +
+      "    return t.length\n" +
+      "  }\n" +
+      "  return 0\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("nested destructuring binding named same as module alias does NOT trigger false CAP001", () => {
     const src =
       "?bs 0.8\n" +

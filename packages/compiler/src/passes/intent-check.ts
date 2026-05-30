@@ -49,7 +49,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
-import { aliasesForFn, collectStdlibAliases } from "./_alias.js";
+import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
@@ -143,7 +143,10 @@ function checkPureClaim(
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
   const declAliases = aliasesForFn(tokens, decl, allDecls, aliases);
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, acceptOptionalChain);
+  const declBlockShadows = acceptOptionalChain
+    ? blockShadowsForFn(tokens, decl, allDecls, new Set(aliases.keys()))
+    : [];
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, acceptOptionalChain, declBlockShadows);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -229,8 +232,11 @@ function checkIdempotentClaim(
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
   const declAliases4 = aliasesForFn(tokens, decl, allDecls, aliases);
+  const declBlockShadows4 = acceptOptionalChain
+    ? blockShadowsForFn(tokens, decl, allDecls, new Set(aliases.keys()))
+    : [];
   const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases4, (ns) =>
-    NON_IDEMPOTENT.has(ns), acceptOptionalChain,
+    NON_IDEMPOTENT.has(ns), acceptOptionalChain, declBlockShadows4,
   );
   if (bodyUse) {
     const entry = getErrorCode("INT004")!;
@@ -272,6 +278,7 @@ function findFirstCapabilityUse(
   aliases: Map<string, string> = new Map(),
   filter?: (namespace: string) => boolean,
   acceptOptionalChain = false,
+  blockShadows: BlockShadowRange[] = [],
 ): { capability: string; namespace: string; member: string; accessOp: "." | "?." } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
@@ -282,7 +289,10 @@ function findFirstCapabilityUse(
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
-    const canonical = aliases.get(tok.text) ?? tok.text;
+    const aliasCanonical = !isInBlockShadow(tok.text, i, blockShadows)
+      ? aliases.get(tok.text)
+      : undefined;
+    const canonical = aliasCanonical ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
     if (!cap) continue;
     if (filter && !filter(canonical)) continue;

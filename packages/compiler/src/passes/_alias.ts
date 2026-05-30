@@ -755,12 +755,10 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
     if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
 
     // `const`/`let` are block-scoped; `var` is function-scoped.
-    // KNOWN LIMITATION: we collect block-scoped names only at the fn's
-    // immediate scope (braceDepth <= 1). A nested-block binding such as
-    // `if (flag) { const t = "x"; t.length }` will not suppress the module
-    // alias for tokens INSIDE that block — `t.length` may fire a false CAP001.
-    // True scope-aware shadowing requires range tracking, not a flat set.
-    // Filed as a follow-up (issue to track: nested-block alias shadowing).
+    // Only collect block-scoped names at the fn's immediate scope (braceDepth <= 1).
+    // Nested-block bindings (depth > 1) are handled via `blockShadowsForFn`, which
+    // returns per-token ranges so callers can suppress aliases only inside the block
+    // where the local binding lives — not for the entire function.
     const isBlockScoped = tok.text === "const" || tok.text === "let";
     if (isBlockScoped && braceDepth > 1) continue;
 
@@ -904,6 +902,118 @@ export function aliasesForFn(
   return new Map([...moduleAliases].filter(([k]) => !shadows.has(k)));
 }
 
+/**
+ * A const/let binding inside a nested block (depth > 1) that shadows a
+ * module-level alias. Stored as the token-index range of the block that
+ * contains the declaration, so callers can do a per-token check:
+ * "is this alias token inside a range that shadows it?"
+ */
+export interface BlockShadowRange {
+  name: string;
+  /** Token index of the `{` opening the enclosing block. */
+  startIdx: number;
+  /** Token index of the matching `}`. */
+  endIdx: number;
+}
+
+/**
+ * Collect block-scoped const/let declarations inside `fn`'s body that are
+ * nested at brace depth > 1 (i.e., inside an if/for/while block, not at the
+ * fn's immediate scope). Only names that appear in `moduleAliasNames` are
+ * collected — unrelated local bindings are ignored.
+ *
+ * Used alongside `aliasesForFn` to suppress alias resolution per-token:
+ * `aliasesForFn` suppresses module-level aliases that are shadowed
+ * function-wide; `blockShadowsForFn` provides the ranges for shadows that
+ * only apply inside their enclosing nested block.
+ *
+ * Callers use `isInBlockShadow` to test whether a given token is inside any
+ * returned range before treating it as an alias reference.
+ */
+export function blockShadowsForFn(
+  tokens: Token[],
+  fn: FnDecl,
+  allDecls: FnDecl[],
+  moduleAliasNames: ReadonlySet<string>,
+): BlockShadowRange[] {
+  if (moduleAliasNames.size === 0) return [];
+
+  const result: BlockShadowRange[] = [];
+  const nestedFns = allDecls.filter(
+    (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
+  );
+  const sorted = [...nestedFns].sort((a, b) => a.tokenStart - b.tokenStart);
+  const openNestedFns: FnDecl[] = [];
+  let nextNested = 0;
+
+  const start = fn.bodyTokenStart ?? fn.tokenStart;
+  const end = fn.tokenEnd;
+
+  // Stack of enclosing block boundaries (token indices). Pushed on `{`, popped on `}`.
+  const blockStack: Array<{ openIdx: number; closeIdx: number }> = [];
+  let braceDepth = 0;
+
+  for (let i = start; i < end; i++) {
+    // Skip tokens inside nested fn declarations.
+    while (openNestedFns.length > 0 && openNestedFns[openNestedFns.length - 1]!.tokenEnd <= i) {
+      openNestedFns.pop();
+    }
+    while (nextNested < sorted.length && sorted[nextNested]!.tokenStart <= i) {
+      openNestedFns.push(sorted[nextNested]!);
+      nextNested++;
+    }
+    if (openNestedFns.length > 0) continue;
+
+    const tok = tokens[i];
+    if (!tok) continue;
+
+    if (tok.kind === "open" && tok.text === "{") {
+      braceDepth++;
+      const closeIdx = (tok as { matchedAt?: number }).matchedAt;
+      if (closeIdx !== undefined) blockStack.push({ openIdx: i, closeIdx });
+      continue;
+    }
+    if (tok.kind === "close" && tok.text === "}") {
+      braceDepth--;
+      if (blockStack.length > 0 && blockStack[blockStack.length - 1]!.closeIdx === i) {
+        blockStack.pop();
+      }
+      continue;
+    }
+
+    // Only look for const/let at nested block depth (depth > 1 = inside an if/for/etc).
+    if (braceDepth <= 1) continue;
+    if (tok.kind !== "ident" || (tok.text !== "const" && tok.text !== "let")) continue;
+
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+    if (!moduleAliasNames.has(nameTok.text)) continue;
+
+    // Record the enclosing block as the shadow range for this name.
+    const block = blockStack.at(-1);
+    if (block) {
+      result.push({ name: nameTok.text, startIdx: block.openIdx, endIdx: block.closeIdx });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Returns true if `name` at token index `tokenIdx` is suppressed by a
+ * block-level shadow range. Used alongside `aliasesForFn` to provide
+ * accurate per-token alias resolution without full scope-range tracking.
+ */
+export function isInBlockShadow(
+  name: string,
+  tokenIdx: number,
+  ranges: BlockShadowRange[],
+): boolean {
+  return ranges.some(
+    (r) => r.name === name && r.startIdx <= tokenIdx && tokenIdx <= r.endIdx,
+  );
+}
 
 /**
  * Return the stdlib name if `openIdx` (`(`) wraps ONLY a bare stdlib ident,

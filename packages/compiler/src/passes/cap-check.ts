@@ -33,7 +33,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
-import { aliasesForFn, collectStdlibAliases } from "./_alias.js";
+import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
@@ -216,7 +216,10 @@ function checkStrict(src: string, allowGenerics: boolean, trackAliases = false):
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
     const fnAliases = aliasesForFn(tokens, decl, decls, aliases);
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases, trackAliases);
+    const fnBlockShadows = trackAliases
+      ? blockShadowsForFn(tokens, decl, decls, new Set(aliases.keys()))
+      : [];
+    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, fnAliases, trackAliases, fnBlockShadows);
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
@@ -305,6 +308,7 @@ function scanBody(
   decls: FnDecl[],
   aliases: Map<string, string> = new Map(),
   acceptOptionalChain = false,
+  blockShadows: BlockShadowRange[] = [],
 ): { direct: Map<string, DirectUse>; callNames: Set<string> } {
   const direct = new Map<string, DirectUse>();
   const callNames = new Set<string>();
@@ -320,7 +324,12 @@ function scanBody(
 
     // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
     // Optional chaining (`?.`) is also accepted from ?bs 0.8 (acceptOptionalChain).
-    const canonical = aliases.get(tok.text) ?? tok.text;
+    // Block-level shadows (const/let at depth > 1 in the fn body) suppress alias
+    // resolution for tokens inside the shadowing block.
+    const aliasCanonical = !isInBlockShadow(tok.text, i, blockShadows)
+      ? aliases.get(tok.text)
+      : undefined;
+    const canonical = aliasCanonical ?? tok.text;
     const cap = STDLIB_TO_CAP[canonical];
     const isDot = next?.kind === "punct" && next.text === ".";
     const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
