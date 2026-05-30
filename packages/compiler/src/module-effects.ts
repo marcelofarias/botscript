@@ -19,8 +19,8 @@ export interface FnEffectSurface {
  * and cap-check to extend transitivity beyond same-file calls.
  *
  * Import alias resolution (`import { fetchRow as fetchUser }`) is handled by
- * buildImportAliasMap — dep-check and thr-check resolve local aliases to
- * declared names before looking up in this map.
+ * buildImportAliasMap — dep-check, thr-check, and cap-check resolve local
+ * aliases to declared names before looking up in this map.
  */
 export type ModuleEffects = Readonly<Record<string, FnEffectSurface>>;
 
