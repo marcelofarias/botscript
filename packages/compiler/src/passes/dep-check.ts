@@ -94,8 +94,13 @@ export function passDepCheck(
   // Build maps for external (cross-file) effect declarations.
   const extReads = new Map<string, Set<string>>();
   const extWrites = new Map<string, Set<string>>();
+  // All declared names in moduleEffects (regardless of whether they have reads/writes).
+  // Used by DEP003/DEP004 to distinguish "known callee with no labels" from "unknown callee"
+  // — only known callees count as non-self callees; unknown ones are opaque.
+  const knownExternalNames = new Set<string>();
   if (moduleEffects) {
     for (const [name, eff] of Object.entries(moduleEffects)) {
+      knownExternalNames.add(name);
       if (eff.reads?.length) extReads.set(name, new Set(eff.reads));
       if (eff.writes?.length) extWrites.set(name, new Set(eff.writes));
     }
@@ -275,8 +280,12 @@ export function passDepCheck(
         }
         continue;
       }
-      hasNonSelfCallee = true;
       const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+      // Treat unknown cross-file callees (not in moduleEffects) as opaque so
+      // that a fn importing a helper that isn't in the effects map doesn't
+      // get a false DEP003/DEP004 warning from seeing "zero labels" for it.
+      if (!knownExternalNames.has(resolvedCallee)) continue;
+      hasNonSelfCallee = true;
       const extR = extReads.get(resolvedCallee);
       if (extR) for (const label of extR) calleeReads.add(label);
       const extW = extWrites.get(resolvedCallee);
