@@ -746,7 +746,17 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
     const t = tokens[i];
     if (!t) { i++; continue; }
 
-    if (t.kind === "open" && (t.text === "{" || t.text === "[")) { depth++; i++; continue; }
+    if (t.kind === "open" && (t.text === "{" || t.text === "[")) {
+      if (depth === 1) {
+        // Nested pattern as a direct element: `[{a, b}]`, `[[a, b]]`, or `{ key: {…} }`
+        // where the key: branch hasn't already advanced past this token.
+        // Recurse so nested bindings are collected at any depth.
+        collectDestructuredNames(tokens, i, end, out);
+        const matchedClose = (t as { matchedAt?: number }).matchedAt;
+        if (matchedClose !== undefined) { i = matchedClose + 1; continue; }
+      }
+      depth++; i++; continue;
+    }
     if (t.kind === "close" && (t.text === "}" || t.text === "]")) {
       depth--;
       i++;

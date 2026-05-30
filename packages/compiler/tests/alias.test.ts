@@ -450,6 +450,28 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
     expect(() => t(src)).not.toThrow();
   });
 
+  it("nested array destructuring binding (`[[t]]`) named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(arr: any) -> number {\n" +
+      "  const [[t]] = arr\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("array-of-objects destructuring binding (`[{t}]`) named same as module alias does NOT trigger false CAP001", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(arr: any) -> number {\n" +
+      "  const [{ t }] = arr\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("fn param named same as module alias with nested generic type (>>) does NOT trigger false CAP001", () => {
     // `fn f(t: Result<Result<number, string>, string>)` — the lexer emits `>>` as a
     // single operator token. fnParamNames must decrement depth by 2 so it correctly
