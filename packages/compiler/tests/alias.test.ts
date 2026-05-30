@@ -308,8 +308,19 @@ describe("collectStdlibAliases — non-trivial RHS forms are NOT tracked", () =>
     expect(aliases("const t = (random);")).toEqual(new Map([["t", "random"]]));
   });
 
-  it("nested parens are NOT tracked (only single-paren grouping)", () => {
-    expect(aliases("const t = ((time))\n")).toEqual(new Map());
+  it("nested parens are tracked (multi-level paren grouping)", () => {
+    // unwrapParenToIdent handles any depth, so `((time))`, `(((time)))` etc.
+    // are all equivalent to `(time)` — trivially tracking the stdlib namespace.
+    expect(aliases("const t = ((time))\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("triple-nested parens are tracked", () => {
+    expect(aliases("const t = (((time)))\n")).toEqual(new Map([["t", "time"]]));
+  });
+
+  it("nested parens with non-trivial content are NOT tracked", () => {
+    // Inner group `(time)` doesn't fill the outer paren — `+ 1` follows.
+    expect(aliases("const t = ((time) + 1)\n")).toEqual(new Map());
   });
 
   it("paren with member access inside is NOT tracked", () => {

@@ -71,9 +71,20 @@ describe("ALI001: fires on non-trivial RHS forms", () => {
   });
 
   it("fires for doubly-nested paren form with continuation (const t = ((time)).now)", () => {
-    // `((time))` is not tracked (only single-paren grouping is), and `.now`
-    // makes it non-trivial — ALI001 should fire to flag the untracked form.
+    // `((time))` is tracked, but `.now` makes the full RHS non-trivial —
+    // collectStdlibAliases rejects it (non-clean end-of-statement) and
+    // collectAliasWarningCandidates emits ALI001.
     const src = "?bs 0.8\nconst t = ((time)).now\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("fires for deeply-nested parens with non-trivial inner content (const t = (((time) + 1)))", () => {
+    // `((time) + 1)` — the inner `(time)` doesn't fill the middle paren.
+    // isParenWrappedStdlib correctly returns null; ALI001 fires.
+    const src = "?bs 0.8\nconst t = (((time) + 1))\n";
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "ALI001");
     expect(warns).toHaveLength(1);

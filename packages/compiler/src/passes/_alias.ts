@@ -27,7 +27,7 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  *
  * Accepted forms:
  *   const t = time              — bare stdlib ident
- *   const t = (time)            — single-paren grouping (trivially equivalent)
+ *   const t = (time)            — paren grouping (any depth: `(time)`, `((time))`, etc.)
  *   const t: SomeType = time    — type-annotated binding (annotation skipped)
  *   const t: typeof time = time — complex type annotation (scan forward to `=`)
  *
@@ -99,7 +99,7 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
 
     // Resolve the RHS to a bare stdlib ident, accepting either:
     //   const t = time          — direct ident
-    //   const t = (time)        — single-paren grouping
+    //   const t = (time)        — paren grouping (any depth: `(time)`, `((time))`, etc.)
     const rawRhsIdx = nextSignificant(tokens, eqIdx + 1);
     const rawRhsTok = tokens[rawRhsIdx];
     if (!rawRhsTok) continue;
@@ -112,17 +112,13 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       stdlibTok = rawRhsTok;
       afterStdlibIdx = rawRhsIdx + 1;
     } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
-      // grouping: const t = (time)
-      // The open-paren token carries the index of its matching close-paren.
-      const innerIdx = nextSignificant(tokens, rawRhsIdx + 1);
-      const innerTok = tokens[innerIdx];
-      if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) continue;
-      // The close-paren must follow immediately (no other tokens inside).
-      const closeIdx = nextSignificant(tokens, innerIdx + 1);
-      const closeTok = tokens[closeIdx];
-      if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") continue;
-      stdlibTok = innerTok;
-      afterStdlibIdx = closeIdx + 1;
+      // paren grouping: const t = (time), ((time)), (((time))), etc.
+      // unwrapParenToIdent verifies each paren level wraps ONLY the inner group,
+      // so `((time) + 1)` and `(time.now)` are correctly rejected here.
+      const unwrapped = unwrapParenToIdent(tokens, rawRhsIdx);
+      if (!unwrapped || !STDLIB_NAMES.has(unwrapped.tok.text)) continue;
+      stdlibTok = unwrapped.tok;
+      afterStdlibIdx = unwrapped.tokenEnd;
     } else {
       continue;
     }
@@ -859,7 +855,16 @@ function isParenWrappedStdlib(tokens: Token[], openIdx: number): string | null {
   const innerTok = tokens[innerIdx];
   if (!innerTok) return null;
   if (innerTok.kind === "open" && innerTok.text === "(") {
-    return isParenWrappedStdlib(tokens, innerIdx);
+    const result = isParenWrappedStdlib(tokens, innerIdx);
+    if (result === null) return null;
+    // Verify the inner group is the ONLY content of the outer parens:
+    // the token after the inner close must be the outer close.
+    // Without this, `((time) + 1)` would return "time" even though it's non-trivial.
+    const innerCloseIdx = (innerTok as { matchedAt?: number }).matchedAt;
+    const outerCloseIdx = (tokens[openIdx] as { matchedAt?: number }).matchedAt;
+    if (innerCloseIdx === undefined || outerCloseIdx === undefined) return null;
+    if (nextSignificant(tokens, innerCloseIdx + 1) !== outerCloseIdx) return null;
+    return result;
   }
   if (innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) return null;
   const closeIdx = nextSignificant(tokens, innerIdx + 1);
