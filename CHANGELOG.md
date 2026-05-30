@@ -127,11 +127,12 @@ goes behind a new pin.
   `const t = time` binding makes `t.now()` equivalent to `time.now()` for all
   static checks (CAP001/CAP002, INT002/INT004, UNS005). Only trivial direct
   bindings are tracked; non-trivial RHS forms stay on the canonical-name tripwire.
-- **ALI001** (warning) — fires when a module-level `const <name> = <stdlib>`
-  binding has the stdlib namespace ident as the first RHS token but in a
-  non-trivial form (member access, operator, call, parenthesized non-trivial
-  form) that static alias tracking cannot follow. Non-blocking; tells the author
-  why `name.member()` won't be seen as a stdlib call by static checks.
+- **ALI001** (warning) — fires when a module-level `const <name> = <expr>`
+  binding contains a stdlib namespace ident anywhere in the RHS but in a
+  non-trivial form (member access, operator, call, conditional such as
+  `flag ? time : null`, parenthesized non-trivial form) that static alias
+  tracking cannot follow. Non-blocking; tells the author why `name.member()`
+  won't be seen as a stdlib call by static checks.
 - **ALI002** (warning) — fires when a module-level `const x = <ident>` binding
   creates an alias of an already-tracked stdlib alias (alias-of-alias chain).
   Chain aliases are not tracked; warns the author to use a direct binding or the
