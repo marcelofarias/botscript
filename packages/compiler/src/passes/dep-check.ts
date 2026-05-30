@@ -21,21 +21,23 @@
  *
  *   DEP002  writes under-declared: same for writes { ... }.
  *
+ *   DEP003  reads over-declared (warning): fn has at least one same-file (or
+ *           moduleEffects) callee but no callee (transitively) declares `reads { x }`.
+ *           The label likely became stale after a refactor removed the callee that
+ *           originally justified it. Leaf fns are excluded — they may be the actual
+ *           access point and the compiler cannot verify the body directly.
+ *
+ *   DEP004  writes over-declared (warning): same for writes { ... }.
+ *
  * Same-file call resolution is performed by default. Cross-file calls are
  * opaque unless the caller provides a `moduleEffects` map (via
  * `TransformOptions.moduleEffects`): any function listed there is treated as
  * if its declaration were in the current file, so a caller that omits its
  * reads/writes labels fires DEP001/DEP002 exactly as for a same-file callee.
  * Dynamic dispatch and higher-order function arguments are not tracked.
- *
- * Over-declaration is intentionally NOT checked here. The reads/writes labels
- * are user-defined strings; unlike stdlib capability names, the compiler has
- * no way to verify that a declared label is actually accessed in the body.
- * Over-declaration is therefore always allowed (conservative declarations are
- * harmless and may even be intentional for documentation purposes).
  */
 
-import { BotscriptError } from "../diagnostics.js";
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
@@ -66,19 +68,24 @@ interface FnRecord {
 // Entry point
 // ---------------------------------------------------------------------------
 
+export interface DepCheckResult {
+  code: string;
+  warnings: ReadonlyArray<Diagnostic>;
+}
+
 export function passDepCheck(
   src: string,
   version: VersionInfo,
   moduleEffects?: ModuleEffects,
-): string {
-  if (!atLeast(version.resolved, "0.9")) return src;
+): DepCheckResult {
+  if (!atLeast(version.resolved, "0.9")) return { code: src, warnings: [] };
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  if (decls.length === 0) return src;
+  if (decls.length === 0) return { code: src, warnings: [] };
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` in this file should look up `fetchRow` in moduleEffects.
@@ -236,7 +243,50 @@ export function passDepCheck(
     }
   }
 
-  return src;
+  // 5. DEP003/DEP004: over-declared (warning-level).
+  //    For each fn that has at least one same-file (or moduleEffects) callee,
+  //    compute which declared reads/writes labels are not justified by any callee.
+  //    Leaf fns (no tracked callees) are excluded — they may be the actual
+  //    access point and the compiler can't verify the body directly.
+  //    The primary target is stale annotations left after a refactor removed the
+  //    callee that originally justified the label.
+  const warnings: Diagnostic[] = [];
+  for (const rec of records.values()) {
+    if (rec.callees.size === 0) continue;
+
+    // Collect labels that propagate from callees (excluding this fn's own declaration).
+    const calleeReads = new Set<string>();
+    const calleeWrites = new Set<string>();
+    for (const calleeName of rec.callees) {
+      const calleeDecls = declsByName.get(calleeName);
+      if (calleeDecls) {
+        for (const calleeDecl of calleeDecls) {
+          if (calleeDecl === rec.decl) continue;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const label of callee.transitiveReads.keys()) calleeReads.add(label);
+          for (const label of callee.transitiveWrites.keys()) calleeWrites.add(label);
+        }
+        continue;
+      }
+      const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+      const extR = extReads.get(resolvedCallee);
+      if (extR) for (const label of extR) calleeReads.add(label);
+      const extW = extWrites.get(resolvedCallee);
+      if (extW) for (const label of extW) calleeWrites.add(label);
+    }
+
+    const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
+    if (overDeclaredReads.length > 0) {
+      warnings.push(mkOverDeclaredWarning(src, rec, "reads", overDeclaredReads));
+    }
+    const overDeclaredWrites = [...rec.declaredWrites].filter(l => !calleeWrites.has(l)).sort();
+    if (overDeclaredWrites.length > 0) {
+      warnings.push(mkOverDeclaredWarning(src, rec, "writes", overDeclaredWrites));
+    }
+  }
+
+  return { code: src, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -326,4 +376,46 @@ function mkError(
   };
 
   return new BotscriptError([diagnostic]);
+}
+
+function mkOverDeclaredWarning(
+  src: string,
+  rec: FnRecord,
+  kind: "reads" | "writes",
+  overLabels: string[],
+): Diagnostic {
+  const code = kind === "reads" ? "DEP003" : "DEP004";
+  const entry = getErrorCode(code)!;
+  const { line, column } = locationOf(src, rec.decl.fnKeywordStart);
+  const nameEnd = rec.decl.nameStart + rec.decl.name.length;
+
+  const labelList = overLabels.join(", ");
+  const firstLabel = overLabels[0]!;
+
+  const message =
+    `fn '${rec.decl.name}' declares ${kind} { ${labelList} } ` +
+    `but no callee in this file transitively declares ${kind} { ${firstLabel} }; ` +
+    `annotation may be stale`;
+
+  const proposed =
+    kind === "reads"
+      ? [...rec.declaredReads].filter((l) => !overLabels.includes(l)).sort()
+      : [...rec.declaredWrites].filter((l) => !overLabels.includes(l)).sort();
+
+  return {
+    code,
+    severity: "warning",
+    file: null,
+    line,
+    column,
+    start: rec.decl.fnKeywordStart,
+    end: nameEnd,
+    message,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite:
+      proposed.length > 0
+        ? `fn ${rec.decl.name}(...) ${kind} { ${proposed.join(", ")} } -> ...  // remove stale label: ${labelList}`
+        : `fn ${rec.decl.name}(...) -> ...  // remove stale ${kind} {} clause: ${labelList}`,
+  };
 }

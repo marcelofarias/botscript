@@ -52,6 +52,8 @@ describe("botscript-mcp explanations", () => {
       "CAP003",
       "DEP001",
       "DEP002",
+      "DEP003",
+      "DEP004",
       "EFF002",
       "EFF003",
       "EFF004",

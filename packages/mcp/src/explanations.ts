@@ -641,6 +641,52 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }\n",
     },
   },
+  DEP003: {
+    code: "DEP003",
+    title: "fn declares reads {} label not justified by any callee in the same file (warning)",
+    body:
+      "From `?bs 0.9`, DEP003 fires as a **warning** (not an error) when fn A has same-file " +
+      "callees but no callee (direct or transitive) declares `reads { x }` that A also declares. " +
+      "The label is not justified by the call graph — a common sign of a refactor that removed " +
+      "the callee that originally justified the annotation.\n\n" +
+      "**Scope:** only fires for fns with at least one same-file (or moduleEffects) callee. " +
+      "Leaf fns are excluded — they may be the actual access point, and the compiler cannot " +
+      "scan the body for direct resource accesses (reads {} labels are user-defined strings, " +
+      "not stdlib references).\n\n" +
+      "DEP003 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP001.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn helper(id: string) -> string = id\n" +
+        "fn getUserName(id: string) reads { userDb } -> string = helper(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn getUser(id: string) reads { userDb } -> string = id\n" +
+        "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n",
+    },
+  },
+  DEP004: {
+    code: "DEP004",
+    title: "fn declares writes {} label not justified by any callee in the same file (warning)",
+    body:
+      "From `?bs 0.9`, DEP004 fires as a **warning** (not an error) when fn A has same-file " +
+      "callees but no callee (direct or transitive) declares `writes { x }` that A also declares. " +
+      "The label is not justified by the call graph and may be stale.\n\n" +
+      "**Scope:** only fires for fns with at least one same-file (or moduleEffects) callee. " +
+      "Leaf fns are excluded — the compiler cannot scan the body for direct resource modifications " +
+      "(writes {} labels are user-defined strings).\n\n" +
+      "DEP004 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP002.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn helper(msg: string) -> void { }\n" +
+        "fn logEvent(msg: string) writes { auditLog } -> void { helper(msg) }\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn writeAudit(msg: string) writes { auditLog } -> void { }\n" +
+        "fn logEvent(msg: string) writes { auditLog } -> void { writeAudit(msg) }\n",
+    },
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",

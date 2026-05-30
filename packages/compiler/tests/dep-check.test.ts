@@ -3,6 +3,8 @@
  *
  * DEP001: fn A calls fn B which reads { x }, but A doesn't declare reads { x }.
  * DEP002: fn A calls fn B which writes { x }, but A doesn't declare writes { x }.
+ * DEP003: fn declares reads { x } but no callee (transitively) reads { x }.
+ * DEP004: fn declares writes { x } but no callee (transitively) writes { x }.
  */
 
 import { describe, expect, it } from "vitest";
@@ -217,5 +219,120 @@ describe("parameter-default exclusion (issue #70)", () => {
       "fn helper() reads { cache } -> string = \"x\"\n" +
       "fn caller() -> string { helper() }\n";
     expect(() => compile(src)).toThrow("DEP001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP003: reads over-declared
+// ---------------------------------------------------------------------------
+
+describe("DEP003: reads over-declared (0.9+)", () => {
+  it("fires when a fn declares reads { x } but no callee declares reads { x }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn formatName(s: string) -> string = s\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = formatName(\"Alice\")\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+    expect(result.warnings.find((w) => w.code === "DEP003")!.message).toContain("userDb");
+  });
+
+  it("does NOT fire when the declared label is justified by a same-file callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getUser(id: string) reads { userDb } -> string = id\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does NOT fire when the declared label is justified transitively", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readDb(id: string) reads { userDb } -> string = id\n" +
+      "fn getUser(id: string) reads { userDb } -> string = readDb(id)\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("fires for each over-declared label separately when multiple are stale", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db, cache } -> string = helper()\n";
+    const result = transform(src);
+    const dep3warns = result.warnings.filter((w) => w.code === "DEP003");
+    expect(dep3warns).toHaveLength(1);
+    expect(dep3warns[0]!.message).toContain("db");
+  });
+
+  it("fires warning with severity 'warning'", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> string = \"ok\"\n" +
+      "fn f() reads { x } -> string = noop()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "DEP003");
+    expect(w).toBeDefined();
+    expect(w!.severity).toBe("warning");
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn f() reads { x } -> string = \"ok\"\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not throw — DEP003 is non-blocking", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn f() reads { userDb } -> string = \"Alice\"\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP004: writes over-declared
+// ---------------------------------------------------------------------------
+
+describe("DEP004: writes over-declared (0.9+)", () => {
+  it("fires when a fn declares writes { x } but no callee declares writes { x }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+    expect(result.warnings.find((w) => w.code === "DEP004")!.message).toContain("auditLog");
+  });
+
+  it("does NOT fire when the declared label is justified by a same-file callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn writeAudit(msg: string) writes { auditLog } -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { writeAudit(msg) }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("fires with severity 'warning' and does not throw", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
+    expect(() => compile(src)).not.toThrow();
+    const result = transform(src);
+    expect(result.warnings.find((w) => w.code === "DEP004")!.severity).toBe("warning");
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
   });
 });
