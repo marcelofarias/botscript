@@ -125,29 +125,31 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     expect(warns).toHaveLength(0);
   });
 
-  it("does not fire for ternary where first token is non-stdlib (const t = flag ? time : null)", () => {
+  it("fires for ternary where stdlib appears as non-leading RHS token (const t = flag ? time : null)", () => {
+    // `time` is in the RHS but not the first token — alias is untracked, ALI001 fires.
     const src = "?bs 0.8\nconst t = flag ? time : null\n";
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "ALI001");
-    expect(warns).toHaveLength(0);
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
   });
 
-  it("does not fire for parenthesized ternary starting with non-stdlib (const t = (flag ? time : null))", () => {
-    // The paren wraps an expression whose first token is a non-stdlib ident.
-    // ALI001 must NOT fire — only deeper-nested grouping like ((time)).now is flagged.
+  it("fires for parenthesized ternary containing stdlib (const t = (flag ? time : null))", () => {
+    // Paren wraps a ternary with stdlib in the non-leading position — ALI001 fires.
     const src = "?bs 0.8\nconst t = (flag ? time : null)\n";
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "ALI001");
-    expect(warns).toHaveLength(0);
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
   });
 
-  it("does not fire for doubly-parenthesized ternary where stdlib is not the leading token (const t = ((flag ? time : null)))", () => {
-    // Double-paren wrapping must also check only the LEADING token after unwrapping.
-    // `flag` leads, not `time`, so ALI001 must NOT fire.
+  it("fires for doubly-parenthesized ternary containing stdlib (const t = ((flag ? time : null)))", () => {
+    // Double-paren wrapping a ternary — stdlib appears inside, ALI001 fires.
     const src = "?bs 0.8\nconst t = ((flag ? time : null))\n";
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "ALI001");
-    expect(warns).toHaveLength(0);
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("time");
   });
 
   it("does NOT fire for trivially double-parenthesized stdlib (const t = ((time)))", () => {

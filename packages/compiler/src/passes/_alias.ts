@@ -157,11 +157,13 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
 }
 
 /**
- * Collect module-level const bindings where the RHS starts with a stdlib namespace
- * ident but is in a non-trivial form that the alias collector can't track.
+ * Collect module-level const bindings where the RHS contains a stdlib namespace
+ * ident in a non-trivial form that the alias collector can't track.
  *
  * These are ALI001 candidates — the author may have intended to alias the namespace
- * but the form is unsound for static tracking.
+ * but the form is unsound for static tracking. This includes both leading-stdlib
+ * forms (`const t = time.now`) and non-leading forms (`const t = flag ? time : null`)
+ * where the stdlib ident appears somewhere in the RHS expression.
  *
  * Like collectStdlibAliases, uses brace depth to exclude tokens inside any
  * braced block (fn bodies, test/unsafe blocks, etc.) — only module-scope bindings.
@@ -254,9 +256,9 @@ export function collectAliasWarningCandidates(
           //   - `trivialStdlib` is set when inner `(stdlib)` exists but outer has more
           //     content: `((time) + 1)`, `((time).now)`.
           //   - Otherwise fall back to leadingStdlibAfterParens for deeply nested forms.
-          //   - `((flag ? time : null))` has no stdlib leading → no warning.
+          //   - `((flag ? time : null))`: no stdlib leading, but scan full content.
           const nestedStdlib =
-            trivialStdlib ?? leadingStdlibAfterParens(tokens, innerIdx);
+            trivialStdlib ?? leadingStdlibAfterParens(tokens, innerIdx) ?? scanRhsForStdlib(tokens, rawRhsIdx + 1)?.stdlibName;
           if (nestedStdlib) {
             const matchedCloseIdx = rawRhsTok.matchedAt;
             const matchedClose = matchedCloseIdx !== undefined ? tokens[matchedCloseIdx] : undefined;
@@ -271,7 +273,18 @@ export function collectAliasWarningCandidates(
         }
       } else if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
         // First significant token inside the paren is neither a stdlib ident nor
-        // another `(`. Nothing to do here (e.g. `(flag ? time : null)`).
+        // another `(`. Scan the paren content for a non-leading stdlib name.
+        // e.g. `(flag ? time : null)` — `time` appears but is not the leading token.
+        const found = scanRhsForStdlib(tokens, rawRhsIdx + 1);
+        if (found) {
+          const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
+          candidates.push({
+            name: nameTok.text,
+            stdlibName: found.stdlibName,
+            start: constStart,
+            end: matchedClose?.end ?? found.end,
+          });
+        }
         continue;
       } else {
         // innerTok is a bare stdlib ident inside single parens.
@@ -293,6 +306,17 @@ export function collectAliasWarningCandidates(
         afterStdlibIdx = closeIdx + 1;
       }
     } else {
+      // RHS starts with a non-stdlib, non-paren token.
+      // Scan the full statement for any stdlib ident (e.g. `flag ? time : null`).
+      const found = scanRhsForStdlib(tokens, rawRhsIdx);
+      if (found) {
+        candidates.push({
+          name: nameTok.text,
+          stdlibName: found.stdlibName,
+          start: constStart,
+          end: found.end,
+        });
+      }
       continue;
     }
 
@@ -653,6 +677,35 @@ function nextNonTrivia(tokens: Token[], from: number, end: number): Token | unde
 }
 
 /**
+ * Scan tokens from `from` to the first newline/eof/lineComment at paren depth 0
+ * and return the first stdlib namespace ident found, along with its end offset.
+ * Returns null if no stdlib ident appears before the statement terminator.
+ *
+ * Used by `collectAliasWarningCandidates` to catch non-leading stdlib names such
+ * as `flag ? time : null` or `(flag ? time : null)`.
+ */
+function scanRhsForStdlib(
+  tokens: Token[],
+  from: number,
+): { stdlibName: string; end: number } | null {
+  let parenDepth = 0;
+  for (let i = from; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t) continue;
+    if (t.kind === "open" && (t.text === "(" || t.text === "[")) { parenDepth++; continue; }
+    if (t.kind === "close" && (t.text === ")" || t.text === "]")) { if (parenDepth > 0) parenDepth--; continue; }
+    if (parenDepth === 0) {
+      if (t.kind === "newline" || t.kind === "eof" || t.kind === "lineComment") break;
+      if (t.kind === "punct" && t.text === ";") break;
+    }
+    if (t.kind === "ident" && STDLIB_NAMES.has(t.text)) {
+      return { stdlibName: t.text, end: t.end };
+    }
+  }
+  return null;
+}
+
+/**
  * Return the set of names bound by `const`/`let`/`var` declarations in
  * `fn`'s immediate body. Tokens inside nested fn bodies are excluded — a
  * binding in an inner fn only shadows at that inner scope, not here.
@@ -701,10 +754,13 @@ export function fnBodyLocalNames(tokens: Token[], fn: FnDecl, nestedFns: FnDecl[
     if (tok.kind !== "ident") continue;
     if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
 
-    // `const`/`let` are block-scoped: only shadow at the directly-enclosing
-    // scope (braceDepth === 1, or 0 for expression-bodied fns). Bindings inside
-    // nested blocks (if/for/while/etc.) are block-scoped there, NOT here.
-    // `var` is function-scoped so it shadows regardless of nesting depth.
+    // `const`/`let` are block-scoped; `var` is function-scoped.
+    // KNOWN LIMITATION: we collect block-scoped names only at the fn's
+    // immediate scope (braceDepth <= 1). A nested-block binding such as
+    // `if (flag) { const t = "x"; t.length }` will not suppress the module
+    // alias for tokens INSIDE that block — `t.length` may fire a false CAP001.
+    // True scope-aware shadowing requires range tracking, not a flat set.
+    // Filed as a follow-up (issue to track: nested-block alias shadowing).
     const isBlockScoped = tok.text === "const" || tok.text === "let";
     if (isBlockScoped && braceDepth > 1) continue;
 
