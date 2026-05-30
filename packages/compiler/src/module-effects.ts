@@ -3,23 +3,24 @@ import type { Token } from "./parser/lex.js";
 
 /**
  * Declared effect surface of a single exported function from another module.
- * Used by passDepCheck and passThrCheck to extend transitivity across files.
+ * Used by passDepCheck, passThrCheck, and passCapCheck to extend transitivity
+ * across files.
  */
 export interface FnEffectSurface {
+  capabilities?: readonly string[];
   reads?: readonly string[];
   writes?: readonly string[];
   throws?: readonly string[];
 }
 
 /**
- * Effect map for imported functions. Keys are bare function names as they
- * appear at the call site. Consumed by dep-check and thr-check passes to
- * extend DEP001/DEP002/THR001 transitivity beyond same-file calls.
+ * Effect map for imported functions. Keys are declared function names (the
+ * name as it appears in the exporting file). Consumed by dep-check, thr-check,
+ * and cap-check to extend transitivity beyond same-file calls.
  *
- * Known limitation: keys are declared function names, so aliased imports
- * (`import { fetchRow as fetchUser }`) are not yet resolved to their call-site
- * alias. Tracked separately; cross-file checks degrade gracefully (no false
- * positives) when an alias is in play.
+ * Import alias resolution (`import { fetchRow as fetchUser }`) is handled by
+ * buildImportAliasMap — dep-check and thr-check resolve local aliases to
+ * declared names before looking up in this map.
  */
 export type ModuleEffects = Readonly<Record<string, FnEffectSurface>>;
 
@@ -33,9 +34,11 @@ export function mergeEffectSurface(
   b: FnEffectSurface,
 ): FnEffectSurface {
   const merged: FnEffectSurface = {};
+  const capabilities = [...new Set([...(a.capabilities ?? []), ...(b.capabilities ?? [])])];
   const reads = [...new Set([...(a.reads ?? []), ...(b.reads ?? [])])];
   const writes = [...new Set([...(a.writes ?? []), ...(b.writes ?? [])])];
   const throws = [...new Set([...(a.throws ?? []), ...(b.throws ?? [])])];
+  if (capabilities.length) merged.capabilities = capabilities;
   if (reads.length) merged.reads = reads;
   if (writes.length) merged.writes = writes;
   if (throws.length) merged.throws = throws;
@@ -347,10 +350,10 @@ export function buildImportAliasMap(tokens: readonly Token[]): Map<string, strin
  * Pass sources in a stable order (callers sort their file lists) so the merged
  * result is deterministic across platforms.
  *
- * Known limitation: keys are declared function names, so aliased imports
- * (`import { fetchRow as fetchUser }`) are not yet resolved to their call-site
- * alias. Cross-file checks degrade gracefully (no false positives) when an
- * alias is in play. Tracked for a follow-up.
+ * Keys are declared function names (as they appear in the exporting file).
+ * Import alias resolution (`import { fetchRow as fetchUser }`) is handled by
+ * buildImportAliasMap in the consuming pass, not here. Callers (dep-check,
+ * thr-check, cap-check) resolve local aliases before looking up in this map.
  */
 export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
   const effects = Object.create(null) as Record<string, FnEffectSurface>;
@@ -368,6 +371,7 @@ export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
       const { decl } = stmt;
       if (exported !== null && !exported.has(decl.name)) continue;
       const surface: FnEffectSurface = {};
+      if (decl.capabilities?.length) surface.capabilities = decl.capabilities;
       if (decl.reads?.length) surface.reads = decl.reads;
       if (decl.writes?.length) surface.writes = decl.writes;
       if (decl.throws?.length) surface.throws = decl.throws;
