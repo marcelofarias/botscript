@@ -533,4 +533,34 @@ describe("CAP001: cross-file capability transitivity via moduleEffects", () => {
     };
     expect(() => compile(src, moduleEffects)).not.toThrow();
   });
+
+  it("fires CAP001 on outer caller in a same-file chain outer->helper->imported", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn helper() -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n" +
+      "fn outer() -> string {\n" +
+      "  return helper()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).toThrow(/CAP001/);
+  });
+
+  it("passes when outer declares the cap in a same-file chain outer->helper->imported", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn helper() uses { net } -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n" +
+      "fn outer() uses { net } -> string {\n" +
+      "  return helper()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).not.toThrow();
+  });
 });

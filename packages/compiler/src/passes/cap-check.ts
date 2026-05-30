@@ -248,10 +248,36 @@ function checkStrict(
     }
   }
 
-  // 4. Closure: propagate callees' consumed caps back to callers until
-  //    fixed point. For each callee NAME the body called, merge the
-  //    consumed sets of EVERY decl in the file with that name (conservative
-  //    over-approximation when names are shadowed).
+  // 4. Seed external (cross-file) caps before the same-file closure so that
+  //    transitive chains like `outer -> helper -> fetchRow (imported uses { net })`
+  //    propagate `net` all the way up to `outer` during the fixed-point below.
+  if (extCaps.size > 0) {
+    for (const rec of records.values()) {
+      for (const calleeName of rec.callees) {
+        if (declsByName.has(calleeName)) continue;
+        const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+        const caps = extCaps.get(resolvedCallee);
+        if (!caps) continue;
+        const displayCallee =
+          calleeName !== resolvedCallee ? `${calleeName} (as '${resolvedCallee}')` : calleeName;
+        for (const cap of caps) {
+          if (rec.consumed.has(cap)) continue;
+          rec.consumed.set(cap, {
+            kind: "external",
+            fnName: rec.decl.name,
+            callee: displayCallee,
+            capability: cap,
+          });
+        }
+      }
+    }
+  }
+
+  // 4b. Closure: propagate callees' consumed caps back to callers until
+  //     fixed point. For each callee NAME the body called, merge the
+  //     consumed sets of EVERY decl in the file with that name (conservative
+  //     over-approximation when names are shadowed). External caps seeded
+  //     above now participate in this propagation.
   let changed = true;
   while (changed) {
     changed = false;
@@ -273,31 +299,6 @@ function checkStrict(
             });
             changed = true;
           }
-        }
-      }
-    }
-  }
-
-  // 4b. Cross-file propagation: for each callee that is NOT a same-file fn,
-  //     look up its capabilities in extCaps (resolved via importAliases) and
-  //     add a synthetic `external` path entry to the caller's consumed set.
-  if (extCaps.size > 0) {
-    for (const rec of records.values()) {
-      for (const calleeName of rec.callees) {
-        if (declsByName.has(calleeName)) continue;
-        const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
-        const caps = extCaps.get(resolvedCallee);
-        if (!caps) continue;
-        const displayCallee =
-          calleeName !== resolvedCallee ? `${calleeName} (as '${resolvedCallee}')` : calleeName;
-        for (const cap of caps) {
-          if (rec.consumed.has(cap)) continue;
-          rec.consumed.set(cap, {
-            kind: "external",
-            fnName: rec.decl.name,
-            callee: displayCallee,
-            capability: cap,
-          });
         }
       }
     }
