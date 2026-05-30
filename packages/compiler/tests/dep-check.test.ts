@@ -336,3 +336,55 @@ describe("DEP004: writes over-declared (0.9+)", () => {
     expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEP003/DEP004: self-recursive fns and callback parameter justification
+// ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: self-recursive fn exclusion", () => {
+  it("does not fire DEP003 for a self-recursive fn — treated as leaf/access-point", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn countdown(n: number) reads { store } -> void {\n" +
+      "  if (n > 0) countdown(n - 1);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 for a self-recursive fn — treated as leaf/access-point", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn accumulate(n: number) writes { store } -> void {\n" +
+      "  if (n > 0) accumulate(n - 1);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+});
+
+describe("DEP003/DEP004: callback parameter justification", () => {
+  it("does not fire DEP003 when reads label is justified by a callback parameter annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string {\n" +
+      "  noop();\n" +
+      "  loader()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when writes label is justified by a callback parameter annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withAudit(cb: () writes { auditLog } -> void) writes { auditLog } -> void {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+});

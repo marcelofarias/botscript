@@ -465,12 +465,14 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "fn name(...) reads { …remaining } -> ...  // remove label not propagated by any callee",
     example:
-      "// before — getUserName declares reads { userDb } but no callee reads userDb\n" +
+      "// before — getUser calls helper() but helper() does not read userDb\n" +
       "?bs 0.9\n" +
-      "fn getUserName(id: string) reads { userDb } -> string = \"Alice\"  // DEP003\n\n" +
+      "fn helper(id: string) -> string = \"Alice\"\n" +
+      "fn getUser(id: string) reads { userDb } -> string { helper(id) }  // DEP003\n\n" +
       "// after — remove stale label\n" +
       "?bs 0.9\n" +
-      "fn getUserName(id: string) -> string = \"Alice\"",
+      "fn helper(id: string) -> string = \"Alice\"\n" +
+      "fn getUser(id: string) -> string { helper(id) }",
   },
   DEP004: {
     code: "DEP004",
@@ -484,12 +486,14 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "fn name(...) writes { …remaining } -> ...  // remove label not propagated by any callee",
     example:
-      "// before — logEvent declares writes { auditLog } but no callee writes auditLog\n" +
+      "// before — logEvent calls save() but save() does not write auditLog\n" +
       "?bs 0.9\n" +
-      "fn logEvent(msg: string) writes { auditLog } -> void { }  // DEP004\n\n" +
+      "fn save(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { save(msg) }  // DEP004\n\n" +
       "// after — remove stale label\n" +
       "?bs 0.9\n" +
-      "fn logEvent(msg: string) -> void { }",
+      "fn save(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) -> void { save(msg) }",
   },
   THR003: {
     code: "THR003",

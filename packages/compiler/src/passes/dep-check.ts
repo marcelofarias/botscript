@@ -244,10 +244,13 @@ export function passDepCheck(
   }
 
   // 5. DEP003/DEP004: over-declared (warning-level).
-  //    For each fn that has at least one same-file (or moduleEffects) callee,
+  //    For each fn that has at least one same-file (or moduleEffects) non-self callee,
   //    compute which declared reads/writes labels are not justified by any callee.
-  //    Leaf fns (no tracked callees) are excluded — they may be the actual
-  //    access point and the compiler can't verify the body directly.
+  //    Leaf fns (no tracked callees) and self-only-recursive fns are excluded —
+  //    they may be the actual access point and the compiler can't verify the body.
+  //    Callback parameter annotations (paramReads/paramWrites) are treated as
+  //    implicit callee justification: a wrapper that receives a reads { db } callback
+  //    and propagates that label upward is not over-declaring.
   //    The primary target is stale annotations left after a refactor removed the
   //    callee that originally justified the label.
   const warnings: Diagnostic[] = [];
@@ -255,13 +258,16 @@ export function passDepCheck(
     if (rec.callees.size === 0) continue;
 
     // Collect labels that propagate from callees (excluding this fn's own declaration).
-    const calleeReads = new Set<string>();
-    const calleeWrites = new Set<string>();
+    // Also seed from callback parameter annotations so wrapper fns aren't falsely warned.
+    const calleeReads = new Set<string>(rec.decl.paramReads);
+    const calleeWrites = new Set<string>(rec.decl.paramWrites);
+    let hasNonSelfCallee = false;
     for (const calleeName of rec.callees) {
       const calleeDecls = declsByName.get(calleeName);
       if (calleeDecls) {
         for (const calleeDecl of calleeDecls) {
           if (calleeDecl === rec.decl) continue;
+          hasNonSelfCallee = true;
           const callee = records.get(calleeDecl);
           if (!callee) continue;
           for (const label of callee.transitiveReads.keys()) calleeReads.add(label);
@@ -269,12 +275,16 @@ export function passDepCheck(
         }
         continue;
       }
+      hasNonSelfCallee = true;
       const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
       const extR = extReads.get(resolvedCallee);
       if (extR) for (const label of extR) calleeReads.add(label);
       const extW = extWrites.get(resolvedCallee);
       if (extW) for (const label of extW) calleeWrites.add(label);
     }
+
+    // Self-only-recursive fns are treated like leaves.
+    if (!hasNonSelfCallee) continue;
 
     const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
     if (overDeclaredReads.length > 0) {
