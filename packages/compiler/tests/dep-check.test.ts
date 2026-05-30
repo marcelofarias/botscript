@@ -256,7 +256,7 @@ describe("DEP003: reads over-declared (0.9+)", () => {
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
 
-  it("fires for each over-declared label separately when multiple are stale", () => {
+  it("fires a single warning listing all over-declared labels when multiple are stale", () => {
     const src =
       "?bs 0.9\n" +
       "fn helper() -> string = \"x\"\n" +
@@ -281,7 +281,8 @@ describe("DEP003: reads over-declared (0.9+)", () => {
   it("does not fire below ?bs 0.9", () => {
     const src =
       "?bs 0.8\n" +
-      "fn f() reads { x } -> string = \"ok\"\n";
+      "fn helper() -> string = \"ok\"\n" +
+      "fn f() reads { x } -> string = helper()\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
@@ -289,7 +290,8 @@ describe("DEP003: reads over-declared (0.9+)", () => {
   it("does not throw — DEP003 is non-blocking", () => {
     const src =
       "?bs 0.9\n" +
-      "fn f() reads { userDb } -> string = \"Alice\"\n";
+      "fn helper() -> string = \"Alice\"\n" +
+      "fn f() reads { userDb } -> string = helper()\n";
     expect(() => compile(src)).not.toThrow();
   });
 });
@@ -331,7 +333,8 @@ describe("DEP004: writes over-declared (0.9+)", () => {
   it("does not fire below ?bs 0.9", () => {
     const src =
       "?bs 0.8\n" +
-      "fn logEvent(msg: string) writes { auditLog } -> void { }\n";
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
   });
