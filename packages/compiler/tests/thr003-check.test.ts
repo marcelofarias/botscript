@@ -183,6 +183,21 @@ describe("THR004: throws over-declared (0.9+)", () => {
     expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
     expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
   });
+
+  it("does not suppress THR004 for dollar-prefixed or uppercase callback params", () => {
+    // collectParamNames must match lexer ident rules ($cb, CB) so these are
+    // recognised as params and do not trigger the opaque-call suppression path.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withDollar($cb: () -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  $cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
 });
 
 // ---------------------------------------------------------------------------

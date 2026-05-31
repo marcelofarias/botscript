@@ -400,8 +400,8 @@ function collectBodyErrorTypes(
 function collectParamNames(fn: FnDecl): Set<string> {
   const names = new Set<string>();
   // args format: `(name: type, name: type, ...)` — param names precede `:`.
-  const re = /(?:[\(,]\s*)([a-z_]\w*)\s*:/g;
-  let m;
+  const re = /(?:[\(,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(fn.args)) !== null) {
     names.add(m[1]!);
   }
