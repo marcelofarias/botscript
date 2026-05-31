@@ -44,6 +44,44 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
  */
 export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
   const aliases = new Map<string, string>();
+
+  // Pre-scan: find canonical stdlib names that have been rebound to a DIFFERENT stdlib
+  // namespace at module scope. e.g. `const time = random` means `const x = time` would
+  // produce `x → time` but at runtime `x` holds `random` — tracking it is unsound.
+  // Only cross-stdlib rebindings (e.g. `const time = random`) trigger this guard; bindings
+  // to non-stdlib values or self-references (e.g. `const time = time`) are left alone
+  // because the canonical-name tripwire still applies to direct `time.x` uses.
+  const reboundCanonicals = new Set<string>();
+  {
+    let d = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (!tok) continue;
+      if (tok.kind === "open" && tok.text === "{") { d++; continue; }
+      if (tok.kind === "close" && tok.text === "}") { if (d > 0) d--; continue; }
+      if (d !== 0) continue;
+      if (tok.kind !== "ident" || tok.text !== "const") continue;
+      const nameIdx = nextSignificant(tokens, i + 1);
+      const nameTok = tokens[nameIdx];
+      if (!nameTok || nameTok.kind !== "ident" || !STDLIB_NAMES.has(nameTok.text)) continue;
+      // Find `=` (skip optional type annotation — just look for the first `=` token).
+      let eqIdx = -1;
+      for (let j = nameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t || t.kind === "newline" || t.kind === "eof") break;
+        if (t.kind === "eq") { eqIdx = j; break; }
+      }
+      if (eqIdx === -1) continue;
+      const rhsIdx = nextSignificant(tokens, eqIdx + 1);
+      const rhsTok = tokens[rhsIdx];
+      // Only treat as rebound when the RHS is a DIFFERENT stdlib namespace.
+      // `const time = time` (self-reference) is left alone.
+      if (rhsTok && rhsTok.kind === "ident" && STDLIB_NAMES.has(rhsTok.text) && rhsTok.text !== nameTok.text) {
+        reboundCanonicals.add(nameTok.text);
+      }
+    }
+  }
+
   let depth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
@@ -149,6 +187,11 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
     // Canonical names must remain unconditional tripwires — recording `time → random`
     // would cause later passes to mis-attribute `time.now()` as a `random` call.
     if (STDLIB_NAMES.has(nameTok.text)) continue;
+
+    // Skip if the RHS stdlib name has been rebound at module scope (e.g.
+    // `const time = random; const x = time` — `x` would be aliased to the rebound
+    // `time`, not the canonical stdlib `time`; tracking it as `x → time` is unsound).
+    if (reboundCanonicals.has(stdlibTok.text)) continue;
 
     aliases.set(nameTok.text, stdlibTok.text);
   }
@@ -830,9 +873,17 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
         const localIdx = nextSignificant(tokens, peekIdx + 1);
         const local = tokens[localIdx];
         if (local?.kind === "ident") {
-          // `key: localName` — simple rename binding.
+          // `key: localName` or `key: localName = defaultExpr` — simple rename binding.
+          // The local name is the binding; skip any `= defaultExpr` so idents in the
+          // default expression are not mistaken for bound names.
           out.add(local.text);
-          i = localIdx + 1;
+          const afterLocalIdx = nextSignificant(tokens, localIdx + 1);
+          const afterLocal = tokens[afterLocalIdx];
+          if (afterLocal?.kind === "eq") {
+            i = skipDefaultValue(tokens, afterLocalIdx + 1, end);
+          } else {
+            i = localIdx + 1;
+          }
         } else if (local && local.kind === "open" && (local.text === "{" || local.text === "[")) {
           // `key: { nested }` or `key: [nested]` — recurse into the nested pattern.
           collectDestructuredNames(tokens, localIdx, end, out);
@@ -878,11 +929,45 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
         }
       }
     } else {
-      // Array pattern: each ident is a binding.
+      // Array pattern: each ident is a binding, possibly with a default value.
+      // `[x = t]` — x is the binding; t is in the default expression, not a bound name.
       out.add(t.text);
-      i++;
+      const peekIdx2 = nextSignificant(tokens, i + 1);
+      const peek2 = tokens[peekIdx2];
+      if (peek2?.kind === "eq") {
+        i = skipDefaultValue(tokens, peekIdx2 + 1, end);
+      } else {
+        i++;
+      }
     }
   }
+}
+
+/**
+ * Skip over a default-value expression starting at token index `from`, stopping
+ * when a `,` at depth 0 or a closing bracket/brace is reached. Returns the
+ * index of the stopping token (the `,` or close bracket).
+ *
+ * Used by `collectDestructuredNames` to skip idents inside default-value
+ * expressions so they are not collected as bound names.
+ */
+function skipDefaultValue(tokens: Token[], from: number, end: number): number {
+  let j = from;
+  let skipDepth = 0;
+  while (j < end) {
+    const jt = tokens[j];
+    if (!jt) { j++; continue; }
+    if (jt.kind === "open") { skipDepth++; j++; continue; }
+    if (jt.kind === "close") {
+      if (skipDepth === 0) return j;
+      skipDepth--;
+      j++;
+      continue;
+    }
+    if (skipDepth === 0 && jt.kind === "punct" && jt.text === ",") return j;
+    j++;
+  }
+  return j;
 }
 
 /**

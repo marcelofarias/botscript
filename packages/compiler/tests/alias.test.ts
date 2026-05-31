@@ -634,3 +634,64 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
     expect(() => t(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// collectDestructuredNames: default-value idents are not bound names
+// ---------------------------------------------------------------------------
+
+describe("stdlib alias tracking — destructuring default values are not bound names", () => {
+  it("renamed destructuring default `const { foo: t = r } = obj` does not shadow module alias `const t = time`", () => {
+    // `t` in the default expression is a read, not a binding. The local name is `t` (via `foo: t`),
+    // so it DOES shadow the alias. But `r` in the default is not a binding and must not shadow anything.
+    const src =
+      "?bs 0.8\n" +
+      "const r = random\n" +
+      "fn f(obj: any) uses { random } -> number {\n" +
+      "  const { foo: x = r } = obj\n" +
+      "  return r.next()\n" +
+      "}\n";
+    // r.next() should resolve to random.next() via alias — cap-check should pass.
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("array default `const [t = r] = arr` does not bind `r` as a local shadow", () => {
+    const src =
+      "?bs 0.8\n" +
+      "const r = random\n" +
+      "fn f(arr: any) uses { random } -> number {\n" +
+      "  const [x = r] = arr\n" +
+      "  return r.next()\n" +
+      "}\n";
+    // r.next() should resolve to random.next() via alias — cap-check should pass.
+    expect(() => t(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectStdlibAliases: canonical rebinding guard
+// ---------------------------------------------------------------------------
+
+describe("stdlib alias tracking — canonical name rebinding", () => {
+  it("does not track `const x = time` when `const time = random` rebinds the canonical", () => {
+    // With `const time = random`, the alias `const x = time` would produce x → time
+    // but at runtime x holds random. collectStdlibAliases must not track such aliases.
+    const src =
+      "?bs 0.8\n" +
+      "const time = random\n" +
+      "const x = time\n" +
+      "fn f() uses { random } -> number = random.next()\n";
+    // x is NOT tracked as an alias; x.next() would be an unknown call.
+    // The test just verifies the file compiles without error (no false CAP001 from x).
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("still tracks `const x = time` when `const time = time` (self-reference) is present", () => {
+    // Self-referential `const time = time` is degenerate; it should not mark `time` as rebound.
+    const src =
+      "?bs 0.8\n" +
+      "const time = time\n" +
+      "const x = time\n" +
+      "fn f() uses { time } -> number = x.now()\n";
+    expect(() => t(src)).not.toThrow();
+  });
+});
