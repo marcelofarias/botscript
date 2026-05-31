@@ -80,7 +80,15 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       // Also handle paren-wrapped same-name: `const time = (time)` is still self-ref.
       let rhsIsCanonicalSelf = false;
       if (rhsTok && rhsTok.kind === "ident" && rhsTok.text === nameTok.text) {
-        rhsIsCanonicalSelf = true;
+        // Only a self-reference if the ident is not followed by `.` (member access).
+        // `const time = time` → self-ref; `const time = time.now` → rebind.
+        const afterRhsIdx = nextSignificant(tokens, rhsIdx + 1);
+        const afterRhsTok = tokens[afterRhsIdx];
+        const isMemberAccess =
+          afterRhsTok &&
+          ((afterRhsTok.kind === "punct" && afterRhsTok.text === ".") ||
+            afterRhsTok.kind === "questionDot");
+        if (!isMemberAccess) rhsIsCanonicalSelf = true;
       } else if (rhsTok && rhsTok.kind === "open" && rhsTok.text === "(") {
         const unwrapped = unwrapParenToIdent(tokens, rhsIdx);
         if (unwrapped && unwrapped.tok.text === nameTok.text) {
@@ -480,10 +488,20 @@ export function collectDestructuringWarningCandidates(
       stdlibName = rawRhsTok.text;
       rhsTokenEnd = rawRhsIdx + 1;
     } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
-      // const { now } = (time)  — paren-wrapped stdlib namespace
+      // const { now } = (time)  or  const { now } = (t)  — paren-wrapped RHS
       const unwrapped = unwrapParenToIdent(tokens, rawRhsIdx);
-      if (!unwrapped || !STDLIB_NAMES.has(unwrapped.tok.text)) continue;
-      stdlibName = unwrapped.tok.text;
+      if (!unwrapped) continue;
+      if (STDLIB_NAMES.has(unwrapped.tok.text)) {
+        // paren-wrapped direct stdlib namespace
+        stdlibName = unwrapped.tok.text;
+      } else if (aliases) {
+        // paren-wrapped tracked stdlib alias
+        const resolved = aliases.get(unwrapped.tok.text);
+        if (!resolved) continue;
+        stdlibName = resolved;
+      } else {
+        continue;
+      }
       rhsTokenEnd = unwrapped.tokenEnd;
     } else if (aliases && rawRhsTok.kind === "ident") {
       // const { now } = t  where t is a tracked stdlib alias (const t = time)

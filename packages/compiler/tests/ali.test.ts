@@ -572,4 +572,13 @@ describe("ALI003 — stdlib namespace destructuring (?bs 0.8)", () => {
     expect(warns.length).toBeGreaterThanOrEqual(1);
     expect(warns[0]?.message).toContain("time");
   });
+
+  it("ALI003 fires when RHS is a paren-wrapped tracked alias (`const t = time; const { now } = (t)`)", () => {
+    // Same as above but the alias is trivially parenthesized on the RHS.
+    const src = "?bs 0.8\nconst t = time\nconst { now } = (t)\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]?.message).toContain("time");
+  });
 });
