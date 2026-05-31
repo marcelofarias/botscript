@@ -184,7 +184,7 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | ------ | --------------------------------------------- | ------------------------------------------------------- |
 | BS001  | Malformed `?bs` directive (e.g. `?bs nope`).  | `?bs 0.1` (or whatever `LATEST_VERSION` is).            |
 | BS002  | Unsupported version (e.g. `?bs 99.0`).        | Pin to a supported version; see `SUPPORTED_VERSIONS`.   |
-| CAP001 | A fn calls or transitively reaches `http/time/random/fs/stdout/stderr.X` whose capability isn't in its `uses { … }`. (0.2 is direct-only; 0.3 adds transitive call-graph propagation and the diagnostic names the path.) | Either add the capability or remove the call. The diagnostic includes the literal `fn name(...) uses { … } -> ...` rewrite. |
+| CAP001 | A fn calls or transitively reaches `http/time/random/fs/stdout/stderr.X` whose capability isn't in its `uses { … }`. (0.2 is direct-only; 0.3 adds same-file transitive propagation; cross-file propagation via `moduleEffects` applies from 0.3.) | Either add the capability or remove the call. The diagnostic includes the literal `fn name(...) uses { … } -> ...` rewrite. |
 | CAP002 | (0.3+) A fn declares a capability nothing in its body or callees reaches. | Remove the unused capability from the `uses { … }` clause, or actually use it. |
 | UNS001 | (0.3+) `unsafe { … }` block missing a justification string. | `unsafe "<reason>" { … }`. |
 | UNS002 | (0.3+) `unsafe "" { … }` — empty justification. (0.5+) Also fires on a declaration-level `unsafe "" fn name(…)` with an empty reason. | Replace `""` with a one-sentence reason. |

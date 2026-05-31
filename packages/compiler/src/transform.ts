@@ -134,7 +134,7 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
     const forms: string[] = [];
     const allWarnings: Diagnostic[] = [];
 
-    // When moduleEffects is provided, substitute closures for dep/thr passes
+    // When moduleEffects is provided, substitute closures for dep/thr/cap passes
     // so they can consult the cross-file effect surface.
     const mods = opts.moduleEffects;
     const effectivePipeline: ReadonlyArray<PipelineEntry> = mods
@@ -143,6 +143,8 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
             return { ...e, fn: (s: string, v: VersionInfo) => passDepCheck(s, v, mods) };
           if (e.name === "thrCheck")
             return { ...e, fn: (s: string, v: VersionInfo) => passThrCheck(s, v, mods) };
+          if (e.name === "capCheck")
+            return { ...e, fn: (s: string, v: VersionInfo) => passCapCheck(s, v, mods) };
           return e;
         })
       : PASS_PIPELINE;

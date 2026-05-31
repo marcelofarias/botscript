@@ -17,6 +17,12 @@
  *            Inner `fn` declarations are excluded from the parent's body scan.
  *            Aliasing of stdlib namespaces (`const t = time`) is still not
  *            tracked — the rule remains "the canonical names are tripwires".
+ *
+ *   cross-file (0.3+, opt-in via moduleEffects): when `passCapCheck` is called
+ *            with a `ModuleEffects` map that includes `capabilities` on an
+ *            imported fn's surface, CAP001 fires if a caller omits those
+ *            capabilities from its `uses {}`. Import aliases are resolved.
+ *            `buildModuleEffects` collects `uses {}` declarations automatically.
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
@@ -27,6 +33,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
+import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 /** stdlib namespace -> capability it consumes. Canonical source; import from here to avoid drift. */
 export const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
@@ -78,12 +85,14 @@ interface DirectUse {
 
 /**
  * The transitive path of how a capability arrived in a fn — either a direct
- * stdlib reference inside the fn itself, or a call to a callee that
- * (recursively) consumes it.
+ * stdlib reference inside the fn itself, a call to a same-file callee that
+ * (recursively) consumes it, or a call to an imported (cross-file) function
+ * whose declared capabilities propagate to the caller.
  */
 type Path =
   | { kind: "direct"; fnName: string; use: DirectUse }
-  | { kind: "via"; fnName: string; callee: string; next: Path };
+  | { kind: "via"; fnName: string; callee: string; next: Path }
+  | { kind: "external"; fnName: string; callee: string; capability: string };
 
 interface FnRecord {
   decl: FnDecl;
@@ -96,12 +105,14 @@ interface FnRecord {
   consumed: Map<string, Path>;
 }
 
-export function passCapCheck(src: string, version: VersionInfo): string {
-  // Allow generics in fn signatures from 0.4 onward, so a generic fn isn't
-  // silently dropped from the cap-check call graph. Earlier pins do not
-  // recognize `<…>` between the name and the args (forward-compat).
+export function passCapCheck(
+  src: string,
+  version: VersionInfo,
+  moduleEffects?: ModuleEffects,
+): string {
   const allowGenerics = atLeast(version.resolved, "0.4");
-  if (atLeast(version.resolved, "0.3")) return checkStrict(src, allowGenerics);
+  if (atLeast(version.resolved, "0.3"))
+    return checkStrict(src, allowGenerics, moduleEffects);
   return checkDirect(src, allowGenerics);
 }
 
@@ -174,14 +185,32 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
  * present in the call graph (and CAP001/CAP002 fire on them). 0.3 callers
  * pass allowGenerics=false, preserving prior behaviour.
  */
-function checkStrict(src: string, allowGenerics: boolean): string {
+function checkStrict(
+  src: string,
+  allowGenerics: boolean,
+  moduleEffects?: ModuleEffects,
+): string {
   // 1. Parse once with includeNestedFns so program.fns covers every decl
   //    in the file. Reuse the lexed tokens for intra-body scans.
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  // 2. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
+  // 2. Build cross-file capability maps and import alias resolution up front
+  //     so scanBody can track calls to imported functions that have capabilities.
+  const importAliases = moduleEffects ? buildImportAliasMap(tokens) : new Map<string, string>();
+  const extCaps = new Map<string, readonly string[]>();
+  if (moduleEffects) {
+    for (const [name, eff] of Object.entries(moduleEffects)) {
+      if (eff.capabilities?.length) extCaps.set(name, eff.capabilities);
+    }
+  }
+  // Names to track as callees: external fn names and their local import aliases.
+  const extCalleeNames = new Set<string>();
+  for (const name of extCaps.keys()) extCalleeNames.add(name);
+  for (const localAlias of importAliases.keys()) extCalleeNames.add(localAlias);
+
+  // 3. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
   //    fns surfaced, two helpers with the same name in different scopes are
   //    a real possibility — keying by name would silently let one
   //    overwrite the other in the Map and corrupt inference. Identity
@@ -199,7 +228,7 @@ function checkStrict(src: string, allowGenerics: boolean): string {
     const inner = decls.filter(
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls);
+    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, extCalleeNames);
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
@@ -219,10 +248,34 @@ function checkStrict(src: string, allowGenerics: boolean): string {
     }
   }
 
-  // 4. Closure: propagate callees' consumed caps back to callers until
-  //    fixed point. For each callee NAME the body called, merge the
-  //    consumed sets of EVERY decl in the file with that name (conservative
-  //    over-approximation when names are shadowed).
+  // 4. Seed external (cross-file) caps before the same-file closure so that
+  //    transitive chains like `outer -> helper -> fetchRow (imported uses { net })`
+  //    propagate `net` all the way up to `outer` during the fixed-point below.
+  if (extCaps.size > 0) {
+    for (const rec of records.values()) {
+      for (const calleeName of rec.callees) {
+        if (declsByName.has(calleeName)) continue;
+        const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+        const caps = extCaps.get(resolvedCallee);
+        if (!caps) continue;
+        for (const cap of caps) {
+          if (rec.consumed.has(cap)) continue;
+          rec.consumed.set(cap, {
+            kind: "external",
+            fnName: rec.decl.name,
+            callee: calleeName,
+            capability: cap,
+          });
+        }
+      }
+    }
+  }
+
+  // 4b. Closure: propagate callees' consumed caps back to callers until
+  //     fixed point. For each callee NAME the body called, merge the
+  //     consumed sets of EVERY decl in the file with that name (conservative
+  //     over-approximation when names are shadowed). External caps seeded
+  //     above now participate in this propagation.
   let changed = true;
   while (changed) {
     changed = false;
@@ -286,10 +339,14 @@ function scanBody(
   fn: FnDecl,
   inner: FnDecl[],
   decls: FnDecl[],
+  extraCalleeNames: ReadonlySet<string> = new Set(),
 ): { direct: Map<string, DirectUse>; callNames: Set<string> } {
   const direct = new Map<string, DirectUse>();
   const callNames = new Set<string>();
-  const fnNames = new Set(decls.map((d) => d.name));
+  const fnNames =
+    extraCalleeNames.size > 0
+      ? new Set([...decls.map((d) => d.name), ...extraCalleeNames])
+      : new Set(decls.map((d) => d.name));
 
   for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
     if (insideAny(i, inner)) continue;
@@ -375,7 +432,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
   const proposed = [...declaredList, ...missing].join(", ");
 
   const entry = getErrorCode("CAP001")!;
-  const isTransitive = path.kind === "via";
+  const isTransitive = path.kind === "via" || path.kind === "external";
   const pathStr = renderPath(path);
 
   // For a direct usage we anchor the diagnostic at the offending stdlib token
@@ -455,14 +512,31 @@ function renderPath(path: Path): string {
     parts.push(cur.fnName);
     cur = cur.next;
   }
+  if (cur.kind === "external") {
+    parts.push(cur.fnName);
+    parts.push(`${cur.callee} (imported)`);
+    return parts.join(" -> ");
+  }
   parts.push(cur.fnName);
   parts.push(`${cur.use.namespace}.${cur.use.member}`);
   return parts.join(" -> ");
 }
 
+/** Synthetic DirectUse used when the leaf of a path is an external callee. */
+const EXTERNAL_LEAF_USE: DirectUse = {
+  capability: "",
+  namespace: "(imported)",
+  member: "",
+  line: 0,
+  column: 0,
+  start: 0,
+  end: 0,
+};
+
 function leafDirectUse(path: Path): DirectUse {
   let cur: Path = path;
   while (cur.kind === "via") cur = cur.next;
+  if (cur.kind === "external") return EXTERNAL_LEAF_USE;
   return cur.use;
 }
 

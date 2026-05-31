@@ -461,3 +461,106 @@ describe("buildModuleEffects builder", () => {
     expect(effects.pubB).toEqual({ reads: ["bDb"] });
   });
 });
+
+// ---------------------------------------------------------------------------
+// CAP001: cross-file capability transitivity
+// ---------------------------------------------------------------------------
+
+describe("CAP001: cross-file capability transitivity via moduleEffects", () => {
+  it("fires when caller omits capability declared in imported fn", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn processData() -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).toThrow(/CAP001/);
+  });
+
+  it("passes when caller declares the capability from imported fn", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn processData() uses { net } -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).not.toThrow();
+  });
+
+  it("passes when no moduleEffects are provided (opaque external calls)", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn processData() -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("resolves import aliases when checking cross-file capabilities", () => {
+    const src =
+      "?bs 0.3\n" +
+      "import { fetchRow as fetchUser } from \"./db.bs\"\n" +
+      "fn processData() -> string {\n" +
+      "  return fetchUser()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).toThrow(/CAP001/);
+  });
+
+  it("buildModuleEffects collects capabilities from exported fn declarations", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn fetchRow() uses { net } -> string = http.get(\"https://example.com\")\n" +
+      "export { fetchRow }\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects.fetchRow?.capabilities).toEqual(["net"]);
+  });
+
+  it("does not fire below ?bs 0.3 (no transitive cap-check before 0.3)", () => {
+    const src =
+      "?bs 0.2\n" +
+      "fn processData() -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).not.toThrow();
+  });
+
+  it("fires CAP001 on outer caller in a same-file chain outer->helper->imported", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn helper() -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n" +
+      "fn outer() -> string {\n" +
+      "  return helper()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).toThrow(/CAP001/);
+  });
+
+  it("passes when outer declares the cap in a same-file chain outer->helper->imported", () => {
+    const src =
+      "?bs 0.3\n" +
+      "fn helper() uses { net } -> string {\n" +
+      "  return fetchRow()\n" +
+      "}\n" +
+      "fn outer() uses { net } -> string {\n" +
+      "  return helper()\n" +
+      "}\n";
+    const moduleEffects: ModuleEffects = {
+      fetchRow: { capabilities: ["net"] },
+    };
+    expect(() => compile(src, moduleEffects)).not.toThrow();
+  });
+});
