@@ -576,4 +576,61 @@ describe("stdlib alias tracking — shadowing (fn param same name as module alia
       "}\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("block-scoped destructuring { t } suppresses alias inside the block — no false CAP001", () => {
+    // `const { t } = obj` inside an if-block shadows the module alias `const t = time`.
+    // `t.length` inside the block should NOT fire CAP001.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(flag: boolean, obj: any) -> number {\n" +
+      "  if (flag) {\n" +
+      "    const { t } = obj\n" +
+      "    return t.length\n" +
+      "  }\n" +
+      "  return 0\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("alias is still active OUTSIDE the block where destructuring shadows it", () => {
+    // `const { t } = obj` inside the if-block only shadows `t` inside that block.
+    // `t.now()` outside the block still resolves to the module alias and fires CAP001.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(flag: boolean, obj: any) -> number {\n" +
+      "  if (flag) {\n" +
+      "    const { t } = obj\n" +
+      "  }\n" +
+      "  return t.now()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("default value expression idents in destructuring are NOT treated as bound names", () => {
+    // `const { a = t } = obj` — `a` is the bound name; `t` (default value) is not.
+    // The module alias `const t = time` must still be active: `t.now()` fires CAP001.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(obj: any) -> number {\n" +
+      "  const { a = t } = obj\n" +
+      "  return t.now()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/CAP001/);
+  });
+
+  it("bound name in destructuring with default IS treated as a shadow", () => {
+    // `const { t = 0 } = obj` at fn-body top level — `t` is the bound name, not a default.
+    // It shadows the module alias so `t.now()` does NOT fire CAP001.
+    const src =
+      "?bs 0.8\n" +
+      "const t = time\n" +
+      "fn f(obj: any) -> number {\n" +
+      "  const { t = 0 } = obj\n" +
+      "  return t.length\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });

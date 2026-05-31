@@ -853,7 +853,29 @@ function collectDestructuredNames(tokens: Token[], openIdx: number, end: number,
       } else {
         // `shorthand` or `shorthand = default` — the ident is the binding.
         out.add(t.text);
-        i++;
+        // If a default value follows (`= expr`), skip identifiers in the
+        // expression — they are reads, not bound names.
+        // Note: `=` has token kind "eq" in botscript's lexer (not "punct").
+        if (peek?.kind === "eq") {
+          let j = peekIdx + 1;
+          let skipDepth = 0;
+          while (j < end) {
+            const jt = tokens[j];
+            if (!jt) { j++; continue; }
+            if (jt.kind === "open") { skipDepth++; j++; continue; }
+            if (jt.kind === "close") {
+              if (skipDepth === 0) break;
+              skipDepth--;
+              j++;
+              continue;
+            }
+            if (skipDepth === 0 && jt.kind === "punct" && jt.text === ",") break;
+            j++;
+          }
+          i = j;
+        } else {
+          i++;
+        }
       }
     } else {
       // Array pattern: each ident is a binding.
@@ -987,12 +1009,22 @@ export function blockShadowsForFn(
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
-    if (!nameTok || nameTok.kind !== "ident") continue;
-    if (!moduleAliasNames.has(nameTok.text)) continue;
+    if (!nameTok) continue;
 
-    // Record the enclosing block as the shadow range for this name.
     const block = blockStack.at(-1);
-    if (block) {
+    if (!block) continue;
+
+    if (nameTok.kind === "open" && (nameTok.text === "{" || nameTok.text === "[")) {
+      // Destructuring: `const { t } = obj` or `const [t] = arr` inside a nested block.
+      // Collect all bound names and record any that shadow module aliases.
+      const patternNames = new Set<string>();
+      collectDestructuredNames(tokens, nameIdx, end, patternNames);
+      for (const name of patternNames) {
+        if (moduleAliasNames.has(name)) {
+          result.push({ name, startIdx: block.openIdx, endIdx: block.closeIdx });
+        }
+      }
+    } else if (nameTok.kind === "ident" && moduleAliasNames.has(nameTok.text)) {
       result.push({ name: nameTok.text, startIdx: block.openIdx, endIdx: block.closeIdx });
     }
   }
