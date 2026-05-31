@@ -112,11 +112,13 @@ export function passDepCheck(
   const fnNames = new Set(decls.map((d) => d.name));
 
   // Include external function names (and their local aliases) in the callee
-  // scan so cross-file calls appear in the callees set.
+  // scan so cross-file calls appear in the callees set.  knownExternalNames
+  // covers moduleEffects entries with no reads/writes so calls to them are
+  // collected and treated as non-self callees by DEP003/DEP004.
   const aliasedLocalNames = new Set(importAliases.keys());
   const allCalleeNames =
-    extReads.size > 0 || extWrites.size > 0 || aliasedLocalNames.size > 0
-      ? new Set([...fnNames, ...extReads.keys(), ...extWrites.keys(), ...aliasedLocalNames])
+    knownExternalNames.size > 0 || aliasedLocalNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...aliasedLocalNames])
       : fnNames;
 
   // Precompute each fn's nested (descendant) decls once via a single sweep,
