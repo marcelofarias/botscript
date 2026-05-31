@@ -198,6 +198,42 @@ describe("THR004: throws over-declared (0.9+)", () => {
     expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
     expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
   });
+
+  it("message shows full declared throws set even when only a subset are stale", () => {
+    // helper throws DbError; load also declares NetworkError (stale).
+    // The message must show "declares throws { DbError, NetworkError }" — the complete
+    // declared set — not just "{ NetworkError }" (the stale subset).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() throws { DbError } -> string = \"ok\"\n" +
+      "fn load() throws { DbError, NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("DbError");
+    expect(w!.message).toContain("NetworkError");
+    // Full declared set must appear in the message (not just the stale label).
+    expect(w!.message).toMatch(/declares throws \{[^}]*DbError[^}]*NetworkError[^}]*\}/);
+  });
+
+  it("does not capture nested callback-type param names as outer fn params", () => {
+    // `process` has a callback param typed `(item: string) -> void`.
+    // `item` is inside a type annotation — not a real param of `process`.
+    // collectParamNames must NOT capture `item`; otherwise an external call to
+    // a function named `item` would be incorrectly suppressed.
+    // THR004 should still fire: `noop` doesn't throw NetworkError, and `handler`
+    // (a real param with no throws annotation) doesn't justify it either.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn process(handler: (item: string) -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  handler(\"x\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
 });
 
 // ---------------------------------------------------------------------------

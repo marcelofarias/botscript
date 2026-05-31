@@ -396,14 +396,28 @@ function collectBodyErrorTypes(
  * Returns the set of parameter names for a function, parsed from `FnDecl.args`.
  * Used to exclude callback parameter calls from the opaque-call heuristic in THR004:
  * calling `cb()` where `cb` is a declared parameter is not an unknown external call.
+ *
+ * Depth-tracks parentheses so names inside nested callback type annotations
+ * (e.g. the `name` in `cb: (name: string) -> string`) are not captured.
  */
 function collectParamNames(fn: FnDecl): Set<string> {
   const names = new Set<string>();
-  // args format: `(name: type, name: type, ...)` — param names precede `:`.
-  const re = /(?:[\(,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(fn.args)) !== null) {
-    names.add(m[1]!);
+  const args = fn.args; // verbatim args string, includes outer parens
+  let depth = 0;
+  let i = 0;
+  while (i < args.length) {
+    const c = args[i]!;
+    if (c === "(") { depth++; i++; continue; }
+    if (c === ")") { depth--; i++; continue; }
+    // Only capture param names at the top-level param list (depth === 1).
+    if (depth !== 1) { i++; continue; }
+    const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/.exec(args.slice(i));
+    if (m) {
+      names.add(m[1]!);
+      i += m[0].length;
+    } else {
+      i++;
+    }
   }
   return names;
 }
@@ -451,12 +465,17 @@ function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diag
   const entry = getErrorCode("THR004")!;
   const { line, column } = locationOf(src, rec.decl.fnKeywordStart);
   const nameEnd = rec.decl.nameStart + rec.decl.name.length;
-  const firstLabel = overLabels[0]!;
-  const labelList = overLabels.join(", ");
+  // Show the full declared throws set so the message is accurate even when only
+  // a subset of labels are stale (the reader sees what the fn actually declares).
+  const declaredList = [...rec.declaredThrows].sort().join(", ");
+  const staleList = overLabels.join(", ");
   const notPropagated =
     overLabels.length === 1
-      ? `'${firstLabel}' is not propagated by any callee or constructed directly`
-      : `[${labelList}] are not propagated by any callee or constructed directly`;
+      ? `'${overLabels[0]}' is not propagated by any callee or constructed directly`
+      : `[${staleList}] are not propagated by any callee or constructed directly`;
+
+  const remaining = [...rec.declaredThrows].filter((l) => !overLabels.includes(l)).sort();
+  const rewriteThrows = remaining.length > 0 ? `throws { ${remaining.join(", ")} } ` : "";
 
   return {
     code: "THR004",
@@ -467,9 +486,9 @@ function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diag
     start: rec.decl.fnKeywordStart,
     end: nameEnd,
     message:
-      `fn '${rec.decl.name}' declares throws { ${labelList} } but ${notPropagated}; annotation may be stale`,
+      `fn '${rec.decl.name}' declares throws { ${declaredList} } but ${notPropagated}; annotation may be stale`,
     rule: entry.rule,
     idiom: entry.idiom,
-    rewrite: `fn ${rec.decl.name}(...) throws { …remaining } -> ...  // remove label not propagated by any callee or body`,
+    rewrite: `fn ${rec.decl.name}(...) ${rewriteThrows}-> ...  // remove stale label${overLabels.length > 1 ? "s" : ""}: ${staleList}`,
   };
 }
