@@ -475,4 +475,45 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
   });
+
+  it("does not fire DEP003 when fn calls an unknown namespace object method", () => {
+    // `dbClient.query()` is a member call on an unknown namespace import.
+    // hasOpaqueCall must treat it as opaque so DEP003 is suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  dbClient.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when fn calls an unknown namespace object method", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f() writes { log } -> void {\n" +
+      "  step();\n" +
+      "  logger.write()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("does not suppress DEP003 for stdlib namespace method calls (time.now)", () => {
+    // Stdlib namespaces are excluded from opaque detection — they are handled
+    // by cap-check, not by DEP003 suppression.
+    // Use `unsafe` to suppress UNS005 so the DEP003 check is reached.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() uses { time } reads { db } -> number {\n" +
+      "  helper();\n" +
+      "  unsafe \"known\" { time.now() }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
 });

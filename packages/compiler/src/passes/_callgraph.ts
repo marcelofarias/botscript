@@ -88,6 +88,12 @@ export function collectCallees(
 }
 
 /**
+ * Botscript stdlib namespace names. Member calls on these (e.g. `time.now()`,
+ * `http.get()`) are handled by cap-check/uns-check, not by `hasOpaqueCall`.
+ */
+const STDLIB_NAMESPACES = new Set(["http", "time", "random", "fs", "stdout", "stderr"]);
+
+/**
  * Botscript's lexer only promotes a small set of names to `keyword` tokens
  * (see `KEYWORDS` in lex.ts). Most control-flow constructs (`if`, `while`,
  * `for`, etc.) are tokenised as plain `ident` and would otherwise be treated
@@ -147,15 +153,34 @@ export function hasOpaqueCall(
     // CapCase identifiers (error-type constructors like `NetworkError(...)`).
     if (BOTSCRIPT_BUILTIN_CALLS.has(tok.text) || /^[A-Z]/.test(tok.text)) continue;
 
-    // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
+    // Skip method identifiers that are part of a property/member access.
     const prevIdx = prevSignificant(tokens, i - 1);
     const prev = tokens[prevIdx];
     if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
       continue;
 
-    // Must be followed by `(` to be a call.
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
+
+    // Detect member calls on unknown namespace objects: `db.read()` or `api.helper()`.
+    // If this ident is followed by `.`, it is used as a namespace/object receiver.
+    // Stdlib namespaces (time, http, etc.) are handled by cap-check — skip those.
+    // Any other unknown ident used as a method receiver is treated as opaque.
+    if (next && ((next.kind === "punct" && next.text === ".") || next.kind === "questionDot")) {
+      if (STDLIB_NAMESPACES.has(tok.text)) continue;
+      const methodIdx = nextSignificant(tokens, nextIdx + 1);
+      const methodTok = tokens[methodIdx];
+      if (methodTok && methodTok.kind === "ident") {
+        const afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+        const afterMethod = tokens[afterMethodIdx];
+        if (afterMethod && afterMethod.kind === "open" && afterMethod.text === "(") {
+          return true; // Opaque namespace/object method call
+        }
+      }
+      continue; // Property access without a following call — not opaque
+    }
+
+    // Must be followed by `(` to be a bare function call.
     if (!next || next.kind !== "open" || next.text !== "(") continue;
 
     return true;

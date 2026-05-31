@@ -314,11 +314,14 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "__proto__")).toBe(true);
   });
 
-  it("omits fns with no declared effects", () => {
+  it("includes fns with no declared effects as empty entries", () => {
+    // Pure helpers (no reads/writes/throws) are included so DEP003/DEP004 can
+    // distinguish "known callee with no labels" from "unknown opaque callee".
     const effects = buildModuleEffects([
-      "?bs 0.9\nfn pure(x: string) -> string = x\n",
+      "?bs 0.9\nfn helper(x: string) -> string = x\n",
     ]);
-    expect(Object.keys(effects)).toEqual([]);
+    expect(Object.hasOwn(effects, "helper")).toBe(true);
+    expect(effects.helper).toEqual({});
   });
 
   it("includes only exported fns when the source has export statements", () => {

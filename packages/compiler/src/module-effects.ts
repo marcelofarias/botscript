@@ -375,11 +375,12 @@ export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
       if (decl.reads?.length) surface.reads = decl.reads;
       if (decl.writes?.length) surface.writes = decl.writes;
       if (decl.throws?.length) surface.throws = decl.throws;
-      if (Object.keys(surface).length > 0) {
-        effects[decl.name] = Object.hasOwn(effects, decl.name)
-          ? mergeEffectSurface(effects[decl.name]!, surface)
-          : surface;
-      }
+      // Always include the function, even when surface is empty {}.
+      // DEP003/DEP004 need to distinguish "known callee with no labels" from
+      // "unknown callee" — omitting pure helpers causes them to look opaque.
+      effects[decl.name] = Object.hasOwn(effects, decl.name)
+        ? mergeEffectSurface(effects[decl.name]!, surface)
+        : surface;
     }
   }
   return effects;
