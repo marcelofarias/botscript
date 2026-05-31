@@ -14,6 +14,102 @@ function compile(src: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// THR004: over-declared throws (0.9+, warning)
+// ---------------------------------------------------------------------------
+
+describe("THR004: throws over-declared (0.9+)", () => {
+  it("fires when a fn declares throws { X } but no callee throws X and body has no err(X)", () => {
+    // helper does not throw, body has no err(NetworkError)
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"ok\"\n" +
+      "fn load(id: string) throws { NetworkError } -> string = helper(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does NOT fire when callee transitively throws X", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn risky(id: string) throws { NetworkError } -> string = id\n" +
+      "fn load(id: string) throws { NetworkError } -> string = risky(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire when body directly constructs err(X)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  err(NetworkError())\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire for leaf fn (no tracked callees)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) throws { NetworkError } -> string = id\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire for self-recursive fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn retry(n: number) throws { NetworkError } -> string {\n" +
+      "  if (n > 0) retry(n - 1);\n" +
+      "  \"ok\"\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("is non-blocking (does not throw)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does NOT fire when paramThrows justifies the label", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withHandler(cb: () throws { NetworkError } -> string) throws { NetworkError } -> string {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("THR004 has severity 'warning'", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w?.severity).toBe("warning");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // THR003: missing throws from callback parameter
 // ---------------------------------------------------------------------------
 

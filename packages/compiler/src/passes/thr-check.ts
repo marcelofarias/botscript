@@ -25,14 +25,14 @@
  * it strictly needs.
  */
 
-import { BotscriptError } from "../diagnostics.js";
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
-import { computeNesting, collectCallees, nextSignificant, prevSignificant } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
@@ -58,15 +58,15 @@ export function passThrCheck(
   src: string,
   version: VersionInfo,
   moduleEffects?: ModuleEffects,
-): string {
-  if (!atLeast(version.resolved, "0.9")) return src;
+): { code: string; warnings: ReadonlyArray<Diagnostic> } {
+  if (!atLeast(version.resolved, "0.9")) return { code: src, warnings: [] };
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  if (decls.length === 0) return src;
+  if (decls.length === 0) return { code: src, warnings: [] };
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` should look up `fetchRow` in moduleEffects.
@@ -84,10 +84,15 @@ export function passThrCheck(
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
 
+  // All fns listed in moduleEffects (with or without throws) are "known" externals.
+  const knownExternalNames = new Set<string>(
+    moduleEffects ? Object.keys(moduleEffects) : [],
+  );
+
   const aliasedLocalNames = new Set(importAliases.keys());
   const allCalleeNames =
-    extThrows.size > 0 || aliasedLocalNames.size > 0
-      ? new Set([...fnNames, ...extThrows.keys(), ...aliasedLocalNames])
+    knownExternalNames.size > 0 || aliasedLocalNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...aliasedLocalNames])
       : fnNames;
 
   const innerByDecl = computeNesting(decls);
@@ -181,7 +186,49 @@ export function passThrCheck(
     if (err) throw err;
   }
 
-  return src;
+  // THR004: over-declared throws — a declared label is not justified by any
+  // callee (transitively) or by a direct err(X...) construction in the body.
+  const warnings: Diagnostic[] = [];
+  for (const rec of records.values()) {
+    if (rec.callees.size === 0) continue;
+
+    // Justified by: paramThrows + direct body construction + transitive callee throws.
+    const justifiedThrows = new Set<string>(rec.decl.paramThrows);
+    const bodyErrs = collectBodyErrorTypes(tokens, rec.decl, innerByDecl.get(rec.decl) ?? []);
+    for (const t of bodyErrs) justifiedThrows.add(t);
+
+    let hasNonSelfCallee = false;
+    for (const calleeName of rec.callees) {
+      const calleeDecls = declsByName.get(calleeName);
+      if (calleeDecls) {
+        for (const calleeDecl of calleeDecls) {
+          if (calleeDecl === rec.decl) continue;
+          hasNonSelfCallee = true;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const label of callee.transitiveThrows.keys()) justifiedThrows.add(label);
+        }
+        continue;
+      }
+      const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+      if (!knownExternalNames.has(resolvedCallee)) continue;
+      hasNonSelfCallee = true;
+      const extT = extThrows.get(resolvedCallee);
+      if (extT) for (const label of extT) justifiedThrows.add(label);
+    }
+    if (!hasNonSelfCallee) continue;
+
+    // Suppress when fn has opaque calls (unlisted external callee).
+    const inner = innerByDecl.get(rec.decl) ?? [];
+    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames)) continue;
+
+    const overDeclared = [...rec.declaredThrows].filter((l) => !justifiedThrows.has(l)).sort();
+    if (overDeclared.length > 0) {
+      warnings.push(mkThr004Warning(src, rec, overDeclared));
+    }
+  }
+
+  return { code: src, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -344,4 +391,83 @@ function checkBodyErrors(
   }
 
   return null;
+}
+
+/**
+ * Collect all CapCase error type names directly constructed in `fn`'s body via
+ * `err(TypeName(...))`, `err(new TypeName(...))`, or bare `err(TypeName)`.
+ * Used by the THR004 check to determine whether a declared throws label is
+ * justified by a direct construction even when no callee propagates it.
+ */
+function collectBodyErrorTypes(tokens: Token[], fn: FnDecl, inner: FnDecl[]): Set<string> {
+  const result = new Set<string>();
+  const open: FnDecl[] = [];
+  let nextInner = 0;
+
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
+
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident" || tok.text !== "err") continue;
+
+    const prevIdx = prevSignificant(tokens, i - 1);
+    const prev = tokens[prevIdx];
+    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot")) continue;
+
+    const parenIdx = nextSignificant(tokens, i + 1);
+    const parenTok = tokens[parenIdx];
+    if (!parenTok || parenTok.kind !== "open" || parenTok.text !== "(") continue;
+
+    let argIdx = nextSignificant(tokens, parenIdx + 1);
+    let argTok = tokens[argIdx];
+
+    if (argTok && argTok.kind === "ident" && argTok.text === "new") {
+      argIdx = nextSignificant(tokens, argIdx + 1);
+      argTok = tokens[argIdx];
+    }
+
+    if (!argTok || argTok.kind !== "ident") continue;
+    const typeName = argTok.text;
+    if (!/^[A-Z]/.test(typeName)) continue;
+
+    const afterIdx = nextSignificant(tokens, argIdx + 1);
+    const after = tokens[afterIdx];
+    if (!after) continue;
+    const isCtor = after.kind === "open" && after.text === "(";
+    const isRef = after.kind === "close" && after.text === ")";
+    if (!isCtor && !isRef) continue;
+
+    result.add(typeName);
+  }
+
+  return result;
+}
+
+function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diagnostic {
+  const entry = getErrorCode("THR004")!;
+  const { line, column } = locationOf(src, rec.decl.fnKeywordStart);
+  const nameEnd = rec.decl.nameStart + rec.decl.name.length;
+  const firstLabel = overLabels[0]!;
+  const labelList = overLabels.join(", ");
+
+  return {
+    code: "THR004",
+    severity: "warning" as const,
+    file: null,
+    line,
+    column,
+    start: rec.decl.fnKeywordStart,
+    end: nameEnd,
+    message:
+      `fn '${rec.decl.name}' declares throws { ${labelList} } but no callee in this file transitively throws { ${firstLabel} } ` +
+      `and the body does not construct err(${firstLabel}...); annotation may be stale`,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite: `fn ${rec.decl.name}(...) throws { …remaining } -> ...  // remove label not propagated by any callee or body`,
+  };
 }

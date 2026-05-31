@@ -414,6 +414,22 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
       "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }",
   },
+  THR004: {
+    code: "THR004",
+    title: "fn declares throws {} label not justified by any callee or direct construction (warning)",
+    rule: "a declared throws {} label should reflect an error type the fn or its callees can actually throw; if no same-file callee (transitively) throws X and the fn body does not construct err(X...), the label may be stale",
+    idiom: "remove the stale label from the throws {} clause; leaf fns and fns that directly construct err(X) can safely declare X even if no callee propagates it",
+    rewrite: "fn name(...) throws { …remaining } -> ...  // remove label not propagated by any callee or body",
+    example:
+      "// before — load calls helper() but neither throws NetworkError\n" +
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"ok\"\n" +
+      "fn load(id: string) throws { NetworkError } -> string = helper(id)  // THR004\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"ok\"\n" +
+      "fn load(id: string) -> string = helper(id)",
+  },
   THR003: {
     code: "THR003",
     title: "outer fn declares narrower throws than a callback parameter",

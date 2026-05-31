@@ -123,3 +123,51 @@ export function prevSignificant(tokens: Token[], start: number): number {
   }
   return i;
 }
+
+/**
+ * Returns true if `fn`'s body contains at least one function call whose callee
+ * name is NOT in `knownCalleeNames` (i.e. an opaque/external call whose effects
+ * are unknown to the compiler).
+ *
+ * A call is detected as `ident(` where the ident is not a property access and
+ * is not in `knownCalleeNames`. Inner fn declarations are excluded.
+ */
+export function hasOpaqueCall(
+  tokens: Token[],
+  fn: FnDecl,
+  inner: FnDecl[],
+  knownCalleeNames: Set<string>,
+): boolean {
+  const open: FnDecl[] = [];
+  let nextInner = 0;
+
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
+
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident") continue;
+
+    // Skip known callee names (same-file fns and listed external fns).
+    if (knownCalleeNames.has(tok.text)) continue;
+
+    // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
+    const prevIdx = prevSignificant(tokens, i - 1);
+    const prev = tokens[prevIdx];
+    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+      continue;
+
+    // Must be followed by `(` to be a call.
+    const nextIdx = nextSignificant(tokens, i + 1);
+    const next = tokens[nextIdx];
+    if (!next || next.kind !== "open" || next.text !== "(") continue;
+
+    return true;
+  }
+
+  return false;
+}
