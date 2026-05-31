@@ -18,11 +18,16 @@
  *           (`err(e)` where e's type is inferred) are out of scope — token-based
  *           detection only.
  *
+ *   THR004  throws over-declared: fn declares `throws { X }` but no same-file
+ *           callee (direct or transitive) throws X, the fn's body does not
+ *           construct `err(X...)` directly, and no callback param declares
+ *           `throws { X }`. Warning-level (?bs 0.9), gated to fns with at
+ *           least one non-self callee. Suppressed when the fn has untracked
+ *           external calls (opaque callees whose effects are unknown).
+ *
  * Same-file call resolution is performed by default. Cross-file calls extend
- * THR001 transitivity when a `moduleEffects` map is provided via
- * `TransformOptions.moduleEffects`. Over-declaration is intentionally NOT
- * checked — a caller may conservatively declare more exception types than
- * it strictly needs.
+ * THR001/THR004 transitivity when a `moduleEffects` map is provided via
+ * `TransformOptions.moduleEffects`.
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
@@ -195,7 +200,7 @@ export function passThrCheck(
     // Justified by: paramThrows + direct body construction + transitive callee throws.
     const justifiedThrows = new Set<string>(rec.decl.paramThrows);
     const bodyErrs = collectBodyErrorTypes(tokens, rec.decl, innerByDecl.get(rec.decl) ?? []);
-    for (const t of bodyErrs) justifiedThrows.add(t);
+    for (const t of bodyErrs.keys()) justifiedThrows.add(t);
 
     let hasNonSelfCallee = false;
     for (const calleeName of rec.callees) {
@@ -304,20 +309,22 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
 }
 
 /**
- * THR002: scan fn body for `err(TypeName(...))`, `err(new TypeName(...))`, or
- * bare `err(TypeName)` where TypeName (CapCase ident) is not in the fn's own
- * `throws {}` set. Returns a BotscriptError on the first violation found, or null.
+ * Collect all CapCase error type names directly constructed in `fn`'s body via
+ * `err(TypeName(...))`, `err(new TypeName(...))`, or bare `err(TypeName)`.
+ *
+ * Returns a Map from type name to the `err` token's start/end position of its
+ * first occurrence. Insertion order matches source order, so iteration order
+ * preserves left-to-right source position.
+ *
+ * Used by THR002 (undeclared construction check) and THR004 (over-declared
+ * justification) to avoid duplicating the body-scan logic.
  */
-function checkBodyErrors(
+function collectBodyErrorTypes(
   tokens: Token[],
   fn: FnDecl,
   inner: FnDecl[],
-  declaredThrows: Set<string>,
-  src: string,
-): BotscriptError | null {
-  const entry = getErrorCode("THR002")!;
-
-  // Cursor-based inner-fn exclusion.
+): Map<string, { start: number; end: number }> {
+  const result = new Map<string, { start: number; end: number }>();
   const open: FnDecl[] = [];
   let nextInner = 0;
 
@@ -366,10 +373,32 @@ function checkBodyErrors(
     const isRef = after.kind === "close" && after.text === ")";
     if (!isCtor && !isRef) continue;
 
-    // Already declared — fine.
+    // Record only the first occurrence per type name.
+    if (!result.has(typeName)) result.set(typeName, { start: tok.start, end: tok.end });
+  }
+
+  return result;
+}
+
+/**
+ * THR002: scan fn body for `err(TypeName(...))`, `err(new TypeName(...))`, or
+ * bare `err(TypeName)` where TypeName (CapCase ident) is not in the fn's own
+ * `throws {}` set. Returns a BotscriptError on the first violation found, or null.
+ */
+function checkBodyErrors(
+  tokens: Token[],
+  fn: FnDecl,
+  inner: FnDecl[],
+  declaredThrows: Set<string>,
+  src: string,
+): BotscriptError | null {
+  const entry = getErrorCode("THR002")!;
+  const bodyErrs = collectBodyErrorTypes(tokens, fn, inner);
+
+  for (const [typeName, loc] of bodyErrs) {
     if (declaredThrows.has(typeName)) continue;
 
-    const { line, column } = locationOf(src, tok.start);
+    const { line, column } = locationOf(src, loc.start);
     const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
 
     return new BotscriptError([{
@@ -378,8 +407,8 @@ function checkBodyErrors(
       file: null,
       line,
       column,
-      start: tok.start,
-      end: tok.end,
+      start: loc.start,
+      end: loc.end,
       message:
         declaredThrows.size === 0
           ? `fn '${fn.name}' constructs err(${typeName}...) but has no throws clause`
@@ -391,61 +420,6 @@ function checkBodyErrors(
   }
 
   return null;
-}
-
-/**
- * Collect all CapCase error type names directly constructed in `fn`'s body via
- * `err(TypeName(...))`, `err(new TypeName(...))`, or bare `err(TypeName)`.
- * Used by the THR004 check to determine whether a declared throws label is
- * justified by a direct construction even when no callee propagates it.
- */
-function collectBodyErrorTypes(tokens: Token[], fn: FnDecl, inner: FnDecl[]): Set<string> {
-  const result = new Set<string>();
-  const open: FnDecl[] = [];
-  let nextInner = 0;
-
-  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
-    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
-    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
-      open.push(inner[nextInner]!);
-      nextInner++;
-    }
-    if (open.length > 0) continue;
-
-    const tok = tokens[i];
-    if (!tok || tok.kind !== "ident" || tok.text !== "err") continue;
-
-    const prevIdx = prevSignificant(tokens, i - 1);
-    const prev = tokens[prevIdx];
-    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot")) continue;
-
-    const parenIdx = nextSignificant(tokens, i + 1);
-    const parenTok = tokens[parenIdx];
-    if (!parenTok || parenTok.kind !== "open" || parenTok.text !== "(") continue;
-
-    let argIdx = nextSignificant(tokens, parenIdx + 1);
-    let argTok = tokens[argIdx];
-
-    if (argTok && argTok.kind === "ident" && argTok.text === "new") {
-      argIdx = nextSignificant(tokens, argIdx + 1);
-      argTok = tokens[argIdx];
-    }
-
-    if (!argTok || argTok.kind !== "ident") continue;
-    const typeName = argTok.text;
-    if (!/^[A-Z]/.test(typeName)) continue;
-
-    const afterIdx = nextSignificant(tokens, argIdx + 1);
-    const after = tokens[afterIdx];
-    if (!after) continue;
-    const isCtor = after.kind === "open" && after.text === "(";
-    const isRef = after.kind === "close" && after.text === ")";
-    if (!isCtor && !isRef) continue;
-
-    result.add(typeName);
-  }
-
-  return result;
 }
 
 function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diagnostic {

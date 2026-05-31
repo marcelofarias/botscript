@@ -125,12 +125,42 @@ export function prevSignificant(tokens: Token[], start: number): number {
 }
 
 /**
+ * Botscript builtin call names that are never opaque external calls.
+ * Includes all lowercase stdlib value helpers (Result, Option) and the
+ * error-throw builtin. These appear as bare `ident(` in function bodies
+ * but are compiler-known — not user-defined external functions.
+ */
+const BOTSCRIPT_BUILTIN_CALLS = new Set([
+  // Error builtin
+  "err",
+  // Result helpers
+  "isErr",
+  "isOk",
+  "mapErr",
+  "mapResult",
+  "ok",
+  "unwrap",
+  // Option helpers
+  "isNone",
+  "isSome",
+  "mapOption",
+  "none",
+  "optionFromNullable",
+  "some",
+  "unwrapOption",
+  "unwrapOr",
+]);
+
+/**
  * Returns true if `fn`'s body contains at least one function call whose callee
  * name is NOT in `knownCalleeNames` (i.e. an opaque/external call whose effects
  * are unknown to the compiler).
  *
  * A call is detected as `ident(` where the ident is not a property access and
  * is not in `knownCalleeNames`. Inner fn declarations are excluded.
+ *
+ * Botscript stdlib value helpers (ok, isOk, some, none, etc.) and CapCase type
+ * constructors are never treated as opaque — they are compiler-known builtins.
  */
 export function hasOpaqueCall(
   tokens: Token[],
@@ -155,10 +185,9 @@ export function hasOpaqueCall(
     // Skip known callee names (same-file fns and listed external fns).
     if (knownCalleeNames.has(tok.text)) continue;
 
-    // Skip `err` (botscript error-throw builtin) and CapCase identifiers
-    // (error-type constructors like `NetworkError(...)`). These are language
-    // builtins/type constructs, not opaque external calls.
-    if (tok.text === "err" || /^[A-Z]/.test(tok.text)) continue;
+    // Skip compiler-known builtins (err, ok, some, none, etc.) and CapCase
+    // identifiers (error-type constructors like `NetworkError(...)`).
+    if (BOTSCRIPT_BUILTIN_CALLS.has(tok.text) || /^[A-Z]/.test(tok.text)) continue;
 
     // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
     const prevIdx = prevSignificant(tokens, i - 1);

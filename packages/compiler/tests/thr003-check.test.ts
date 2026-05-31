@@ -1,9 +1,14 @@
 /**
- * Tests for THR003: callback throws annotation not propagated to outer fn (?bs 0.9+).
+ * Tests for THR003 and THR004 (?bs 0.9+).
  *
- * Fires when a function-typed parameter declares `throws { X }` but the containing
- * fn does not declare `throws { X }`. Calling the callback can surface X, so the
- * outer fn's throws surface must cover it (same principle as EFF003/EFF004).
+ * THR003: fires when a function-typed parameter declares `throws { X }` but the
+ * containing fn does not declare `throws { X }`. Calling the callback can surface X,
+ * so the outer fn's throws surface must cover it (same principle as EFF003/EFF004).
+ *
+ * THR004: fires (warning-level) when a fn declares `throws { X }` but no same-file
+ * callee (direct or transitive) throws X, the fn's body does not construct err(X...),
+ * and no callback param declares `throws { X }`. Suppressed for leaf fns, self-only-
+ * recursive fns, and fns with opaque (untracked) external calls.
  */
 
 import { describe, expect, it } from "vitest";
@@ -131,6 +136,21 @@ describe("THR004: throws over-declared (0.9+)", () => {
       "fn load() throws { AuthError, NetworkError } -> string {\n" +
       "  helper();\n" +
       "  err(AuthError())\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does NOT treat ok() and other stdlib result helpers as opaque calls", () => {
+    // ok(), some(), isOk(), etc. are botscript stdlib builtins, not opaque external calls.
+    // THR004 must still fire even when they are present in the fn body.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"result\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  ok(\"value\")\n" +
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
