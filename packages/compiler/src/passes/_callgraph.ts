@@ -88,6 +88,18 @@ export function collectCallees(
 }
 
 /**
+ * Botscript's lexer only promotes a small set of names to `keyword` tokens
+ * (see `KEYWORDS` in lex.ts). Most control-flow constructs (`if`, `while`,
+ * `for`, etc.) are tokenised as plain `ident` and would otherwise be treated
+ * as opaque function calls by `hasOpaqueCall`. Skip them explicitly.
+ */
+const CONTROL_FLOW_IDENTS = new Set([
+  "if", "else", "while", "for", "do", "switch", "case", "default",
+  "return", "break", "continue", "throw", "try", "catch", "finally",
+  "typeof", "void", "delete", "new", "in", "of", "instanceof",
+]);
+
+/**
  * Returns true if fn's body contains any direct function call (`ident(`) to a
  * name that is NOT in `knownNames` and is not the fn itself.
  *
@@ -116,6 +128,9 @@ export function hasOpaqueCall(
     if (!tok || tok.kind !== "ident") continue;
     if (tok.text === fn.name) continue;
     if (knownNames.has(tok.text)) continue;
+
+    // Skip control-flow identifiers that look like calls but aren't.
+    if (CONTROL_FLOW_IDENTS.has(tok.text)) continue;
 
     // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
     const prevIdx = prevSignificant(tokens, i - 1);

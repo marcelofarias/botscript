@@ -115,10 +115,18 @@ export function passDepCheck(
   // scan so cross-file calls appear in the callees set.  knownExternalNames
   // covers moduleEffects entries with no reads/writes so calls to them are
   // collected and treated as non-self callees by DEP003/DEP004.
-  const aliasedLocalNames = new Set(importAliases.keys());
+  //
+  // Only include aliases whose resolved target is actually present in
+  // moduleEffects. An alias for an un-listed import is opaque — including it
+  // would mask the opaque call from hasOpaqueCall and produce false warnings.
+  const aliasedKnownNames = new Set(
+    [...importAliases.entries()]
+      .filter(([, resolved]) => knownExternalNames.has(resolved))
+      .map(([alias]) => alias),
+  );
   const allCalleeNames =
-    knownExternalNames.size > 0 || aliasedLocalNames.size > 0
-      ? new Set([...fnNames, ...knownExternalNames, ...aliasedLocalNames])
+    knownExternalNames.size > 0 || aliasedKnownNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...aliasedKnownNames])
       : fnNames;
 
   // Precompute each fn's nested (descendant) decls once via a single sweep,

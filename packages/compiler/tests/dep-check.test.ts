@@ -425,4 +425,29 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
+
+  it("fires DEP003 even when fn body contains if/while control flow", () => {
+    // `if (cond)` must not be treated as an opaque function call — it's
+    // control flow, not an external callee.
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper(x: number) -> string = \"ok\"\n" +
+      "fn f(flag: bool) reads { db } -> string {\n" +
+      "  if (flag) localHelper(1);\n" +
+      "  localHelper(2)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP004 even when fn body contains while control flow", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step(n: number) -> void { }\n" +
+      "fn f(n: number) writes { log } -> void {\n" +
+      "  while (n > 0) step(n);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+  });
 });
