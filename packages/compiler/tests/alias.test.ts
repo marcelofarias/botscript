@@ -694,4 +694,15 @@ describe("stdlib alias tracking — canonical name rebinding", () => {
       "fn f() uses { time } -> number = x.now()\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("does not track `const x = time` when `const time = (random)` rebinds the canonical (paren-wrapped)", () => {
+    // Paren-wrapped rebinding: `const time = (random)` must also mark `time` as rebound,
+    // so `const x = time` is not tracked (x would hold random at runtime, not time).
+    const src =
+      "?bs 0.8\n" +
+      "const time = (random)\n" +
+      "const x = time\n" +
+      "fn f() uses { random } -> number = random.next()\n";
+    expect(() => t(src)).not.toThrow();
+  });
 });

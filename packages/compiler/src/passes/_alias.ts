@@ -76,7 +76,17 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       const rhsTok = tokens[rhsIdx];
       // Only treat as rebound when the RHS is a DIFFERENT stdlib namespace.
       // `const time = time` (self-reference) is left alone.
-      if (rhsTok && rhsTok.kind === "ident" && STDLIB_NAMES.has(rhsTok.text) && rhsTok.text !== nameTok.text) {
+      // Also handle paren-wrapped RHS: `const time = (random)`.
+      let rhsStdlibName: string | null = null;
+      if (rhsTok && rhsTok.kind === "ident" && STDLIB_NAMES.has(rhsTok.text)) {
+        rhsStdlibName = rhsTok.text;
+      } else if (rhsTok && rhsTok.kind === "open" && rhsTok.text === "(") {
+        const unwrapped = unwrapParenToIdent(tokens, rhsIdx);
+        if (unwrapped && STDLIB_NAMES.has(unwrapped.tok.text)) {
+          rhsStdlibName = unwrapped.tok.text;
+        }
+      }
+      if (rhsStdlibName !== null && rhsStdlibName !== nameTok.text) {
         reboundCanonicals.add(nameTok.text);
       }
     }
