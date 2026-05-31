@@ -258,14 +258,12 @@ function checkStrict(
         const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
         const caps = extCaps.get(resolvedCallee);
         if (!caps) continue;
-        const displayCallee =
-          calleeName !== resolvedCallee ? `${calleeName} (as '${resolvedCallee}')` : calleeName;
         for (const cap of caps) {
           if (rec.consumed.has(cap)) continue;
           rec.consumed.set(cap, {
             kind: "external",
             fnName: rec.decl.name,
-            callee: displayCallee,
+            callee: calleeName,
             capability: cap,
           });
         }
