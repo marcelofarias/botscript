@@ -184,10 +184,16 @@ export function passThrCheck(
     }
   }
 
+  // Pre-compute body error types for all fns once; shared by THR002 and THR004
+  // to avoid running the same token scan twice per function.
+  const bodyErrsByDecl = new Map<FnDecl, Map<string, { start: number; end: number }>>();
+  for (const rec of records.values()) {
+    bodyErrsByDecl.set(rec.decl, collectBodyErrorTypes(tokens, rec.decl, innerByDecl.get(rec.decl) ?? []));
+  }
+
   // THR002: fn body must not directly construct undeclared error types.
   for (const rec of records.values()) {
-    const inner = innerByDecl.get(rec.decl) ?? [];
-    const err = checkBodyErrors(tokens, rec.decl, inner, rec.declaredThrows, src);
+    const err = checkBodyErrors(rec.decl, rec.declaredThrows, src, bodyErrsByDecl.get(rec.decl)!);
     if (err) throw err;
   }
 
@@ -199,8 +205,7 @@ export function passThrCheck(
 
     // Justified by: paramThrows + direct body construction + transitive callee throws.
     const justifiedThrows = new Set<string>(rec.decl.paramThrows);
-    const bodyErrs = collectBodyErrorTypes(tokens, rec.decl, innerByDecl.get(rec.decl) ?? []);
-    for (const t of bodyErrs.keys()) justifiedThrows.add(t);
+    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) justifiedThrows.add(t);
 
     let hasNonSelfCallee = false;
     for (const calleeName of rec.callees) {
@@ -224,8 +229,15 @@ export function passThrCheck(
     if (!hasNonSelfCallee) continue;
 
     // Suppress when fn has opaque calls (unlisted external callee).
+    // Fn parameter names are excluded from the opaque-call check because their
+    // effect surface is already captured by `paramThrows` — calling a typed
+    // callback param is not an unknown external call.
     const inner = innerByDecl.get(rec.decl) ?? [];
-    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames)) continue;
+    const paramNames = collectParamNames(rec.decl);
+    const knownForOpaque = paramNames.size > 0
+      ? new Set([...allCalleeNames, ...paramNames])
+      : allCalleeNames;
+    if (hasOpaqueCall(tokens, rec.decl, inner, knownForOpaque)) continue;
 
     const overDeclared = [...rec.declaredThrows].filter((l) => !justifiedThrows.has(l)).sort();
     if (overDeclared.length > 0) {
@@ -381,19 +393,32 @@ function collectBodyErrorTypes(
 }
 
 /**
- * THR002: scan fn body for `err(TypeName(...))`, `err(new TypeName(...))`, or
- * bare `err(TypeName)` where TypeName (CapCase ident) is not in the fn's own
- * `throws {}` set. Returns a BotscriptError on the first violation found, or null.
+ * Returns the set of parameter names for a function, parsed from `FnDecl.args`.
+ * Used to exclude callback parameter calls from the opaque-call heuristic in THR004:
+ * calling `cb()` where `cb` is a declared parameter is not an unknown external call.
+ */
+function collectParamNames(fn: FnDecl): Set<string> {
+  const names = new Set<string>();
+  // args format: `(name: type, name: type, ...)` — param names precede `:`.
+  const re = /(?:[\(,]\s*)([a-z_]\w*)\s*:/g;
+  let m;
+  while ((m = re.exec(fn.args)) !== null) {
+    names.add(m[1]!);
+  }
+  return names;
+}
+
+/**
+ * THR002: check pre-computed body error types against the fn's declared throws set.
+ * Returns a BotscriptError on the first undeclared construction found, or null.
  */
 function checkBodyErrors(
-  tokens: Token[],
   fn: FnDecl,
-  inner: FnDecl[],
   declaredThrows: Set<string>,
   src: string,
+  bodyErrs: Map<string, { start: number; end: number }>,
 ): BotscriptError | null {
   const entry = getErrorCode("THR002")!;
-  const bodyErrs = collectBodyErrorTypes(tokens, fn, inner);
 
   for (const [typeName, loc] of bodyErrs) {
     if (declaredThrows.has(typeName)) continue;

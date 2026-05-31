@@ -168,6 +168,21 @@ describe("THR004: throws over-declared (0.9+)", () => {
     expect(w!.message).toContain("AuthError");
     expect(w!.message).toContain("NetworkError");
   });
+
+  it("fires when a callback param has no throws annotation — calling it does not suppress THR004", () => {
+    // `cb` has no throws annotation, so it does not justify any label.
+    // Calling `cb()` must not be treated as an opaque call that suppresses THR004.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withHandler(cb: () -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
 });
 
 // ---------------------------------------------------------------------------
