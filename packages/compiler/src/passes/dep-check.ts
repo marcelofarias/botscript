@@ -43,7 +43,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, collectCallees, hasOpaqueCall } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall, collectTopLevelParamNames } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
@@ -320,8 +320,11 @@ export function passDepCheck(
 
     // Suppress when the fn calls any opaque (unlisted) external function — that
     // unknown callee may be the actual read/write point that justifies the label.
+    // Pass param names so member calls on fn parameters (e.g. `str.trim()`) are
+    // not mistaken for opaque namespace/import method calls.
     const inner = innerByDecl.get(rec.decl) ?? [];
-    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames)) continue;
+    const paramNames = collectTopLevelParamNames(rec.decl.args);
+    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames, paramNames)) continue;
 
     const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
     if (overDeclaredReads.length > 0) {

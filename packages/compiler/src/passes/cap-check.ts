@@ -31,11 +31,18 @@ import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
-import { nextSignificant } from "./_callgraph.js";
+import { nextSignificant, STDLIB_NAMESPACES } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
-/** stdlib namespace -> capability it consumes. Canonical source; import from here to avoid drift. */
+/**
+ * stdlib namespace → capability it consumes.
+ *
+ * Keys must exactly match `STDLIB_NAMESPACES` exported from `_callgraph.ts`.
+ * `_callgraph.ts` is the canonical source for the namespace name list; this
+ * record adds the per-namespace capability string. If a new stdlib namespace is
+ * added, update both.
+ */
 export const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
   http: "net",
   time: "time",

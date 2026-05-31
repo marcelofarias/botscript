@@ -516,4 +516,31 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
+
+  it("fires DEP003 even when fn calls a method on a string parameter (name.trim())", () => {
+    // `name.trim()` is a method call on a fn parameter — it is NOT an opaque
+    // external import. hasOpaqueCall must exclude parameter names from the
+    // namespace-receiver check so DEP003 is not incorrectly suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f(name: string) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP004 even when fn calls a method on an array parameter (items.map())", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f(items: string[]) writes { log } -> void {\n" +
+      "  step();\n" +
+      "  items.map(step)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+  });
 });

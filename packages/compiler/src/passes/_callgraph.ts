@@ -90,8 +90,11 @@ export function collectCallees(
 /**
  * Botscript stdlib namespace names. Member calls on these (e.g. `time.now()`,
  * `http.get()`) are handled by cap-check/uns-check, not by `hasOpaqueCall`.
+ *
+ * `cap-check.ts` exports `STDLIB_TO_CAP` whose keys must exactly match this set.
+ * Import from here rather than duplicating the list.
  */
-const STDLIB_NAMESPACES = new Set(["http", "time", "random", "fs", "stdout", "stderr"]);
+export const STDLIB_NAMESPACES = new Set(["http", "time", "random", "fs", "stdout", "stderr"]);
 
 /**
  * Botscript's lexer only promotes a small set of names to `keyword` tokens
@@ -117,18 +120,52 @@ const BOTSCRIPT_BUILTIN_CALLS = new Set([
 ]);
 
 /**
+ * Parse the top-level parameter names from a fn's `args` string (verbatim,
+ * including outer parens). Depth-tracks parentheses so names inside nested
+ * callback type annotations (e.g. `cb: (item: string) -> void`) are excluded.
+ *
+ * Used by `hasOpaqueCall` (and exported for callers that also need param names)
+ * to avoid treating method calls on fn parameters as opaque namespace calls.
+ */
+export function collectTopLevelParamNames(args: string): Set<string> {
+  const names = new Set<string>();
+  let depth = 0;
+  let i = 0;
+  while (i < args.length) {
+    const c = args[i]!;
+    if (c === "(") { depth++; i++; continue; }
+    if (c === ")") { depth--; i++; continue; }
+    if (depth !== 1) { i++; continue; }
+    const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/.exec(args.slice(i));
+    if (m) {
+      names.add(m[1]!);
+      i += m[0].length;
+    } else {
+      i++;
+    }
+  }
+  return names;
+}
+
+/**
  * Returns true if fn's body contains any direct function call (`ident(`) to a
  * name that is NOT in `knownNames` and is not the fn itself.
  *
  * Used by DEP003/DEP004 to suppress over-declaration warnings when the fn
  * calls an opaque external (e.g. an import not listed in moduleEffects) that
  * could be the actual resource access point.
+ *
+ * `localNames` (optional) is a set of parameter or local-variable names that
+ * should not be treated as opaque namespace/object receivers. For example,
+ * `name.trim()` where `name` is a string parameter is not an opaque import
+ * method call and must not trigger suppression.
  */
 export function hasOpaqueCall(
   tokens: Token[],
   fn: FnDecl,
   inner: FnDecl[],
   knownNames: Set<string>,
+  localNames?: ReadonlySet<string>,
 ): boolean {
   const open: FnDecl[] = [];
   let nextInner = 0;
@@ -165,9 +202,11 @@ export function hasOpaqueCall(
     // Detect member calls on unknown namespace objects: `db.read()` or `api.helper()`.
     // If this ident is followed by `.`, it is used as a namespace/object receiver.
     // Stdlib namespaces (time, http, etc.) are handled by cap-check — skip those.
-    // Any other unknown ident used as a method receiver is treated as opaque.
+    // Local names (fn parameters, local variables) are also excluded: `name.trim()`
+    // is a method on a known local, not a call to an unknown namespace import.
     if (next && ((next.kind === "punct" && next.text === ".") || next.kind === "questionDot")) {
       if (STDLIB_NAMESPACES.has(tok.text)) continue;
+      if (localNames?.has(tok.text)) continue;
       const methodIdx = nextSignificant(tokens, nextIdx + 1);
       const methodTok = tokens[methodIdx];
       if (methodTok && methodTok.kind === "ident") {
