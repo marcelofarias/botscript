@@ -100,6 +100,17 @@ const CONTROL_FLOW_IDENTS = new Set([
 ]);
 
 /**
+ * Botscript stdlib value helpers that appear as bare `ident(` in function
+ * bodies but are compiler-known builtins — not opaque external calls.
+ * Includes all lowercase Result and Option helpers plus the error builtin.
+ */
+const BOTSCRIPT_BUILTIN_CALLS = new Set([
+  "err",
+  "isErr", "isOk", "mapErr", "mapResult", "ok", "unwrap",
+  "isNone", "isSome", "mapOption", "none", "optionFromNullable", "some", "unwrapOption", "unwrapOr",
+]);
+
+/**
  * Returns true if fn's body contains any direct function call (`ident(`) to a
  * name that is NOT in `knownNames` and is not the fn itself.
  *
@@ -131,6 +142,10 @@ export function hasOpaqueCall(
 
     // Skip control-flow identifiers that look like calls but aren't.
     if (CONTROL_FLOW_IDENTS.has(tok.text)) continue;
+
+    // Skip compiler-known stdlib builtins (ok, err, some, none, etc.) and
+    // CapCase identifiers (error-type constructors like `NetworkError(...)`).
+    if (BOTSCRIPT_BUILTIN_CALLS.has(tok.text) || /^[A-Z]/.test(tok.text)) continue;
 
     // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
     const prevIdx = prevSignificant(tokens, i - 1);

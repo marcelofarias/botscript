@@ -265,6 +265,7 @@ describe("DEP003: reads over-declared (0.9+)", () => {
     const dep3warns = result.warnings.filter((w) => w.code === "DEP003");
     expect(dep3warns).toHaveLength(1);
     expect(dep3warns[0]!.message).toContain("db");
+    expect(dep3warns[0]!.message).toContain("cache");
   });
 
   it("fires warning with severity 'warning'", () => {
@@ -343,6 +344,30 @@ describe("DEP004: writes over-declared (0.9+)", () => {
 // ---------------------------------------------------------------------------
 // DEP003/DEP004: self-recursive fns and callback parameter justification
 // ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: transitive callee justification", () => {
+  it("does NOT fire DEP003 when a multi-hop callee chain justifies the label", () => {
+    // f reads { db } calls g, g calls h, h reads { db }.
+    // The DFS must reach h through g to find the justification.
+    const src =
+      "?bs 0.9\n" +
+      "fn h() reads { db } -> string = \"row\"\n" +
+      "fn g() reads { db } -> string = h()\n" +
+      "fn f() reads { db } -> string = g()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("fires DEP003 when only the intermediate callee declares the label (leaf justifies)", () => {
+    // f reads { db } calls g, g reads { db } (leaf). f is justified by g.
+    const src =
+      "?bs 0.9\n" +
+      "fn g() reads { db } -> string = \"row\"\n" +
+      "fn f() reads { db } -> string = g()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+});
 
 describe("DEP003/DEP004: self-recursive fn exclusion", () => {
   it("does not fire DEP003 for a self-recursive fn — treated as leaf/access-point", () => {

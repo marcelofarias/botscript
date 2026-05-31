@@ -260,42 +260,53 @@ export function passDepCheck(
 
   // 5. DEP003/DEP004: over-declared (warning-level).
   //    For each fn that has at least one same-file (or moduleEffects) non-self callee,
-  //    compute which declared reads/writes labels are not justified by any callee.
+  //    compute which declared reads/writes labels are NOT justified by any callee.
   //    Leaf fns (no tracked callees) and self-only-recursive fns are excluded —
   //    they may be the actual access point and the compiler can't verify the body.
   //    Callback parameter annotations (paramReads/paramWrites) are treated as
   //    implicit callee justification: a wrapper that receives a reads { db } callback
   //    and propagates that label upward is not over-declaring.
   //    Fns that call any opaque (unlisted) function are also excluded — the unknown
-  //    callee may be the actual access point that justifies the label.
-  //    The primary target is stale annotations left after a refactor removed the
-  //    callee that originally justified the label.
+  //    callee may be the actual read/write point that justifies the label.
+  //
+  //    Justification uses a DFS over the callee graph rooted at rec.decl's direct
+  //    callees, collecting each reachable fn's DECLARED reads/writes. The root fn
+  //    itself is excluded from the DFS to prevent circular self-justification through
+  //    mutual recursion (f calls g, g calls f -> g.transitiveReads includes f's label,
+  //    which would let f justify itself via g even if neither actually reads the resource).
   const warnings: Diagnostic[] = [];
   for (const rec of records.values()) {
     if (rec.callees.size === 0) continue;
 
-    // Collect labels that propagate from callees (excluding this fn's own declaration).
-    // Also seed from callback parameter annotations so wrapper fns aren't falsely warned.
+    // Seed justification from callback parameter annotations. A wrapper fn that
+    // accepts a `fn() reads { db } -> T` callback and propagates reads { db }
+    // upward is not over-declaring, even if regular callees don't read db.
     const calleeReads = new Set<string>(rec.decl.paramReads);
     const calleeWrites = new Set<string>(rec.decl.paramWrites);
+
+    // DFS from direct callees, collecting their declared reads/writes transitively.
+    // rec.decl is pre-added so the DFS stops there, preventing circular justification.
+    const visited = new Set<FnDecl>([rec.decl]);
     let hasNonSelfCallee = false;
-    for (const calleeName of rec.callees) {
+
+    const dfsStack: string[] = [...rec.callees];
+    while (dfsStack.length > 0) {
+      const calleeName = dfsStack.pop()!;
       const calleeDecls = declsByName.get(calleeName);
       if (calleeDecls) {
         for (const calleeDecl of calleeDecls) {
-          if (calleeDecl === rec.decl) continue;
+          if (visited.has(calleeDecl)) continue;
+          visited.add(calleeDecl);
           hasNonSelfCallee = true;
           const callee = records.get(calleeDecl);
           if (!callee) continue;
-          for (const label of callee.transitiveReads.keys()) calleeReads.add(label);
-          for (const label of callee.transitiveWrites.keys()) calleeWrites.add(label);
+          for (const label of callee.decl.reads ?? []) calleeReads.add(label);
+          for (const label of callee.decl.writes ?? []) calleeWrites.add(label);
+          for (const nextCallee of callee.callees) dfsStack.push(nextCallee);
         }
         continue;
       }
       const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
-      // Treat unknown cross-file callees (not in moduleEffects) as opaque so
-      // that a fn importing a helper that isn't in the effects map doesn't
-      // get a false DEP003/DEP004 warning from seeing "zero labels" for it.
       if (!knownExternalNames.has(resolvedCallee)) continue;
       hasNonSelfCallee = true;
       const extR = extReads.get(resolvedCallee);
@@ -428,9 +439,12 @@ function mkOverDeclaredWarning(
   const labelList = overLabels.join(", ");
   const firstLabel = overLabels[0]!;
 
+  const notPropagated =
+    overLabels.length === 1
+      ? `'${firstLabel}' is not declared by any tracked callee`
+      : `[${labelList}] are not declared by any tracked callee`;
   const message =
-    `fn '${rec.decl.name}' declares ${kind} { ${labelList} } ` +
-    `but no callee in this file transitively declares ${kind} { ${firstLabel} }; ` +
+    `fn '${rec.decl.name}' declares ${kind} { ${labelList} } but ${notPropagated}; ` +
     `annotation may be stale`;
 
   const proposed =
