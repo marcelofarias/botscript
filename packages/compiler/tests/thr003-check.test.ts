@@ -107,6 +107,47 @@ describe("THR004: throws over-declared (0.9+)", () => {
     const w = result.warnings.find((w: any) => w.code === "THR004");
     expect(w?.severity).toBe("warning");
   });
+
+  it("does NOT fire when fn has an opaque (untracked) call alongside tracked callees", () => {
+    // externalLib is not declared anywhere in this file — it's opaque,
+    // so we cannot statically determine its throws surface.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  externalLib()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT treat err() as an opaque call — fires when err constructs a different error type", () => {
+    // AuthError is justified by err(AuthError()), but NetworkError is not.
+    // err() is a builtin, not an opaque external call, so THR004 must still fire for NetworkError.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { AuthError, NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  err(AuthError())\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("message lists all stale labels, not just the first", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { AuthError, NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("AuthError");
+    expect(w!.message).toContain("NetworkError");
+  });
 });
 
 // ---------------------------------------------------------------------------

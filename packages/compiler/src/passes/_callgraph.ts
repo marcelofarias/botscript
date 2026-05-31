@@ -155,6 +155,11 @@ export function hasOpaqueCall(
     // Skip known callee names (same-file fns and listed external fns).
     if (knownCalleeNames.has(tok.text)) continue;
 
+    // Skip `err` (botscript error-throw builtin) and CapCase identifiers
+    // (error-type constructors like `NetworkError(...)`). These are language
+    // builtins/type constructs, not opaque external calls.
+    if (tok.text === "err" || /^[A-Z]/.test(tok.text)) continue;
+
     // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
     const prevIdx = prevSignificant(tokens, i - 1);
     const prev = tokens[prevIdx];

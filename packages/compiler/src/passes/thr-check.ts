@@ -454,6 +454,10 @@ function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diag
   const nameEnd = rec.decl.nameStart + rec.decl.name.length;
   const firstLabel = overLabels[0]!;
   const labelList = overLabels.join(", ");
+  const notPropagated =
+    overLabels.length === 1
+      ? `'${firstLabel}' is not propagated by any callee or constructed directly`
+      : `[${labelList}] are not propagated by any callee or constructed directly`;
 
   return {
     code: "THR004",
@@ -464,8 +468,7 @@ function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diag
     start: rec.decl.fnKeywordStart,
     end: nameEnd,
     message:
-      `fn '${rec.decl.name}' declares throws { ${labelList} } but no callee in this file transitively throws { ${firstLabel} } ` +
-      `and the body does not construct err(${firstLabel}...); annotation may be stale`,
+      `fn '${rec.decl.name}' declares throws { ${labelList} } but ${notPropagated}; annotation may be stale`,
     rule: entry.rule,
     idiom: entry.idiom,
     rewrite: `fn ${rec.decl.name}(...) throws { …remaining } -> ...  // remove label not propagated by any callee or body`,
