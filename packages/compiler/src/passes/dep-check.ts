@@ -43,7 +43,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, collectCallees } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
@@ -258,6 +258,8 @@ export function passDepCheck(
   //    Callback parameter annotations (paramReads/paramWrites) are treated as
   //    implicit callee justification: a wrapper that receives a reads { db } callback
   //    and propagates that label upward is not over-declaring.
+  //    Fns that call any opaque (unlisted) function are also excluded — the unknown
+  //    callee may be the actual access point that justifies the label.
   //    The primary target is stale annotations left after a refactor removed the
   //    callee that originally justified the label.
   const warnings: Diagnostic[] = [];
@@ -296,6 +298,11 @@ export function passDepCheck(
 
     // Self-only-recursive fns are treated like leaves.
     if (!hasNonSelfCallee) continue;
+
+    // Suppress when the fn calls any opaque (unlisted) external function — that
+    // unknown callee may be the actual read/write point that justifies the label.
+    const inner = innerByDecl.get(rec.decl) ?? [];
+    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames)) continue;
 
     const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
     if (overDeclaredReads.length > 0) {

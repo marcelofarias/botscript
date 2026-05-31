@@ -87,6 +87,53 @@ export function collectCallees(
   return callees;
 }
 
+/**
+ * Returns true if fn's body contains any direct function call (`ident(`) to a
+ * name that is NOT in `knownNames` and is not the fn itself.
+ *
+ * Used by DEP003/DEP004 to suppress over-declaration warnings when the fn
+ * calls an opaque external (e.g. an import not listed in moduleEffects) that
+ * could be the actual resource access point.
+ */
+export function hasOpaqueCall(
+  tokens: Token[],
+  fn: FnDecl,
+  inner: FnDecl[],
+  knownNames: Set<string>,
+): boolean {
+  const open: FnDecl[] = [];
+  let nextInner = 0;
+
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
+
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident") continue;
+    if (tok.text === fn.name) continue;
+    if (knownNames.has(tok.text)) continue;
+
+    // Skip property accesses: `obj.helper(...)` or `obj?.helper(...)`.
+    const prevIdx = prevSignificant(tokens, i - 1);
+    const prev = tokens[prevIdx];
+    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+      continue;
+
+    // Must be followed by `(` to be a call.
+    const nextIdx = nextSignificant(tokens, i + 1);
+    const next = tokens[nextIdx];
+    if (!next || next.kind !== "open" || next.text !== "(") continue;
+
+    return true;
+  }
+
+  return false;
+}
+
 export function nextSignificant(tokens: Token[], start: number): number {
   let i = start;
   while (i < tokens.length) {

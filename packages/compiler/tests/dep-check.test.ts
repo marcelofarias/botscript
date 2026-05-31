@@ -391,3 +391,38 @@ describe("DEP003/DEP004: callback parameter justification", () => {
     expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEP003/DEP004: opaque external call suppression
+// ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: opaque external call suppression", () => {
+  it("does not fire DEP003 when fn also calls an unlisted external helper", () => {
+    // localHelper is tracked (same-file), unknownHelper is NOT in allCalleeNames.
+    // DEP003 must be suppressed because unknownHelper may be the actual reader.
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string { localHelper(); unknownHelper() }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when fn also calls an unlisted external helper", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> void { }\n" +
+      "fn f() writes { db } -> void { localHelper(); unknownHelper() }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("fires DEP003 when all callees are tracked and none declare the label", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string = localHelper()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+});
