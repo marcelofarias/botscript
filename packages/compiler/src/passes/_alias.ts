@@ -45,12 +45,12 @@ const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
 export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
   const aliases = new Map<string, string>();
 
-  // Pre-scan: find canonical stdlib names that have been rebound to a DIFFERENT stdlib
-  // namespace at module scope. e.g. `const time = random` means `const x = time` would
-  // produce `x → time` but at runtime `x` holds `random` — tracking it is unsound.
-  // Only cross-stdlib rebindings (e.g. `const time = random`) trigger this guard; bindings
-  // to non-stdlib values or self-references (e.g. `const time = time`) are left alone
-  // because the canonical-name tripwire still applies to direct `time.x` uses.
+  // Pre-scan: find canonical stdlib names that have been rebound at module scope.
+  // e.g. `const time = random` (cross-stdlib) or `const time = getTime()` (non-stdlib)
+  // both mean `const x = time` would produce `x → time` but at runtime `x` holds the
+  // rebound value — tracking it as a canonical stdlib alias is unsound.
+  // Only self-referential bindings (`const time = time`) are exempt, because they
+  // don't change the name's value relative to the canonical stdlib.
   const reboundCanonicals = new Set<string>();
   {
     let d = 0;
@@ -74,19 +74,20 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       if (eqIdx === -1) continue;
       const rhsIdx = nextSignificant(tokens, eqIdx + 1);
       const rhsTok = tokens[rhsIdx];
-      // Only treat as rebound when the RHS is a DIFFERENT stdlib namespace.
-      // `const time = time` (self-reference) is left alone.
-      // Also handle paren-wrapped RHS: `const time = (random)`.
-      let rhsStdlibName: string | null = null;
-      if (rhsTok && rhsTok.kind === "ident" && STDLIB_NAMES.has(rhsTok.text)) {
-        rhsStdlibName = rhsTok.text;
+      // Determine whether the RHS is the same canonical stdlib name (self-reference).
+      // Any other value — a different stdlib name, a non-stdlib ident, a call, a
+      // member access — means `nameTok.text` is rebound and aliases to it are unsound.
+      // Also handle paren-wrapped same-name: `const time = (time)` is still self-ref.
+      let rhsIsCanonicalSelf = false;
+      if (rhsTok && rhsTok.kind === "ident" && rhsTok.text === nameTok.text) {
+        rhsIsCanonicalSelf = true;
       } else if (rhsTok && rhsTok.kind === "open" && rhsTok.text === "(") {
         const unwrapped = unwrapParenToIdent(tokens, rhsIdx);
-        if (unwrapped && STDLIB_NAMES.has(unwrapped.tok.text)) {
-          rhsStdlibName = unwrapped.tok.text;
+        if (unwrapped && unwrapped.tok.text === nameTok.text) {
+          rhsIsCanonicalSelf = true;
         }
       }
-      if (rhsStdlibName !== null && rhsStdlibName !== nameTok.text) {
+      if (!rhsIsCanonicalSelf) {
         reboundCanonicals.add(nameTok.text);
       }
     }
@@ -415,6 +416,7 @@ export function collectAliasWarningCandidates(
  */
 export function collectDestructuringWarningCandidates(
   tokens: Token[],
+  aliases?: Map<string, string>,
 ): Array<{ stdlibName: string; start: number; end: number }> {
   const candidates: Array<{ stdlibName: string; start: number; end: number }> = [];
   let depth = 0;
@@ -471,16 +473,24 @@ export function collectDestructuringWarningCandidates(
     const rawRhsTok = tokens[rawRhsIdx];
     if (!rawRhsTok) continue;
 
-    let stdlibTok: Token;
+    let stdlibName: string | undefined;
     let rhsTokenEnd: number;
     if (rawRhsTok.kind === "ident" && STDLIB_NAMES.has(rawRhsTok.text)) {
-      stdlibTok = rawRhsTok;
+      // const { now } = time  — direct stdlib namespace
+      stdlibName = rawRhsTok.text;
       rhsTokenEnd = rawRhsIdx + 1;
     } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
+      // const { now } = (time)  — paren-wrapped stdlib namespace
       const unwrapped = unwrapParenToIdent(tokens, rawRhsIdx);
       if (!unwrapped || !STDLIB_NAMES.has(unwrapped.tok.text)) continue;
-      stdlibTok = unwrapped.tok;
+      stdlibName = unwrapped.tok.text;
       rhsTokenEnd = unwrapped.tokenEnd;
+    } else if (aliases && rawRhsTok.kind === "ident") {
+      // const { now } = t  where t is a tracked stdlib alias (const t = time)
+      const resolved = aliases.get(rawRhsTok.text);
+      if (!resolved) continue;
+      stdlibName = resolved;
+      rhsTokenEnd = rawRhsIdx + 1;
     } else {
       continue;
     }
@@ -502,7 +512,7 @@ export function collectDestructuringWarningCandidates(
       (afterRhs.kind === "punct" && afterRhs.text === ";");
     if (!isClean) continue;
 
-    candidates.push({ stdlibName: stdlibTok.text, start: constStart, end: stdlibTok.end });
+    candidates.push({ stdlibName: stdlibName!, start: constStart, end: rawRhsTok.end });
   }
 
   return candidates;

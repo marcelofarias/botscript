@@ -85,8 +85,8 @@ export function passAliCheck(src: string, version: VersionInfo): { code: string;
     }
   }
 
-  // ALI003: stdlib namespace destructuring (`const { now } = time`).
-  const ali003Candidates = collectDestructuringWarningCandidates(tokens);
+  // ALI003: stdlib namespace destructuring (`const { now } = time` or via alias).
+  const ali003Candidates = collectDestructuringWarningCandidates(tokens, aliases);
   if (ali003Candidates.length > 0) {
     const entry = getErrorCode("ALI003")!;
     for (const c of ali003Candidates) {

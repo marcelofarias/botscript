@@ -705,4 +705,30 @@ describe("stdlib alias tracking — canonical name rebinding", () => {
       "fn f() uses { random } -> number = random.next()\n";
     expect(() => t(src)).not.toThrow();
   });
+
+  it("does not track `const x = time` when `const time = getTime()` rebinds via a call", () => {
+    // Non-stdlib rebinding: `const time = getTime()` gives `time` a non-canonical
+    // value. `const x = time` must not be tracked as `x → time`.
+    const src =
+      "?bs 0.8\n" +
+      "fn getTime() -> number = 0\n" +
+      "const time = getTime()\n" +
+      "const x = time\n" +
+      "fn f() -> number = x\n";
+    // If x were tracked as time, a call like x.now() would be checked for 'time'
+    // capability — but x is just a number. Verifies the rebinding guard fires.
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does not track `const x = time` when `const time = time.now` rebinds via member access", () => {
+    // Member-access rebinding: `const time = time.now` gives the canonical name a
+    // function value (a method), not the namespace itself.
+    const src =
+      "?bs 0.8\n" +
+      "const time = time.now\n" +
+      "const x = time\n" +
+      "fn f() -> number = x\n";
+    // x must not be tracked as an alias of the canonical 'time' stdlib namespace.
+    expect(() => t(src)).not.toThrow();
+  });
 });

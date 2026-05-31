@@ -562,4 +562,14 @@ describe("ALI003 — stdlib namespace destructuring (?bs 0.8)", () => {
     expect(warns.length).toBe(1);
     expect(warns[0]?.message).toContain("time");
   });
+
+  it("ALI003 fires when RHS is a tracked stdlib alias (`const t = time; const { now } = t`)", () => {
+    // t is a tracked alias for time; destructuring t extracts the same untracked
+    // member reference. ALI003 should fire with the canonical stdlib name 'time'.
+    const src = "?bs 0.8\nconst t = time\nconst { now } = t\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI003");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]?.message).toContain("time");
+  });
 });
