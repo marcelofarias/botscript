@@ -78,21 +78,35 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       // Any other value — a different stdlib name, a non-stdlib ident, a call, a
       // member access — means `nameTok.text` is rebound and aliases to it are unsound.
       // Also handle paren-wrapped same-name: `const time = (time)` is still self-ref.
+      // A "clean" self-reference means the RHS ends the statement — nothing follows on
+      // the same line. Use a raw whitespace-only skip (not nextSignificant which also
+      // skips newlines) to detect operators/continuations like `const time = time + 1`.
       let rhsIsCanonicalSelf = false;
       if (rhsTok && rhsTok.kind === "ident" && rhsTok.text === nameTok.text) {
-        // Only a self-reference if the ident is not followed by `.` (member access).
-        // `const time = time` → self-ref; `const time = time.now` → rebind.
-        const afterRhsIdx = nextSignificant(tokens, rhsIdx + 1);
-        const afterRhsTok = tokens[afterRhsIdx];
-        const isMemberAccess =
-          afterRhsTok &&
-          ((afterRhsTok.kind === "punct" && afterRhsTok.text === ".") ||
-            afterRhsTok.kind === "questionDot");
-        if (!isMemberAccess) rhsIsCanonicalSelf = true;
+        let afterRawIdx = rhsIdx + 1;
+        while (afterRawIdx < tokens.length && tokens[afterRawIdx]?.kind === "whitespace") afterRawIdx++;
+        const afterRaw = tokens[afterRawIdx];
+        const isStatementEnd =
+          !afterRaw ||
+          afterRaw.kind === "newline" ||
+          afterRaw.kind === "lineComment" ||
+          afterRaw.kind === "eof" ||
+          (afterRaw.kind === "punct" && afterRaw.text === ";");
+        if (isStatementEnd) rhsIsCanonicalSelf = true;
       } else if (rhsTok && rhsTok.kind === "open" && rhsTok.text === "(") {
         const unwrapped = unwrapParenToIdent(tokens, rhsIdx);
         if (unwrapped && unwrapped.tok.text === nameTok.text) {
-          rhsIsCanonicalSelf = true;
+          // Same check: verify nothing follows the closing paren on the same line.
+          let afterRawIdx = unwrapped.tokenEnd;
+          while (afterRawIdx < tokens.length && tokens[afterRawIdx]?.kind === "whitespace") afterRawIdx++;
+          const afterRaw = tokens[afterRawIdx];
+          const isStatementEnd =
+            !afterRaw ||
+            afterRaw.kind === "newline" ||
+            afterRaw.kind === "lineComment" ||
+            afterRaw.kind === "eof" ||
+            (afterRaw.kind === "punct" && afterRaw.text === ";");
+          if (isStatementEnd) rhsIsCanonicalSelf = true;
         }
       }
       if (!rhsIsCanonicalSelf) {

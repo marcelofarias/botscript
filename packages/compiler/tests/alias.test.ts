@@ -731,4 +731,31 @@ describe("stdlib alias tracking — canonical name rebinding", () => {
     // x must not be tracked as an alias of the canonical 'time' stdlib namespace.
     expect(() => t(src)).not.toThrow();
   });
+
+  it("does not track `const x = time` when `const time = time + 1` rebinds via operator expression", () => {
+    // Arithmetic rebinding: `const time = time + 1` produces a number, not the namespace.
+    // The pre-scan must NOT treat this as a clean self-reference just because the RHS
+    // starts with the same ident — without the fix, `nextSignificant` would skip the
+    // newline and see `const x = time` as valid, then track x → time causing false positives.
+    // With the fix, `time` is marked rebound so `x` is not tracked as a stdlib alias,
+    // and calling `time.now()` directly still fires CAP001 via the canonical tripwire.
+    const srcNoAlias =
+      "?bs 0.8\n" +
+      "const time = time + 1\n" +
+      "const x = time\n" +
+      "fn f() -> number = x\n";
+    // No stdlib alias is tracked, no capability annotation, no CAP diagnostics.
+    expect(() => t(srcNoAlias)).not.toThrow();
+  });
+
+  it("does not track `const x = time` when `const time = (time) + 1` rebinds via paren+operator", () => {
+    // Paren-wrapped self-ref followed by operator: `const time = (time) + 1`.
+    // The pre-scan must check that nothing follows the closing paren on the same line.
+    const srcNoAlias =
+      "?bs 0.8\n" +
+      "const time = (time) + 1\n" +
+      "const x = time\n" +
+      "fn f() -> number = x\n";
+    expect(() => t(srcNoAlias)).not.toThrow();
+  });
 });
