@@ -706,7 +706,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   THR004: {
     code: "THR004",
-    title: "fn declares throws {} label not justified by any callee or direct construction (warning)",
+    title: "fn declares throws {} label not justified by any callee or direct construction",
     body:
       "From `?bs 0.9`, `throws {}` annotations are enforced in both directions. " +
       "THR001 fires when a callee's error type is absent from the caller's declaration; " +

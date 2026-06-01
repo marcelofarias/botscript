@@ -416,7 +416,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   THR004: {
     code: "THR004",
-    title: "fn declares throws {} label not justified by any callee or direct construction (warning)",
+    title: "fn declares throws {} label not justified by any callee or direct construction",
     rule: "a declared throws {} label should reflect an error type the fn or its callees can actually throw; if no same-file callee (transitively) throws X and the fn body does not construct err(X...), the label may be stale",
     idiom: "remove the stale label from the throws {} clause; leaf fns and fns that directly construct err(X) can safely declare X even if no callee propagates it",
     rewrite: "fn name(...) throws { …remaining } -> ...  // remove label not propagated by any callee or body",
