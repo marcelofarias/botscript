@@ -81,7 +81,7 @@ const STDLIB_NAMESPACE_NAMES = new Set(["http", "random", "stderr", "stdout", "t
  * Canonical source — import this set to avoid drift with STDLIB_VALUE_SYMBOLS.
  */
 export const STDLIB_VALUE_CALL_NAMES: ReadonlySet<string> = new Set(
-  STDLIB_VALUE_SYMBOLS.filter(s => !STDLIB_NAMESPACE_NAMES.has(s)),
+  STDLIB_VALUE_SYMBOLS.filter((s) => !STDLIB_NAMESPACE_NAMES.has(s)),
 );
 
 /**
