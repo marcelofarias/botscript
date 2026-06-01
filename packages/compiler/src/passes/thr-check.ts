@@ -397,20 +397,24 @@ function collectBodyErrorTypes(
  * Used to exclude callback parameter calls from the opaque-call heuristic in THR004:
  * calling `cb()` where `cb` is a declared parameter is not an unknown external call.
  *
- * Depth-tracks parentheses so names inside nested callback type annotations
- * (e.g. the `name` in `cb: (name: string) -> string`) are not captured.
+ * Depth-tracks parentheses and braces so names inside nested callback type
+ * annotations (e.g. `(name: string) -> void`) and record type literals
+ * (e.g. `user: { name: string }`) are not captured.
  */
 function collectParamNames(fn: FnDecl): Set<string> {
   const names = new Set<string>();
   const args = fn.args; // verbatim args string, includes outer parens
-  let depth = 0;
+  let parenDepth = 0;
+  let braceDepth = 0;
   let i = 0;
   while (i < args.length) {
     const c = args[i]!;
-    if (c === "(") { depth++; i++; continue; }
-    if (c === ")") { depth--; i++; continue; }
-    // Only capture param names at the top-level param list (depth === 1).
-    if (depth !== 1) { i++; continue; }
+    if (c === "(") { parenDepth++; i++; continue; }
+    if (c === ")") { parenDepth--; i++; continue; }
+    if (c === "{") { braceDepth++; i++; continue; }
+    if (c === "}") { braceDepth--; i++; continue; }
+    // Only capture param names at the top-level param list (parenDepth === 1, braceDepth === 0).
+    if (parenDepth !== 1 || braceDepth !== 0) { i++; continue; }
     const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/.exec(args.slice(i));
     if (m) {
       names.add(m[1]!);

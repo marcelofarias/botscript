@@ -234,6 +234,23 @@ describe("THR004: throws over-declared (0.9+)", () => {
     expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
     expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
   });
+
+  it("does not capture record type literal field names as outer fn params", () => {
+    // `process` has a param typed `user: { name: string }`.
+    // `name` is inside a record type literal — not a real param of `process`.
+    // collectParamNames must NOT capture `name`; otherwise an external call to
+    // a function named `name` would be incorrectly suppressed.
+    // THR004 should still fire: `noop` doesn't throw NetworkError.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn process(user: { name: string }) throws { NetworkError } -> void {\n" +
+      "  noop()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
 });
 
 // ---------------------------------------------------------------------------
