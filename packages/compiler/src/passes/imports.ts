@@ -72,6 +72,18 @@ const STDLIB_VALUE_SYMBOLS = [
   "time",
 ] as const;
 
+/** Stdlib namespace names (member-access objects, not standalone call targets). */
+const STDLIB_NAMESPACE_NAMES = new Set(["http", "random", "stderr", "stdout", "time"]);
+
+/**
+ * Stdlib value helpers that appear as bare `ident(` call sites in function bodies
+ * (Result, Option, and error builtins — not stdlib namespace objects).
+ * Canonical source — import this set to avoid drift with STDLIB_VALUE_SYMBOLS.
+ */
+export const STDLIB_VALUE_CALL_NAMES: ReadonlySet<string> = new Set(
+  STDLIB_VALUE_SYMBOLS.filter((s) => !STDLIB_NAMESPACE_NAMES.has(s)),
+);
+
 /**
  * User-facing stdlib type exports auto-imported from `?bs 0.6` onwards.
  * Emitted via `import type { ... }` so consumers using

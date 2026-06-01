@@ -734,6 +734,29 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         ") throws { NetworkError } -> void { handler(items[0]) }\n",
     },
   },
+  THR004: {
+    code: "THR004",
+    title: "fn declares throws {} label not justified by any callee or direct construction",
+    body:
+      "From `?bs 0.9`, `throws {}` annotations are enforced in both directions. " +
+      "THR001 fires when a callee's error type is absent from the caller's declaration; " +
+      "THR004 fires when a declared error type is not justified by any callee or direct " +
+      "`err(X...)` construction in the fn body.\n\n" +
+      "Leaf fns (no tracked callees) and fns with opaque external calls are excluded — " +
+      "they may be the actual throw point. Fns that accept `() throws { X } ->` callback " +
+      "parameters are also excluded via paramThrows seeding.\n\n" +
+      "THR004 is gated on `?bs 0.9`. The under-declaration counterpart is THR001.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn helper(id: string) -> string = \"ok\"\n" +
+        "fn load(id: string) throws { NetworkError } -> string = helper(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn helper(id: string) -> string = \"ok\"\n" +
+        "fn load(id: string) -> string = helper(id)\n",
+    },
+  },
   VER001: {
     code: "VER001",
     title: "reads {} / writes {} declared below the ?bs 0.9 enforcement floor",

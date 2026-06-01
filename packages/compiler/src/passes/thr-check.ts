@@ -18,21 +18,26 @@
  *           (`err(e)` where e's type is inferred) are out of scope — token-based
  *           detection only.
  *
+ *   THR004  throws over-declared: fn declares `throws { X }` but no same-file
+ *           callee (direct or transitive) throws X, the fn's body does not
+ *           construct `err(X...)` directly, and no callback param declares
+ *           `throws { X }`. Warning-level (?bs 0.9), gated to fns with at
+ *           least one non-self callee. Suppressed when the fn has untracked
+ *           external calls (opaque callees whose effects are unknown).
+ *
  * Same-file call resolution is performed by default. Cross-file calls extend
- * THR001 transitivity when a `moduleEffects` map is provided via
- * `TransformOptions.moduleEffects`. Over-declaration is intentionally NOT
- * checked — a caller may conservatively declare more exception types than
- * it strictly needs.
+ * THR001/THR004 transitivity when a `moduleEffects` map is provided via
+ * `TransformOptions.moduleEffects`.
  */
 
-import { BotscriptError } from "../diagnostics.js";
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
-import { computeNesting, collectCallees, nextSignificant, prevSignificant } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
@@ -58,15 +63,15 @@ export function passThrCheck(
   src: string,
   version: VersionInfo,
   moduleEffects?: ModuleEffects,
-): string {
-  if (!atLeast(version.resolved, "0.9")) return src;
+): { code: string; warnings: ReadonlyArray<Diagnostic> } {
+  if (!atLeast(version.resolved, "0.9")) return { code: src, warnings: [] };
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  if (decls.length === 0) return src;
+  if (decls.length === 0) return { code: src, warnings: [] };
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` should look up `fetchRow` in moduleEffects.
@@ -84,10 +89,15 @@ export function passThrCheck(
   const declsByName = new Map<string, FnDecl[]>();
   const fnNames = new Set(decls.map((d) => d.name));
 
+  // All fns listed in moduleEffects (with or without throws) are "known" externals.
+  const knownExternalNames = new Set<string>(
+    moduleEffects ? Object.keys(moduleEffects) : [],
+  );
+
   const aliasedLocalNames = new Set(importAliases.keys());
   const allCalleeNames =
-    extThrows.size > 0 || aliasedLocalNames.size > 0
-      ? new Set([...fnNames, ...extThrows.keys(), ...aliasedLocalNames])
+    knownExternalNames.size > 0 || aliasedLocalNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...aliasedLocalNames])
       : fnNames;
 
   const innerByDecl = computeNesting(decls);
@@ -174,14 +184,68 @@ export function passThrCheck(
     }
   }
 
+  // Pre-compute body error types for all fns once; shared by THR002 and THR004
+  // to avoid running the same token scan twice per function.
+  const bodyErrsByDecl = new Map<FnDecl, Map<string, { start: number; end: number }>>();
+  for (const rec of records.values()) {
+    bodyErrsByDecl.set(rec.decl, collectBodyErrorTypes(tokens, rec.decl, innerByDecl.get(rec.decl) ?? []));
+  }
+
   // THR002: fn body must not directly construct undeclared error types.
   for (const rec of records.values()) {
-    const inner = innerByDecl.get(rec.decl) ?? [];
-    const err = checkBodyErrors(tokens, rec.decl, inner, rec.declaredThrows, src);
+    const err = checkBodyErrors(rec.decl, rec.declaredThrows, src, bodyErrsByDecl.get(rec.decl)!);
     if (err) throw err;
   }
 
-  return src;
+  // THR004: over-declared throws — a declared label is not justified by any
+  // callee (transitively) or by a direct err(X...) construction in the body.
+  const warnings: Diagnostic[] = [];
+  for (const rec of records.values()) {
+    if (rec.callees.size === 0) continue;
+
+    // Justified by: paramThrows + direct body construction + transitive callee throws.
+    const justifiedThrows = new Set<string>(rec.decl.paramThrows);
+    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) justifiedThrows.add(t);
+
+    let hasNonSelfCallee = false;
+    for (const calleeName of rec.callees) {
+      const calleeDecls = declsByName.get(calleeName);
+      if (calleeDecls) {
+        for (const calleeDecl of calleeDecls) {
+          if (calleeDecl === rec.decl) continue;
+          hasNonSelfCallee = true;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const label of callee.transitiveThrows.keys()) justifiedThrows.add(label);
+        }
+        continue;
+      }
+      const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+      if (!knownExternalNames.has(resolvedCallee)) continue;
+      hasNonSelfCallee = true;
+      const extT = extThrows.get(resolvedCallee);
+      if (extT) for (const label of extT) justifiedThrows.add(label);
+    }
+    if (!hasNonSelfCallee) continue;
+
+    // Suppress when fn has opaque calls (unlisted external callee).
+    // Fn parameter names are excluded from the opaque-call check because their
+    // effect surface is already captured by `paramThrows` — calling a typed
+    // callback param is not an unknown external call.
+    const inner = innerByDecl.get(rec.decl) ?? [];
+    const paramNames = collectParamNames(rec.decl);
+    const knownForOpaque = paramNames.size > 0
+      ? new Set([...allCalleeNames, ...paramNames])
+      : allCalleeNames;
+    if (hasOpaqueCall(tokens, rec.decl, inner, knownForOpaque)) continue;
+
+    const overDeclared = [...rec.declaredThrows].filter((l) => !justifiedThrows.has(l)).sort();
+    if (overDeclared.length > 0) {
+      warnings.push(mkThr004Warning(src, rec, overDeclared));
+    }
+  }
+
+  return { code: src, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,20 +321,22 @@ function mkThr001Error(src: string, rec: FnRecord, missingLabels: string[]): Bot
 }
 
 /**
- * THR002: scan fn body for `err(TypeName(...))`, `err(new TypeName(...))`, or
- * bare `err(TypeName)` where TypeName (CapCase ident) is not in the fn's own
- * `throws {}` set. Returns a BotscriptError on the first violation found, or null.
+ * Collect all CapCase error type names directly constructed in `fn`'s body via
+ * `err(TypeName(...))`, `err(new TypeName(...))`, or bare `err(TypeName)`.
+ *
+ * Returns a Map from type name to the `err` token's start/end position of its
+ * first occurrence. Insertion order matches source order, so iteration order
+ * preserves left-to-right source position.
+ *
+ * Used by THR002 (undeclared construction check) and THR004 (over-declared
+ * justification) to avoid duplicating the body-scan logic.
  */
-function checkBodyErrors(
+function collectBodyErrorTypes(
   tokens: Token[],
   fn: FnDecl,
   inner: FnDecl[],
-  declaredThrows: Set<string>,
-  src: string,
-): BotscriptError | null {
-  const entry = getErrorCode("THR002")!;
-
-  // Cursor-based inner-fn exclusion.
+): Map<string, { start: number; end: number }> {
+  const result = new Map<string, { start: number; end: number }>();
   const open: FnDecl[] = [];
   let nextInner = 0;
 
@@ -319,10 +385,63 @@ function checkBodyErrors(
     const isRef = after.kind === "close" && after.text === ")";
     if (!isCtor && !isRef) continue;
 
-    // Already declared — fine.
+    // Record only the first occurrence per type name.
+    if (!result.has(typeName)) result.set(typeName, { start: tok.start, end: tok.end });
+  }
+
+  return result;
+}
+
+/**
+ * Returns the set of parameter names for a function, parsed from `FnDecl.args`.
+ * Used to exclude callback parameter calls from the opaque-call heuristic in THR004:
+ * calling `cb()` where `cb` is a declared parameter is not an unknown external call.
+ *
+ * Depth-tracks parentheses and braces so names inside nested callback type
+ * annotations (e.g. `(name: string) -> void`) and record type literals
+ * (e.g. `user: { name: string }`) are not captured.
+ */
+function collectParamNames(fn: FnDecl): Set<string> {
+  const names = new Set<string>();
+  const args = fn.args; // verbatim args string, includes outer parens
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let i = 0;
+  while (i < args.length) {
+    const c = args[i]!;
+    if (c === "(") { parenDepth++; i++; continue; }
+    if (c === ")") { parenDepth--; i++; continue; }
+    if (c === "{") { braceDepth++; i++; continue; }
+    if (c === "}") { braceDepth--; i++; continue; }
+    // Only capture param names at the top-level param list (parenDepth === 1, braceDepth === 0).
+    if (parenDepth !== 1 || braceDepth !== 0) { i++; continue; }
+    const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/.exec(args.slice(i));
+    if (m) {
+      names.add(m[1]!);
+      i += m[0].length;
+    } else {
+      i++;
+    }
+  }
+  return names;
+}
+
+/**
+ * THR002: check pre-computed body error types against the fn's declared throws set.
+ * Returns a BotscriptError on the first undeclared construction found, or null.
+ */
+function checkBodyErrors(
+  fn: FnDecl,
+  declaredThrows: Set<string>,
+  src: string,
+  bodyErrs: Map<string, { start: number; end: number }>,
+): BotscriptError | null {
+  const entry = getErrorCode("THR002")!;
+
+  for (const [typeName, loc] of bodyErrs) {
     if (declaredThrows.has(typeName)) continue;
 
-    const { line, column } = locationOf(src, tok.start);
+    const { line, column } = locationOf(src, loc.start);
     const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
 
     return new BotscriptError([{
@@ -331,8 +450,8 @@ function checkBodyErrors(
       file: null,
       line,
       column,
-      start: tok.start,
-      end: tok.end,
+      start: loc.start,
+      end: loc.end,
       message:
         declaredThrows.size === 0
           ? `fn '${fn.name}' constructs err(${typeName}...) but has no throws clause`
@@ -344,4 +463,36 @@ function checkBodyErrors(
   }
 
   return null;
+}
+
+function mkThr004Warning(src: string, rec: FnRecord, overLabels: string[]): Diagnostic {
+  const entry = getErrorCode("THR004")!;
+  const { line, column } = locationOf(src, rec.decl.fnKeywordStart);
+  const nameEnd = rec.decl.nameStart + rec.decl.name.length;
+  // Show the full declared throws set so the message is accurate even when only
+  // a subset of labels are stale (the reader sees what the fn actually declares).
+  const declaredList = [...rec.declaredThrows].sort().join(", ");
+  const staleList = overLabels.join(", ");
+  const notPropagated =
+    overLabels.length === 1
+      ? `'${overLabels[0]}' is not propagated by any callee or constructed directly`
+      : `[${staleList}] are not propagated by any callee or constructed directly`;
+
+  const remaining = [...rec.declaredThrows].filter((l) => !overLabels.includes(l)).sort();
+  const rewriteThrows = remaining.length > 0 ? `throws { ${remaining.join(", ")} } ` : "";
+
+  return {
+    code: "THR004",
+    severity: "warning" as const,
+    file: null,
+    line,
+    column,
+    start: rec.decl.fnKeywordStart,
+    end: nameEnd,
+    message:
+      `fn '${rec.decl.name}' declares throws { ${declaredList} } but ${notPropagated}; annotation may be stale`,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite: `fn ${rec.decl.name}(...) ${rewriteThrows}-> ...  // remove stale label${overLabels.length > 1 ? "s" : ""}: ${staleList}`,
+  };
 }

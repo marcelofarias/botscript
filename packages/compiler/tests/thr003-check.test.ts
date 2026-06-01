@@ -1,9 +1,14 @@
 /**
- * Tests for THR003: callback throws annotation not propagated to outer fn (?bs 0.9+).
+ * Tests for THR003 and THR004 (?bs 0.9+).
  *
- * Fires when a function-typed parameter declares `throws { X }` but the containing
- * fn does not declare `throws { X }`. Calling the callback can surface X, so the
- * outer fn's throws surface must cover it (same principle as EFF003/EFF004).
+ * THR003: fires when a function-typed parameter declares `throws { X }` but the
+ * containing fn does not declare `throws { X }`. Calling the callback can surface X,
+ * so the outer fn's throws surface must cover it (same principle as EFF003/EFF004).
+ *
+ * THR004: fires (warning-level) when a fn declares `throws { X }` but no same-file
+ * callee (direct or transitive) throws X, the fn's body does not construct err(X...),
+ * and no callback param declares `throws { X }`. Suppressed for leaf fns, self-only-
+ * recursive fns, and fns with opaque (untracked) external calls.
  */
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +17,241 @@ import { transform } from "../src/transform.js";
 function compile(src: string): string {
   return transform(src).code;
 }
+
+// ---------------------------------------------------------------------------
+// THR004: over-declared throws (0.9+, warning)
+// ---------------------------------------------------------------------------
+
+describe("THR004: throws over-declared (0.9+)", () => {
+  it("fires when a fn declares throws { X } but no callee throws X and body has no err(X)", () => {
+    // helper does not throw, body has no err(NetworkError)
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"ok\"\n" +
+      "fn load(id: string) throws { NetworkError } -> string = helper(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does NOT fire when callee transitively throws X", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn risky(id: string) throws { NetworkError } -> string = id\n" +
+      "fn load(id: string) throws { NetworkError } -> string = risky(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire when body directly constructs err(X)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  err(NetworkError())\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire for leaf fn (no tracked callees)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) throws { NetworkError } -> string = id\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire for self-recursive fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn retry(n: number) throws { NetworkError } -> string {\n" +
+      "  if (n > 0) retry(n - 1);\n" +
+      "  \"ok\"\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("is non-blocking (does not throw)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does NOT fire when paramThrows justifies the label", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withHandler(cb: () throws { NetworkError } -> string) throws { NetworkError } -> string {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("THR004 has severity 'warning'", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w?.severity).toBe("warning");
+  });
+
+  it("does NOT fire when fn has an opaque (untracked) call alongside tracked callees", () => {
+    // externalLib is not declared anywhere in this file — it's opaque,
+    // so we cannot statically determine its throws surface.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  externalLib()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
+  it("does NOT treat err() as an opaque call — fires when err constructs a different error type", () => {
+    // AuthError is justified by err(AuthError()), but NetworkError is not.
+    // err() is a builtin, not an opaque external call, so THR004 must still fire for NetworkError.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { AuthError, NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  err(AuthError())\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does NOT treat ok() and other stdlib result helpers as opaque calls", () => {
+    // ok(), some(), isOk(), etc. are botscript stdlib builtins, not opaque external calls.
+    // THR004 must still fire even when they are present in the fn body.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"result\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  ok(\"value\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("message lists all stale labels, not just the first", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { AuthError, NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("AuthError");
+    expect(w!.message).toContain("NetworkError");
+  });
+
+  it("fires when a callback param has no throws annotation — calling it does not suppress THR004", () => {
+    // `cb` has no throws annotation, so it does not justify any label.
+    // Calling `cb()` must not be treated as an opaque call that suppresses THR004.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withHandler(cb: () -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does not suppress THR004 for dollar-prefixed or uppercase callback params", () => {
+    // collectParamNames must match lexer ident rules ($cb, CB) so these are
+    // recognised as params and do not trigger the opaque-call suppression path.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withDollar($cb: () -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  $cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("message shows full declared throws set even when only a subset are stale", () => {
+    // helper throws DbError; load also declares NetworkError (stale).
+    // The message must show "declares throws { DbError, NetworkError }" — the complete
+    // declared set — not just "{ NetworkError }" (the stale subset).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() throws { DbError } -> string = \"ok\"\n" +
+      "fn load() throws { DbError, NetworkError } -> string = helper()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w: any) => w.code === "THR004");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("DbError");
+    expect(w!.message).toContain("NetworkError");
+    // Full declared set must appear in the message (not just the stale label).
+    expect(w!.message).toMatch(/declares throws \{[^}]*DbError[^}]*NetworkError[^}]*\}/);
+  });
+
+  it("does not capture nested callback-type param names as outer fn params", () => {
+    // `process` has a callback param typed `(item: string) -> void`.
+    // `item` is inside a type annotation — not a real param of `process`.
+    // collectParamNames must NOT capture `item`; otherwise an external call to
+    // a function named `item` would be incorrectly suppressed.
+    // THR004 should still fire: `noop` doesn't throw NetworkError, and `handler`
+    // (a real param with no throws annotation) doesn't justify it either.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn process(handler: (item: string) -> void) throws { NetworkError } -> void {\n" +
+      "  noop();\n" +
+      "  handler(\"x\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+
+  it("does not capture record type literal field names as outer fn params", () => {
+    // `process` has a param typed `user: { name: string }`.
+    // `name` is inside a record type literal — not a real param of `process`.
+    // collectParamNames must NOT capture `name`; otherwise an external call to
+    // a function named `name` would be incorrectly suppressed.
+    // THR004 should still fire: `noop` doesn't throw NetworkError.
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn process(user: { name: string }) throws { NetworkError } -> void {\n" +
+      "  noop()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(true);
+    expect(result.warnings.find((w: any) => w.code === "THR004")!.message).toContain("NetworkError");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // THR003: missing throws from callback parameter
