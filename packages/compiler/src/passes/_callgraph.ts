@@ -8,6 +8,7 @@
 
 import type { Token } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
+import { STDLIB_VALUE_CALL_NAMES } from "./imports.js";
 
 /**
  * Build a map from each FnDecl to all nested (direct and indirect) FnDecls
@@ -124,32 +125,8 @@ export function prevSignificant(tokens: Token[], start: number): number {
   return i;
 }
 
-/**
- * Botscript builtin call names that are never opaque external calls.
- * Includes all lowercase stdlib value helpers (Result, Option) and the
- * error-throw builtin. These appear as bare `ident(` in function bodies
- * but are compiler-known — not user-defined external functions.
- */
-const BOTSCRIPT_BUILTIN_CALLS = new Set([
-  // Error builtin
-  "err",
-  // Result helpers
-  "isErr",
-  "isOk",
-  "mapErr",
-  "mapResult",
-  "ok",
-  "unwrap",
-  // Option helpers
-  "isNone",
-  "isSome",
-  "mapOption",
-  "none",
-  "optionFromNullable",
-  "some",
-  "unwrapOption",
-  "unwrapOr",
-]);
+// Alias imported for opaque-call detection; derived from imports.ts to avoid drift.
+const BOTSCRIPT_BUILTIN_CALLS = STDLIB_VALUE_CALL_NAMES;
 
 /**
  * Returns true if `fn`'s body contains at least one function call whose callee
