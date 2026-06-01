@@ -1,13 +1,16 @@
 /**
- * Tests for VER001 / VER002: unenforced effect annotations below ?bs 0.9.
+ * Tests for VER001 / VER002 / VER003: unenforced annotations below their
+ * enforcement floors.
  *
- * Both codes are warnings (non-blocking). Compilation succeeds; warnings are
- * returned in TransformResult.warnings.
+ * All three codes are warnings (non-blocking). Compilation succeeds; warnings
+ * are returned in TransformResult.warnings.
  *
- *   VER001  reads {} / writes {} present but DEP001/DEP002 is not enforced
+ *   VER001  reads {} / writes {} present but DEP001/DEP002 are not enforced
  *           (file pinned below ?bs 0.9).
  *   VER002  throws {} present but THR001 is not enforced (file pinned
  *           below ?bs 0.9).
+ *   VER003  intent: "..." present but INT001–INT005 are not enforced (file
+ *           pinned below ?bs 0.7).
  */
 
 import { describe, expect, it } from "vitest";
@@ -262,6 +265,113 @@ describe("VER001 / VER002: no false positives", () => {
       "}\n";
     const result = transform(src);
     const warns = result.warnings.filter((w) => w.code === "VER001" || w.code === "VER002");
+    expect(warns).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VER003 — intent: unenforced
+// ---------------------------------------------------------------------------
+
+describe("VER003: fires as a warning for intent: below 0.7", () => {
+  it("emits VER003 for intent: \"pure\" at ?bs 0.6", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn slug(s: string) intent: \"pure\" -> string {\n" +
+      "  s\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.severity).toBe("warning");
+    expect(warns[0]!.message).toMatch(/slug/);
+    expect(warns[0]!.message).toMatch(/intent: "pure"/);
+    expect(warns[0]!.message).toMatch(/0\.6/);
+    expect(warns[0]!.message).toMatch(/INT001/);
+    expect(warns[0]!.message).toMatch(/unenforced/);
+  });
+
+  it("emits VER003 for intent: \"idempotent\" at ?bs 0.6", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn doWork(id: string) intent: \"idempotent\" -> string {\n" +
+      "  id\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toMatch(/idempotent/);
+  });
+
+  it("does not throw — compilation succeeds", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn slug(s: string) intent: \"pure\" -> string {\n" +
+      "  s\n" +
+      "}\n";
+    expect(() => transform(src)).not.toThrow();
+  });
+
+  it("fires one warning per fn with intent:", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn fnA(x: string) intent: \"pure\" -> string { x }\n" +
+      "fn fnB(x: string) intent: \"idempotent\" -> string { x }\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(2);
+    const names = warns.map((w) => w.message).join(" ");
+    expect(names).toMatch(/fnA/);
+    expect(names).toMatch(/fnB/);
+  });
+
+  it("does NOT fire at ?bs 0.7 — enforcement is active", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn slug(s: string) intent: \"pure\" -> string {\n" +
+      "  s\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does NOT fire for fn without intent: at ?bs 0.6", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn add(a: number, b: number) -> number = pure { a + b }\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("fires for nested fn with intent: below 0.7", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn outer(id: string) -> string {\n" +
+      "  fn inner(x: string) intent: \"pure\" -> string { x }\n" +
+      "  inner(id)\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toMatch(/inner/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VER001/VER002 can still fire at ?bs 0.8 (below 0.9); VER003 is silent (enforced from 0.7+)
+// ---------------------------------------------------------------------------
+
+describe("VER003: silent at ?bs 0.8 (enforcement floor is 0.7, not 0.9)", () => {
+  it("does not fire VER003 at ?bs 0.8 — intent is enforced at 0.7+", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn slug(s: string) intent: \"pure\" -> string {\n" +
+      "  s\n" +
+      "}\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "VER003");
     expect(warns).toHaveLength(0);
   });
 });
