@@ -586,4 +586,21 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
+
+  it("suppresses DEP003 when param has object type annotation — inner idents are not param names", () => {
+    // `opts: { dbClient: string }` — `dbClient` is a property name in the type
+    // annotation, not an actual fn parameter. Before the brace-depth fix,
+    // collectTopLevelParamNames would add `dbClient` to localNames, causing
+    // `dbClient.query()` in the body to look like a local param method call
+    // rather than an opaque external call, which incorrectly allowed DEP003 to fire.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f(opts: { dbClient: string }) reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  dbClient.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
 });
