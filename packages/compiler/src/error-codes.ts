@@ -579,6 +579,25 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn loadUser(id: string) throws { NetworkError } -> string = id",
   },
+  VER003: {
+    code: "VER003",
+    title: "intent: annotation declared below the ?bs 0.7 enforcement floor — annotation is unenforced",
+    rule:
+      "INT001–INT005 (intent consistency checks) are enforced from `?bs 0.7`; a non-empty " +
+      "`intent: \"...\"` clause on a file pinned below 0.7 is accepted but not verified — it is documentation only",
+    idiom:
+      "annotate now if you intend to enforce later, but know that reviewers reading the header " +
+      "cannot assume the compiler has checked it; upgrade the pin to `?bs 0.7` to activate enforcement",
+    rewrite:
+      "upgrade pin to `?bs 0.7` to activate INT001–INT005 enforcement",
+    example:
+      "// before — intent: at ?bs 0.6 is documentation only (VER003 warning)\n" +
+      "?bs 0.6\n" +
+      "fn now() intent: \"pure\" -> number = pure { time.now() }\n\n" +
+      "// after — enforcement active\n" +
+      "?bs 0.7\n" +
+      "fn now() intent: \"pure\" -> number = pure { time.now() }  // INT002 would fire here",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

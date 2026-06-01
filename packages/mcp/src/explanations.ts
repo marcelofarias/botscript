@@ -787,6 +787,31 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn loadUser(id: string) throws { NetworkError } -> string = id\n",
     },
   },
+  VER003: {
+    code: "VER003",
+    title: "intent: annotation declared below the ?bs 0.7 enforcement floor",
+    body:
+      "From `?bs 0.7`, the compiler enforces `intent:` annotations against the function's " +
+      "declared capabilities and body (INT001–INT005). Below that version, the annotation is " +
+      "parsed and accepted silently — it is documentation, not a verified claim.\n\n" +
+      "VER003 fires as a **warning** (non-blocking) when a non-empty `intent: \"...\"` clause " +
+      "is declared on a fn in a file pinned below `?bs 0.7`. A reviewer reading the header " +
+      "would reasonably assume the compiler has verified the intent claim — it has not.\n\n" +
+      "The most common scenario: a team writing intent annotations in advance while still on " +
+      "`?bs 0.6`, intending to enforce later. VER003 makes the lack of enforcement visible " +
+      "so reviewers are not given false assurance.\n\n" +
+      "The fix is to upgrade the `?bs` pin to `0.7` (which activates INT001–INT005 enforcement) " +
+      "or to leave the annotation knowing it is documentation-only until the upgrade.\n\n" +
+      "VER003 is the `intent:` sibling of VER001 (`reads {}`/`writes {}`) and VER002 (`throws {}`).",
+    example: {
+      fails:
+        "?bs 0.6\n" +
+        "fn slug(s: string) intent: \"pure\" -> string = s.toLowerCase()\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn slug(s: string) intent: \"pure\" -> string = s.toLowerCase()\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();

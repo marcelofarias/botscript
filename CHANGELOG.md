@@ -7,6 +7,15 @@ goes behind a new pin.
 ## ?bs 0.9 — unreleased
 
 ### Added
+- **VER003 — `intent:` annotation below the ?bs 0.7 enforcement floor.**
+  VER003 fires as a **warning** (non-blocking) when a fn declares a non-empty
+  `intent: "..."` clause on a file pinned below `?bs 0.7`. INT001–INT005 are only
+  enforced from `?bs 0.7`; below that floor the annotation is accepted but not
+  verified — a reviewer reading the header cannot assume the compiler has checked
+  the intent claim. VER003 makes that gap explicit, completing the enforcement-floor
+  warning trilogy alongside VER001 (`reads {}`/`writes {}`, < 0.9) and VER002
+  (`throws {}`, < 0.9).
+
 - **`moduleEffects` option — cross-file effect transitivity.**
   `transform(src, { moduleEffects })` now accepts a `ModuleEffects` map that
   declares the effect surface of imported functions. When provided,

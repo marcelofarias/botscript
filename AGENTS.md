@@ -211,6 +211,7 @@ parse the resulting `{ ok: false, diagnostics: [...] }` envelope.
 | MAT001 | (0.9+) A `match` expression handles `ok` or `err` tag patterns but omits the opposing tag without a wildcard `_` arm. An incomplete Result match is a silent no-op for the missing path. | Add the missing `ok { ... } -> ...` or `err { ... } -> ...` arm, or add a wildcard `_ -> ...` arm. |
 | VER001 | (warning, < 0.9) A non-empty `reads {}` or `writes {}` clause is declared on a fn in a file pinned below `?bs 0.9`. DEP001/DEP002 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.9` to activate enforcement, or leave it knowing it is unenforced. |
 | VER002 | (warning, < 0.9) A non-empty `throws {}` clause is declared on a fn in a file pinned below `?bs 0.9`. THR001 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.9` to activate enforcement, or leave it knowing it is unenforced. |
+| VER003 | (warning, < 0.7) A non-empty `intent: "..."` clause is declared on a fn in a file pinned below `?bs 0.7`. INT001–INT005 enforcement is not active; the annotation is documentation only. Non-blocking. | Upgrade the pin to `?bs 0.7` to activate enforcement, or leave it knowing it is unenforced. |
 
 When you add a new compiler error, allocate the next free code in the same
 range (`BSnnn` for general parse errors, `CAPnnn` for capability checks,
