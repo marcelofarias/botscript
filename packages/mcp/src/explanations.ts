@@ -620,6 +620,49 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  MAT002: {
+    code: "MAT002",
+    title: "non-exhaustive match on Option — missing some or none arm",
+    body:
+      "From `?bs 0.9`, a `match` expression that explicitly handles the `some` or `none` tag " +
+      "must also handle the opposing tag (or include a wildcard `_` arm).\n\n" +
+      "This fires when you match on an Option value but leave one path unhandled:\n\n" +
+      "```\n" +
+      "// MAT002: missing 'none' arm\n" +
+      "match lookupUser(id) {\n" +
+      "  some { user } -> user.name\n" +
+      "}\n\n" +
+      "// MAT002: missing 'some' arm\n" +
+      "match option {\n" +
+      "  none -> \"default\"\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Suppression mechanisms (in order of preference):**\n\n" +
+      "1. **Add the missing arm** — handle both arms explicitly:\n" +
+      "   ```\n   match lookupUser(id) {\n     some { user } -> user.name\n     none -> \"unknown\"\n   }\n   ```\n\n" +
+      "2. **Wildcard arm** — use `_` when you want to coerce or ignore the missing case:\n" +
+      "   ```\n   match lookupUser(id) {\n     some { user } -> user.name\n     _ -> \"unknown\"\n   }\n   ```\n\n" +
+      "The check is scoped to the `some`/`none` tag vocabulary — it fires only when at least one " +
+      "of those tags is explicitly named in an arm. User-defined tagged unions with different " +
+      "tag names are not affected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn greet(name: Option<string>) -> string {\n" +
+        "  match name {\n" +
+        "    some { v } -> `Hello, ${v}`\n" +
+        "  }\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn greet(name: Option<string>) -> string {\n" +
+        "  match name {\n" +
+        "    some { v } -> `Hello, ${v}`\n" +
+        "    none -> \"Hello, stranger\"\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   DEP002: {
     code: "DEP002",
     title: "fn transitively writes a resource category not declared in its header",

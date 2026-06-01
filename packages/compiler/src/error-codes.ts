@@ -509,6 +509,34 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  MAT002: {
+    code: "MAT002",
+    title: "non-exhaustive match on Option — missing some or none arm",
+    rule:
+      "a match expression that explicitly handles the `some` or `none` tag must also handle the other; " +
+      "add the missing arm or a wildcard `_` to make the match exhaustive",
+    idiom:
+      "prefer explicit `some { v }` and `none` arms over a wildcard — a wildcard silently discards the payload " +
+      "and hides the fact that the absent case was considered",
+    rewrite:
+      "add the missing 'some { v } -> ...' or 'none -> ...' arm, or a '_ -> ...' wildcard",
+    example:
+      "// before — match on Option is missing the none arm\n" +
+      "?bs 0.9\n" +
+      "fn greet(name: Option<string>) -> string {\n" +
+      "  match name {\n" +
+      "    some { v } -> `Hello, ${v}`  // MAT002: missing none arm\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "fn greet(name: Option<string>) -> string {\n" +
+      "  match name {\n" +
+      "    some { v } -> `Hello, ${v}`\n" +
+      "    none -> \"Hello, stranger\"\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",
