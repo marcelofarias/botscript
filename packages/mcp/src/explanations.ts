@@ -354,6 +354,36 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()\n",
     },
   },
+  INT005: {
+    code: "INT005",
+    title: "intent declares 'idempotent' but function declares writes {}",
+    body:
+      "INT005 fires when a function header combines `intent: \"idempotent\"` with a non-empty " +
+      "`writes { ... }` clause. A function that writes to a resource produces observable " +
+      "side effects: calling it twice is not the same as calling it once, because the write " +
+      "happens again. That contradicts the idempotency contract, which requires that repeated " +
+      "calls with the same arguments produce the same observable result.\n\n" +
+      "The check is structural and header-level: it fires whenever both clauses appear, " +
+      "regardless of what the body actually does. This is intentional — the annotation surface " +
+      "is the contract, and the contract is self-contradictory. (For upsert-style writes that " +
+      "happen to be idempotent in practice, the correct posture is to not claim `idempotent` " +
+      "and instead document the idempotency guarantee via a comment.)\n\n" +
+      "INT005 is gated on `?bs 0.8` (the same gate that activates reads/writes enforcement). " +
+      "Files pinned below 0.8 can declare both clauses without triggering the check. When " +
+      "both INT005 and INT003/INT004 would fire, INT005 takes priority and only INT005 is emitted.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn recordAttempt(id: string) intent: \"idempotent\" writes { auditLog } -> void { }\n",
+      passes:
+        "// option A — remove the idempotent claim (the fn writes state, so it is not idempotent)\n" +
+        "?bs 0.9\n" +
+        "fn recordAttempt(id: string) writes { auditLog } -> void { }\n\n" +
+        "// option B — remove writes if the fn does not actually mutate anything\n" +
+        "?bs 0.9\n" +
+        "fn recordAttempt(id: string) intent: \"idempotent\" -> void { }\n",
+    },
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

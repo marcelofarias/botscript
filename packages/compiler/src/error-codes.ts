@@ -286,6 +286,29 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.7\n" +
       "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()",
   },
+  INT005: {
+    code: "INT005",
+    title: "intent declares 'idempotent' but function declares writes {}",
+    rule:
+      "a function declaring intent: \"idempotent\" must not declare `writes { ... }` — " +
+      "a fn that mutates a resource produces different observable side effects on each call, " +
+      "making it structurally non-idempotent regardless of input",
+    idiom:
+      "remove the writes declaration if the fn does not actually mutate the resource, " +
+      "or change the intent to reflect the actual behaviour",
+    rewrite:
+      "// option A — remove the writes declaration if the fn does not mutate:\n" +
+      "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
+      "// option B — remove the idempotent intent claim (keep writes):\n" +
+      "fn name(args) writes { label } -> type = ...",
+    example:
+      "// before — fn claims idempotent but declares writes { auditLog }; INT005 fires\n" +
+      "?bs 0.9\n" +
+      "fn recordAttempt(id: string) intent: \"idempotent\" writes { auditLog } -> void { }\n\n" +
+      "// after — remove the idempotent claim (the fn mutates state, so it is not idempotent)\n" +
+      "?bs 0.9\n" +
+      "fn recordAttempt(id: string) writes { auditLog } -> void { }",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",
