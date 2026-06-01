@@ -31,7 +31,7 @@ import type { Token } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
-import { nextSignificant, STDLIB_NAMESPACES } from "./_callgraph.js";
+import { nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 

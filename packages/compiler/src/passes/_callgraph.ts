@@ -191,12 +191,15 @@ export function collectFnBodyLocalNames(
 }
 
 /**
- * Returns true if fn's body contains any direct function call (`ident(`) to a
- * name that is NOT in `knownNames` and is not the fn itself.
+ * Returns true if fn's body contains any opaque external call — either a bare
+ * function call (`ident(`) or a member/namespace call (`obj.method()`) — where
+ * the callee/receiver is NOT in `knownNames` and is not a compiler-known stdlib
+ * builtin, control-flow keyword, or CapCase error constructor.
  *
- * Used by DEP003/DEP004 to suppress over-declaration warnings when the fn
- * calls an opaque external (e.g. an import not listed in moduleEffects) that
- * could be the actual resource access point.
+ * Both patterns can reach external resources: a bare `fetchData()` or a member
+ * call `db.read()` on an imported object. Suppresses over-declaration warnings
+ * (DEP003/DEP004, THR004) when the fn has at least one such call whose effects
+ * are unknown to the compiler.
  *
  * `localNames` (optional) is a set of parameter or local-variable names that
  * should not be treated as opaque namespace/object receivers. For example,
