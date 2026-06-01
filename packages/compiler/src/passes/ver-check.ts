@@ -29,9 +29,9 @@
  * "annotate first, then upgrade the pin" is valid. The warning makes the
  * lack of enforcement visible so reviewers are not given false assurance.
  *
- * Only non-empty clauses are flagged. An empty `reads {}` / `throws {}` on
- * an old-pin file is likely an intentional forward-declaration placeholder
- * and does not create false assurance.
+ * Only non-empty clauses are flagged. An empty `reads {}` / `writes {}` /
+ * `throws {}` on an old-pin file is likely an intentional forward-declaration
+ * placeholder and does not create false assurance.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -61,56 +61,54 @@ export function passVerCheck(src: string, version: VersionInfo): VerCheckResult 
   const ver003 = getErrorCode("VER003")!;
 
   for (const { decl } of program.fns) {
-    // VER001/VER002: active below ?bs 0.9
-    if (!isAtLeast09) {
-      const hasUnenforcedReads = (decl.reads?.length ?? 0) > 0;
-      const hasUnenforcedWrites = (decl.writes?.length ?? 0) > 0;
-      const hasUnenforcedThrows = (decl.throws?.length ?? 0) > 0;
+    // VER001/VER002: always active here — ?bs 0.9+ already returned early above
+    const hasUnenforcedReads = (decl.reads?.length ?? 0) > 0;
+    const hasUnenforcedWrites = (decl.writes?.length ?? 0) > 0;
+    const hasUnenforcedThrows = (decl.throws?.length ?? 0) > 0;
 
-      if (hasUnenforcedReads || hasUnenforcedWrites) {
-        const { line, column } = locationOf(src, decl.fnKeywordStart);
-        const clauses: string[] = [];
-        if (hasUnenforcedReads) clauses.push(`reads { ${decl.reads!.join(", ")} }`);
-        if (hasUnenforcedWrites) clauses.push(`writes { ${decl.writes!.join(", ")} }`);
-        const clauseStr = clauses.join(" / ");
+    if (hasUnenforcedReads || hasUnenforcedWrites) {
+      const { line, column } = locationOf(src, decl.fnKeywordStart);
+      const clauses: string[] = [];
+      if (hasUnenforcedReads) clauses.push(`reads { ${decl.reads!.join(", ")} }`);
+      if (hasUnenforcedWrites) clauses.push(`writes { ${decl.writes!.join(", ")} }`);
+      const clauseStr = clauses.join(" / ");
 
-        warnings.push({
-          code: "VER001",
-          severity: "warning",
-          file: null,
-          line,
-          column,
-          start: decl.fnKeywordStart,
-          end: decl.nameStart + decl.name.length,
-          message:
-            `fn '${decl.name}' declares ${clauseStr} at ?bs ${version.resolved} — ` +
-            `DEP001/DEP002 enforcement requires ?bs 0.9; this annotation is unenforced`,
-          rule: ver001.rule,
-          idiom: ver001.idiom,
-          rewrite: ver001.rewrite,
-        });
-      }
+      warnings.push({
+        code: "VER001",
+        severity: "warning",
+        file: null,
+        line,
+        column,
+        start: decl.fnKeywordStart,
+        end: decl.nameStart + decl.name.length,
+        message:
+          `fn '${decl.name}' declares ${clauseStr} at ?bs ${version.resolved} — ` +
+          `DEP001/DEP002 enforcement requires ?bs 0.9; this annotation is unenforced`,
+        rule: ver001.rule,
+        idiom: ver001.idiom,
+        rewrite: ver001.rewrite,
+      });
+    }
 
-      if (hasUnenforcedThrows) {
-        const { line, column } = locationOf(src, decl.fnKeywordStart);
-        const throwsStr = `throws { ${decl.throws!.join(", ")} }`;
+    if (hasUnenforcedThrows) {
+      const { line, column } = locationOf(src, decl.fnKeywordStart);
+      const throwsStr = `throws { ${decl.throws!.join(", ")} }`;
 
-        warnings.push({
-          code: "VER002",
-          severity: "warning",
-          file: null,
-          line,
-          column,
-          start: decl.fnKeywordStart,
-          end: decl.nameStart + decl.name.length,
-          message:
-            `fn '${decl.name}' declares ${throwsStr} at ?bs ${version.resolved} — ` +
-            `THR001 enforcement requires ?bs 0.9; this annotation is unenforced`,
-          rule: ver002.rule,
-          idiom: ver002.idiom,
-          rewrite: ver002.rewrite,
-        });
-      }
+      warnings.push({
+        code: "VER002",
+        severity: "warning",
+        file: null,
+        line,
+        column,
+        start: decl.fnKeywordStart,
+        end: decl.nameStart + decl.name.length,
+        message:
+          `fn '${decl.name}' declares ${throwsStr} at ?bs ${version.resolved} — ` +
+          `THR001 enforcement requires ?bs 0.9; this annotation is unenforced`,
+        rule: ver002.rule,
+        idiom: ver002.idiom,
+        rewrite: ver002.rewrite,
+      });
     }
 
     // VER003: active below ?bs 0.7

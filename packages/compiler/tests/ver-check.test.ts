@@ -5,11 +5,11 @@
  * All three codes are warnings (non-blocking). Compilation succeeds; warnings
  * are returned in TransformResult.warnings.
  *
- *   VER001  reads {} / writes {} present but DEP001/DEP002 is not enforced
+ *   VER001  reads {} / writes {} present but DEP001/DEP002 are not enforced
  *           (file pinned below ?bs 0.9).
  *   VER002  throws {} present but THR001 is not enforced (file pinned
  *           below ?bs 0.9).
- *   VER003  intent: "..." present but INT001–INT005 is not enforced (file
+ *   VER003  intent: "..." present but INT001–INT005 are not enforced (file
  *           pinned below ?bs 0.7).
  */
 
@@ -360,7 +360,7 @@ describe("VER003: fires as a warning for intent: below 0.7", () => {
 });
 
 // ---------------------------------------------------------------------------
-// VER003 is silent at ?bs 0.8 — VER001/VER002 can still fire below 0.9
+// VER001/VER002 can still fire at ?bs 0.8 (below 0.9); VER003 is silent (enforced from 0.7+)
 // ---------------------------------------------------------------------------
 
 describe("VER003: silent at ?bs 0.8 (enforcement floor is 0.7, not 0.9)", () => {
