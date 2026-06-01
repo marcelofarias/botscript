@@ -250,18 +250,32 @@ export function hasOpaqueCall(
     // Local names (fn parameters, local variables) are also excluded: `name.trim()`
     // is a method on a known local, not a call to an unknown namespace import.
     if (next && ((next.kind === "punct" && next.text === ".") || next.kind === "questionDot")) {
-      if (STDLIB_NAMESPACES.has(tok.text)) continue;
-      if (localNames?.has(tok.text)) continue;
-      const methodIdx = nextSignificant(tokens, nextIdx + 1);
-      const methodTok = tokens[methodIdx];
-      if (methodTok && methodTok.kind === "ident") {
-        const afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+      const afterDotIdx = nextSignificant(tokens, nextIdx + 1);
+      const afterDot = tokens[afterDotIdx];
+
+      if (afterDot && afterDot.kind === "ident") {
+        // Member-access call: `db.read(...)` or optional member: `db?.read(...)`
+        if (STDLIB_NAMESPACES.has(tok.text)) continue;
+        if (localNames?.has(tok.text)) continue;
+        const afterMethodIdx = nextSignificant(tokens, afterDotIdx + 1);
         const afterMethod = tokens[afterMethodIdx];
-        if (afterMethod && afterMethod.kind === "open" && afterMethod.text === "(") {
-          return true; // Opaque namespace/object method call
-        }
+        // Direct call: `db.read(...)` or optional call: `db.read?.(...)`
+        const isMethodCall =
+          (afterMethod?.kind === "open" && afterMethod.text === "(") ||
+          (afterMethod?.kind === "questionDot" &&
+            tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.kind === "open" &&
+            tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.text === "(");
+        if (isMethodCall) return true; // Opaque namespace/object method call
+        continue; // Property access without a following call — not opaque
       }
-      continue; // Property access without a following call — not opaque
+
+      if (afterDot && afterDot.kind === "open" && afterDot.text === "(") {
+        // Optional bare call: `fn?.()` — `?.` is immediately followed by `(`.
+        // The receiver is not a known callee, so this is opaque.
+        return true;
+      }
+
+      continue; // `?.` followed by something other than ident or `(` — not a call
     }
 
     // Must be followed by `(` to be a bare function call.

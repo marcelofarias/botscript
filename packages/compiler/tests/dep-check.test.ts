@@ -603,4 +603,32 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
+
+  it("suppresses DEP003 when fn uses optional bare call to unknown external fn?.()", () => {
+    // `externalLib?.()` is an optional call to a function not declared in this file — opaque,
+    // so DEP003 must be suppressed (the external may perform the read).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  externalLib?.()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP003 when fn calls an unknown namespace via optional member call obj.method?.()", () => {
+    // `db.read?.()` — optional method call on an unknown namespace object.
+    // hasOpaqueCall must detect the call pattern even with the `?.` operator.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  externalDb.read?.()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
 });
