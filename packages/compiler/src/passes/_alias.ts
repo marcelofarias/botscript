@@ -417,11 +417,25 @@ export function collectAliasWarningCandidates(
 
     if (isTrivial) continue;
 
+    // Extend the diagnostic range to the end of the full RHS expression, not just
+    // the first non-trivial token after the stdlib ident. For `const t = time.now`
+    // we want the range to include `.now`, not stop at `.`.
+    let statementEnd = afterRhs.end;
+    let scanIdx = afterIdx + 1;
+    while (scanIdx < tokens.length) {
+      const t = tokens[scanIdx];
+      if (!t) break;
+      if (t.kind === "newline" || t.kind === "eof" || t.kind === "lineComment") break;
+      if (t.kind === "punct" && t.text === ";") break;
+      if (t.kind !== "whitespace" && t.kind !== "blockComment") statementEnd = t.end;
+      scanIdx++;
+    }
+
     candidates.push({
       name: nameTok.text,
       stdlibName,
       start: constStart,
-      end: afterRhs.end,
+      end: statementEnd,
     });
   }
 

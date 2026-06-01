@@ -250,6 +250,17 @@ describe("ALI001: warning fields", () => {
     expect(typeof warn.start).toBe("number");
     expect(warn.start).toBeGreaterThanOrEqual(0);
   });
+
+  it("end offset covers the full RHS expression, not just the first non-trivial token", () => {
+    // For `const t = time.now`, the range must span the full binding (18 chars),
+    // not stop at the `.` between `time` and `now`.
+    const src = "?bs 0.8\nconst t = time.now\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI001")!;
+    expect(warn.end).toBeGreaterThan(warn.start);
+    // "const t = time.now" is 18 chars; the range must be at least that wide
+    expect(warn.end - warn.start).toBeGreaterThanOrEqual(18);
+  });
 });
 
 // ---------------------------------------------------------------------------
