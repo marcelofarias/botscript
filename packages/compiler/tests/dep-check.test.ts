@@ -543,4 +543,47 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
   });
+
+  it("fires DEP003 even when fn calls a method on a local const binding (name.trim())", () => {
+    // Local `const name = ...` followed by `name.trim()` is NOT an opaque external call.
+    // Without collectFnBodyLocalNames, `name` is absent from localNames and name.trim()
+    // incorrectly suppresses DEP003.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  const name = helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn constructs an error type (err(NetworkError{...})) as an arg", () => {
+    // CapCase error-type constructors inside err(...) must NOT suppress DEP003.
+    // Standalone CapCase calls like `LoadUser()` SHOULD suppress (opaque external).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  err(NotFoundError { msg: \"x\" })\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("suppresses DEP003 when fn calls an unknown CapCase external function (LoadUser())", () => {
+    // A CapCase function call that is NOT inside err(...) is a genuine opaque
+    // external and should suppress DEP003 — the external may perform the read.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  LoadUser()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
 });

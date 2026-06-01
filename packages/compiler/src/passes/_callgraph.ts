@@ -148,6 +148,46 @@ export function collectTopLevelParamNames(args: string): Set<string> {
 }
 
 /**
+ * Collect names of `const`/`let` simple-binding variables declared in `fn`'s
+ * body (excluding tokens inside nested fn declarations).
+ *
+ * Only plain `const name = ...` and `let name = ...` forms are collected —
+ * destructuring patterns are intentionally skipped. The result is used as
+ * the `localNames` set for `hasOpaqueCall` so that method calls on local
+ * variables (e.g. `name.trim()`) are not mistaken for opaque import calls.
+ */
+export function collectFnBodyLocalNames(
+  tokens: Token[],
+  fn: FnDecl,
+  inner: FnDecl[],
+): Set<string> {
+  const names = new Set<string>();
+  const open: FnDecl[] = [];
+  let nextInner = 0;
+  const start = fn.bodyTokenStart ?? fn.tokenStart;
+
+  for (let i = start; i < fn.tokenEnd; i++) {
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
+
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident") continue;
+    if (tok.text !== "const" && tok.text !== "let") continue;
+
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    // Only simple `const name` bindings — skip destructuring (`{`, `[`)
+    if (nameTok && nameTok.kind === "ident") names.add(nameTok.text);
+  }
+
+  return names;
+}
+
+/**
  * Returns true if fn's body contains any direct function call (`ident(`) to a
  * name that is NOT in `knownNames` and is not the fn itself.
  *
@@ -186,9 +226,8 @@ export function hasOpaqueCall(
     // Skip control-flow identifiers that look like calls but aren't.
     if (CONTROL_FLOW_IDENTS.has(tok.text)) continue;
 
-    // Skip compiler-known stdlib builtins (ok, err, some, none, etc.) and
-    // CapCase identifiers (error-type constructors like `NetworkError(...)`).
-    if (BOTSCRIPT_BUILTIN_CALLS.has(tok.text) || /^[A-Z]/.test(tok.text)) continue;
+    // Skip compiler-known stdlib builtins (ok, err, some, none, etc.).
+    if (BOTSCRIPT_BUILTIN_CALLS.has(tok.text)) continue;
 
     // Skip method identifiers that are part of a property/member access.
     const prevIdx = prevSignificant(tokens, i - 1);
@@ -221,6 +260,17 @@ export function hasOpaqueCall(
 
     // Must be followed by `(` to be a bare function call.
     if (!next || next.kind !== "open" || next.text !== "(") continue;
+
+    // CapCase idents followed by `(` are opaque external calls UNLESS they appear
+    // directly inside `err(TypeName...)` — those are error-type constructors, not
+    // user-defined functions. Check: prev is `(` and prevprev is the `err` builtin.
+    if (/^[A-Z]/.test(tok.text)) {
+      if (prev && prev.kind === "open" && prev.text === "(") {
+        const prevPrevIdx = prevSignificant(tokens, prevIdx - 1);
+        const prevPrev = tokens[prevPrevIdx];
+        if (prevPrev && prevPrev.kind === "ident" && prevPrev.text === "err") continue;
+      }
+    }
 
     return true;
   }
