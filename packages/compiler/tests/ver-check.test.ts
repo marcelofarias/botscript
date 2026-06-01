@@ -360,7 +360,7 @@ describe("VER003: fires as a warning for intent: below 0.7", () => {
 });
 
 // ---------------------------------------------------------------------------
-// VER003 co-fires with VER001/VER002 at ?bs 0.8 (VER003 is NOT active)
+// VER003 is silent at ?bs 0.8 — VER001/VER002 can still fire below 0.9
 // ---------------------------------------------------------------------------
 
 describe("VER003: silent at ?bs 0.8 (enforcement floor is 0.7, not 0.9)", () => {

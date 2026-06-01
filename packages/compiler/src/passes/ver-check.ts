@@ -49,8 +49,8 @@ export function passVerCheck(src: string, version: VersionInfo): VerCheckResult 
   const isAtLeast07 = atLeast(version.resolved, "0.7");
   const isAtLeast09 = atLeast(version.resolved, "0.9");
 
-  // All three checks are no-ops at their respective enforcement floors.
-  if (isAtLeast09 && isAtLeast07) return { code: src, warnings: [] };
+  // At ?bs 0.9+ all three checks are no-ops (0.9 implies 0.7).
+  if (isAtLeast09) return { code: src, warnings: [] };
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
