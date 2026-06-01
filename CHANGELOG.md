@@ -126,6 +126,14 @@ goes behind a new pin.
   `intent: "pure"` alongside a non-empty `reads { }` or `writes { }` clause.
   Pure functions have no read/write dependencies, same way they have no
   capabilities.
+- **INT005 — idempotent intent vs writes {} conflict.**
+  From `?bs 0.8`, the compiler fires `INT005` when a function combines
+  `intent: "idempotent"` with a non-empty `writes { ... }` clause. A fn that
+  writes to a resource produces different observable side effects on each call,
+  making it structurally non-idempotent regardless of its inputs. INT005
+  is the writes-analog of INT003 (idempotent + random/time) and fires at the
+  header level with the same error severity. When both a writes conflict and a
+  random/time conflict are present, INT005 takes priority and only INT005 fires.
 
 ### Compat
 - `reads { }` / `writes { }` parsing is forward-compatible: `parseFn`

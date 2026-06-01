@@ -545,3 +545,81 @@ describe("INT001 — pure intent vs reads/writes annotations (?bs 0.8)", () => {
     expect(() => t(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT005 — idempotent intent vs writes { } (?bs 0.8+)
+// ---------------------------------------------------------------------------
+
+describe("INT005 — idempotent intent vs writes { } (?bs 0.8+)", () => {
+  it("fires INT005 when intent is 'idempotent' and writes {} is non-empty", () => {
+    const src = `?bs 0.9\nfn recordAttempt(id: string) intent: "idempotent" writes { auditLog } -> void { }\n`;
+    expect(() => t(src)).toThrow("INT005");
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT005");
+      expect(err.diagnostics[0]!.message).toContain("auditLog");
+      expect(err.diagnostics[0]!.severity).toBe("error");
+    }
+  });
+
+  it("fires INT005 for multiple writes labels", () => {
+    const src = `?bs 0.9\nfn update(id: string) intent: "idempotent" writes { db, cache } -> void { }\n`;
+    expect(() => t(src)).toThrow("INT005");
+  });
+
+  it("fires INT005 even when idempotent is mixed with other intent words", () => {
+    const src = `?bs 0.9\nfn sync(id: string) intent: "idempotent and safe" writes { db } -> void { }\n`;
+    expect(() => t(src)).toThrow("INT005");
+  });
+
+  it("INT005 takes priority over INT003 when both writes and random/time are present", () => {
+    // When writes {} AND random/time are both declared, INT005 fires first.
+    const src = `?bs 0.9\nfn bad(id: string) uses { random } intent: "idempotent" writes { db } -> string = id\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT005");
+    }
+  });
+
+  it("does NOT fire INT005 for idempotent intent without writes {}", () => {
+    const src = `?bs 0.9\nfn getUser(id: string) intent: "idempotent" reads { cache } -> string = id\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT005 when writes {} is empty", () => {
+    const src = `?bs 0.9\nfn step(id: string) intent: "idempotent" writes { } -> void { }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT005 below ?bs 0.8 (check gated on checksReadsWrites)", () => {
+    // The writes {} check gates on 0.8 via checksReadsWrites — 0.7 is not enough.
+    const src = `?bs 0.7\nfn recordAttempt(id: string) intent: "idempotent" writes { auditLog } -> void { }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT005 for non-idempotent intent with writes {}", () => {
+    // Only idempotent intent triggers INT005; other intent strings are fine with writes.
+    const src = `?bs 0.9\nfn update(id: string) intent: "writer" writes { db } -> void { }\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT005 diagnostic has correct start/end and code", () => {
+    const src = `?bs 0.9\nfn recordAttempt(id: string) intent: "idempotent" writes { auditLog } -> void { }\n`;
+    try {
+      t(src);
+      throw new Error("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const diag = err.diagnostics[0]!;
+      expect(diag.code).toBe("INT005");
+      expect(typeof diag.start).toBe("number");
+      expect(typeof diag.end).toBe("number");
+      expect(diag.start).toBeGreaterThan(0);
+    }
+  });
+});

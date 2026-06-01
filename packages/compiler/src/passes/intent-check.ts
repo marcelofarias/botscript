@@ -30,6 +30,12 @@
  *                      the capability (under-declaration variant of INT003).
  *                      (body-level verification — fires when INT003 does not)
  *
+ *              INT005  intent contains "idempotent" but the function declares
+ *                      `writes { ... }`. A fn that mutates a resource produces
+ *                      different observable side effects on each call, making
+ *                      it structurally non-idempotent.
+ *                      (header-level consistency check, 0.8+)
+ *
  *            Planned for future versions: total, monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -169,13 +175,16 @@ function checkPureClaim(
 const NON_IDEMPOTENT = new Set(["random", "time"]);
 
 /**
- * "idempotent" claim: INT003 (header conflict) and INT004 (body under-declaration).
+ * "idempotent" claim: INT003 (header conflict), INT004 (body under-declaration),
+ * INT005 (writes {} conflict).
  *
  * An idempotent fn is safe to retry: same inputs → same observable result.
  * `random` and `time` break that — they yield different values per call — so a
- * fn that declares or directly calls either cannot honour the claim. Other
- * capabilities (net, fs, …) are not structurally flagged — INT003 is a narrow
- * header heuristic, not a proof of idempotence.
+ * fn that declares or directly calls either cannot honour the claim. `writes {}`
+ * also contradicts idempotency: a fn that writes to a resource on every call
+ * produces different observable side effects across invocations. Other
+ * capabilities (net, fs, …) are not structurally flagged — INT003/INT005 are
+ * narrow header heuristics, not proofs of idempotence.
  */
 function checkIdempotentClaim(
   decl: FnDecl,
@@ -185,6 +194,40 @@ function checkIdempotentClaim(
   checksReadsWrites: boolean,
   diagnostics: Diagnostic[],
 ): void {
+  // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
+  // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
+  // repeated calls produce different side effects. Checked before INT003 so that
+  // a fn with both writes and random/time gets INT005 first (the writes conflict
+  // is the broader structural contradiction).
+  if (checksReadsWrites && (decl.writes?.length ?? 0) > 0) {
+    const entry = getErrorCode("INT005")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const writesStr = decl.writes!.join(", ");
+    diagnostics.push({
+      code: "INT005",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'idempotent' but declares writes { ${writesStr} } — ` +
+        `a function that writes to a resource produces different side effects on each call, ` +
+        `making it non-idempotent`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the writes declaration if the fn does not actually mutate:\n` +
+        `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
+        `// option B — remove the idempotent intent claim:\n` +
+        `fn ${decl.name}(...) writes { ${writesStr} } -> ...`,
+    });
+    // INT005 already fired — do not also fire INT003/INT004.
+    return;
+  }
+
   // INT003: header-level — uses { } declares a non-idempotent capability.
   const nonIdem = decl.capabilities.filter((c) => NON_IDEMPOTENT.has(c));
   if (nonIdem.length > 0) {
