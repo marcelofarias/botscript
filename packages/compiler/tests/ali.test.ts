@@ -2,8 +2,8 @@
  * Tests for ALI001: stdlib namespace aliased via a non-trivial expression.
  *
  * ALI001 is a warning (non-blocking) that fires when a module-level const
- * binding has a stdlib namespace identifier as the first token of the RHS,
- * but the form is non-trivial — static alias tracking is NOT guaranteed.
+ * binding has a stdlib namespace identifier anywhere in the RHS but the form
+ * is non-trivial — static alias tracking is NOT guaranteed.
  *
  * Gated on ?bs 0.8.
  */

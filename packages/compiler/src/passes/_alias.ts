@@ -84,7 +84,9 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
       let rhsIsCanonicalSelf = false;
       if (rhsTok && rhsTok.kind === "ident" && rhsTok.text === nameTok.text) {
         let afterRawIdx = rhsIdx + 1;
-        while (afterRawIdx < tokens.length && tokens[afterRawIdx]?.kind === "whitespace") afterRawIdx++;
+        while (afterRawIdx < tokens.length &&
+          (tokens[afterRawIdx]?.kind === "whitespace" || tokens[afterRawIdx]?.kind === "blockComment"))
+          afterRawIdx++;
         const afterRaw = tokens[afterRawIdx];
         const isStatementEnd =
           !afterRaw ||
@@ -98,7 +100,9 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
         if (unwrapped && unwrapped.tok.text === nameTok.text) {
           // Same check: verify nothing follows the closing paren on the same line.
           let afterRawIdx = unwrapped.tokenEnd;
-          while (afterRawIdx < tokens.length && tokens[afterRawIdx]?.kind === "whitespace") afterRawIdx++;
+          while (afterRawIdx < tokens.length &&
+            (tokens[afterRawIdx]?.kind === "whitespace" || tokens[afterRawIdx]?.kind === "blockComment"))
+            afterRawIdx++;
           const afterRaw = tokens[afterRawIdx];
           const isStatementEnd =
             !afterRaw ||
@@ -544,7 +548,7 @@ export function collectDestructuringWarningCandidates(
       (afterRhs.kind === "punct" && afterRhs.text === ";");
     if (!isClean) continue;
 
-    candidates.push({ stdlibName: stdlibName!, start: constStart, end: rawRhsTok.end });
+    candidates.push({ stdlibName: stdlibName!, start: constStart, end: tokens[rhsTokenEnd - 1]?.end ?? rawRhsTok.end });
   }
 
   return candidates;
