@@ -652,6 +652,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Leaf fns are excluded — they may be the actual access point, and the compiler cannot " +
       "scan the body for direct resource accesses (reads {} labels are user-defined strings, " +
       "not stdlib references).\n\n" +
+      "DEP003 is also suppressed when the function body contains any opaque or untracked external " +
+      "call (a call to a function not visible to the same-file call graph) — the unknown callee may " +
+      "be the actual read site, so the warning is withheld to avoid false positives.\n\n" +
       "DEP003 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP001.",
     example: {
       fails:
