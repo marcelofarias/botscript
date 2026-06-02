@@ -327,7 +327,11 @@ export function passDepCheck(
     const paramNames = collectTopLevelParamNames(rec.decl.args);
     const bodyLocals = collectFnBodyLocalNames(tokens, rec.decl, inner);
     const localNames = new Set([...paramNames, ...bodyLocals]);
-    if (hasOpaqueCall(tokens, rec.decl, inner, allCalleeNames, localNames)) continue;
+    // Include param names in knownNames so bare calls to callback parameters
+    // (e.g. `loader()`) are not treated as opaque external calls — their effects
+    // are already captured via paramReads/paramWrites.
+    const knownWithParams = new Set([...allCalleeNames, ...paramNames]);
+    if (hasOpaqueCall(tokens, rec.decl, inner, knownWithParams, localNames)) continue;
 
     const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
     if (overDeclaredReads.length > 0) {

@@ -677,6 +677,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Scope:** only fires for fns with at least one same-file (or moduleEffects) callee. " +
       "Leaf fns are excluded — the compiler cannot scan the body for direct resource modifications " +
       "(writes {} labels are user-defined strings).\n\n" +
+      "DEP004 is also suppressed when the function body contains any opaque or untracked external " +
+      "call (a call to a function not visible to the same-file call graph) — the unknown callee may " +
+      "be the actual write site, so the warning is withheld to avoid false positives.\n\n" +
       "DEP004 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP002.",
     example: {
       fails:
