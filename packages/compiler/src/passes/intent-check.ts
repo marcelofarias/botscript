@@ -145,10 +145,12 @@ function checkPureClaim(
       rule: entry.rule,
       idiom: entry.idiom,
       rewrite: hasOnlyThrows
-        ? `// option A — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...\n\n` +
-          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`
-        : `// remove the conflicting header clauses (uses/reads/writes/throws):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
+        ? `// option A — remove the throws {} declaration (keep intent: "pure"):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
+          `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...`
+        : `// option A — remove the conflicting header clauses (uses/reads/writes/throws):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
+          `// option C — replace throws with Result (preferred for pure fns, when throws is the only conflict):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...`,
     });
     // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
     return;

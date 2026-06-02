@@ -689,6 +689,7 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
 
   it("message mentions Result as the alternative when only throws conflicts", () => {
     const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
+    expect(() => t(src)).toThrow(BotscriptError);
     try {
       t(src);
     } catch (e) {
