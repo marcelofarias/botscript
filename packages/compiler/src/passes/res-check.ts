@@ -25,6 +25,8 @@ import { atLeast, type VersionInfo } from "./version.js";
 import type { Diagnostic } from "../diagnostics.js";
 import type { Token } from "../parser/lex.js";
 
+const BINARY_OPS = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>"]);
+
 export interface ResCheckResult {
   code: string;
   warnings: ReadonlyArray<Diagnostic>;
@@ -204,10 +206,7 @@ function resultIsConsumed(tok: Token | undefined): boolean {
   // Null-coalescing: result ?? ...
   if (tok.kind === "questionQuestion") return true;
   // Binary operators: result && ..., result || ..., etc.
-  if (tok.kind === "operator") {
-    const ops = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>"]);
-    if (ops.has(tok.text)) return true;
-  }
+  if (tok.kind === "operator" && BINARY_OPS.has(tok.text)) return true;
   return false;
 }
 
