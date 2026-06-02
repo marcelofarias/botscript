@@ -164,3 +164,51 @@ describe("RES002: only fires for Result/Option-returning fns", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RES002 — grouping paren transparency
+// ---------------------------------------------------------------------------
+
+describe("RES002: grouping paren transparency", () => {
+  it("fires for discarded call wrapped in leading grouping parens", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(user: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn processUser(user: string) -> void {\n" +
+      "  (saveUser(user))\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+
+  it("does not fire when wrapped call result is used as argument", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn save(user: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn wrap(r: Result<void, string>) -> void { }\n" +
+      "fn processUser(user: string) -> void {\n" +
+      "  wrap(save(user))\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES002 — nested generic return type label
+// ---------------------------------------------------------------------------
+
+describe("RES002: nested generic return type label", () => {
+  it("reports correct label for nested generics like Result<Option<string>, E>", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn findUser(id: string) -> Result<Option<string>, Error> { ok(none) }\n" +
+      "fn process(id: string) -> void {\n" +
+      "  findUser(id)\n" +
+      "}\n";
+    const result = check(src);
+    const warn = result.warnings.find((w) => w.code === "RES002");
+    expect(warn).toBeDefined();
+    expect(warn!.message).toContain("Result<Option<string>, Error>");
+  });
+});

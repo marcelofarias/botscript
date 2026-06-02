@@ -73,14 +73,19 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     if (!openTok || openTok.kind !== "open" || openTok.text !== "(") continue;
 
     // Must be in statement position: prev token (not skipping newlines) is
-    // a newline, `{`, or start-of-tokens.
-    const prevIdx = prevNotSkippingNewlines(tokens, i - 1);
-    const prevTok = tokens[prevIdx];
+    // a newline, `{`, `;`, or start-of-tokens — walking through any leading
+    // grouping parens, e.g. `(saveUser(user))` is at statement position.
+    let checkPrevIdx = prevNotSkippingNewlines(tokens, i - 1);
+    let checkPrev = tokens[checkPrevIdx];
+    while (checkPrev && checkPrev.kind === "open" && checkPrev.text === "(") {
+      checkPrevIdx = prevNotSkippingNewlines(tokens, checkPrevIdx - 1);
+      checkPrev = tokens[checkPrevIdx];
+    }
     const inStatementPos =
-      prevTok === undefined ||
-      prevTok.kind === "newline" ||
-      (prevTok.kind === "open" && prevTok.text === "{") ||
-      (prevTok.kind === "punct" && prevTok.text === ";");
+      checkPrev === undefined ||
+      checkPrev.kind === "newline" ||
+      (checkPrev.kind === "open" && checkPrev.text === "{") ||
+      (checkPrev.kind === "punct" && checkPrev.text === ";");
 
     if (!inStatementPos) continue;
 
@@ -88,9 +93,26 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     const closeIdx = openTok.matchedAt;
     if (closeIdx === undefined) continue;
 
-    // Check the token after the close paren (not skipping newlines) to
-    // determine if the result is used in a larger expression.
-    const afterCloseIdx = nextNotSkippingNewlines(tokens, closeIdx + 1);
+    // Skip any trailing grouping parens after the call's close paren.
+    // e.g. `(saveUser(user))` — the outer `)` is a grouping paren, not an arg.
+    // A `)` is a grouping paren when its matching `(` is NOT preceded by an ident.
+    let effectiveCloseIdx = closeIdx;
+    while (true) {
+      const nextIdx = nextNotSkippingNewlines(tokens, effectiveCloseIdx + 1);
+      const nextTok = tokens[nextIdx];
+      if (!nextTok || nextTok.kind !== "close" || nextTok.text !== ")") break;
+      if (nextTok.matchedAt === undefined) break;
+      const prevOfOpenIdx = prevNotSkippingNewlines(tokens, nextTok.matchedAt - 1);
+      const prevOfOpen = tokens[prevOfOpenIdx];
+      // If the matching `(` is preceded by an ident, this `)` closes a fn call
+      if (prevOfOpen && prevOfOpen.kind === "ident") break;
+      // Otherwise it's a grouping paren — skip past it
+      effectiveCloseIdx = nextIdx;
+    }
+
+    // Check the token after the (possibly adjusted) close paren to determine
+    // if the result is used in a larger expression.
+    const afterCloseIdx = nextNotSkippingNewlines(tokens, effectiveCloseIdx + 1);
     const afterClose = tokens[afterCloseIdx];
 
     if (resultIsConsumed(afterClose)) continue;
@@ -278,6 +300,16 @@ function getReturnTypeLabel(
   const decl = decls.find((d) => d.name === name);
   if (!decl) return "Result/Option";
   const rt = decl.returnType;
-  const m = /(?:Result|Option)<[^>]*>/.exec(rt);
-  return m ? m[0] : rt;
+  const m = /(?:Result|Option)</.exec(rt);
+  if (!m) return rt;
+  // Count angle-bracket depth to handle nested generics like Result<Option<string>, E>
+  let depth = 0;
+  for (let i = m.index + m[0].length - 1; i < rt.length; i++) {
+    if (rt[i] === "<") depth++;
+    else if (rt[i] === ">") {
+      depth--;
+      if (depth === 0) return rt.slice(m.index, i + 1);
+    }
+  }
+  return rt.slice(m.index);
 }
