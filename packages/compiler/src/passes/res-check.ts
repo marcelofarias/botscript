@@ -34,7 +34,7 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   if (!atLeast(version.resolved, "0.9")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
-  const program = parseProgram(src, { allowGenerics, includeNestedFns: false });
+  const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
@@ -77,7 +77,11 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     // grouping parens, e.g. `(saveUser(user))` is at statement position.
     let checkPrevIdx = prevNotSkippingNewlines(tokens, i - 1);
     let checkPrev = tokens[checkPrevIdx];
-    while (checkPrev && checkPrev.kind === "open" && checkPrev.text === "(") {
+    while (
+      checkPrev &&
+      ((checkPrev.kind === "open" && checkPrev.text === "(") ||
+        (checkPrev.kind === "ident" && checkPrev.text === "await"))
+    ) {
       checkPrevIdx = prevNotSkippingNewlines(tokens, checkPrevIdx - 1);
       checkPrev = tokens[checkPrevIdx];
     }
@@ -227,8 +231,25 @@ function collectSkipRanges(
       let braceIdx = -1;
       if (nameOrBrace.kind === "string") {
         const k = skipTrivia(tokens, j + 1);
-        const open = tokens[k];
-        if (open && open.kind === "open" && open.text === "{") braceIdx = k;
+        const next = tokens[k];
+        if (next && next.kind === "open" && next.text === "{") {
+          braceIdx = k;
+        } else if (next && next.kind === "ident" && next.text === "with") {
+          // test "name" with mocks { caps } { body }
+          const mocksIdx = skipTrivia(tokens, k + 1);
+          const capsIdx = skipTrivia(tokens, mocksIdx + 1);
+          const capsOpen = tokens[capsIdx];
+          if (
+            capsOpen &&
+            capsOpen.kind === "open" &&
+            capsOpen.text === "{" &&
+            capsOpen.matchedAt !== undefined
+          ) {
+            const bodyIdx = skipTrivia(tokens, capsOpen.matchedAt + 1);
+            const bodyOpen = tokens[bodyIdx];
+            if (bodyOpen && bodyOpen.kind === "open" && bodyOpen.text === "{") braceIdx = bodyIdx;
+          }
+        }
       } else if (nameOrBrace.kind === "open" && nameOrBrace.text === "{") {
         braceIdx = j;
       }

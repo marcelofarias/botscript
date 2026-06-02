@@ -234,7 +234,7 @@ function loadOne(url: string): string {
   });
 }
 
-$test("labels", async () => { await $withMocks(["time"] as const, async () => {
+$test("labels", async () => { await $withMocks(["time"], async () => {
   $assert(label({ kind: "Idle" }) === "-");
 }); });
 "
@@ -255,7 +255,7 @@ type Shape = { kind: "Circle"; r: number } | { kind: "Square"; side: number };
 exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time } 1`] = `
 "import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
 
-$test("deterministic clock", async () => { await $withMocks(["time"] as const, async () => {
+$test("deterministic clock", async () => { await $withMocks(["time"], async () => {
   $assert(time.now() === 0);
   $assert(time.now() === 1);
 }); });
@@ -265,7 +265,7 @@ $test("deterministic clock", async () => { await $withMocks(["time"] as const, a
 exports[`forward-compat: ?bs 0.2 output is frozen > test with mocks { time, random } 1`] = `
 "import { $assert, $test, $withMocks } from "@mbfarias/botscript-runtime";
 
-$test("deterministic both", async () => { await $withMocks(["time", "random"] as const, async () => {
+$test("deterministic both", async () => { await $withMocks(["time", "random"], async () => {
   $assert(time.now() === 0);
   $assert(random.next() === 0);
 }); });
