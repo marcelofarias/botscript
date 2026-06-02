@@ -76,10 +76,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // message "intent says pure but has uses { net }" is seen before the
   // transitive capability walk, which produces noisier output.
   { name: "intentCheck", fn: passIntentCheck, minVersion: "0.7" },
-  // aliCheck: non-blocking warning (ALI001) when a module-level const binding
-  // has a stdlib namespace ident on the RHS but in a non-trivial form that
-  // the alias tracker can't follow — author gets early feedback instead of
-  // silent mis-tracking.
+  // aliCheck: non-blocking warnings (ALI001/ALI002/ALI003) for module-level
+  // const bindings that reference a stdlib namespace but bypass alias tracking —
+  // non-trivial RHS forms (ALI001), alias-of-alias chains (ALI002), and
+  // namespace destructuring (ALI003).
   { name: "aliCheck", fn: passAliCheck, minVersion: "0.8" },
   // verCheck: non-blocking warning (VER001/VER002) when reads/writes/throws
   // annotations are declared below their enforcement floor (?bs 0.9). Runs

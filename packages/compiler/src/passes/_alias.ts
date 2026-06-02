@@ -805,8 +805,8 @@ function scanRhsForStdlib(
   for (let i = from; i < tokens.length; i++) {
     const t = tokens[i];
     if (!t) continue;
-    if (t.kind === "open" && (t.text === "(" || t.text === "[")) { parenDepth++; continue; }
-    if (t.kind === "close" && (t.text === ")" || t.text === "]")) { if (parenDepth > 0) parenDepth--; continue; }
+    if (t.kind === "open") { parenDepth++; continue; }
+    if (t.kind === "close") { if (parenDepth > 0) parenDepth--; continue; }
     if (parenDepth === 0) {
       if (t.kind === "newline" || t.kind === "eof" || t.kind === "lineComment") break;
       if (t.kind === "punct" && t.text === ";") break;
