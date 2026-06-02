@@ -203,6 +203,17 @@ export function hasOpaqueCall(
   knownNames: Set<string>,
   localNames?: ReadonlySet<string>,
 ): boolean {
+  // When localNames is not provided, lazily compute it so that method calls on
+  // fn parameters and local variables (e.g. `name.trim()`) are not mistaken for
+  // opaque namespace/object calls.
+  const effectiveLocalNames: ReadonlySet<string> =
+    localNames ??
+    (() => {
+      const names = collectTopLevelParamNames(fn.args);
+      for (const n of collectFnBodyLocalNames(tokens, fn, inner)) names.add(n);
+      return names;
+    })();
+
   const open: FnDecl[] = [];
   let nextInner = 0;
 
@@ -246,7 +257,7 @@ export function hasOpaqueCall(
       if (afterDot && afterDot.kind === "ident") {
         // Member-access call: `db.read(...)` or optional member: `db?.read(...)`
         if (STDLIB_NAMESPACES.has(tok.text)) continue;
-        if (localNames?.has(tok.text)) continue;
+        if (effectiveLocalNames.has(tok.text)) continue;
         const afterMethodIdx = nextSignificant(tokens, afterDotIdx + 1);
         const afterMethod = tokens[afterMethodIdx];
         // Direct call: `db.read(...)` or optional call: `db.read?.(...)`
