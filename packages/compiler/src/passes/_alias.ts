@@ -250,6 +250,7 @@ export function collectStdlibAliases(tokens: Token[]): Map<string, string> {
  */
 export function collectAliasWarningCandidates(
   tokens: Token[],
+  aliases?: Map<string, string>,
 ): Array<{ name: string; stdlibName: string; start: number; end: number }> {
   const candidates: Array<{ name: string; stdlibName: string; start: number; end: number }> = [];
   let depth = 0;
@@ -305,8 +306,15 @@ export function collectAliasWarningCandidates(
     let stdlibName: string;
     let afterStdlibIdx: number;
 
-    if (rawRhsTok.kind === "ident" && STDLIB_NAMES.has(rawRhsTok.text)) {
-      stdlibName = rawRhsTok.text;
+    // Resolve a leading ident: canonical stdlib name OR tracked alias for one.
+    const resolvedLeading = rawRhsTok.kind === "ident"
+      ? (STDLIB_NAMES.has(rawRhsTok.text)
+        ? rawRhsTok.text
+        : (aliases?.get(rawRhsTok.text) ?? null))
+      : null;
+
+    if (resolvedLeading !== null) {
+      stdlibName = resolvedLeading;
       afterStdlibIdx = rawRhsIdx + 1;
     } else if (rawRhsTok.kind === "open" && rawRhsTok.text === "(") {
       // Paren-wrapped RHS: find the first significant token inside.
@@ -351,38 +359,40 @@ export function collectAliasWarningCandidates(
           }
           continue;
         }
-      } else if (!innerTok || innerTok.kind !== "ident" || !STDLIB_NAMES.has(innerTok.text)) {
-        // First significant token inside the paren is neither a stdlib ident nor
-        // another `(`. Scan the paren content for a non-leading stdlib name.
-        // e.g. `(flag ? time : null)` — `time` appears but is not the leading token.
+      } else if (!innerTok || innerTok.kind !== "ident" || (!STDLIB_NAMES.has(innerTok.text) && !aliases?.has(innerTok.text))) {
+        // First significant token inside the paren is neither a stdlib ident (nor a
+        // tracked alias for one) nor another `(`. Scan the paren content for a
+        // non-leading stdlib name. e.g. `(flag ? time : null)`.
         const found = scanRhsForStdlib(tokens, rawRhsIdx + 1);
         if (found) {
-          const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
           candidates.push({
             name: nameTok.text,
             stdlibName: found.stdlibName,
             start: constStart,
-            end: matchedClose?.end ?? found.end,
+            end: scanStatementEndFrom(tokens, rawRhsIdx),
           });
         }
         continue;
       } else {
-        // innerTok is a bare stdlib ident inside single parens.
+        // innerTok is a bare stdlib ident (or tracked alias for one) inside single parens.
+        const resolvedInner = STDLIB_NAMES.has(innerTok.text)
+          ? innerTok.text
+          : aliases!.get(innerTok.text)!;
         const closeIdx = nextSignificant(tokens, innerIdx + 1);
         const closeTok = tokens[closeIdx];
         if (!closeTok || closeTok.kind !== "close" || closeTok.text !== ")") {
-          // Non-trivial paren: e.g. `const t = (time.now)` — emit ALI001.
+          // Non-trivial paren: e.g. `const t = (time.now)` or `const t = (alias.now)`.
           const matchedClose = rawRhsTok.matchedAt !== undefined ? tokens[rawRhsTok.matchedAt] : undefined;
           const diagEnd = matchedClose?.end ?? closeTok?.end ?? rawRhsTok.end;
           candidates.push({
             name: nameTok.text,
-            stdlibName: innerTok.text,
+            stdlibName: resolvedInner,
             start: constStart,
             end: diagEnd,
           });
           continue;
         }
-        stdlibName = innerTok.text;
+        stdlibName = resolvedInner;
         afterStdlibIdx = closeIdx + 1;
       }
     } else {
@@ -394,7 +404,7 @@ export function collectAliasWarningCandidates(
           name: nameTok.text,
           stdlibName: found.stdlibName,
           start: constStart,
-          end: found.end,
+          end: scanStatementEndFrom(tokens, rawRhsIdx),
         });
       }
       continue;
@@ -679,6 +689,10 @@ export function collectChainAliasWarningCandidates(
       (afterRhs.kind === "punct" && afterRhs.text === ";");
     if (!isClean) continue;
 
+    // Skip: binding name is itself a canonical stdlib namespace — `time.member()`
+    // is still a tracked tripwire, so ALI002 would be misleading here.
+    if (STDLIB_NAMES.has(nameTok.text)) continue;
+
     candidates.push({
       name: nameTok.text,
       aliasName: rhsTok.text,
@@ -787,6 +801,26 @@ function nextNonTrivia(tokens: Token[], from: number, end: number): Token | unde
     if (t.kind !== "whitespace" && t.kind !== "newline" && t.kind !== "lineComment" && t.kind !== "blockComment") return t;
   }
   return undefined;
+}
+
+/**
+ * Scan forward from `fromIdx` and return the character offset of the last
+ * non-trivial (non-whitespace, non-blockComment) token before the statement
+ * terminator (newline, `;`, lineComment, EOF).
+ *
+ * Used to extend ALI001 diagnostic ranges to cover the full RHS expression
+ * rather than stopping at the first stdlib identifier found.
+ */
+function scanStatementEndFrom(tokens: Token[], fromIdx: number): number {
+  let end = tokens[fromIdx]?.end ?? 0;
+  for (let i = fromIdx + 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t) break;
+    if (t.kind === "newline" || t.kind === "eof" || t.kind === "lineComment") break;
+    if (t.kind === "punct" && t.text === ";") break;
+    if (t.kind !== "whitespace" && t.kind !== "blockComment") end = t.end;
+  }
+  return end;
 }
 
 /**

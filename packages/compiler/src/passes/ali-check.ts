@@ -34,8 +34,13 @@ export function passAliCheck(src: string, version: VersionInfo): { code: string;
 
   const warnings: Diagnostic[] = [];
 
-  // ALI001: non-trivial RHS forms (member access, operator, call).
-  const ali001Candidates = collectAliasWarningCandidates(tokens);
+  // Pre-compute stdlib aliases once; shared by ALI001 (alias bypass), ALI002, and ALI003.
+  const aliases = collectStdlibAliases(tokens);
+
+  // ALI001: non-trivial RHS forms (member access, operator, call) — including
+  // forms where the leading ident is a tracked alias (e.g. `const x = t.now`
+  // where `const t = time`).
+  const ali001Candidates = collectAliasWarningCandidates(tokens, aliases);
   if (ali001Candidates.length > 0) {
     const entry = getErrorCode("ALI001")!;
     for (const c of ali001Candidates) {
@@ -60,7 +65,6 @@ export function passAliCheck(src: string, version: VersionInfo): { code: string;
   }
 
   // ALI002: alias-of-alias chains (`const x = t` where t is a tracked alias).
-  const aliases = collectStdlibAliases(tokens);
   const ali002Candidates = collectChainAliasWarningCandidates(tokens, aliases);
   if (ali002Candidates.length > 0) {
     const entry = getErrorCode("ALI002")!;

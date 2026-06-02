@@ -593,3 +593,91 @@ describe("ALI003 — stdlib namespace destructuring (?bs 0.8)", () => {
     expect(warns[0]?.message).toContain("time");
   });
 });
+
+// ---------------------------------------------------------------------------
+// ALI001 via tracked alias (alias bypass)
+// ---------------------------------------------------------------------------
+
+describe("ALI001: fires when leading RHS ident is a tracked alias", () => {
+  it("fires for `const now = t.now` when t is a tracked alias for time", () => {
+    // `const t = time` is tracked; `const now = t.now` extracts a bare member
+    // reference via the alias — ALI001 fires with the canonical stdlib name.
+    const src = "?bs 0.8\nconst t = time\nconst now = t.now\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("fires for `const f = (t).now` when t is a tracked alias", () => {
+    // Paren-wrapped alias followed by member access — same bypass, must warn.
+    const src = "?bs 0.8\nconst t = time\nconst f = (t).now\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect(warns[0]!.message).toContain("time");
+  });
+
+  it("does NOT fire for `const x = t` (trivial alias chain — caught by ALI002 instead)", () => {
+    // Direct chain alias: ALI002 handles this, ALI001 must not double-warn.
+    const src = "?bs 0.8\nconst t = time\nconst x = t\n";
+    const result = transform(src);
+    const ali001 = result.warnings.filter((w) => w.code === "ALI001");
+    expect(ali001).toHaveLength(0);
+  });
+
+  it("does NOT fire for `const now = t.now` when t is NOT a tracked alias", () => {
+    // `t` is an arbitrary ident, not a stdlib alias — no ALI001 false positive.
+    const src = "?bs 0.8\nconst t = 42\nconst now = t.now\n";
+    const result = transform(src);
+    const ali001 = result.warnings.filter((w) => w.code === "ALI001");
+    expect(ali001).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ALI002 false-positive fix: skip when binding name is canonical stdlib
+// ---------------------------------------------------------------------------
+
+describe("ALI002: does NOT fire when binding name is itself a canonical stdlib namespace", () => {
+  it("does NOT fire for `const time = t` when t is a tracked alias for time", () => {
+    // Re-binding a canonical stdlib name — `time.member()` is still a tracked
+    // tripwire, so ALI002 would be misleading and must not fire.
+    const src = "?bs 0.8\nconst t = time\nconst time = t\n";
+    const result = transform(src);
+    const ali002 = result.warnings.filter((w) => w.code === "ALI002");
+    expect(ali002).toHaveLength(0);
+  });
+
+  it("does NOT fire for `const random = t` when t is a tracked alias for random", () => {
+    const src = "?bs 0.8\nconst t = random\nconst random = t\n";
+    const result = transform(src);
+    const ali002 = result.warnings.filter((w) => w.code === "ALI002");
+    expect(ali002).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ALI001 range: non-leading RHS extends to end of statement
+// ---------------------------------------------------------------------------
+
+describe("ALI001 range: non-leading and paren-wrapped non-leading RHS", () => {
+  it("range covers full ternary `const x = flag ? time : null`", () => {
+    const src = "?bs 0.8\nconst x = flag ? time : null\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI001")!;
+    expect(warn).toBeDefined();
+    // Range must extend past `time` to cover ` : null`
+    const binding = "const x = flag ? time : null";
+    expect(warn.end - warn.start).toBeGreaterThanOrEqual(binding.length);
+  });
+
+  it("range covers full paren-wrapped ternary `const x = (flag ? time : null)`", () => {
+    const src = "?bs 0.8\nconst x = (flag ? time : null)\n";
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI001")!;
+    expect(warn).toBeDefined();
+    const binding = "const x = (flag ? time : null)";
+    expect(warn.end - warn.start).toBeGreaterThanOrEqual(binding.length);
+  });
+});
