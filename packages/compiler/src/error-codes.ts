@@ -195,26 +195,35 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   INT001: {
     code: "INT001",
-    title: "intent declares 'pure' but function has capability or resource declarations",
+    title: "intent declares 'pure' but function has capability, resource, or throws declarations",
     rule:
       "a function whose intent contains 'pure' must have no capability declarations (uses {}) — " +
       "from ?bs 0.8, it must also have no read/write resource dependencies (reads {} / writes {}) — " +
-      "pure functions are deterministic, side-effect-free, and access no external resources",
+      "from ?bs 0.9, it must also have no throws {} declaration — " +
+      "pure functions are deterministic, side-effect-free, and should use Result<T, E> for errors",
     idiom:
-      "remove the conflicting header clauses (uses {}, or reads {} / writes {} at ?bs 0.8+) from a pure function, " +
-      "or change the intent to reflect the actual behaviour",
+      "remove the conflicting header clauses (uses {}, reads {} / writes {} at ?bs 0.8+, throws {} at ?bs 0.9+) " +
+      "from a pure function, or change the intent to reflect the actual behaviour",
     rewrite:
-      "// option A — remove resource annotations:\n" +
+      "// option A — remove conflicting annotations:\n" +
       "fn name(args) intent: \"pure\" -> type = ...\n\n" +
       "// option B — remove the intent claim:\n" +
-      "fn name(args) uses { caps } reads { ... } writes { ... } -> type = ...",
+      "fn name(args) uses { caps } reads { ... } writes { ... } throws { ... } -> type = ...\n\n" +
+      "// option C — replace throws with Result (preferred for pure fns):\n" +
+      "fn name(args) intent: \"pure\" -> Result<type, ErrorType> = ...",
     example:
-      "// before — intent says pure, but function reads from cache\n" +
-      "?bs 0.8\n" +
-      "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = ...\n\n" +
-      "// after — intent matches the declaration\n" +
-      "?bs 0.8\n" +
-      "fn lookup(id: string) reads { cache } -> Option<string> = ...",
+      "// before — intent says pure, but function can throw\n" +
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) intent: \"pure\" throws { ParseError } -> string {\n" +
+      "  if (!raw.match(/^[a-z]+$/)) throw new ParseError(\"invalid\")\n" +
+      "  return raw\n" +
+      "}\n\n" +
+      "// after — use Result instead of throws\n" +
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
+      "  if (!raw.match(/^[a-z]+$/)) return err(new ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}",
   },
   INT002: {
     code: "INT002",

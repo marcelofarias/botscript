@@ -623,3 +623,77 @@ describe("INT005 — idempotent intent vs writes { } (?bs 0.8+)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT001 extended: throws {} also contradicts "pure" intent (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
+  it("fires INT001 when intent is 'pure' but function has throws { }", () => {
+    const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      expect(err.diagnostics[0]!.message).toContain("throws");
+      expect(err.diagnostics[0]!.message).toContain("ParseError");
+    }
+  });
+
+  it("fires INT001 when intent is 'pure' and throws {} has multiple types", () => {
+    const src = `?bs 0.9\nfn parse(raw: string) intent: "pure" throws { ParseError, ValidationError } -> string = raw\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      const msg = err.diagnostics[0]!.message;
+      expect(msg).toContain("ParseError");
+      expect(msg).toContain("ValidationError");
+    }
+  });
+
+  it("fires INT001 when all four conflict: uses + reads + writes + throws + pure intent", () => {
+    const src = `?bs 0.9\nfn combo(id: string) uses { net } reads { cache } writes { metrics } throws { NetworkError } intent: "pure" -> string = id\n`;
+    expect(() => t(src)).toThrow();
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("INT001");
+      const msg = err.diagnostics[0]!.message;
+      expect(msg).toContain("uses");
+      expect(msg).toContain("reads");
+      expect(msg).toContain("writes");
+      expect(msg).toContain("throws");
+    }
+  });
+
+  it("does NOT fire INT001 for throws {} + pure intent under ?bs 0.8 (check gated on 0.9)", () => {
+    const src = `?bs 0.8\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT001 for throws {} + pure intent under ?bs 0.7 (check gated on 0.9)", () => {
+    const src = `?bs 0.7\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT001 when throws {} present but intent is not pure", () => {
+    const src = `?bs 0.9\nfn parseId(raw: string) throws { ParseError } -> string = raw\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("message mentions Result as the alternative when only throws conflicts", () => {
+    const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.message).toContain("Result");
+    }
+  });
+});

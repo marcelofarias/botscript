@@ -229,34 +229,45 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   INT001: {
     code: "INT001",
-    title: "intent declares 'pure' but function has capability or read/write declarations",
+    title: "intent declares 'pure' but function has capability, resource, or throws declarations",
     body:
       "An `intent: \"pure\"` clause is a machine-checkable claim that the function is " +
       "deterministic, side-effect-free, and accesses no external resources. A function " +
-      "with a non-empty `uses { ... }`, `reads { ... }`, or `writes { ... }` clause " +
-      "contradicts that claim — the declaration says it can reach the network, file " +
-      "system, or clock (or depends on / mutates external state) while the intent says " +
-      "it cannot. Botscript treats this as an error rather than a warning because the " +
-      "mismatch is always a mistake: either the intent is wrong, or the conflicting " +
-      "header clause is wrong.\n\n" +
+      "with a non-empty `uses { ... }`, `reads { ... }`, `writes { ... }`, or `throws { ... }` " +
+      "clause contradicts that claim — the declaration says it can reach the network, file " +
+      "system, or clock (or depends on / mutates external state, or throws exceptions) while " +
+      "the intent says it cannot. Botscript treats this as an error rather than a warning " +
+      "because the mismatch is always a mistake: either the intent is wrong, or the " +
+      "conflicting header clause is wrong.\n\n" +
+      "For `throws {}` specifically: throwing an exception is a side effect — it unwinds " +
+      "the call stack and changes control flow in a way observable to the caller. A truly " +
+      "pure function should use `Result<T, E>` instead of `throws {}` to signal error " +
+      "conditions.\n\n" +
       "The word 'pure' is matched as a whole word inside the intent string — " +
       "`\"impure\"` does not match, but `\"pure\"`, `\"pure function\"`, and " +
       "`\"idempotent and pure\"` all do.\n\n" +
       "INT001 is gated on `?bs 0.7`. Files pinned to earlier versions may use " +
       "`intent:` declarations without triggering any check. From `?bs 0.8`, the same " +
-      "rule applies to `reads { }` and `writes { }` clauses.\n\n" +
+      "rule applies to `reads { }` and `writes { }` clauses. From `?bs 0.9`, it also " +
+      "applies to `throws { }` clauses.\n\n" +
       "Scope note: INT001 is a header-level consistency check — it verifies that the " +
       "declared header clauses do not contradict each other. Body-shape verification " +
       "(whether the function body actually matches its declared intent) is a separate " +
       "check (INT002) introduced in `?bs 0.7`.",
     example: {
       fails:
-        "?bs 0.8\n" +
-        "fn lookup(id: string) reads { cache } intent: \"pure\" -> Option<string> = none\n",
+        "?bs 0.9\n" +
+        "fn parseId(raw: string) intent: \"pure\" throws { ParseError } -> string {\n" +
+        "  if (!raw.match(/^[a-z]+$/)) throw new ParseError(\"invalid\")\n" +
+        "  return raw\n" +
+        "}\n",
       passes:
-        "// option A — remove the conflicting header clause (uses/reads/writes)\n" +
-        "?bs 0.8\n" +
-        "fn lookup(id: string) intent: \"pure\" -> Option<string> = pure { none }\n",
+        "// use Result instead of throws for a pure error-producing fn\n" +
+        "?bs 0.9\n" +
+        "fn parseId(raw: string) intent: \"pure\" -> Result<string, string> {\n" +
+        "  if (!raw.match(/^[a-z]+$/)) return err(\"invalid id format\")\n" +
+        "  return ok(raw)\n" +
+        "}\n",
     },
   },
   INT002: {
