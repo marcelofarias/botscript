@@ -539,6 +539,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes: "?bs 0.3\nconst r = Result.try { JSON.parse(input) };\n",
     },
   },
+  RES002: {
+    code: "RES002",
+    title: "Result- or Option-returning fn called but return value discarded",
+    body:
+      "RES002 is a **warning** (non-blocking) that fires when a same-file function whose " +
+      "declared return type contains `Result<>` or `Option<>` is called as a bare statement — " +
+      "the return value is discarded without propagation (`?`), matching, or assignment.\n\n" +
+      "**Why this is a problem:** in botscript, `Result<void, E>` is not `void`. The error path " +
+      "is real and reaches the caller only if the caller propagates it. Discarding the result " +
+      "permanently seals the error path — any failure is silently swallowed. LLMs writing " +
+      "botscript frequently write `callFn(args)` as a statement when they 'don't care about " +
+      "the return value', the same pattern they'd use in TypeScript for a `Promise<void>` " +
+      "fire-and-forget. RES002 catches this before it becomes a runtime surprise.\n\n" +
+      "**What to do:**\n" +
+      "- Use `?` to propagate errors to the caller: `saveUser(user)?`\n" +
+      "- Use `match` to handle each case explicitly\n" +
+      "- Assign to a variable: `let result = saveUser(user)` and inspect later\n" +
+      "- If the discard is truly intentional (best-effort logging, optional cache write), " +
+      "wrap in `unsafe \"intentional discard\" { saveUser(user) }` to document the decision.\n\n" +
+      "**Scope:** only fires for same-file fns (not cross-file or moduleEffects). " +
+      "Calls inside `test { ... }` and `unsafe { ... }` blocks are excluded.\n\n" +
+      "RES002 is gated on `?bs 0.9`. The complementary exhaustiveness checks are MAT001 " +
+      "(non-exhaustive Result match) and MAT002 (non-exhaustive Option match).",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn saveUser(user: string) writes { userDb } -> Result<void, string> { ok(undefined) }\n" +
+        "fn processUser(user: string) writes { userDb } -> void {\n" +
+        "  saveUser(user)\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn saveUser(user: string) writes { userDb } -> Result<void, string> { ok(undefined) }\n" +
+        "fn processUser(user: string) writes { userDb } -> Result<void, string> {\n" +
+        "  saveUser(user)?\n" +
+        "}\n",
+    },
+  },
   SYN001: {
     code: "SYN001",
     title: "duplicate or invalid fn header clause",

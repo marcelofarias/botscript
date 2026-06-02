@@ -31,6 +31,15 @@ goes behind a new pin.
   declarations the match is considered ambiguous and the check is suppressed.
   Built-in tags (`ok`, `err`, `some`, `none`) are handled by MAT001/MAT002 and
   are excluded from MAT003. Gated on `?bs 0.9`.
+- **RES002 — Result/Option return value discarded.**
+  RES002 fires as a **warning** (non-blocking) when a same-file function whose
+  declared return type contains `Result<>` or `Option<>` is called as a bare
+  statement — the return value is discarded without propagation (`?`), matching,
+  or assignment. The error or absence path is permanently sealed from callers,
+  a silent bug class common in LLM-generated botscript where `callFn(args)` is
+  written as a fire-and-forget statement. Calls inside `test { }` and
+  `unsafe { }` blocks are excluded. To document an intentional discard, wrap
+  in `unsafe "intentional discard" { f() }`. Gated on `?bs 0.9`.
 
 - **MAT002 — non-exhaustive Option match (`some`/`none`).**
   MAT002 fires as an **error** (blocking) when a `match` expression names a
