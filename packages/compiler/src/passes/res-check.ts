@@ -18,7 +18,6 @@
  */
 
 import { getErrorCode } from "../error-codes.js";
-import { lex } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
@@ -179,7 +178,7 @@ function resultIsConsumed(tok: Token | undefined): boolean {
   // Null-coalescing: result ?? ...
   if (tok.kind === "questionQuestion") return true;
   // Binary operators: result && ..., result || ..., etc.
-  if (tok.kind === "punct") {
+  if (tok.kind === "operator") {
     const ops = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>"]);
     if (ops.has(tok.text)) return true;
   }
