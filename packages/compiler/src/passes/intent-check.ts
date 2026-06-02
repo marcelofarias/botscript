@@ -147,10 +147,12 @@ function checkPureClaim(
       rewrite: hasOnlyThrows
         ? `// option A — remove the throws {} declaration (keep intent: "pure"):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
           `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
-          `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...`
-        : `// option A — remove the conflicting header clauses (uses/reads/writes/throws):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
-          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
-          `// option C — replace throws with Result (preferred for pure fns, when throws is the only conflict):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...`,
+          `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
+        : `// option A — remove the conflicting header clauses (${parts.join("/")} ):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...` +
+          (hasThrows
+            ? `\n\n// option C — if throws is the last remaining conflict after removing uses/reads/writes, replace it with Result:\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
+            : ``),
     });
     // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
     return;

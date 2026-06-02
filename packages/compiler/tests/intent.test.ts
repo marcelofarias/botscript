@@ -631,9 +631,9 @@ describe("INT005 — idempotent intent vs writes { } (?bs 0.8+)", () => {
 describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
   it("fires INT001 when intent is 'pure' but function has throws { }", () => {
     const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
-    expect(() => t(src)).toThrow();
     try {
       t(src);
+      expect.fail("should have thrown");
     } catch (e) {
       const err = e as BotscriptError;
       expect(err.diagnostics[0]!.code).toBe("INT001");
@@ -644,9 +644,9 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
 
   it("fires INT001 when intent is 'pure' and throws {} has multiple types", () => {
     const src = `?bs 0.9\nfn parse(raw: string) intent: "pure" throws { ParseError, ValidationError } -> string = raw\n`;
-    expect(() => t(src)).toThrow();
     try {
       t(src);
+      expect.fail("should have thrown");
     } catch (e) {
       const err = e as BotscriptError;
       expect(err.diagnostics[0]!.code).toBe("INT001");
@@ -658,9 +658,9 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
 
   it("fires INT001 when all four conflict: uses + reads + writes + throws + pure intent", () => {
     const src = `?bs 0.9\nfn combo(id: string) uses { net } reads { cache } writes { metrics } throws { NetworkError } intent: "pure" -> string = id\n`;
-    expect(() => t(src)).toThrow();
     try {
       t(src);
+      expect.fail("should have thrown");
     } catch (e) {
       const err = e as BotscriptError;
       expect(err.diagnostics[0]!.code).toBe("INT001");
@@ -689,9 +689,9 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
 
   it("message mentions Result as the alternative when only throws conflicts", () => {
     const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { ParseError } -> string = raw\n`;
-    expect(() => t(src)).toThrow(BotscriptError);
     try {
       t(src);
+      expect.fail("should have thrown");
     } catch (e) {
       const err = e as BotscriptError;
       expect(err.diagnostics[0]!.message).toContain("Result");
