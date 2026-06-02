@@ -144,9 +144,11 @@ function checkPureClaim(
       message: `${baseMsg} — ${detail}`,
       rule: entry.rule,
       idiom: entry.idiom,
-      rewrite:
-        `// remove the conflicting header clauses (uses/reads/writes/throws):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-        `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
+      rewrite: hasOnlyThrows
+        ? `// option A — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> = ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`
+        : `// remove the conflicting header clauses (uses/reads/writes/throws):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
+          `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
     });
     // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
     return;

@@ -264,8 +264,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes:
         "// use Result instead of throws for a pure error-producing fn\n" +
         "?bs 0.9\n" +
-        "fn parseId(raw: string) intent: \"pure\" -> Result<string, string> {\n" +
-        "  if (!raw.match(/^[a-z]+$/)) return err(\"invalid id format\")\n" +
+        "fn parseId(raw: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
+        "  if (!raw.match(/^[a-z]+$/)) return err(parseError(\"invalid\"))\n" +
         "  return ok(raw)\n" +
         "}\n",
     },
