@@ -7,6 +7,15 @@ goes behind a new pin.
 ## ?bs 0.9 — unreleased
 
 ### Added
+- **MAT002 — non-exhaustive Option match (`some`/`none`).**
+  MAT002 fires as an **error** (blocking) when a `match` expression names a
+  `some` arm but no `none` arm (or vice versa) without a wildcard `_` arm.
+  This is the Option-type complement to MAT001 (which covers `ok`/`err`). A
+  match that handles only one branch of an `Option<T>` silently discards the
+  other case, a common source of unexpected `undefined` behaviour in bots. Both
+  a `some { v } -> ...` arm and a `none -> ...` arm are required for the match
+  to be considered exhaustive. A wildcard `_ -> ...` arm suppresses the check.
+
 - **VER003 — `intent:` annotation below the ?bs 0.7 enforcement floor.**
   VER003 fires as a **warning** (non-blocking) when a fn declares a non-empty
   `intent: "..."` clause on a file pinned below `?bs 0.7`. INT001–INT005 are only
