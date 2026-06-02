@@ -212,3 +212,54 @@ describe("RES002: nested generic return type label", () => {
     expect(warn!.message).toContain("Result<Option<string>, Error>");
   });
 });
+
+// ---------------------------------------------------------------------------
+// RES002 — await transparency
+// ---------------------------------------------------------------------------
+
+describe("RES002: await transparency", () => {
+  it("fires when Result-returning fn is called as an awaited statement", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(user: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn process(user: string) -> void {\n" +
+      "  await saveUser(user)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES002 — test-with-mocks skip
+// ---------------------------------------------------------------------------
+
+describe("RES002: test-with-mocks blocks are excluded", () => {
+  it("does not fire inside test ... with mocks { caps } { body } block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(user: string) writes { userDb } -> Result<void, string> { ok(undefined) }\n" +
+      "test \"setup\" with mocks { userDb } {\n" +
+      "  saveUser(\"alice\")\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES002 — nested fn declarations
+// ---------------------------------------------------------------------------
+
+describe("RES002: nested fn declarations participate in check", () => {
+  it("fires when a nested Result-returning helper is called and discarded", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn outer() -> void {\n" +
+      "  fn inner(x: string) -> Result<void, string> { ok(undefined) }\n" +
+      "  inner(\"hello\")\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+});

@@ -14,7 +14,7 @@ describe("test \"...\" with mocks { ... } { ... } (0.2)", () => {
       `}\n`;
     const out = t(src);
     expect(out).toContain(`$test("deterministic clock", async () =>`);
-    expect(out).toContain(`$withMocks(["time", "random"] as const`);
+    expect(out).toContain(`$withMocks(["time", "random"]`);
     expect(out).toContain(`time.now()`);
     expect(out).toContain(`$assert(b > a);`);
   });
@@ -45,7 +45,7 @@ describe("test \"...\" with mocks { ... } { ... } (0.2)", () => {
   it("works with single capability", () => {
     const src = `?bs 0.2\ntest "single" with mocks { time } { time.now(); }\n`;
     const out = t(src);
-    expect(out).toContain(`$withMocks(["time"] as const`);
+    expect(out).toContain(`$withMocks(["time"]`);
   });
 
   it("preserves the original test name string verbatim", () => {
