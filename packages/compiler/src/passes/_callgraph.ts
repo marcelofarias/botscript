@@ -272,13 +272,25 @@ export function hasOpaqueCall(
     if (!next || next.kind !== "open" || next.text !== "(") continue;
 
     // CapCase idents followed by `(` are opaque external calls UNLESS they appear
-    // directly inside `err(TypeName...)` — those are error-type constructors, not
-    // user-defined functions. Check: prev is `(` and prevprev is the `err` builtin.
+    // inside `err(TypeName...)` or `err(new TypeName...)` — those are error-type
+    // constructors, not user-defined functions.
     if (/^[A-Z]/.test(tok.text)) {
+      // err(TypeName(...)) — prev is `(`, prevprev is `err`
       if (prev && prev.kind === "open" && prev.text === "(") {
         const prevPrevIdx = prevSignificant(tokens, prevIdx - 1);
         const prevPrev = tokens[prevPrevIdx];
         if (prevPrev && prevPrev.kind === "ident" && prevPrev.text === "err") continue;
+      }
+      // err(new TypeName(...)) — prev is `new`, prev-of-prev is `(`, prev3 is `err`
+      if (prev && prev.kind === "ident" && prev.text === "new") {
+        const prevNewIdx = prevIdx;
+        const prevParenIdx = prevSignificant(tokens, prevNewIdx - 1);
+        const prevParen = tokens[prevParenIdx];
+        if (prevParen && prevParen.kind === "open" && prevParen.text === "(") {
+          const prevErrIdx = prevSignificant(tokens, prevParenIdx - 1);
+          const prevErr = tokens[prevErrIdx];
+          if (prevErr && prevErr.kind === "ident" && prevErr.text === "err") continue;
+        }
       }
     }
 

@@ -631,4 +631,19 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
+
+  it("fires DEP003 when fn uses err(new TypeName(...)) — new-form error construction is not opaque", () => {
+    // `err(new NetworkError(...))` is the botscript `new`-form error constructor.
+    // It must NOT suppress DEP003 — the error construction is not an external read.
+    // (throws { NetworkError } declared so THR002 does not fire independently)
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } throws { NetworkError } -> Result<string, string> {\n" +
+      "  helper();\n" +
+      "  return err(new NetworkError(\"failed\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
 });
