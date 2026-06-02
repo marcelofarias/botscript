@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { transform } from "../src/index.js";
+import { BotscriptError, transform } from "../src/index.js";
 
 // ---------------------------------------------------------------------------
 // ALI001 fires on non-trivial RHS forms
@@ -679,5 +679,51 @@ describe("ALI001 range: non-leading and paren-wrapped non-leading RHS", () => {
     expect(warn).toBeDefined();
     const binding = "const x = (flag ? time : null)";
     expect(warn.end - warn.start).toBeGreaterThanOrEqual(binding.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ALI003 — error at ?bs 0.9+
+// ---------------------------------------------------------------------------
+
+describe("ALI003 — blocking error at ?bs 0.9+", () => {
+  it("throws BotscriptError with ALI003 at ?bs 0.9", () => {
+    const src = "?bs 0.9\nconst { now } = time\n";
+    expect(() => transform(src)).toThrow(BotscriptError);
+    try {
+      transform(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("ALI003");
+      expect(err.diagnostics[0]!.severity).toBe("error");
+    }
+  });
+
+  it("throws for each destructured stdlib namespace at ?bs 0.9", () => {
+    const src = "?bs 0.9\nconst { get } = http\n";
+    expect(() => transform(src)).toThrow(BotscriptError);
+    try {
+      transform(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      expect(err.diagnostics[0]!.code).toBe("ALI003");
+      expect(err.diagnostics[0]!.message).toContain("http");
+    }
+  });
+
+  it("remains a warning at ?bs 0.8 — does not throw", () => {
+    const src = "?bs 0.8\nconst { now } = time\n";
+    expect(() => transform(src)).not.toThrow();
+    const result = transform(src);
+    const warn = result.warnings.find((w) => w.code === "ALI003");
+    expect(warn).toBeDefined();
+    expect(warn!.severity).toBe("warning");
+  });
+
+  it("ALI001/ALI002 remain warnings at ?bs 0.9 — not blocked", () => {
+    const src = "?bs 0.9\nconst t = time.method\n";
+    expect(() => transform(src)).not.toThrow();
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "ALI001")).toBe(true);
   });
 });

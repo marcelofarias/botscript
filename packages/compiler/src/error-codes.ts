@@ -67,7 +67,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "object-destructuring a stdlib namespace (`const { now } = time`) produces bare ident references " +
       "that no static check follows — capability checks (CAP001/CAP002), body-level intent checks " +
       "(INT002/INT004), and UNS005 will not see the extracted member as a `time` reference; " +
-      "use a direct namespace binding or the canonical name directly",
+      "use a direct namespace binding or the canonical name directly; " +
+      "warning at ?bs 0.8, error (blocking) at ?bs 0.9+ — no defensible use case exists",
     idiom: "use a direct binding (`const t = time`) and call `t.now()` rather than destructuring `time`",
     rewrite:
       "// option A — direct namespace binding:\nconst t = time\n// ... then call t.now() instead of now()\n\n" +

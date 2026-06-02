@@ -100,6 +100,12 @@ goes behind a new pin.
   distinguish the two. Compilation always succeeds; the warning is returned in
   `TransformResult.warnings`.
 
+- **ALI003 upgraded to error at `?bs 0.9+`.**
+  `const { now } = time` (stdlib namespace destructuring) was a warning at `?bs 0.8`.
+  From `?bs 0.9`, it is a **blocking error** — there is no defensible use case for
+  destructuring a stdlib namespace; the pattern is always either a mistake or a
+  static-check bypass attempt. Files on `?bs 0.8` retain warning-level behaviour.
+
 - **Warning severity in `TransformResult`.**
   `TransformResult` now carries a `warnings: ReadonlyArray<Diagnostic>` field.
   All prior callers that read only `code`, `forms`, and `version` are
