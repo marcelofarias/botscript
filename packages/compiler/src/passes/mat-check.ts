@@ -57,9 +57,9 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     if (hasWildcard) continue;
 
     const matchStart = tokens[expr.start]!.start;
-    const { line, column } = locationOf(src, matchStart);
 
     if ((hasOk || hasErr) && !(hasOk && hasErr)) {
+      const { line, column } = locationOf(src, matchStart);
       const missing = hasOk ? "err" : "ok";
       const missingPattern = missing === "err" ? "'err { e } -> ...'" : "'ok { v } -> ...'";
       throw new BotscriptError([{
@@ -78,6 +78,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     }
 
     if ((hasSome || hasNone) && !(hasSome && hasNone)) {
+      const { line, column } = locationOf(src, matchStart);
       const missing = hasSome ? "none" : "some";
       const missingPattern = missing === "none" ? "'none -> ...'" : "'some { v } -> ...'";
       throw new BotscriptError([{
