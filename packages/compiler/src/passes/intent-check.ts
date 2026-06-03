@@ -148,7 +148,7 @@ function checkPureClaim(
         ? `// option A — remove the throws {} declaration (keep intent: "pure"):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
           `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
           `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
-        : `// option A — remove the conflicting header clauses (${parts.join("/")} ):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+        : `// option A — remove the conflicting header clauses (${parts.join("/")}):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
           `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...` +
           (hasThrows
             ? `\n\n// option C — if throws is the last remaining conflict after removing uses/reads/writes, replace it with Result:\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`

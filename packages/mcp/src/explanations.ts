@@ -262,8 +262,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "  return raw\n" +
         "}\n",
       passes:
-        "// pure fns use Result for error signaling; use simple error values\n" +
-        "// (CapCase error types require throws {}, which conflicts with intent: \"pure\")\n" +
+        "// pure fns use Result for error signaling\n" +
         "?bs 0.9\n" +
         "fn parseId(raw: string) intent: \"pure\" -> Result<string, string> {\n" +
         "  if (!raw.match(/^[a-z]+$/)) return err(\"invalid id format\")\n" +
