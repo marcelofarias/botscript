@@ -25,7 +25,7 @@ import { atLeast, type VersionInfo } from "./version.js";
 import type { Diagnostic } from "../diagnostics.js";
 import type { Token } from "../parser/lex.js";
 
-const BINARY_OPS = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>"]);
+const BINARY_OPS = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>", ">>>", "**"]);
 
 export interface ResCheckResult {
   code: string;
@@ -173,7 +173,10 @@ const CONTINUATION_TOKEN_TEXT = new Set([
   "&&", "||", "??", "+", "-", "*", "/", "%",
   "==", "!=", "===", "!==", "<", ">", "<=", ">=",
   "&", "|", "^", "<<", ">>",
-  ",", ":", "?",
+  ",", ":",
+  // Note: `?` is NOT included — in botscript `?` is the postfix propagation
+  // operator, not a ternary marker; a line ending in `?` terminates the
+  // expression, so the next line's call is a new statement.
 ]);
 
 /**
@@ -187,7 +190,7 @@ function precededByContinuation(tokens: Token[], newlineIdx: number): boolean {
   while (i >= 0) {
     const t = tokens[i];
     if (!t) return false;
-    if (t.kind === "whitespace" || t.kind === "blockComment") { i--; continue; }
+    if (t.kind === "whitespace" || t.kind === "blockComment" || t.kind === "lineComment") { i--; continue; }
     if (t.kind === "newline") return false; // empty line above — not a continuation
     // Check if this token is a continuation token.
     return CONTINUATION_TOKEN_TEXT.has(t.text);
