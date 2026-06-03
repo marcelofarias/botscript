@@ -43,12 +43,20 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   if (decls.length === 0) return src;
 
   // 1. Collect result-bearing fn names.
+  // If the same name appears with mixed return types (e.g. a nested fn shadows
+  // a top-level fn), treat it as ambiguous and exclude it — scope resolution
+  // would be needed to classify calls correctly, so the safe default is silence.
   const resultBearing = new Set<string>();
+  const nonResultBearing = new Set<string>();
   for (const decl of decls) {
     if (decl.returnType.includes("Result<") || decl.returnType.includes("Option<")) {
       resultBearing.add(decl.name);
+    } else {
+      nonResultBearing.add(decl.name);
     }
   }
+  // Remove ambiguous names.
+  for (const name of nonResultBearing) resultBearing.delete(name);
   if (resultBearing.size === 0) return src;
 
   // 2. Collect char ranges to skip: test blocks and unsafe expression blocks.
@@ -77,6 +85,10 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     // Must be in statement position: prev token (not skipping newlines) is
     // a newline, `{`, `;`, or start-of-tokens — walking through any leading
     // grouping parens, e.g. `(saveUser(user))` is at statement position.
+    //
+    // If the prev token is a newline, also check the token on the line above:
+    // if it's a continuation token (=, &&, ||, ,, :, binary ops, etc.) then
+    // this call is part of a multi-line expression, not a statement.
     let checkPrevIdx = prevNotSkippingNewlines(tokens, i - 1);
     let checkPrev = tokens[checkPrevIdx];
     while (
@@ -89,7 +101,7 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     }
     const inStatementPos =
       checkPrev === undefined ||
-      checkPrev.kind === "newline" ||
+      ((checkPrev.kind === "newline") && !precededByContinuation(tokens, checkPrevIdx)) ||
       (checkPrev.kind === "open" && checkPrev.text === "{") ||
       (checkPrev.kind === "punct" && checkPrev.text === ";");
 
@@ -150,6 +162,38 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Tokens that, when appearing at the end of a line, indicate the expression
+ * continues on the next line — so a call starting on the next line is NOT
+ * in statement position.
+ */
+const CONTINUATION_TOKEN_TEXT = new Set([
+  "=", "+=", "-=", "*=", "/=", "%=", "&&=", "||=", "??=",
+  "&&", "||", "??", "+", "-", "*", "/", "%",
+  "==", "!=", "===", "!==", "<", ">", "<=", ">=",
+  "&", "|", "^", "<<", ">>",
+  ",", ":", "?",
+]);
+
+/**
+ * Returns true if the last non-whitespace token on the line above `newlineIdx`
+ * is a continuation token (meaning the call on the next line is part of a
+ * larger expression, not a statement).
+ */
+function precededByContinuation(tokens: Token[], newlineIdx: number): boolean {
+  // Walk backward past the newline to the previous line's last real token.
+  let i = newlineIdx - 1;
+  while (i >= 0) {
+    const t = tokens[i];
+    if (!t) return false;
+    if (t.kind === "whitespace" || t.kind === "blockComment") { i--; continue; }
+    if (t.kind === "newline") return false; // empty line above — not a continuation
+    // Check if this token is a continuation token.
+    return CONTINUATION_TOKEN_TEXT.has(t.text);
+  }
+  return false;
+}
 
 /**
  * Walk backward from `start`, skipping only horizontal whitespace and block

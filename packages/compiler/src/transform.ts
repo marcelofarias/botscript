@@ -106,15 +106,15 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // rewrites the source and erases unsafe keywords used as suppression markers.
   { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
+  // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
+  // to build skip ranges) AND before testMocks (passTestMocks generates
+  // `as const` in compiled output which is not a botscript bare-as cast).
+  // Running on the original botscript source ensures only author-written
+  // casts are flagged. New enforced check behind a 0.5 pin per AGENTS.md rule 4.
+  { name: "bareAs", fn: passBareAs, minVersion: "0.5" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },
-  // bareAs MUST run before unsafe: passUnsafe rewrites the source and erases
-  // the original `unsafe` keyword, so the bare-as walk has to use the
-  // pre-rewrite token stream to find unsafe-block body ranges. New enforced
-  // check on syntax that was previously legal -> behind a 0.5 pin per
-  // AGENTS.md rule 4.
-  { name: "bareAs", fn: passBareAs, minVersion: "0.5" },
   { name: "unsafe", fn: passUnsafe, minVersion: "0.3" },
   { name: "resultTry", fn: passResultTry, minVersion: "0.3" },
   { name: "fn", fn: passFn },

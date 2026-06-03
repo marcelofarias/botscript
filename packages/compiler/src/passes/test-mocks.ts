@@ -71,7 +71,7 @@ export function passTestMocks(src: string): string {
     // Emit verbatim text up to the `with` ident, then the rewritten form.
     out += src.slice(cursor, withTok.start);
     const capsLiteral = `[${caps.map((c) => JSON.stringify(c)).join(", ")}]`;
-    out += `{ await $withMocks(${capsLiteral}, async () => {${body}}); }`;
+    out += `{ await $withMocks(${capsLiteral} as const, async () => {${body}}); }`;
     cursor = tokens[bodyClose]!.end;
     i = bodyClose;
   }
