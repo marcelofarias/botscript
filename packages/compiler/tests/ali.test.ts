@@ -1,11 +1,11 @@
 /**
- * Tests for ALI001: stdlib namespace aliased via a non-trivial expression.
+ * Tests for ALI001/ALI002/ALI003: stdlib namespace alias bypass checks.
  *
- * ALI001 is a warning (non-blocking) that fires when a module-level const
- * binding has a stdlib namespace identifier anywhere in the RHS but the form
- * is non-trivial — static alias tracking is NOT guaranteed.
- *
- * Gated on ?bs 0.8.
+ * ALI001 fires when a module-level const has a stdlib namespace ident anywhere
+ * in a non-trivial RHS — warning, gated on ?bs 0.8.
+ * ALI002 fires when a module-level const is an alias-of-alias chain — warning, ?bs 0.8.
+ * ALI003 fires on stdlib namespace destructuring — warning at ?bs 0.8,
+ *        blocking error at ?bs 0.9+.
  */
 
 import { describe, expect, it } from "vitest";

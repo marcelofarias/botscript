@@ -612,8 +612,8 @@ export function collectChainAliasWarningCandidates(
     if (!nameTok || nameTok.kind !== "ident") continue;
 
     // Accept `const x = <alias>`, `const x: T = <alias>`, and `const x = (<alias>)`.
-    // Note: paren-unwrapping here accepts any depth via unwrapParenToIdent,
-    // whereas collectStdlibAliases only accepts a single paren level.
+    // Note: paren-unwrapping here uses unwrapParenToIdent (any depth);
+    // collectStdlibAliases also handles multiple paren levels via isParenWrappedStdlib.
     const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
     const afterNameTok = tokens[afterNameIdx];
     let eqIdx = -1;
