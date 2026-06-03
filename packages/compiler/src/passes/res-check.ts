@@ -117,8 +117,10 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     }
 
     // Check the token after the (possibly adjusted) close paren to determine
-    // if the result is used in a larger expression.
-    const afterCloseIdx = nextNotSkippingNewlines(tokens, effectiveCloseIdx + 1);
+    // if the result is used in a larger expression.  Use skipTrivia (which
+    // also skips newlines) so continuation tokens on the next line — `?`,
+    // `.`, `?.` — are still recognized as consumption.
+    const afterCloseIdx = skipTrivia(tokens, effectiveCloseIdx + 1);
     const afterClose = tokens[afterCloseIdx];
 
     if (resultIsConsumed(afterClose)) continue;
@@ -236,6 +238,8 @@ function collectSkipRanges(
         } else if (next && next.kind === "ident" && next.text === "with") {
           // test "name" with mocks { caps } { body }
           const mocksIdx = skipTrivia(tokens, k + 1);
+          const mocksTok = tokens[mocksIdx];
+          if (!mocksTok || mocksTok.kind !== "ident" || mocksTok.text !== "mocks") continue;
           const capsIdx = skipTrivia(tokens, mocksIdx + 1);
           const capsOpen = tokens[capsIdx];
           if (
