@@ -442,7 +442,9 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   const idx = m.index;
   // Start scanning from the `<` that opens the generic arguments.
   const openAngle = returnType.indexOf("<", idx + 6);
-  let depth = 0;
+  let depth = 0;       // angle-bracket depth (tracks Result<…> nesting)
+  let braceDepth = 0;  // `{…}` depth — commas inside record types are not separators
+  let parenDepth = 0;  // `(…)` depth — commas inside fn types are not separators
   let firstCommaDepth1 = -1;
   let closingIdx = -1;
   for (let i = openAngle; i < returnType.length; i++) {
@@ -451,7 +453,11 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
     else if (ch === ">") {
       depth--;
       if (depth === 0) { closingIdx = i; break; }
-    } else if (ch === "," && depth === 1 && firstCommaDepth1 === -1) {
+    } else if (ch === "{") braceDepth++;
+    else if (ch === "}") braceDepth--;
+    else if (ch === "(") parenDepth++;
+    else if (ch === ")") parenDepth--;
+    else if (ch === "," && depth === 1 && braceDepth === 0 && parenDepth === 0 && firstCommaDepth1 === -1) {
       firstCommaDepth1 = i;
     }
   }
@@ -462,15 +468,22 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   return members.some((m) => leadingIdent(m) === typeName);
 }
 
-/** Split `s` on `|` characters that are not inside `<>` brackets. */
+/** Split `s` on `|` characters that are not inside `<>`, `{}`, or `()`. */
 function splitOnTopLevelPipe(s: string): string[] {
   const parts: string[] = [];
-  let depth = 0;
+  let angleDepth = 0;
+  let braceDepth = 0;
+  let parenDepth = 0;
   let start = 0;
   for (let i = 0; i < s.length; i++) {
-    if (s[i] === "<") depth++;
-    else if (s[i] === ">") depth--;
-    else if (s[i] === "|" && depth === 0) {
+    const ch = s[i];
+    if (ch === "<") angleDepth++;
+    else if (ch === ">") angleDepth--;
+    else if (ch === "{") braceDepth++;
+    else if (ch === "}") braceDepth--;
+    else if (ch === "(") parenDepth++;
+    else if (ch === ")") parenDepth--;
+    else if (ch === "|" && angleDepth === 0 && braceDepth === 0 && parenDepth === 0) {
       parts.push(s.slice(start, i).trim());
       start = i + 1;
     }

@@ -354,7 +354,7 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
-  it("does not fire when return type has trivia whitespace before <: Result <T, E>", () => {
+  it("does not fire when return type has whitespace before the `<` in `Result <T, E>`", () => {
     const src =
       "?bs 0.9\n" +
       "fn parseId(raw: string) -> Result <string, ParseError> {\n" +
