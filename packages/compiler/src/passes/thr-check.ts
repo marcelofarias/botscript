@@ -436,12 +436,16 @@ function collectParamNames(fn: FnDecl): Set<string> {
  * issues and false matches on nested generics (e.g. `Wrapper<ParseError>`).
  */
 function isErrorTypeInResult(returnType: string, typeName: string): boolean {
-  const idx = returnType.indexOf("Result<");
-  if (idx === -1) return false;
+  // Match `Result<` or `Result <` (AST may preserve trivia between ident and `<`).
+  const m = returnType.match(/\bResult\s*</);
+  if (!m || m.index === undefined) return false;
+  const idx = m.index;
+  // Start scanning from the `<` that opens the generic arguments.
+  const openAngle = returnType.indexOf("<", idx + 6);
   let depth = 0;
   let firstCommaDepth1 = -1;
   let closingIdx = -1;
-  for (let i = idx + 6; i < returnType.length; i++) {
+  for (let i = openAngle; i < returnType.length; i++) {
     const ch = returnType[i];
     if (ch === "<") depth++;
     else if (ch === ">") {
