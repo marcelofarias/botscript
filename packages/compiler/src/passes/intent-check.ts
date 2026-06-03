@@ -131,7 +131,7 @@ function checkPureClaim(
     const baseMsg = `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr}`;
     const detail = hasOnlyThrows
       ? `pure functions may not declare throws — use Result<T, E> for error conditions instead`
-      : `pure functions may not consume external resources, have resource dependencies${hasThrows ? ", or declare throws" : ""}`;
+      : `pure functions may not consume external resources or depend on external resources${hasThrows ? ", or declare throws" : ""}`;
 
     diagnostics.push({
       code: "INT001",
@@ -148,7 +148,7 @@ function checkPureClaim(
         ? `// option A — remove the throws {} declaration (keep intent: "pure"):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
           `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
           `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
-        : `// option A — remove the conflicting header clauses (${parts.join("/")}):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+        : `// option A — remove the conflicting header clauses (${parts.join(" / ")}):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
           `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...` +
           (hasThrows
             ? `\n\n// option C — if throws is the last remaining conflict after removing uses/reads/writes, replace it with Result:\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`

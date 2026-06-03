@@ -695,4 +695,11 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
     expect(caught).not.toBeNull();
     expect(caught!.diagnostics[0]!.message).toContain("Result");
   });
+
+  it("does NOT fire INT001 for empty throws { } with pure intent (length === 0)", () => {
+    // The implementation keys off throws.length > 0; an empty throws clause
+    // is a no-op and must not be treated as a conflicting declaration.
+    const src = `?bs 0.9\nfn parseId(raw: string) intent: "pure" throws { } -> string = raw\n`;
+    expect(() => t(src)).not.toThrow();
+  });
 });

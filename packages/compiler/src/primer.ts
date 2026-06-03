@@ -83,8 +83,8 @@ additions below are the entire language surface.
             read/write dependencies (reads {} / writes {}). Pure functions
             may have neither capabilities nor resource dependencies.
   Under ?bs 0.9, INT001 also fires when 'pure' intent conflicts with
-            throws {} declarations. Throwing is a side effect; pure
-            functions should use Result<T, E> for error conditions.
+            non-empty throws {} declarations. Throwing is a side effect;
+            pure functions should use Result<T, E> for error conditions.
   cap-check diagnostics also carry start/end UTF-16 string offsets alongside
   line/column from 0.2 onward, so editor and LSP integrations can map the
   error to a precise span without re-walking the source. (The whole-file
