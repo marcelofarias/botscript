@@ -363,4 +363,26 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("does not fire when success type T is a tuple/array with commas", () => {
+    // Commas inside `[A, B]` must not be mistaken for the Result<T, E> separator.
+    const src =
+      "?bs 0.9\n" +
+      "fn parsePair(raw: string) -> Result<[string, number], ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok([raw, 1])\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when error type E contains a union inside a tuple", () => {
+    // `|` inside `[E1 | E2]` should not be split as a top-level union member.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseItem(raw: string) -> Result<string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
 });

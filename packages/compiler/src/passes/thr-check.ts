@@ -442,9 +442,10 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   const idx = m.index;
   // Start scanning from the `<` that opens the generic arguments.
   const openAngle = returnType.indexOf("<", idx + 6);
-  let depth = 0;       // angle-bracket depth (tracks Result<…> nesting)
-  let braceDepth = 0;  // `{…}` depth — commas inside record types are not separators
-  let parenDepth = 0;  // `(…)` depth — commas inside fn types are not separators
+  let depth = 0;         // angle-bracket depth (tracks Result<…> nesting)
+  let braceDepth = 0;   // `{…}` depth — commas inside record types are not separators
+  let parenDepth = 0;   // `(…)` depth — commas inside fn types are not separators
+  let bracketDepth = 0; // `[…]` depth — commas inside tuple/array literals are not separators
   let firstCommaDepth1 = -1;
   let closingIdx = -1;
   for (let i = openAngle; i < returnType.length; i++) {
@@ -457,7 +458,9 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
     else if (ch === "}") braceDepth--;
     else if (ch === "(") parenDepth++;
     else if (ch === ")") parenDepth--;
-    else if (ch === "," && depth === 1 && braceDepth === 0 && parenDepth === 0 && firstCommaDepth1 === -1) {
+    else if (ch === "[") bracketDepth++;
+    else if (ch === "]") bracketDepth--;
+    else if (ch === "," && depth === 1 && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && firstCommaDepth1 === -1) {
       firstCommaDepth1 = i;
     }
   }
@@ -468,12 +471,13 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   return members.some((m) => leadingIdent(m) === typeName);
 }
 
-/** Split `s` on `|` characters that are not inside `<>`, `{}`, or `()`. */
+/** Split `s` on `|` characters that are not inside `<>`, `{}`, `()`, or `[]`. */
 function splitOnTopLevelPipe(s: string): string[] {
   const parts: string[] = [];
   let angleDepth = 0;
   let braceDepth = 0;
   let parenDepth = 0;
+  let bracketDepth = 0;
   let start = 0;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
@@ -483,7 +487,9 @@ function splitOnTopLevelPipe(s: string): string[] {
     else if (ch === "}") braceDepth--;
     else if (ch === "(") parenDepth++;
     else if (ch === ")") parenDepth--;
-    else if (ch === "|" && angleDepth === 0 && braceDepth === 0 && parenDepth === 0) {
+    else if (ch === "[") bracketDepth++;
+    else if (ch === "]") bracketDepth--;
+    else if (ch === "|" && angleDepth === 0 && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
       parts.push(s.slice(start, i).trim());
       start = i + 1;
     }
