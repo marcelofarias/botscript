@@ -674,6 +674,51 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  MAT003: {
+    code: "MAT003",
+    title: "non-exhaustive match on user-defined tagged union — missing variant arm",
+    body:
+      "From `?bs 0.9`, a `match` expression whose arm tags all belong to a known user-defined " +
+      "tagged union must cover every variant of that union (or include a wildcard `_` arm).\n\n" +
+      "This fires when you declare `type Shape = Circle { r: number } | Square { side: number } | Triangle { base: number }` " +
+      "and then match on it without handling all variants:\n\n" +
+      "```\n" +
+      "// MAT003: 'Square' and 'Triangle' arms are missing\n" +
+      "match s {\n" +
+      "  Circle { r } -> r\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Suppression mechanisms (in order of preference):**\n\n" +
+      "1. **Add all missing arms** — handle every variant explicitly:\n" +
+      "   ```\n   match s {\n     Circle { r } -> r\n     Square { side } -> side\n     Triangle { base } -> base\n   }\n   ```\n\n" +
+      "2. **Wildcard arm** — use `_` when some variants share a default response:\n" +
+      "   ```\n   match s {\n     Circle { r } -> r\n     _ -> 0\n   }\n   ```\n\n" +
+      "MAT003 only fires when the arm tags **uniquely identify a single known union** — if the " +
+      "same tag name appears in multiple union declarations, the match is considered ambiguous " +
+      "and the check is suppressed. Built-in tags (`ok`, `err`, `some`, `none`) are handled " +
+      "by MAT001/MAT002 and are excluded from MAT003.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+        "fn describe(s: Status) -> string {\n" +
+        "  match s {\n" +
+        "    Done { value } -> value\n" +
+        "    Loading -> \"loading...\"\n" +
+        "  }\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+        "fn describe(s: Status) -> string {\n" +
+        "  match s {\n" +
+        "    Done { value } -> value\n" +
+        "    Failed { code } -> `error ${code}`\n" +
+        "    Loading -> \"loading...\"\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   DEP002: {
     code: "DEP002",
     title: "fn transitively writes a resource category not declared in its header",

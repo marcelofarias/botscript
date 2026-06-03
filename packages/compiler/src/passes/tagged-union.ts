@@ -216,3 +216,42 @@ function sliceText(tokens: Token[], from: number, to: number): string {
   }
   return out;
 }
+
+/**
+ * Collect all user-defined tagged-union declarations from source.
+ *
+ * Returns a map from union name → array of variant names, for every
+ * `type Name = A | B { … } | C` declaration that satisfies the tagged-union
+ * detection rule (at least one alt carries a `{ … }` field block).
+ *
+ * Used by MAT003 to check exhaustiveness of match arms against known unions.
+ */
+export function collectTaggedUnionTypes(src: string): Map<string, string[]> {
+  const tokens = lex(src);
+  const result = new Map<string, string[]>();
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t) continue;
+    if (t.kind === "open" && t.text === "{") { depth++; continue; }
+    if (t.kind === "close" && t.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (t.kind !== "ident" || t.text !== "type") continue;
+
+    const decl = parseTypeDecl(tokens, i);
+    if (!decl) continue;
+
+    const alts = parseAlts(tokens, decl.rhsStart, decl.rhsEnd);
+    if (!alts || !shouldRewrite(alts)) continue;
+
+    const nameIdx = skipTrivia(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    result.set(nameTok.text, alts.map((a) => a.tag));
+    i = decl.end;
+  }
+
+  return result;
+}
