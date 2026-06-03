@@ -221,7 +221,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after — use Result instead of throws\n" +
       "?bs 0.9\n" +
       "fn parseId(raw: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
-      "  if (!raw.match(/^[a-z]+$/)) return err(new ParseError(\"invalid\"))\n" +
+      "  if (!raw.match(/^[a-z]+$/)) { const e = new ParseError(\"invalid\"); return err(e) }\n" +
       "  return ok(raw)\n" +
       "}",
   },
