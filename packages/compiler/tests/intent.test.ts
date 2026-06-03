@@ -635,10 +635,10 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
       t(src);
       expect.fail("should have thrown");
     } catch (e) {
-      const err = e as BotscriptError;
-      expect(err.diagnostics[0]!.code).toBe("INT001");
-      expect(err.diagnostics[0]!.message).toContain("throws");
-      expect(err.diagnostics[0]!.message).toContain("ParseError");
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT001");
+      expect(e.diagnostics[0]!.message).toContain("throws");
+      expect(e.diagnostics[0]!.message).toContain("ParseError");
     }
   });
 
@@ -648,9 +648,9 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
       t(src);
       expect.fail("should have thrown");
     } catch (e) {
-      const err = e as BotscriptError;
-      expect(err.diagnostics[0]!.code).toBe("INT001");
-      const msg = err.diagnostics[0]!.message;
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT001");
+      const msg = e.diagnostics[0]!.message;
       expect(msg).toContain("ParseError");
       expect(msg).toContain("ValidationError");
     }
@@ -662,9 +662,9 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
       t(src);
       expect.fail("should have thrown");
     } catch (e) {
-      const err = e as BotscriptError;
-      expect(err.diagnostics[0]!.code).toBe("INT001");
-      const msg = err.diagnostics[0]!.message;
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT001");
+      const msg = e.diagnostics[0]!.message;
       expect(msg).toContain("uses");
       expect(msg).toContain("reads");
       expect(msg).toContain("writes");
@@ -693,8 +693,8 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
       t(src);
       expect.fail("should have thrown");
     } catch (e) {
-      const err = e as BotscriptError;
-      expect(err.diagnostics[0]!.message).toContain("Result");
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.message).toContain("Result");
     }
   });
 });
