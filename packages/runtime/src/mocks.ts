@@ -24,7 +24,7 @@ import { __resetSources, __setRandomSource, __setTimeSource } from "./effects.js
 export type MockableCapability = "time" | "random";
 
 export const $withMocks = async <T>(
-  caps: ReadonlyArray<string>,
+  caps: ReadonlyArray<MockableCapability>,
   fn: () => T | Promise<T>,
 ): Promise<T> => {
   if (caps.includes("time")) {
