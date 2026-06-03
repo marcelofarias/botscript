@@ -451,7 +451,8 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   for (let i = openAngle; i < returnType.length; i++) {
     const ch = returnType[i];
     if (ch === "<") depth++;
-    else if (ch === ">") {
+    else if (ch === ">" && (i === 0 || returnType[i - 1] !== "-")) {
+      // Skip `>` that is part of `->` (arrow type syntax, not a generic close).
       depth--;
       if (depth === 0) { closingIdx = i; break; }
     } else if (ch === "{") braceDepth++;
@@ -482,7 +483,7 @@ function splitOnTopLevelPipe(s: string): string[] {
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (ch === "<") angleDepth++;
-    else if (ch === ">") angleDepth--;
+    else if (ch === ">" && (i === 0 || s[i - 1] !== "-")) angleDepth--;
     else if (ch === "{") braceDepth++;
     else if (ch === "}") braceDepth--;
     else if (ch === "(") parenDepth++;

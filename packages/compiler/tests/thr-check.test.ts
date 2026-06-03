@@ -375,13 +375,15 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
-  it("does not fire when error type E contains a union inside a tuple", () => {
-    // `|` inside `[E1 | E2]` should not be split as a top-level union member.
+  it("does not fire when success type T contains `->` (arrow type, not generic close)", () => {
+    // The `>` in `->` must not decrement angle-bracket depth — it is part of an
+    // arrow-type token, not a generic close. Without this guard the scanner exits
+    // Result<…> prematurely and misidentifies the error type position.
     const src =
       "?bs 0.9\n" +
-      "fn parseItem(raw: string) -> Result<string, ParseError> {\n" +
+      "fn parseItem(raw: string) -> Result<(x: string) -> string, ParseError> {\n" +
       "  if (!raw) return err(ParseError(\"invalid\"))\n" +
-      "  return ok(raw)\n" +
+      "  return ok((x: string) -> x)\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
