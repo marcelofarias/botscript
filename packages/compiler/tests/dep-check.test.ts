@@ -358,7 +358,7 @@ describe("DEP003/DEP004: transitive callee justification", () => {
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
 
-  it("fires DEP003 when only the intermediate callee declares the label (leaf justifies)", () => {
+  it("does NOT fire DEP003 when a callee (leaf) declares the same label", () => {
     // f reads { db } calls g, g reads { db } (leaf). f is justified by g.
     const src =
       "?bs 0.9\n" +
