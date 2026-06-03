@@ -118,7 +118,12 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     // Only consider arm tags that are not built-in (ok/err/some/none).
     // If any non-tag arm (literal, binding, etc.) is present, the match is not
     // exclusively a tagged-union match — suppress MAT003 to avoid false positives.
-    const userArmTags = armTags.filter((tag) => !BUILTIN_TAGS.has(tag));
+    // Tagged union variants in botscript are always CapCase. Lowercase tags
+    // are binding patterns or non-union arms — exclude them from MAT003 so we
+    // don't fire on patterns like `foo -> ...` (which are variable bindings).
+    const userArmTags = armTags.filter(
+      (tag) => !BUILTIN_TAGS.has(tag) && /^[A-Z]/.test(tag),
+    );
     if (userArmTags.length === 0) continue;
     if (hasNonTagArm) continue;
 

@@ -460,4 +460,21 @@ describe("MAT003: diagnostic fields", () => {
       expect(rewrite).not.toContain("'Loading { ... } -> ...'");
     }
   });
+
+  it("does not fire when all arms are lowercase identifiers (no CapCase tags to match a union)", () => {
+    // Lowercase arm labels are not tagged-union variant arms — they match
+    // anything (binding-style). After the CapCase filter, userArmTags is empty
+    // so MAT003 has nothing to evaluate exhaustiveness against.
+    const src =
+      "?bs 0.9\n" +
+      STATUS_TYPE +
+      "fn check(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    done -> \"d\"\n" +
+      "    failed -> \"f\"\n" +
+      "    loading -> \"l\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
 });
