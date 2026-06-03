@@ -35,7 +35,7 @@ interface TypeDecl {
   rhsEnd: number;
 }
 
-interface Alt {
+export interface Alt {
   tag: string;
   /** Body text inside the `{ … }`, or null for bare tag. */
   body: string | null;
@@ -225,10 +225,13 @@ function sliceText(tokens: Token[], from: number, to: number): string {
  * detection rule (at least one alt carries a `{ … }` field block).
  *
  * Used by MAT003 to check exhaustiveness of match arms against known unions.
+ *
+ * Returns a map from union name → array of `Alt` objects (tag + body presence),
+ * so callers can determine whether a variant is bare-tag or carries a field block.
  */
-export function collectTaggedUnionTypes(src: string): Map<string, string[]> {
+export function collectTaggedUnionTypes(src: string): Map<string, Alt[]> {
   const tokens = lex(src);
-  const result = new Map<string, string[]>();
+  const result = new Map<string, Alt[]>();
   let depth = 0;
 
   for (let i = 0; i < tokens.length; i++) {
@@ -249,7 +252,7 @@ export function collectTaggedUnionTypes(src: string): Map<string, string[]> {
     const nameTok = tokens[nameIdx];
     if (!nameTok || nameTok.kind !== "ident") continue;
 
-    result.set(nameTok.text, alts.map((a) => a.tag));
+    result.set(nameTok.text, alts);
     i = decl.end;
   }
 

@@ -29,7 +29,7 @@ import { lex } from "../parser/lex.js";
 import { parseMatch } from "../parser/parse-match.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import { collectTaggedUnionTypes } from "./tagged-union.js";
+import { collectTaggedUnionTypes, type Alt } from "./tagged-union.js";
 
 // Built-in tag vocabularies — MAT001/MAT002 handle these; MAT003 skips them.
 const BUILTIN_TAGS = new Set(["ok", "err", "some", "none"]);
@@ -126,11 +126,11 @@ export function passMatCheck(src: string, version: VersionInfo): string {
 
     // Find unions where ALL user arm tags are a subset of the union's variants.
     // This ensures we only fire when the match is unambiguously against a specific union.
-    const matchingUnions: Array<{ name: string; variants: string[] }> = [];
-    for (const [name, variants] of knownUnions) {
-      const variantSet = new Set(variants);
+    const matchingUnions: Array<{ name: string; alts: Alt[] }> = [];
+    for (const [name, alts] of knownUnions) {
+      const variantSet = new Set(alts.map((a) => a.tag));
       if (userArmTags.every((tag) => variantSet.has(tag))) {
-        matchingUnions.push({ name, variants });
+        matchingUnions.push({ name, alts });
       }
     }
 
@@ -138,13 +138,16 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     if (matchingUnions.length !== 1) continue;
 
     const union = matchingUnions[0]!;
-    const missing = union.variants.filter((v) => !userArmTagSet.has(v));
-    if (missing.length === 0) continue;
+    const missingAlts = union.alts.filter((a) => !userArmTagSet.has(a.tag));
+    if (missingAlts.length === 0) continue;
 
     const { line, column } = locationOf(src, matchStart);
-    const missingList = missing.map((v) => `'${v}'`).join(", ");
-    const armWord = missing.length === 1 ? "arm" : "arms";
-    const rewriteArms = missing.map((v) => `'${v} { ... } -> ...'`).join(", ");
+    const missingList = missingAlts.map((a) => `'${a.tag}'`).join(", ");
+    const armWord = missingAlts.length === 1 ? "arm" : "arms";
+    // Use `'Tag { ... } -> ...'` for variants with a field block; `'Tag -> ...'` for bare-tag variants.
+    const rewriteArms = missingAlts
+      .map((a) => (a.body !== null ? `'${a.tag} { ... } -> ...'` : `'${a.tag} -> ...'`))
+      .join(", ");
     throw new BotscriptError([{
       code: "MAT003",
       severity: "error",

@@ -435,4 +435,29 @@ describe("MAT003: diagnostic fields", () => {
       expect(err.diagnostics?.[0]?.message).toMatch(/Failed/);
     }
   });
+
+  it("rewrite uses 'Tag { ... } -> ...' for body variants and 'Tag -> ...' for bare-tag variants", () => {
+    // Status = Done { value } | Failed { code } | Loading (bare tag)
+    // Match only Done — missing Failed (has body) and Loading (bare tag)
+    const src =
+      "?bs 0.9\n" +
+      STATUS_TYPE +
+      "fn check(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "  }\n" +
+      "}\n";
+    try {
+      compile(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as { diagnostics?: Array<{ rewrite: string }> };
+      const rewrite = err.diagnostics?.[0]?.rewrite ?? "";
+      // Failed has a body block → should use `{ ... }` form
+      expect(rewrite).toContain("'Failed { ... } -> ...'");
+      // Loading is bare-tag → should NOT use `{ ... }` form
+      expect(rewrite).toContain("'Loading -> ...'");
+      expect(rewrite).not.toContain("'Loading { ... } -> ...'");
+    }
+  });
 });
