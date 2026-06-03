@@ -427,6 +427,33 @@ function collectParamNames(fn: FnDecl): Set<string> {
 }
 
 /**
+/**
+ * Returns true when `typeName` appears as the error type (second parameter)
+ * of a `Result<T, E>` return type — in which case THR002 is suppressed, since
+ * the error is signaled via the return value and no `throws {}` declaration is needed.
+ */
+function isErrorTypeInResult(returnType: string, typeName: string): boolean {
+  const idx = returnType.indexOf("Result<");
+  if (idx === -1) return false;
+  let depth = 0;
+  let firstCommaDepth1 = -1;
+  let closingIdx = -1;
+  for (let i = idx + 6; i < returnType.length; i++) {
+    const ch = returnType[i];
+    if (ch === "<") depth++;
+    else if (ch === ">") {
+      depth--;
+      if (depth === 0) { closingIdx = i; break; }
+    } else if (ch === "," && depth === 1 && firstCommaDepth1 === -1) {
+      firstCommaDepth1 = i;
+    }
+  }
+  if (firstCommaDepth1 === -1 || closingIdx === -1) return false;
+  const errorPart = returnType.slice(firstCommaDepth1 + 1, closingIdx);
+  return new RegExp(`\\b${typeName}\\b`).test(errorPart);
+}
+
+/**
  * THR002: check pre-computed body error types against the fn's declared throws set.
  * Returns a BotscriptError on the first undeclared construction found, or null.
  */
@@ -440,6 +467,9 @@ function checkBodyErrors(
 
   for (const [typeName, loc] of bodyErrs) {
     if (declaredThrows.has(typeName)) continue;
+    // Suppress when the fn returns Result<T, E> and typeName is in E — the error
+    // is signaled via the return value, not thrown; no throws declaration needed.
+    if (isErrorTypeInResult(fn.returnType, typeName)) continue;
 
     const { line, column } = locationOf(src, loc.start);
     const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
