@@ -220,14 +220,13 @@ function sliceText(tokens: Token[], from: number, to: number): string {
 /**
  * Collect all user-defined tagged-union declarations from source.
  *
- * Returns a map from union name → array of variant names, for every
- * `type Name = A | B { … } | C` declaration that satisfies the tagged-union
- * detection rule (at least one alt carries a `{ … }` field block).
+ * Returns a map from union name → array of `Alt` objects (tag + body presence),
+ * for every `type Name = A | B { … } | C` declaration that satisfies the
+ * tagged-union detection rule (at least one alt carries a `{ … }` field block).
+ * Callers use the `body` field of each `Alt` to determine whether a variant is
+ * bare-tag or carries a field block.
  *
  * Used by MAT003 to check exhaustiveness of match arms against known unions.
- *
- * Returns a map from union name → array of `Alt` objects (tag + body presence),
- * so callers can determine whether a variant is bare-tag or carries a field block.
  */
 export function collectTaggedUnionTypes(src: string): Map<string, Alt[]> {
   const tokens = lex(src);

@@ -550,9 +550,9 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "MAT003",
     title: "non-exhaustive match on user-defined tagged union — missing variant arm",
     rule:
-      "a match expression whose arm tags cover at least one variant of a known tagged union " +
-      "must also cover all remaining variants; add the missing arm(s) or a wildcard `_` to " +
-      "make the match exhaustive",
+      "a match expression whose arm tags (all CapCase, no wildcard) unambiguously identify " +
+      "a single known user-defined tagged union must cover all of that union's variants; " +
+      "add the missing arm(s) or a wildcard `_` to make the match exhaustive",
     idiom:
       "prefer explicit arms for every variant over a wildcard — explicit arms ensure future " +
       "variants added to the union are caught at compile time rather than silently falling through",
