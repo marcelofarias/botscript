@@ -427,10 +427,13 @@ function collectParamNames(fn: FnDecl): Set<string> {
 }
 
 /**
-/**
  * Returns true when `typeName` appears as the error type (second parameter)
  * of a `Result<T, E>` return type — in which case THR002 is suppressed, since
  * the error is signaled via the return value and no `throws {}` declaration is needed.
+ *
+ * Uses structural extraction: splits the E position on top-level `|` and compares
+ * each union member's leading identifier exactly, avoiding regex metacharacter
+ * issues and false matches on nested generics (e.g. `Wrapper<ParseError>`).
  */
 function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   const idx = returnType.indexOf("Result<");
@@ -449,8 +452,33 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
     }
   }
   if (firstCommaDepth1 === -1 || closingIdx === -1) return false;
-  const errorPart = returnType.slice(firstCommaDepth1 + 1, closingIdx);
-  return new RegExp(`\\b${typeName}\\b`).test(errorPart);
+  const errorPart = returnType.slice(firstCommaDepth1 + 1, closingIdx).trim();
+  // Split on top-level `|` to handle union error types (e.g. `E1 | E2`).
+  const members = splitOnTopLevelPipe(errorPart);
+  return members.some((m) => leadingIdent(m) === typeName);
+}
+
+/** Split `s` on `|` characters that are not inside `<>` brackets. */
+function splitOnTopLevelPipe(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "<") depth++;
+    else if (s[i] === ">") depth--;
+    else if (s[i] === "|" && depth === 0) {
+      parts.push(s.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(s.slice(start).trim());
+  return parts;
+}
+
+/** Extract the leading identifier from a type expression (stops at `<`, `(`, or whitespace). */
+function leadingIdent(type: string): string {
+  const m = type.trim().match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
+  return m?.[1] ?? "";
 }
 
 /**
