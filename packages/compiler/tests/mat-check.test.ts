@@ -267,7 +267,7 @@ describe("MAT002: MAT001 and MAT002 do not interfere", () => {
 const STATUS_TYPE = "type Status = Done { value: string } | Failed { code: number } | Loading\n";
 // Shape canonical form: Circle, Square, Triangle (C < S < T)
 const SHAPE_TYPE = "type Shape = Circle { r: number } | Square { side: number } | Triangle { base: number }\n";
-// Toggle canonical form: Off, On (f < n)
+// Toggle canonical form: Off, On (alphabetical by second char: 'f' < 'n')
 const TOGGLE_TYPE = "type Toggle = Off | On { value: boolean }\n";
 
 describe("MAT003: missing variant arm on user-defined tagged union", () => {
@@ -364,6 +364,21 @@ describe("MAT003: suppressed when exhaustive or wildcarded", () => {
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when the match contains any non-tag arm (literal, binding, etc.)", () => {
+    // A match mixing tag arms with literal patterns is not a pure union match.
+    // MAT003 must not fire even if some tags belong to a known union.
+    const src =
+      "?bs 0.9\n" +
+      STATUS_TYPE +
+      "fn check(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    \"fallback\" -> \"other\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow(/MAT003/);
   });
 
   it("does not fire when arm tags are ambiguous across multiple unions", () => {

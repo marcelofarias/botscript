@@ -56,6 +56,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     let hasSome = false;
     let hasNone = false;
     let hasWildcard = false;
+    let hasNonTagArm = false;
     const armTags: string[] = [];
 
     for (const arm of expr.arms) {
@@ -66,6 +67,8 @@ export function passMatCheck(src: string, version: VersionInfo): string {
         if (arm.pattern.tag === "some") hasSome = true;
         if (arm.pattern.tag === "none") hasNone = true;
         armTags.push(arm.pattern.tag);
+      } else {
+        hasNonTagArm = true;
       }
     }
 
@@ -113,8 +116,11 @@ export function passMatCheck(src: string, version: VersionInfo): string {
 
     // MAT003: user-defined tagged union exhaustiveness.
     // Only consider arm tags that are not built-in (ok/err/some/none).
+    // If any non-tag arm (literal, binding, etc.) is present, the match is not
+    // exclusively a tagged-union match — suppress MAT003 to avoid false positives.
     const userArmTags = armTags.filter((tag) => !BUILTIN_TAGS.has(tag));
     if (userArmTags.length === 0) continue;
+    if (hasNonTagArm) continue;
 
     const userArmTagSet = new Set(userArmTags);
 
@@ -137,7 +143,8 @@ export function passMatCheck(src: string, version: VersionInfo): string {
 
     const { line, column } = locationOf(src, matchStart);
     const missingList = missing.map((v) => `'${v}'`).join(", ");
-    const firstMissing = missing[0]!;
+    const armWord = missing.length === 1 ? "arm" : "arms";
+    const rewriteArms = missing.map((v) => `'${v} { ... } -> ...'`).join(", ");
     throw new BotscriptError([{
       code: "MAT003",
       severity: "error",
@@ -147,12 +154,11 @@ export function passMatCheck(src: string, version: VersionInfo): string {
       start: matchStart,
       end: tokens[expr.start]!.end,
       message:
-        `non-exhaustive match on '${union.name}' — arm for ${missingList} missing; ` +
+        `non-exhaustive match on '${union.name}' — ${armWord} for ${missingList} missing; ` +
         `add the missing arm(s) or a wildcard '_ -> ...' arm`,
       rule: mat003.rule,
       idiom: mat003.idiom,
-      rewrite: `add '${firstMissing} ${missing.length === 1 ? "{ ... } -> ..." : "/ other missing variants"}'` +
-        ` or a '_ -> ...' wildcard`,
+      rewrite: `add ${rewriteArms} or a '_ -> ...' wildcard`,
     }]);
   }
 
