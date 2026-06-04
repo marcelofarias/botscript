@@ -546,6 +546,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  MAT003: {
+    code: "MAT003",
+    title: "non-exhaustive match on user-defined tagged union — missing variant arm",
+    rule:
+      "a match expression whose arm tags (all CapCase, no wildcard) unambiguously identify " +
+      "a single known user-defined tagged union must cover all of that union's variants; " +
+      "add the missing arm(s) or a wildcard `_` to make the match exhaustive",
+    idiom:
+      "prefer explicit arms for every variant over a wildcard — explicit arms ensure future " +
+      "variants added to the union are caught at compile time rather than silently falling through",
+    rewrite:
+      "add the missing variant arm(s) or a '_ -> ...' wildcard",
+    example:
+      "// before — match on Status is missing the Failed arm\n" +
+      "?bs 0.9\n" +
+      "type Status = Loading | Done { value: string } | Failed { code: number }\n\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Loading   -> \"loading...\"\n" +
+      "    Done { value } -> value  // MAT003: Failed arm missing\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after\n" +
+      "?bs 0.9\n" +
+      "type Status = Loading | Done { value: string } | Failed { code: number }\n\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Loading        -> \"loading...\"\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",

@@ -35,7 +35,7 @@ interface TypeDecl {
   rhsEnd: number;
 }
 
-interface Alt {
+export interface Alt {
   tag: string;
   /** Body text inside the `{ … }`, or null for bare tag. */
   body: string | null;
@@ -215,4 +215,47 @@ function sliceText(tokens: Token[], from: number, to: number): string {
     out += t.text;
   }
   return out;
+}
+
+/**
+ * Collect all user-defined tagged-union declarations from an already-lexed token stream.
+ *
+ * Returns a map from union name → array of `Alt` objects (tag + body presence),
+ * for every `type Name = A | B { … } | C` declaration that satisfies the
+ * tagged-union detection rule (at least one alt carries a `{ … }` field block).
+ * Callers use the `body` field of each `Alt` to determine whether a variant is
+ * bare-tag or carries a field block.
+ *
+ * Accepts a pre-lexed token array so callers who already hold tokens (e.g.
+ * passMatCheck) avoid lexing the source a second time.
+ *
+ * Used by MAT003 to check exhaustiveness of match arms against known unions.
+ */
+export function collectTaggedUnionTypes(tokens: Token[]): Map<string, Alt[]> {
+  const result = new Map<string, Alt[]>();
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t) continue;
+    if (t.kind === "open" && t.text === "{") { depth++; continue; }
+    if (t.kind === "close" && t.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (t.kind !== "ident" || t.text !== "type") continue;
+
+    const decl = parseTypeDecl(tokens, i);
+    if (!decl) continue;
+
+    const alts = parseAlts(tokens, decl.rhsStart, decl.rhsEnd);
+    if (!alts || !shouldRewrite(alts)) continue;
+
+    const nameIdx = skipTrivia(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    result.set(nameTok.text, alts);
+    i = decl.end;
+  }
+
+  return result;
 }

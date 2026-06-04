@@ -14,6 +14,14 @@ goes behind a new pin.
   a pure intent claim. The compiler recommends `Result<T, E>` as the alternative.
   Files below `?bs 0.9` see no change; the check is gated on the 0.9 version pin
   (consistent with how reads/writes were added in 0.8).
+- **MAT003 — non-exhaustive match on user-defined tagged union.**
+  MAT003 fires as an **error** (blocking) when a `match` expression whose arm
+  tags all belong to a known user-defined tagged union is missing at least one
+  variant arm and has no wildcard `_` arm. Only fires when the arm tags uniquely
+  identify a single union — if the same tag name appears in multiple union
+  declarations the match is considered ambiguous and the check is suppressed.
+  Built-in tags (`ok`, `err`, `some`, `none`) are handled by MAT001/MAT002 and
+  are excluded from MAT003. Gated on `?bs 0.9`.
 
 - **MAT002 — non-exhaustive Option match (`some`/`none`).**
   MAT002 fires as an **error** (blocking) when a `match` expression names a
