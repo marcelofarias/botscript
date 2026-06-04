@@ -389,9 +389,9 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
   });
 
   it("still fires when the error type in Result is ParseError[] (array), not ParseError", () => {
-    // `ParseError[]` is a different type from `ParseError`. Suppression should
-    // NOT apply — constructing `err(ParseError(...))` against `Result<T, ParseError[]>`
-    // is a type mismatch that THR002 must continue to flag.
+    // `ParseError[]` (array) is distinct from the bare `ParseError` ident.
+    // Suppression should NOT apply — `ParseError` is absent from the declared
+    // Result<T, E> error position when E is `ParseError[]`.
     const src =
       "?bs 0.9\n" +
       "fn parseId(raw: string) -> Result<string, ParseError[]> {\n" +

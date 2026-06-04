@@ -436,22 +436,24 @@ function collectParamNames(fn: FnDecl): Set<string> {
  * issues and false matches on nested generics (e.g. `Wrapper<ParseError>`).
  */
 function isErrorTypeInResult(returnType: string, typeName: string): boolean {
-  // Match `Result<` or `Result <` (AST may preserve trivia between ident and `<`).
-  const m = returnType.match(/\bResult\s*</);
-  if (!m || m.index === undefined) return false;
-  const idx = m.index;
+  // Only suppress when `Result<` is the outermost type (starts at position 0
+  // after trimming). Nested Result<> inside `Promise<Result<T,E>>` or
+  // `Wrapper<Result<T,E>>` should NOT suppress THR002 — those fns return the
+  // wrapper type, not a Result directly.
+  const rt = returnType.trimStart();
+  if (!rt.match(/^Result\s*</)) return false;
   // Start scanning from the `<` that opens the generic arguments.
-  const openAngle = returnType.indexOf("<", idx + 6);
+  const openAngle = rt.indexOf("<");
   let depth = 0;         // angle-bracket depth (tracks Result<…> nesting)
   let braceDepth = 0;   // `{…}` depth — commas inside record types are not separators
   let parenDepth = 0;   // `(…)` depth — commas inside fn types are not separators
   let bracketDepth = 0; // `[…]` depth — commas inside tuple/array literals are not separators
   let firstCommaDepth1 = -1;
   let closingIdx = -1;
-  for (let i = openAngle; i < returnType.length; i++) {
-    const ch = returnType[i];
+  for (let i = openAngle; i < rt.length; i++) {
+    const ch = rt[i];
     if (ch === "<") depth++;
-    else if (ch === ">" && (i === 0 || returnType[i - 1] !== "-")) {
+    else if (ch === ">" && (i === 0 || rt[i - 1] !== "-")) {
       // Skip `>` that is part of `->` (arrow type syntax, not a generic close).
       depth--;
       if (depth === 0) { closingIdx = i; break; }
@@ -466,7 +468,7 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
     }
   }
   if (firstCommaDepth1 === -1 || closingIdx === -1) return false;
-  const errorPart = returnType.slice(firstCommaDepth1 + 1, closingIdx).trim();
+  const errorPart = rt.slice(firstCommaDepth1 + 1, closingIdx).trim();
   // Split on top-level `|` to handle union error types (e.g. `E1 | E2`).
   const members = splitOnTopLevelPipe(errorPart);
   return members.some((m) => leadingIdent(m) === typeName);
