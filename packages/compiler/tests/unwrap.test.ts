@@ -157,10 +157,13 @@ describe("? operator — bare form", () => {
 
 describe("? operator — await composition", () => {
   it("handles (await expr)? inside async fn", () => {
-    // Must be async fn so `await` is valid in the emitted TypeScript.
+    // passUnwrap is a text transformation; it does not type-check.
+    // `-> Promise<Result<string, string>>` makes the propagation path consistent:
+    // the error branch emits `return __r1` (a Result), which is assignable to
+    // Promise<Result<string,string>> via the async wrapper.
     const src =
       "?bs 0.6\n" +
-      "async fn fetchId() uses { net } -> Promise<string> {\n" +
+      "async fn fetchId() uses { net } -> Promise<Result<string, string>> {\n" +
       "  const raw = (await http.get('/a'))?;\n" +
       "  return raw;\n" +
       "}\n";
