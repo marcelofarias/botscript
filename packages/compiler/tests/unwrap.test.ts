@@ -27,16 +27,17 @@ function compile(src: string): string {
 
 describe("? operator — let-binding form", () => {
   it("emits const temp, guard, then binds Ok value", () => {
+    // fs.readText returns Result<string, string> synchronously — valid ? source
     const src =
       "?bs 0.6\n" +
-      "fn fetchId(id: string) uses { net } -> string {\n" +
-      "  const raw = http.get(`/id/${id}`)?;\n" +
+      "fn readId(path: string) uses { fs } -> string {\n" +
+      "  const raw = fs.readText(path)?;\n" +
       "  return raw;\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
     expect(out).toContain('kind === "err"');
-    expect(out).toContain('return __r1');
+    expect(out).toContain('return __r1;');
     expect(out).toContain('__r1.value');
     expect(out).toContain('const raw');
   });
@@ -44,8 +45,8 @@ describe("? operator — let-binding form", () => {
   it("supports let binder", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
-      "  let x = http.get('/a')?;\n" +
+      "fn readId() uses { fs } -> string {\n" +
+      "  let x = fs.readText('/a')?;\n" +
       "  return x;\n" +
       "}\n";
     const out = compile(src);
@@ -56,8 +57,8 @@ describe("? operator — let-binding form", () => {
   it("supports type annotation on binding", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
-      "  const raw: string = http.get('/a')?;\n" +
+      "fn readId() uses { fs } -> string {\n" +
+      "  const raw: string = fs.readText('/a')?;\n" +
       "  return raw;\n" +
       "}\n";
     const out = compile(src);
@@ -69,8 +70,8 @@ describe("? operator — let-binding form", () => {
   it("normalizes var binder to let in output", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
-      "  var raw = http.get('/a')?;\n" +
+      "fn readId() uses { fs } -> string {\n" +
+      "  var raw = fs.readText('/a')?;\n" +
       "  return raw;\n" +
       "}\n";
     const out = compile(src);
@@ -82,10 +83,10 @@ describe("? operator — let-binding form", () => {
   it("chains multiple ?s with incremented counter", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchUser(id: string) uses { net } -> string {\n" +
-      "  const resp = http.get(`/users/${id}`)?;\n" +
-      "  const body = http.get(`/body/${resp}`)?;\n" +
-      "  return body;\n" +
+      "fn readUser(path: string) uses { fs } -> string {\n" +
+      "  const name = fs.readText(`${path}/name`)?;\n" +
+      "  const bio = fs.readText(`${path}/bio`)?;\n" +
+      "  return bio;\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -112,16 +113,19 @@ describe("? operator — return form", () => {
   it("emits const temp, guard, then returns Ok value", () => {
     // Use a multi-statement body so the single-return canonical form gate does
     // not fire (canonical form at 0.6+ requires single-return fns to use = expr).
+    // fs.readText returns Result<string, string> synchronously — valid ? source.
     const src =
       "?bs 0.6\n" +
-      "fn fetchId(flag: boolean) uses { net } -> string {\n" +
+      "fn readId(flag: boolean) uses { fs } -> string {\n" +
       "  if (flag) return 'early';\n" +
-      "  return http.get('/a')?;\n" +
+      "  return fs.readText('/a')?;\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
     expect(out).toContain('kind === "err"');
-    expect(out).toContain('return __r1');
+    // `return __r1;` (with semicolon) specifically matches the short-circuit branch,
+    // not `return __r1.value;` which is the success path.
+    expect(out).toContain('return __r1;');
     expect(out).toContain('return __r1.value');
   });
 });
@@ -132,15 +136,16 @@ describe("? operator — return form", () => {
 
 describe("? operator — bare form", () => {
   it("emits const temp and guard, no value binding", () => {
+    // fs.writeText returns Result<void, string> synchronously — valid bare ? source.
     const src =
       "?bs 0.6\n" +
-      "fn sideEffect() uses { net } -> void {\n" +
-      "  http.post('/ping', {})?;\n" +
+      "fn writeConfig() uses { fs } -> void {\n" +
+      "  fs.writeText('/cfg', 'data')?;\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
     expect(out).toContain('kind === "err"');
-    expect(out).toContain('return __r1');
+    expect(out).toContain('return __r1;');
     // No value binding after guard
     expect(out).not.toContain('__r1.value');
   });
@@ -174,8 +179,8 @@ describe("? operator — indentation", () => {
   it("preserves leading indentation of the original statement", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
-      "  const raw = http.get('/a')?;\n" +
+      "fn readId() uses { fs } -> string {\n" +
+      "  const raw = fs.readText('/a')?;\n" +
       "  return raw;\n" +
       "}\n";
     const out = compile(src);
@@ -194,8 +199,8 @@ describe("? operator — bare form with semicolon", () => {
   it("consumes trailing semicolon after bare ?", () => {
     const src =
       "?bs 0.6\n" +
-      "fn sideEffect() uses { net } -> void {\n" +
-      "  http.post('/ping', {})? ;\n" +
+      "fn writeConfig() uses { fs } -> void {\n" +
+      "  fs.writeText('/cfg', 'data')? ;\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -213,8 +218,8 @@ describe("? operator — counter isolation", () => {
   it("each transform() call starts the counter at 1", () => {
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
-      "  const raw = http.get('/a')?;\n" +
+      "fn readId() uses { fs } -> string {\n" +
+      "  const raw = fs.readText('/a')?;\n" +
       "  return raw;\n" +
       "}\n";
     const out1 = compile(src);
