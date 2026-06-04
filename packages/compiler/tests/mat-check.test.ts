@@ -494,4 +494,33 @@ describe("MAT003: diagnostic fields", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("does not fire when CapCase user-defined tags appear alongside built-in ok/err tags", () => {
+    // Mixed match: one Circle arm (CapCase, user-union variant) + one ok arm
+    // (built-in Result tag). MAT003 rule says "all CapCase" — a mixed match
+    // is not a pure tagged-union match and must be suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "type Shape = Circle | Square | Triangle\n" +
+      "fn check(v: any) -> string {\n" +
+      "  match v {\n" +
+      "    Circle -> \"circle\"\n" +
+      "    ok { r } -> r\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow(/MAT003/);
+  });
+
+  it("does not fire when CapCase user-defined tags appear alongside built-in some/none tags", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done | Loading\n" +
+      "fn check(v: any) -> string {\n" +
+      "  match v {\n" +
+      "    Done -> \"done\"\n" +
+      "    none -> \"none\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow(/MAT003/);
+  });
 });

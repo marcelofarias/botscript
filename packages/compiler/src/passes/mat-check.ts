@@ -134,6 +134,10 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     );
     if (userArmTags.length === 0) continue;
     if (hasNonTagArm) continue;
+    // Mixed match: built-in Result/Option tags alongside user-defined CapCase
+    // variant arms. These are not a pure tagged-union match — MAT003 should not
+    // fire, as the match is not exclusively over a single user-defined union.
+    if (hasOk || hasErr || hasSome || hasNone) continue;
 
     const userArmTagSet = new Set(userArmTags);
 
