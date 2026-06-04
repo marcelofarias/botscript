@@ -43,6 +43,10 @@
  *            conflict with a "pure" intent claim. A pure function must have no
  *            resource dependencies either.
  *
+ *   ?bs 0.9  INT001 extended: also fires when `throws { ... }` conflicts with a
+ *            "pure" intent claim. Throwing an exception is a side effect; pure
+ *            functions should use `Result<T, E>` instead.
+ *
  *   pre-0.7  This pass is not run. Files on earlier pins may parse `intent:`
  *            without triggering any check.
  */
@@ -61,6 +65,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const checksReadsWrites = atLeast(version.resolved, "0.8");
+  const checksThrows = atLeast(version.resolved, "0.9");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const allDecls = program.fns.map((s) => s.decl);
@@ -76,7 +81,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, diagnostics);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
@@ -99,15 +104,17 @@ function checkPureClaim(
   tokens: Token[],
   allDecls: FnDecl[],
   checksReadsWrites: boolean,
+  checksThrows: boolean,
   diagnostics: Diagnostic[],
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
   const hasWrites = checksReadsWrites && (decl.writes?.length ?? 0) > 0;
+  const hasThrows = checksThrows && (decl.throws?.length ?? 0) > 0;
 
-  if (hasUses || hasReads || hasWrites) {
+  if (hasUses || hasReads || hasWrites || hasThrows) {
     // INT001: header-level conflict — intent claims "pure" but the function
-    // has capability or (from 0.8) read/write resource declarations.
+    // has capability, read/write resource declarations, or throws declarations.
     const entry = getErrorCode("INT001")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -116,8 +123,15 @@ function checkPureClaim(
     if (hasUses) parts.push(`uses { ${decl.capabilities.join(", ")} }`);
     if (hasReads) parts.push(`reads { ${decl.reads!.join(", ")} }`);
     if (hasWrites) parts.push(`writes { ${decl.writes!.join(", ")} }`);
+    if (hasThrows) parts.push(`throws { ${decl.throws!.join(", ")} }`);
     const conflictsStr = parts.join(", ");
     const conflictsRewrite = parts.join(" ");
+
+    const hasOnlyThrows = hasThrows && !hasUses && !hasReads && !hasWrites;
+    const baseMsg = `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr}`;
+    const detail = hasOnlyThrows
+      ? `pure functions may not declare throws — use Result<T, E> for error conditions instead`
+      : `pure functions may not have resource dependencies${hasThrows ? " or declare throws" : ""}`;
 
     diagnostics.push({
       code: "INT001",
@@ -127,14 +141,18 @@ function checkPureClaim(
       column: loc.column,
       start: intentStart,
       end: intentStart + decl.intent!.length + 2,
-      message:
-        `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr} — ` +
-        `pure functions may not consume external resources or have resource dependencies`,
+      message: `${baseMsg} — ${detail}`,
       rule: entry.rule,
       idiom: entry.idiom,
-      rewrite:
-        `// remove the conflicting header clauses (uses/reads/writes):\nfn ${decl.name}(...) intent: "pure" -> ...\n` +
-        `// or remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...`,
+      rewrite: hasOnlyThrows
+        ? `// option A — remove the throws {} declaration (keep intent: "pure"):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...\n\n` +
+          `// option C — replace throws with Result (preferred for pure fns):\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
+        : `// option A — remove the conflicting header clauses (${parts.join(" / ")}):\nfn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+          `// option B — remove the pure intent claim:\nfn ${decl.name}(...) ${conflictsRewrite} -> ...` +
+          (hasThrows
+            ? `\n\n// option C — if throws is the last remaining conflict after removing uses/reads/writes, replace it with Result:\nfn ${decl.name}(...) intent: "pure" -> Result<type, ErrorType> { ... }`
+            : ``),
     });
     // INT001 already fired — skip INT002 for this fn (header conflict subsumes body check).
     return;

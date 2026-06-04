@@ -7,6 +7,14 @@ goes behind a new pin.
 ## ?bs 0.9 — unreleased
 
 ### Added
+- **INT001 extended — `intent: "pure"` + `throws {}` is now an error.**
+  From `?bs 0.9`, INT001 also fires when a function declares both `intent: "pure"`
+  and `throws { … }`. Throwing an exception is a side effect — it unwinds the
+  call stack in a way observable to callers — and is therefore incompatible with
+  a pure intent claim. The compiler recommends `Result<T, E>` as the alternative.
+  Files below `?bs 0.9` see no change; the check is gated on the 0.9 version pin
+  (consistent with how reads/writes were added in 0.8).
+
 - **MAT002 — non-exhaustive Option match (`some`/`none`).**
   MAT002 fires as an **error** (blocking) when a `match` expression names a
   `some` arm but no `none` arm (or vice versa) without a wildcard `_` arm.
