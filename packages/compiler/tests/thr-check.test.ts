@@ -400,4 +400,16 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).toThrow("THR002");
   });
+
+  it("still fires when error type in Result is ParseError [] (with trivia before [)", () => {
+    // `ParseError []` with whitespace before `[` is still an array type.
+    // leadingIdent() must skip past the trivia when checking for the array suffix.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError []> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
 });
