@@ -156,7 +156,7 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
         `discard hides the error/absence path; use '?', match on the result, or assign it`,
       rule: entry.rule,
       idiom: entry.idiom,
-      rewrite: `let result = ${tok.text}(...)  // or use '?' to propagate`,
+      rewrite: entry.rewrite,
     });
   }
 
@@ -215,7 +215,7 @@ function prevNotSkippingNewlines(tokens: Token[], start: number): number {
   while (i >= 0) {
     const t = tokens[i];
     if (!t) return i;
-    if (t.kind === "whitespace" || t.kind === "blockComment") {
+    if (t.kind === "whitespace" || t.kind === "blockComment" || t.kind === "lineComment") {
       i--;
       continue;
     }
@@ -233,7 +233,7 @@ function nextNotSkippingNewlines(tokens: Token[], start: number): number {
   while (i < tokens.length) {
     const t = tokens[i];
     if (!t) return i;
-    if (t.kind === "whitespace" || t.kind === "blockComment") {
+    if (t.kind === "whitespace" || t.kind === "blockComment" || t.kind === "lineComment") {
       i++;
       continue;
     }
@@ -377,17 +377,10 @@ function skipTrivia(tokens: Token[], start: number): number {
   return i;
 }
 
-/** Return the return type label (Result<...> or Option<...>) for a fn name. */
-function getReturnTypeLabel(
-  decls: Array<{ name: string; returnType: string }>,
-  name: string,
-): string {
-  const decl = decls.find((d) => d.name === name);
-  if (!decl) return "Result/Option";
-  const rt = decl.returnType;
+/** Extract the Result<...>/Option<...> substring from a return type string. */
+function extractTypeLabel(rt: string): string {
   const m = /(?:Result|Option)</.exec(rt);
   if (!m) return rt;
-  // Count angle-bracket depth to handle nested generics like Result<Option<string>, E>
   let depth = 0;
   for (let i = m.index + m[0].length - 1; i < rt.length; i++) {
     if (rt[i] === "<") depth++;
@@ -397,4 +390,18 @@ function getReturnTypeLabel(
     }
   }
   return rt.slice(m.index);
+}
+
+/** Return the return type label (Result<...> or Option<...>) for a fn name. */
+function getReturnTypeLabel(
+  decls: Array<{ name: string; returnType: string }>,
+  name: string,
+): string {
+  const matching = decls.filter((d) => d.name === name);
+  if (matching.length === 0) return "Result/Option";
+  // If multiple overloads exist, only show the label when they all agree.
+  const labels = matching.map((d) => extractTypeLabel(d.returnType));
+  const first = labels[0]!;
+  if (labels.every((l) => l === first)) return first;
+  return "Result/Option";
 }
