@@ -79,20 +79,28 @@ export function collectCallees(
     // Must be followed by `(` or `?.(` to be a call.
     // `fn?.()` is an optional direct call — it still carries the callee's
     // declared effects, so it must be included in the callee set.
-    const nextIdx = nextSignificant(tokens, i + 1);
-    const next = tokens[nextIdx];
-    let isCall = !!(next && next.kind === "open" && next.text === "(");
-    if (!isCall && next && next.kind === "questionDot") {
-      const afterQD = nextSignificant(tokens, nextIdx + 1);
-      const afterTok = tokens[afterQD];
-      isCall = !!(afterTok && afterTok.kind === "open" && afterTok.text === "(");
-    }
-    if (!isCall) continue;
+    if (!isDirectOrOptionalCall(tokens, i)) continue;
 
     callees.add(tok.text);
   }
 
   return callees;
+}
+
+/**
+ * Returns true if the token at `identIdx` is directly followed by `(` or `?.(`,
+ * indicating a direct or optional-direct call rather than a bare reference.
+ */
+export function isDirectOrOptionalCall(tokens: Token[], identIdx: number): boolean {
+  const nextIdx = nextSignificant(tokens, identIdx + 1);
+  const next = tokens[nextIdx];
+  if (next && next.kind === "open" && next.text === "(") return true;
+  if (next && next.kind === "questionDot") {
+    const afterQD = nextSignificant(tokens, nextIdx + 1);
+    const afterTok = tokens[afterQD];
+    if (afterTok && afterTok.kind === "open" && afterTok.text === "(") return true;
+  }
+  return false;
 }
 
 export function nextSignificant(tokens: Token[], start: number): number {
@@ -182,15 +190,7 @@ export function hasOpaqueCall(
 
     // Must be followed by `(` or `?.(` to be a call.
     // `fn?.()` is an optional direct call — effects are still in play.
-    const nextIdx = nextSignificant(tokens, i + 1);
-    const next = tokens[nextIdx];
-    let isCall = !!(next && next.kind === "open" && next.text === "(");
-    if (!isCall && next && next.kind === "questionDot") {
-      const afterQD = nextSignificant(tokens, nextIdx + 1);
-      const afterTok = tokens[afterQD];
-      isCall = !!(afterTok && afterTok.kind === "open" && afterTok.text === "(");
-    }
-    if (!isCall) continue;
+    if (!isDirectOrOptionalCall(tokens, i)) continue;
 
     return true;
   }

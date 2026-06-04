@@ -260,13 +260,13 @@ describe("DEP001/DEP002: optional direct call syntax fn?.()", () => {
   });
 
   it("does not mistake obj?.method() for an optional direct call of obj", () => {
-    // `cache?.update()` is a property access on `cache`, not a direct call of
-    // a fn named `cache` — it must not trigger DEP002 for a `writes { cache }`
-    // same-file fn named `cache`.
+    // `cache?.update()` uses `cache` as the receiver — `cache` IS a same-file fn
+    // name, so `collectCallees` reaches the property-access check and must
+    // correctly exclude it (not treat it as a direct call of `cache`).
     const src =
       "?bs 0.9\n" +
       "fn cache(id: string) writes { storage } -> void { }\n" +
-      "fn runner(obj: any) -> void { obj?.update(); }\n";
+      "fn runner(obj: any) -> void { cache?.update(); }\n";
     expect(() => compile(src)).not.toThrow();
   });
 });
