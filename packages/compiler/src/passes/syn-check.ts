@@ -14,8 +14,7 @@ import { getErrorCode } from "../error-codes.js";
 import { lex } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
-import { computeNesting } from "./_callgraph.js";
-import { prevSignificant } from "./_callgraph.js";
+import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 
 export interface SynCheckResult {
@@ -50,11 +49,19 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const tok = tokens[i];
       if (!tok || tok.kind !== "ident" || tok.text !== "throw") continue;
 
-      // Exclude property accesses: obj.throw (unlikely but possible in JS).
+      // Exclude property accesses: obj.throw
       const prevIdx = prevSignificant(tokens, i - 1);
       const prev = tokens[prevIdx];
       if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
         continue;
+
+      // Exclude object literal property keys: { throw: 1 } or method shorthands: { throw() {} }
+      const nextIdx = nextSignificant(tokens, i + 1);
+      const next = tokens[nextIdx];
+      if (next && (
+        (next.kind === "punct" && next.text === ":") ||
+        (next.kind === "open" && next.text === "(")
+      )) continue;
 
       const loc = locationOf(src, tok.start);
       warnings.push({

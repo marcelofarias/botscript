@@ -113,4 +113,26 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
   });
+
+  it("does NOT fire when 'throw' is an object literal property key", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { throw: 1 }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire when 'throw' is a method shorthand in an object literal", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { throw() { return 1 } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });
