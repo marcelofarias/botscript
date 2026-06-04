@@ -43,7 +43,8 @@ export function passMatCheck(src: string, version: VersionInfo): string {
   const mat003 = getErrorCode("MAT003")!;
 
   // Pre-collect all user-defined tagged union declarations in this file.
-  const knownUnions = collectTaggedUnionTypes(src);
+  // Pass the already-lexed tokens to avoid lexing the source a second time.
+  const knownUnions = collectTaggedUnionTypes(tokens);
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -62,11 +63,18 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     for (const arm of expr.arms) {
       if (arm.pattern.kind === "wildcard") { hasWildcard = true; break; }
       if (arm.pattern.kind === "tag") {
-        if (arm.pattern.tag === "ok") hasOk = true;
-        if (arm.pattern.tag === "err") hasErr = true;
-        if (arm.pattern.tag === "some") hasSome = true;
-        if (arm.pattern.tag === "none") hasNone = true;
-        armTags.push(arm.pattern.tag);
+        const tag = arm.pattern.tag;
+        if (tag === "ok") hasOk = true;
+        if (tag === "err") hasErr = true;
+        if (tag === "some") hasSome = true;
+        if (tag === "none") hasNone = true;
+        armTags.push(tag);
+        // Lowercase non-builtin tags are binding patterns (catch-alls), not union
+        // variant names. Treat them as non-tag arms so MAT003 is suppressed when
+        // a binding arm appears alongside CapCase union arms.
+        if (!/^[A-Z]/.test(tag) && !BUILTIN_TAGS.has(tag)) {
+          hasNonTagArm = true;
+        }
       } else {
         hasNonTagArm = true;
       }

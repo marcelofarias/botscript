@@ -218,7 +218,7 @@ function sliceText(tokens: Token[], from: number, to: number): string {
 }
 
 /**
- * Collect all user-defined tagged-union declarations from source.
+ * Collect all user-defined tagged-union declarations from an already-lexed token stream.
  *
  * Returns a map from union name → array of `Alt` objects (tag + body presence),
  * for every `type Name = A | B { … } | C` declaration that satisfies the
@@ -226,10 +226,12 @@ function sliceText(tokens: Token[], from: number, to: number): string {
  * Callers use the `body` field of each `Alt` to determine whether a variant is
  * bare-tag or carries a field block.
  *
+ * Accepts a pre-lexed token array so callers who already hold tokens (e.g.
+ * passMatCheck) avoid lexing the source a second time.
+ *
  * Used by MAT003 to check exhaustiveness of match arms against known unions.
  */
-export function collectTaggedUnionTypes(src: string): Map<string, Alt[]> {
-  const tokens = lex(src);
+export function collectTaggedUnionTypes(tokens: Token[]): Map<string, Alt[]> {
   const result = new Map<string, Alt[]>();
   let depth = 0;
 

@@ -381,6 +381,23 @@ describe("MAT003: suppressed when exhaustive or wildcarded", () => {
     expect(() => compile(src)).not.toThrow(/MAT003/);
   });
 
+  it("does not fire when a lowercase binding arm appears alongside CapCase union arms", () => {
+    // A lowercase ident arm (e.g. `other -> ...`) is a binding pattern — it
+    // catches any value and binds it. MAT003 must not fire even though some
+    // CapCase tags are present alongside it, because the match is not a pure
+    // exhaustive union dispatch.
+    const src =
+      "?bs 0.9\n" +
+      STATUS_TYPE +
+      "fn check(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Loading -> \"loading\"\n" +
+      "    other -> \"other\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
   it("does not fire when arm tags are ambiguous across multiple unions", () => {
     // Both unions have 'Active' — the match is ambiguous and MAT003 does not fire.
     const src =
