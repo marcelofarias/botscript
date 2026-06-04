@@ -8,6 +8,7 @@ import { passFn } from "./passes/fn.js";
 import { passImports } from "./passes/imports.js";
 import { passCapAssert } from "./passes/cap-assert.js";
 import { passVerCheck } from "./passes/ver-check.js";
+import { passSynCheck } from "./passes/syn-check.js";
 import { passDepCheck } from "./passes/dep-check.js";
 import { passThrCheck } from "./passes/thr-check.js";
 import { passEffCheck } from "./passes/eff-check.js";
@@ -80,6 +81,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // early so it can see the full, unmodified header. No-op at 0.9+ because
   // the enforcement passes (depCheck, thrCheck) already validate the claims.
   { name: "verCheck", fn: passVerCheck },
+  // synCheck: non-blocking warning (SYN002) for native throw statements in fn
+  // bodies (?bs 0.7+). Native throws bypass the Result contract — callers
+  // using ? unwrap or match won't observe exceptions raised via throw.
+  { name: "synCheck", fn: passSynCheck, minVersion: "0.7" },
   // effCheck: header-level check that the outer fn's capabilities cover the
   // effect annotations on its callback parameters (EFF002). Runs alongside
   // intentCheck — both are header consistency checks before the body walk.

@@ -404,6 +404,38 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: merge into one clause\n" +
       "fn load(id: string) reads { cache, db } -> string = id",
   },
+  SYN002: {
+    code: "SYN002",
+    title: "native throw statement bypasses Result contract",
+    rule:
+      "native `throw` statements in fn bodies bypass botscript's Result-based error contract — " +
+      "callers using `?` unwrap, `match`, or `throws {}` propagation will not observe exceptions raised via `throw`",
+    idiom:
+      "replace `throw new ErrorType(...)` with `return err(new ErrorType(...))` " +
+      "and update the return type to `Result<T, ErrorType>`",
+    rewrite:
+      "// before — native throw bypasses Result contract\n" +
+      "fn parse(s: string) -> string {\n" +
+      "  if (!s) throw new ParseError(\"empty\")\n" +
+      "  return s\n" +
+      "}\n\n" +
+      "// after — explicit Result contract\n" +
+      "fn parse(s: string) -> Result<string, ParseError> {\n" +
+      "  if (!s) { const e = new ParseError(\"empty\"); return err(e) }\n" +
+      "  return ok(s)\n" +
+      "}",
+    example:
+      "// SYN002: native throw bypasses botscript error contract\n" +
+      "fn parse(s: string) -> string {\n" +
+      "  if (!s) throw new ParseError(\"empty\")\n" +
+      "  return s\n" +
+      "}\n\n" +
+      "// fix: use Result for error signaling\n" +
+      "fn parse(s: string) -> Result<string, ParseError> {\n" +
+      "  if (!s) { const e = new ParseError(\"empty\"); return err(e) }\n" +
+      "  return ok(s)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
