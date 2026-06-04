@@ -127,6 +127,20 @@ describe("THR004: throws over-declared (0.9+)", () => {
     expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
   });
 
+  it("does NOT fire when fn has an opaque optional call externalLib?.()", () => {
+    // externalLib?.() uses the optional-direct-call syntax but is still opaque —
+    // hasOpaqueCall must treat `ident?.(` the same as `ident(` for unknown callees.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn load() throws { NetworkError } -> string {\n" +
+      "  helper();\n" +
+      "  externalLib?.()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w: any) => w.code === "THR004")).toBe(false);
+  });
+
   it("does NOT treat err() as an opaque call — fires when err constructs a different error type", () => {
     // AuthError is justified by err(AuthError()), but NetworkError is not.
     // err() is a builtin, not an opaque external call, so THR004 must still fire for NetworkError.

@@ -219,3 +219,54 @@ describe("parameter-default exclusion (issue #70)", () => {
     expect(() => compile(src)).toThrow("DEP001");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Optional direct calls: `fn?.()` — same-file callees
+// ---------------------------------------------------------------------------
+
+describe("DEP001/DEP002: optional direct call syntax fn?.()", () => {
+  it("fires DEP001 when callee with reads is called optionally and reads is undeclared", () => {
+    // `getFromCache?.()` is an optional call — it still reads from cache, so
+    // the caller must declare reads { cache }.
+    const src =
+      "?bs 0.9\n" +
+      "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+      "fn loadUser(id: string) -> string { getFromCache?.(id) }\n";
+    expect(() => compile(src)).toThrow("DEP001");
+  });
+
+  it("passes DEP001 when optional callee's reads label is declared", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getFromCache(id: string) reads { cache } -> string = id\n" +
+      "fn loadUser(id: string) reads { cache } -> string { getFromCache?.(id) }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("fires DEP002 when callee with writes is called optionally and writes is undeclared", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+      "fn recordEvent(id: string) -> void { updateMetrics?.(id); }\n";
+    expect(() => compile(src)).toThrow("DEP002");
+  });
+
+  it("passes DEP002 when optional callee's writes label is declared", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
+      "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics?.(id); }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not mistake obj?.method() for an optional direct call of obj", () => {
+    // `cache?.update()` uses `cache` as the receiver — `cache` IS a same-file fn
+    // name, so `collectCallees` reaches the property-access check and must
+    // correctly exclude it (not treat it as a direct call of `cache`).
+    const src =
+      "?bs 0.9\n" +
+      "fn cache(id: string) writes { storage } -> void { }\n" +
+      "fn runner(obj: any) -> void { cache?.update(); }\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});
