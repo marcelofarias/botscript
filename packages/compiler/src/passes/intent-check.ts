@@ -131,7 +131,7 @@ function checkPureClaim(
     const baseMsg = `fn '${decl.name}' intent claims 'pure' but declares ${conflictsStr}`;
     const detail = hasOnlyThrows
       ? `pure functions may not declare throws — use Result<T, E> for error conditions instead`
-      : `pure functions may not consume external resources or depend on external resources${hasThrows ? ", or declare throws" : ""}`;
+      : `pure functions may not have resource dependencies${hasThrows ? " or declare throws" : ""}`;
 
     diagnostics.push({
       code: "INT001",

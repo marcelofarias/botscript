@@ -199,7 +199,7 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "a function whose intent contains 'pure' must have no capability declarations (uses {}) — " +
       "from ?bs 0.8, it must also have no read/write resource dependencies (reads {} / writes {}) — " +
-      "from ?bs 0.9, it must also have no throws {} declaration — " +
+      "from ?bs 0.9, it must also have no non-empty throws {} declaration — " +
       "pure functions are deterministic, side-effect-free, and should use Result<T, E> for errors",
     idiom:
       "remove the conflicting header clauses (uses {}, reads {} / writes {} at ?bs 0.8+, throws {} at ?bs 0.9+) " +
