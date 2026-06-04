@@ -61,8 +61,21 @@ describe("? operator — let-binding form", () => {
       "  return raw;\n" +
       "}\n";
     const out = compile(src);
-    expect(out).toContain(': string');
-    expect(out).toContain('const raw');
+    // Assert the binding line specifically, not just any ': string' in the output
+    expect(out).toContain('raw: string');
+    expect(out).toContain('__r1.value');
+  });
+
+  it("normalizes var binder to let in output", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn fetchId() uses { net } -> string {\n" +
+      "  var raw = http.get('/a')?;\n" +
+      "  return raw;\n" +
+      "}\n";
+    const out = compile(src);
+    // passUnwrap normalises `var` → `let`
+    expect(out).toContain('let raw');
     expect(out).toContain('__r1.value');
   });
 
@@ -138,10 +151,11 @@ describe("? operator — bare form", () => {
 // ---------------------------------------------------------------------------
 
 describe("? operator — await composition", () => {
-  it("handles (await expr)?", () => {
+  it("handles (await expr)? inside async fn", () => {
+    // Must be async fn so `await` is valid in the emitted TypeScript.
     const src =
       "?bs 0.6\n" +
-      "fn fetchId() uses { net } -> string {\n" +
+      "async fn fetchId() uses { net } -> Promise<string> {\n" +
       "  const raw = (await http.get('/a'))?;\n" +
       "  return raw;\n" +
       "}\n";
@@ -173,12 +187,59 @@ describe("? operator — indentation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bare form — explicit semicolon
+// ---------------------------------------------------------------------------
+
+describe("? operator — bare form with semicolon", () => {
+  it("consumes trailing semicolon after bare ?", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn sideEffect() uses { net } -> void {\n" +
+      "  http.post('/ping', {})? ;\n" +
+      "}\n";
+    const out = compile(src);
+    expect(out).toContain('__r1');
+    expect(out).toContain('kind === "err"');
+    // The semicolon should be consumed; guard is emitted instead
+    expect(out).not.toContain('__r1.value');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Counter isolation: each compile() call resets the counter
+// ---------------------------------------------------------------------------
+
+describe("? operator — counter isolation", () => {
+  it("each transform() call starts the counter at 1", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn fetchId() uses { net } -> string {\n" +
+      "  const raw = http.get('/a')?;\n" +
+      "  return raw;\n" +
+      "}\n";
+    const out1 = compile(src);
+    const out2 = compile(src);
+    expect(out1).toContain('__r1');
+    expect(out2).toContain('__r1');
+    // No bleed: __r2 must not appear when there's only one ? per call
+    expect(out1).not.toContain('__r2');
+    expect(out2).not.toContain('__r2');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Versioning: ? works on all supported pins
 // ---------------------------------------------------------------------------
 
 describe("? operator — version agnostic", () => {
   it("rewrites ? on ?bs 0.1", () => {
     const src = "?bs 0.1\nfn f() -> string { const x = doThing()?; return x; }\n";
+    const out = compile(src);
+    expect(out).toContain('kind === "err"');
+  });
+
+  it("rewrites ? on ?bs 0.5", () => {
+    const src = "?bs 0.5\nfn f() -> string { const x = doThing()?; return x; }\n";
     const out = compile(src);
     expect(out).toContain('kind === "err"');
   });
