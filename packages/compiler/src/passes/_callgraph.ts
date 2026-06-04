@@ -76,10 +76,18 @@ export function collectCallees(
     if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
       continue;
 
-    // Must be followed by `(` to be a call.
+    // Must be followed by `(` or `?.(` to be a call.
+    // `fn?.()` is an optional direct call — it still carries the callee's
+    // declared effects, so it must be included in the callee set.
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
-    if (!next || next.kind !== "open" || next.text !== "(") continue;
+    let isCall = !!(next && next.kind === "open" && next.text === "(");
+    if (!isCall && next && next.kind === "questionDot") {
+      const afterQD = nextSignificant(tokens, nextIdx + 1);
+      const afterTok = tokens[afterQD];
+      isCall = !!(afterTok && afterTok.kind === "open" && afterTok.text === "(");
+    }
+    if (!isCall) continue;
 
     callees.add(tok.text);
   }
@@ -172,10 +180,17 @@ export function hasOpaqueCall(
     if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
       continue;
 
-    // Must be followed by `(` to be a call.
+    // Must be followed by `(` or `?.(` to be a call.
+    // `fn?.()` is an optional direct call — effects are still in play.
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
-    if (!next || next.kind !== "open" || next.text !== "(") continue;
+    let isCall = !!(next && next.kind === "open" && next.text === "(");
+    if (!isCall && next && next.kind === "questionDot") {
+      const afterQD = nextSignificant(tokens, nextIdx + 1);
+      const afterTok = tokens[afterQD];
+      isCall = !!(afterTok && afterTok.kind === "open" && afterTok.text === "(");
+    }
+    if (!isCall) continue;
 
     return true;
   }
