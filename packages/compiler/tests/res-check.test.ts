@@ -263,3 +263,46 @@ describe("RES002: nested fn declarations participate in check", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RES002 — match as consumption (inline scrutinee)
+// ---------------------------------------------------------------------------
+
+describe("RES002: match expression does not suppress call in scrutinee position", () => {
+  it("does not fire when result-returning call is the match scrutinee (inline)", () => {
+    // `match load(id) { ... }` — load(id) is the scrutinee, not a discarded
+    // statement. The match keyword precedes it on the same line, so it is not
+    // in statement position.
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) -> Result<string, string> { ok(id) }\n" +
+      "fn process(id: string) -> string {\n" +
+      "  match load(id) {\n" +
+      "    ok(v) -> v\n" +
+      "    err(_) -> \"\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES002 — { on next line is a block statement, not match scrutinee
+// ---------------------------------------------------------------------------
+
+describe("RES002: block statement brace on next line does not suppress", () => {
+  it("fires when a discarded call is followed by a block statement on the next line", () => {
+    // `{ ... }` on the next line is a separate block statement, not a match
+    // block consuming the result — RES002 must still fire.
+    const src =
+      "?bs 0.9\n" +
+      "fn save(x: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn caller(x: string) -> void {\n" +
+      "  save(x)\n" +
+      "  { const y = 1 }\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+});

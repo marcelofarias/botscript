@@ -132,10 +132,15 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     // if the result is used in a larger expression.  Use skipTrivia (which
     // also skips newlines) so continuation tokens on the next line — `?`,
     // `.`, `?.` — are still recognized as consumption.
+    // Exception: `{` is only treated as consumption on the same line (match
+    // scrutinee). A `{` on the next line starts a block statement and does
+    // not consume the result.
     const afterCloseIdx = skipTrivia(tokens, effectiveCloseIdx + 1);
     const afterClose = tokens[afterCloseIdx];
+    const afterCloseSameLineIdx = nextNotSkippingNewlines(tokens, effectiveCloseIdx + 1);
+    const afterCloseSameLine = tokens[afterCloseSameLineIdx];
 
-    if (resultIsConsumed(afterClose)) continue;
+    if (resultIsConsumed(afterClose, afterCloseSameLine)) continue;
 
     const { line, column } = locationOf(src, tok.start);
     warnings.push({
@@ -174,6 +179,9 @@ const CONTINUATION_TOKEN_TEXT = new Set([
   "==", "!=", "===", "!==", "<", ">", "<=", ">=",
   "&", "|", "^", "<<", ">>",
   ",", ":",
+  // `match` is a continuation token: `match\n  f(x)\n{ ... }` — the call on
+  // the next line is the scrutinee, not a statement.
+  "match",
   // Note: `?` is NOT included — in botscript `?` is the postfix propagation
   // operator, not a ternary marker; a line ending in `?` terminates the
   // expression, so the next line's call is a new statement.
@@ -237,8 +245,13 @@ function nextNotSkippingNewlines(tokens: Token[], start: number): number {
 /**
  * Returns true when `tok` (the token immediately after a call's `)`) shows
  * the result is used in a larger expression rather than discarded.
+ *
+ * `sameLineTok` is the next non-whitespace token on the same line (no newlines
+ * crossed). Used for the `{` check: a `{` that is part of a match scrutinee
+ * (`match f() { ... }`) is always on the same line, while a block statement
+ * opening brace appears after a newline and must not suppress the warning.
  */
-function resultIsConsumed(tok: Token | undefined): boolean {
+function resultIsConsumed(tok: Token | undefined, sameLineTok?: Token | undefined): boolean {
   if (!tok) return false;
   // Propagation: saveUser(u)?
   if (tok.kind === "question") return true;
@@ -248,8 +261,9 @@ function resultIsConsumed(tok: Token | undefined): boolean {
   // Argument to outer call or inside a list: fn(f(), g())
   if (tok.kind === "close" && tok.text === ")") return true;
   if (tok.kind === "punct" && tok.text === ",") return true;
-  // Match scrutinee: match f() { ... }
-  if (tok.kind === "open" && tok.text === "{") return true;
+  // Match scrutinee: match f() { ... } — only when the `{` is on the same line.
+  // A `{` on the next line opens a block statement and does not consume the result.
+  if (sameLineTok?.kind === "open" && sameLineTok.text === "{") return true;
   // Array element: [f()]
   if (tok.kind === "close" && tok.text === "]") return true;
   // Null-coalescing: result ?? ...
