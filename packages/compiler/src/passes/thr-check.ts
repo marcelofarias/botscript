@@ -499,10 +499,20 @@ function splitOnTopLevelPipe(s: string): string[] {
   return parts;
 }
 
-/** Extract the leading identifier from a type expression (stops at `<`, `(`, or whitespace). */
+/**
+ * Extract the leading identifier from a type expression.
+ * Returns `""` when the ident is immediately followed by `[` — that means
+ * the type is an array form (e.g. `ParseError[]`) which is distinct from the
+ * bare ident (`ParseError`).  Generics (`ParseError<T>`) are still matched.
+ */
 function leadingIdent(type: string): string {
-  const m = type.trim().match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
-  return m?.[1] ?? "";
+  const trimmed = type.trim();
+  const m = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
+  if (!m) return "";
+  const ident = m[1]!;
+  const nextChar = trimmed[ident.length];
+  if (nextChar === "[") return "";
+  return ident;
 }
 
 /**

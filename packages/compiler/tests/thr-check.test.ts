@@ -387,4 +387,17 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("still fires when the error type in Result is ParseError[] (array), not ParseError", () => {
+    // `ParseError[]` is a different type from `ParseError`. Suppression should
+    // NOT apply — constructing `err(ParseError(...))` against `Result<T, ParseError[]>`
+    // is a type mismatch that THR002 must continue to flag.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError[]> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
 });
