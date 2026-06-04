@@ -12,6 +12,13 @@
  *   expr?                    — bare form: evaluates expr, propagates Err, discards Ok
  *
  * The pass is version-agnostic (runs on all ?bs versions).
+ *
+ * Return-type conventions in this file:
+ *   - Fns that use `?` declare Result<T, E> (or Result<void, E>) so the
+ *     error-propagation branch (`return __r;`) is type-consistent with the
+ *     declared return type.
+ *   - passUnwrap is a text transformation and does not type-check; but keeping
+ *     the fixtures self-consistent makes them readable as idiomatic examples.
  */
 
 import { describe, expect, it } from "vitest";
@@ -30,9 +37,9 @@ describe("? operator — let-binding form", () => {
     // fs.readText returns Result<string, string> synchronously — valid ? source
     const src =
       "?bs 0.6\n" +
-      "fn readId(path: string) uses { fs } -> string {\n" +
+      "fn readId(path: string) uses { fs } -> Result<string, string> {\n" +
       "  const raw = fs.readText(path)?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -45,9 +52,9 @@ describe("? operator — let-binding form", () => {
   it("supports let binder", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readId() uses { fs } -> string {\n" +
+      "fn readId() uses { fs } -> Result<string, string> {\n" +
       "  let x = fs.readText('/a')?;\n" +
-      "  return x;\n" +
+      "  return ok(x);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('let x');
@@ -57,9 +64,9 @@ describe("? operator — let-binding form", () => {
   it("supports type annotation on binding", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readId() uses { fs } -> string {\n" +
+      "fn readId() uses { fs } -> Result<string, string> {\n" +
       "  const raw: string = fs.readText('/a')?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out = compile(src);
     // Assert the binding line specifically, not just any ': string' in the output
@@ -70,9 +77,9 @@ describe("? operator — let-binding form", () => {
   it("normalizes var binder to let in output", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readId() uses { fs } -> string {\n" +
+      "fn readId() uses { fs } -> Result<string, string> {\n" +
       "  var raw = fs.readText('/a')?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out = compile(src);
     // passUnwrap normalises `var` → `let`
@@ -83,10 +90,10 @@ describe("? operator — let-binding form", () => {
   it("chains multiple ?s with incremented counter", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readUser(path: string) uses { fs } -> string {\n" +
+      "fn readUser(path: string) uses { fs } -> Result<string, string> {\n" +
       "  const name = fs.readText(`${path}/name`)?;\n" +
       "  const bio = fs.readText(`${path}/bio`)?;\n" +
-      "  return bio;\n" +
+      "  return ok(bio);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -116,8 +123,8 @@ describe("? operator — return form", () => {
     // fs.readText returns Result<string, string> synchronously — valid ? source.
     const src =
       "?bs 0.6\n" +
-      "fn readId(flag: boolean) uses { fs } -> string {\n" +
-      "  if (flag) return 'early';\n" +
+      "fn readId(flag: boolean) uses { fs } -> Result<string, string> {\n" +
+      "  if (flag) return ok('early');\n" +
       "  return fs.readText('/a')?;\n" +
       "}\n";
     const out = compile(src);
@@ -139,8 +146,9 @@ describe("? operator — bare form", () => {
     // fs.writeText returns Result<void, string> synchronously — valid bare ? source.
     const src =
       "?bs 0.6\n" +
-      "fn writeConfig() uses { fs } -> void {\n" +
+      "fn writeConfig() uses { fs } -> Result<void, string> {\n" +
       "  fs.writeText('/cfg', 'data')?;\n" +
+      "  return ok(undefined);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -165,7 +173,7 @@ describe("? operator — await composition", () => {
       "?bs 0.6\n" +
       "async fn fetchId() uses { net } -> Promise<Result<string, string>> {\n" +
       "  const raw = (await http.get('/a'))?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('await');
@@ -182,9 +190,9 @@ describe("? operator — indentation", () => {
   it("preserves leading indentation of the original statement", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readId() uses { fs } -> string {\n" +
+      "fn readId() uses { fs } -> Result<string, string> {\n" +
       "  const raw = fs.readText('/a')?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out = compile(src);
     // All generated lines should be indented at least 2 spaces
@@ -202,8 +210,9 @@ describe("? operator — bare form with semicolon", () => {
   it("consumes trailing semicolon after bare ?", () => {
     const src =
       "?bs 0.6\n" +
-      "fn writeConfig() uses { fs } -> void {\n" +
+      "fn writeConfig() uses { fs } -> Result<void, string> {\n" +
       "  fs.writeText('/cfg', 'data')? ;\n" +
+      "  return ok(undefined);\n" +
       "}\n";
     const out = compile(src);
     expect(out).toContain('__r1');
@@ -221,9 +230,9 @@ describe("? operator — counter isolation", () => {
   it("each transform() call starts the counter at 1", () => {
     const src =
       "?bs 0.6\n" +
-      "fn readId() uses { fs } -> string {\n" +
+      "fn readId() uses { fs } -> Result<string, string> {\n" +
       "  const raw = fs.readText('/a')?;\n" +
-      "  return raw;\n" +
+      "  return ok(raw);\n" +
       "}\n";
     const out1 = compile(src);
     const out2 = compile(src);
@@ -241,19 +250,19 @@ describe("? operator — counter isolation", () => {
 
 describe("? operator — version agnostic", () => {
   it("rewrites ? on ?bs 0.1", () => {
-    const src = "?bs 0.1\nfn f() -> string { const x = doThing()?; return x; }\n";
+    const src = "?bs 0.1\nfn f() -> Result<string, string> { const x = doThing()?; return ok(x); }\n";
     const out = compile(src);
     expect(out).toContain('kind === "err"');
   });
 
   it("rewrites ? on ?bs 0.5", () => {
-    const src = "?bs 0.5\nfn f() -> string { const x = doThing()?; return x; }\n";
+    const src = "?bs 0.5\nfn f() -> Result<string, string> { const x = doThing()?; return ok(x); }\n";
     const out = compile(src);
     expect(out).toContain('kind === "err"');
   });
 
   it("rewrites ? on ?bs 0.9", () => {
-    const src = "?bs 0.9\nfn f() -> string { const x = doThing()?; return x; }\n";
+    const src = "?bs 0.9\nfn f() -> Result<string, string> { const x = doThing()?; return ok(x); }\n";
     const out = compile(src);
     expect(out).toContain('kind === "err"');
   });
