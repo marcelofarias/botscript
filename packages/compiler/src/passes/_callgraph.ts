@@ -91,7 +91,7 @@ export function collectCallees(
  * Returns true if the token at `identIdx` is directly followed by `(` or `?.(`,
  * indicating a direct or optional-direct call rather than a bare reference.
  */
-export function isDirectOrOptionalCall(tokens: Token[], identIdx: number): boolean {
+function isDirectOrOptionalCall(tokens: Token[], identIdx: number): boolean {
   const nextIdx = nextSignificant(tokens, identIdx + 1);
   const next = tokens[nextIdx];
   if (next && next.kind === "open" && next.text === "(") return true;
