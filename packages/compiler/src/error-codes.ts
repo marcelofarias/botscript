@@ -468,7 +468,7 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "direct `console.*` calls (console.log, console.error, etc.) in fn bodies bypass " +
       "botscript's capability model — the compiler cannot see or enforce `stdout`/`stderr` " +
-      "declarations for output routed through `console`; callers cannot know the fn writes to stdout",
+      "declarations for output routed through `console`; callers cannot know the fn writes to stdout or stderr",
     idiom:
       "replace console.log with stdout.write(...) and declare `uses { stdout }` on the fn; " +
       "replace console.error with stderr.write(...) and declare `uses { stderr }`",

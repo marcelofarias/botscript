@@ -186,10 +186,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
         continue;
 
-      // Exclude: `{ console: ... }` — followed by `:`
+      // Must be followed by `.` or `?.` — this implicitly excludes `{ console: ... }`
+      // (property key, followed by `:`) and any other non-member-access context.
       const nextIdx = nextSignificant(tokens, i + 1);
       const next = tokens[nextIdx];
-      // Allow both `console.method(...)` and `console?.method(...)` (optional chaining)
       const isDot = next && next.kind === "punct" && next.text === ".";
       const isOptChain = next && next.kind === "questionDot";
       if (!isDot && !isOptChain) continue;
