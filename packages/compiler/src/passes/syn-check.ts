@@ -189,9 +189,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // Exclude: `{ console: ... }` — followed by `:`
       const nextIdx = nextSignificant(tokens, i + 1);
       const next = tokens[nextIdx];
-      if (!next || !(next.kind === "punct" && next.text === ".")) continue;
+      // Allow both `console.method(...)` and `console?.method(...)` (optional chaining)
+      const isDot = next && next.kind === "punct" && next.text === ".";
+      const isOptChain = next && next.kind === "questionDot";
+      if (!isDot && !isOptChain) continue;
 
-      // Next must be a `.` then a known console output method.
+      // Next must be a `.` / `?.` then a known console output method.
       const methodIdx = nextSignificant(tokens, nextIdx + 1);
       const method = tokens[methodIdx];
       if (!method || method.kind !== "ident" || !CONSOLE_OUTPUT_METHODS.has(method.text)) continue;
@@ -201,6 +204,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const paren = tokens[parenIdx];
       if (!paren || !(paren.kind === "open" && paren.text === "(")) continue;
 
+      const sep = isOptChain ? "?." : ".";
       const loc = locationOf(src, tok.start);
       warnings.push({
         code: "SYN003",
@@ -211,7 +215,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok.start,
         end: method.end,
         message:
-          `fn '${decl.name}' calls console.${method.text}() — ` +
+          `fn '${decl.name}' calls console${sep}${method.text}() — ` +
           `direct console output bypasses the stdout/stderr capability model; ` +
           `use stdout.write(...) or stderr.write(...) and declare uses { stdout } or uses { stderr }`,
         rule: syn003.rule,

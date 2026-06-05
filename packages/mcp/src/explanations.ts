@@ -611,8 +611,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "This is a reliability issue in bot orchestration code: a bot that silently logs to " +
       "console in a sandboxed or pipe environment may produce output the orchestrator never " +
       "expects and cannot suppress or redirect.\n\n" +
-      "**Fix:** replace `console.log(...)` with `stdout.write(...)` and add `uses { stdout }` " +
-      "to the fn header; replace `console.error(...)` with `stderr.write(...)` and add " +
+      "**Fix:** replace `console.log(...)` with `stdout.write(...)` wrapped in an " +
+      "`unsafe \"...\" { ... }` block (required by UNS005 at `?bs 0.9+`) and add `uses { stdout }` " +
+      "to the fn header; replace `console.error(...)` with `stderr.write(...)` (same pattern) and add " +
       "`uses { stderr }`.\n\n" +
       "SYN003 fires at `?bs 0.7+` as a non-blocking warning. The check is token-based and " +
       "fires on any `console.method(...)` call where `console` is not a property of another " +
