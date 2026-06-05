@@ -38,14 +38,20 @@ const BUILTIN_TAGS = new Set(["ok", "err", "some", "none"]);
 
 /**
  * Scan backwards through the match expression's token range to find the `_`
- * wildcard arm token. Returns the token index of the `_` ident that is
- * immediately followed (at the significant-token level) by `->`, which
- * distinguishes an arm wildcard from a `_` appearing inside a binding block.
+ * wildcard arm token at the top level of the match arms block (depth 0).
+ * Tracks `{}` depth so that `_ ->` sequences inside nested match bodies are
+ * not mistaken for the trailing arm wildcard.
  */
 function findTrailingWildcardToken(tokens: ReturnType<typeof lex>, expr: MatchExpr): number {
+  // expr.end - 1 is the closing `}` of the arms block; start inside it.
+  let depth = 0;
   for (let i = expr.end - 2; i >= expr.start; i--) {
     const tok = tokens[i];
-    if (!tok || tok.kind !== "ident" || tok.text !== "_") continue;
+    if (!tok) continue;
+    if (tok.kind === "close" && tok.text === "}") { depth++; continue; }
+    if (tok.kind === "open" && tok.text === "{") { depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "_") continue;
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
     if (next && next.kind === "arrow") return i;

@@ -733,11 +733,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "undetected behavioral drift botscript is designed to prevent.\n\n" +
       "```\n" +
       "// MAT004: wildcard is unreachable — Red/Green/Blue are all covered\n" +
-      "type Color = Red | Green | Blue\n" +
+      "type Color = Red { hex: string } | Green | Blue\n" +
       "match c {\n" +
-      "  Red   -> \"red\"\n" +
-      "  Green -> \"green\"\n" +
-      "  Blue  -> \"blue\"\n" +
+      "  Red { hex } -> hex\n" +
+      "  Green       -> \"green\"\n" +
+      "  Blue        -> \"blue\"\n" +
       "  _ -> \"unreachable\"  // remove this\n" +
       "}\n" +
       "```\n\n" +
