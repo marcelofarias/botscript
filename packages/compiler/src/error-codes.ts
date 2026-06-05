@@ -579,6 +579,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  MAT004: {
+    code: "MAT004",
+    title: "unreachable wildcard arm — match already covers all variants of the tagged union",
+    rule:
+      "a match expression that explicitly covers all variants of a known user-defined tagged " +
+      "union and also has a wildcard `_ -> ...` arm is over-specified; the wildcard is dead code " +
+      "and silently absorbs any new variants added to the union instead of letting MAT003 catch them",
+    idiom:
+      "remove the wildcard arm from exhaustive tagged-union matches so that adding a new union " +
+      "variant immediately triggers a MAT003 error rather than silently falling through the wildcard",
+    rewrite:
+      "remove the '_ -> ...' wildcard arm",
+    example:
+      "// before — Color match is exhaustive but has a redundant trailing wildcard\n" +
+      "?bs 0.9\n" +
+      "type Color = Red { hex: string } | Green | Blue\n\n" +
+      "fn colorName(c: Color) -> string {\n" +
+      "  match c {\n" +
+      "    Red { hex } -> hex\n" +
+      "    Green       -> \"green\"\n" +
+      "    Blue        -> \"blue\"\n" +
+      "    _ -> \"unreachable\"  // MAT004: wildcard is dead code\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after — remove the wildcard; MAT003 will catch new variants\n" +
+      "?bs 0.9\n" +
+      "type Color = Red { hex: string } | Green | Blue\n\n" +
+      "fn colorName(c: Color) -> string {\n" +
+      "  match c {\n" +
+      "    Red { hex } -> hex\n" +
+      "    Green       -> \"green\"\n" +
+      "    Blue        -> \"blue\"\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",

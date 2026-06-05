@@ -14,6 +14,15 @@ goes behind a new pin.
   a pure intent claim. The compiler recommends `Result<T, E>` as the alternative.
   Files below `?bs 0.9` see no change; the check is gated on the 0.9 version pin
   (consistent with how reads/writes were added in 0.8).
+- **MAT004 — unreachable wildcard arm on exhaustive tagged-union match.**
+  MAT004 fires as a **warning** (non-blocking) when a `match` expression on a
+  user-defined tagged union already covers **every** variant explicitly and also
+  has a wildcard `_ -> ...` arm. The wildcard is dead code — it can never be
+  reached — and silently absorbs future new variants, defeating the exhaustiveness
+  check: adding a new union variant would fall through the wildcard at runtime
+  instead of triggering MAT003 at compile time. Fix: remove the wildcard arm.
+  Gated on `?bs 0.9`.
+
 - **MAT003 — non-exhaustive match on user-defined tagged union.**
   MAT003 fires as an **error** (blocking) when a `match` expression whose arm
   tags all belong to a known user-defined tagged union is missing at least one

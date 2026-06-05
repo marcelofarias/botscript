@@ -719,6 +719,54 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  MAT004: {
+    code: "MAT004",
+    title: "unreachable wildcard arm — match already covers all variants of the tagged union",
+    body:
+      "From `?bs 0.9`, when a `match` expression on a user-defined tagged union already " +
+      "covers **every** variant explicitly, a trailing wildcard `_ -> ...` arm is dead code — " +
+      "it can never be reached.\n\n" +
+      "This is not just a style issue: a redundant wildcard **silently absorbs new variants** " +
+      "when the union gains a new tag. Without the wildcard, adding a new variant would " +
+      "immediately trigger MAT003, alerting you that a match site needs updating. With the " +
+      "wildcard, the new variant falls through silently at runtime — exactly the kind of " +
+      "undetected behavioral drift botscript is designed to prevent.\n\n" +
+      "```\n" +
+      "// MAT004: wildcard is unreachable — Red/Green/Blue are all covered\n" +
+      "type Color = Red { hex: string } | Green | Blue\n" +
+      "match c {\n" +
+      "  Red { hex } -> hex\n" +
+      "  Green       -> \"green\"\n" +
+      "  Blue        -> \"blue\"\n" +
+      "  _ -> \"unreachable\"  // remove this\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix:** remove the wildcard arm. If you add a new variant to the union later, " +
+      "MAT003 will tell you exactly which match sites need updating.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "type Color = Blue { b: number } | Green { g: number } | Red { r: number }\n" +
+        "fn colorName(c: Color) -> string {\n" +
+        "  match c {\n" +
+        "    Red { r } -> \"red\"\n" +
+        "    Green { g } -> \"green\"\n" +
+        "    Blue { b } -> \"blue\"\n" +
+        "    _ -> \"unreachable\"\n" +
+        "  }\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "type Color = Blue { b: number } | Green { g: number } | Red { r: number }\n" +
+        "fn colorName(c: Color) -> string {\n" +
+        "  match c {\n" +
+        "    Red { r } -> \"red\"\n" +
+        "    Green { g } -> \"green\"\n" +
+        "    Blue { b } -> \"blue\"\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   DEP002: {
     code: "DEP002",
     title: "fn transitively writes a resource category not declared in its header",

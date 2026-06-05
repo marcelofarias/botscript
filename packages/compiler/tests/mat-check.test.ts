@@ -1,9 +1,10 @@
 /**
- * Tests for MAT001/MAT002/MAT003: non-exhaustive match (?bs 0.9+).
+ * Tests for MAT001/MAT002/MAT003/MAT004: non-exhaustive/over-exhaustive match (?bs 0.9+).
  *
  * MAT001: fires when a Result match has an ok arm but no err arm (or vice versa) and no wildcard.
  * MAT002: fires when an Option match has a some arm but no none arm (or vice versa) and no wildcard.
  * MAT003: fires when a match on a user-defined tagged union is missing at least one variant arm.
+ * MAT004: warns when a match on a user-defined tagged union covers all variants AND has a wildcard.
  */
 
 import { describe, expect, it } from "vitest";
@@ -11,6 +12,10 @@ import { transform } from "../src/transform.js";
 
 function compile(src: string): string {
   return transform(src).code;
+}
+
+function compileWithWarnings(src: string) {
+  return transform(src);
 }
 
 // ---------------------------------------------------------------------------
@@ -522,5 +527,153 @@ describe("MAT003: diagnostic fields", () => {
       "  }\n" +
       "}\n";
     expect(() => compile(src)).not.toThrow(/MAT003/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MAT004: unreachable wildcard arm — match already covers all variants
+// ---------------------------------------------------------------------------
+
+// Note: collectTaggedUnionTypes only tracks unions where at least one alt has
+// a `{ ... }` body block. Bare-tag-only unions (e.g. `type X = A | B`) are not
+// tracked (same rule as MAT003). Tests use unions with at least one body variant.
+
+describe("MAT004: fires for exhaustive match with redundant wildcard", () => {
+  it("warns when all variants are covered and a wildcard arm is present", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "    Loading -> \"loading\"\n" +
+      "    _ -> \"unreachable\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(1);
+  });
+
+  it("warns for a two-variant union fully covered with wildcard", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Toggle = Off | On { label: string }\n" +
+      "fn label(t: Toggle) -> string {\n" +
+      "  match t {\n" +
+      "    On { label } -> label\n" +
+      "    Off -> \"off\"\n" +
+      "    _ -> \"?\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(1);
+  });
+
+  it("warning message names the union and variant count", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "    Loading -> \"loading\"\n" +
+      "    _ -> \"unreachable\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warn = result.warnings.find((w) => w.code === "MAT004")!;
+    expect(warn).toBeDefined();
+    expect(warn.message).toMatch(/Status/);
+    expect(warn.message).toMatch(/3 variant/);
+    expect(warn.severity).toBe("warning");
+  });
+});
+
+describe("MAT004: suppressed when not applicable", () => {
+  it("does not warn when all variants are covered but no wildcard", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "    Loading -> \"loading\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not warn when match is non-exhaustive with wildcard (MAT003 suppressed, MAT004 inapplicable)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    _ -> \"other\"\n" +
+      "  }\n" +
+      "}\n";
+    // wildcard covers the gap — MAT003 suppressed, MAT004 not applicable (not exhaustive)
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(0);
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not warn below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Loading\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "    Loading -> \"loading\"\n" +
+      "    _ -> \"unreachable\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not warn for built-in ok/err or some/none matches", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn check(r: Result<string, string>) -> string {\n" +
+      "  match r {\n" +
+      "    ok { v } -> v\n" +
+      "    err { e } -> e\n" +
+      "    _ -> \"other\"\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not warn when union is ambiguous across multiple matching unions", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type ShapeA = Circle { r: number } | Square { side: number }\n" +
+      "type ShapeB = Circle { r: number } | Square { side: number }\n" +
+      "fn check(s: any) -> string {\n" +
+      "  match s {\n" +
+      "    Circle { r } -> `r=${r}`\n" +
+      "    Square { side } -> `s=${side}`\n" +
+      "    _ -> \"other\"\n" +
+      "  }\n" +
+      "}\n";
+    // Two unions match — ambiguous, MAT003/MAT004 suppressed
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT004");
+    expect(warns).toHaveLength(0);
   });
 });
