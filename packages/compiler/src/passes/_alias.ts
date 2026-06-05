@@ -836,16 +836,26 @@ function scanRhsForStdlib(
   from: number,
 ): { stdlibName: string; end: number } | null {
   let parenDepth = 0;
+  let braceDepth = 0;
   for (let i = from; i < tokens.length; i++) {
     const t = tokens[i];
     if (!t) continue;
+    if (t.kind === "open" && t.text === "{") { braceDepth++; continue; }
+    if (t.kind === "close" && t.text === "}") { if (braceDepth > 0) braceDepth--; continue; }
     if (t.kind === "open") { parenDepth++; continue; }
     if (t.kind === "close") { if (parenDepth > 0) parenDepth--; continue; }
-    if (parenDepth === 0) {
+    if (parenDepth === 0 && braceDepth === 0) {
       if (t.kind === "newline" || t.kind === "eof" || t.kind === "lineComment") break;
       if (t.kind === "punct" && t.text === ";") break;
     }
     if (t.kind === "ident" && STDLIB_NAMES.has(t.text)) {
+      // Skip if used as an object property key: inside braces and next significant
+      // token is `:` (distinguishes `{ time: 1 }` from ternary `flag ? time : null`).
+      if (braceDepth > 0) {
+        const nextIdx = nextSignificant(tokens, i + 1);
+        const nextTok = tokens[nextIdx];
+        if (nextTok && nextTok.kind === "punct" && nextTok.text === ":") continue;
+      }
       return { stdlibName: t.text, end: t.end };
     }
   }

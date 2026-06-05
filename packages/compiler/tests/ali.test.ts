@@ -199,6 +199,15 @@ describe("ALI001: does NOT fire on trivial or unrelated bindings", () => {
     expect(warns).toHaveLength(1);
     expect(warns[0]!.message).toContain("time");
   });
+
+  it("does NOT fire when stdlib name is used as an object property key (const x = { time: 1 })", () => {
+    // `{ time: 1 }` uses `time` as a key, not a reference to the stdlib namespace.
+    // scanRhsForStdlib must skip idents followed by `:`.
+    const src = "?bs 0.8\nconst x = { time: 1 }\n";
+    const result = transform(src);
+    const warns = result.warnings.filter((w) => w.code === "ALI001");
+    expect(warns).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
