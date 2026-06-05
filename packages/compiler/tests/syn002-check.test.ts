@@ -177,4 +177,46 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
   });
+
+  it("does NOT fire when 'throw' is a getter accessor name: { get throw() {} }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { get throw() { return 1 } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire when 'throw' is a setter accessor name: { set throw(v) {} }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { set throw(v: number) { } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("fires when fn body uses = pure { ... } wrapper and contains a throw statement", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn compute(x: number) -> number = pure {\n" +
+      "  throw (new Error(\"bad\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
+  });
+
+  it("fires when fn body uses = io { ... } wrapper and contains a throw statement", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void = io {\n" +
+      "  throw (new Error(\"fail\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
+  });
 });

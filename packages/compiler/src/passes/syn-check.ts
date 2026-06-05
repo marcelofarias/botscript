@@ -71,6 +71,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
         continue;
 
+      // Exclude getter/setter accessor names: { get throw() {} }, { set throw(v) {} }
+      if (prev && prev.kind === "ident" && (prev.text === "get" || prev.text === "set")) continue;
+
       // Exclude object literal property keys: { throw: 1 }
       const nextIdx = nextSignificant(tokens, i + 1);
       const next = tokens[nextIdx];
@@ -93,6 +96,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               prevPrev == null ||
               (prevPrev.kind === "close" && prevPrev.text === ")") ||
               prevPrev.kind === "fatArrow" ||
+              prevPrev.kind === "keyword" ||
               (prevPrev.kind === "ident" &&
                 ["else", "try", "finally", "do"].includes(prevPrev.text));
             if (!isBlock) continue;
