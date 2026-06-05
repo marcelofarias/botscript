@@ -7,6 +7,14 @@
  *           callers relying on `?` unwrap, `match`, or declared `throws {}`
  *           propagation will not observe exceptions raised via `throw`. The
  *           idiomatic fix is `return err(new ErrorType(...))`.
+ *
+ *   SYN003  A `console.*` call was detected in a fn body (?bs 0.7+).
+ *           Direct console calls bypass botscript's capability model: the
+ *           compiler cannot see or enforce the `stdout`/`stderr` capability
+ *           declaration for output that goes through `console`. Use
+ *           `stdout.write(...)` or `stderr.write(...)` so the output surface
+ *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
+ *           clause and visible to callers.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -21,6 +29,12 @@ export interface SynCheckResult {
   warnings: ReadonlyArray<Diagnostic>;
 }
 
+// console method names that are output/logging calls (not console.assert, console.time, etc.)
+const CONSOLE_OUTPUT_METHODS = new Set([
+  "log", "error", "warn", "info", "debug", "dir", "dirxml",
+  "table", "trace", "group", "groupCollapsed", "groupEnd",
+]);
+
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
 
@@ -28,7 +42,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const warnings: Diagnostic[] = [];
-  const entry = getErrorCode("SYN002")!;
+  const syn002 = getErrorCode("SYN002")!;
+  const syn003 = getErrorCode("SYN003")!;
 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
@@ -144,9 +159,64 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           `fn '${decl.name}' contains a native throw statement — ` +
           `callers using ? unwrap or match on Result will not observe this error; ` +
           `use return err(new ErrorType(...)) instead`,
-        rule: entry.rule,
-        idiom: entry.idiom,
-        rewrite: entry.rewrite,
+        rule: syn002.rule,
+        idiom: syn002.idiom,
+        rewrite: syn002.rewrite,
+      });
+    }
+
+    // SYN003: console.* call detection.
+    // Reset state for this fn's SYN003 scan.
+    nextInner = 0;
+    const open003: typeof inner = [];
+    for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
+      while (open003.length > 0 && open003[open003.length - 1]!.tokenEnd <= i) open003.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open003.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open003.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "console") continue;
+
+      // Exclude: `obj.console` — preceded by `.` or `?.`
+      const prevIdx = prevSignificant(tokens, i - 1);
+      const prev = tokens[prevIdx];
+      if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+        continue;
+
+      // Exclude: `{ console: ... }` — followed by `:`
+      const nextIdx = nextSignificant(tokens, i + 1);
+      const next = tokens[nextIdx];
+      if (!next || !(next.kind === "punct" && next.text === ".")) continue;
+
+      // Next must be a `.` then a known console output method.
+      const methodIdx = nextSignificant(tokens, nextIdx + 1);
+      const method = tokens[methodIdx];
+      if (!method || method.kind !== "ident" || !CONSOLE_OUTPUT_METHODS.has(method.text)) continue;
+
+      // Must be a call: next after the method must be `(`
+      const parenIdx = nextSignificant(tokens, methodIdx + 1);
+      const paren = tokens[parenIdx];
+      if (!paren || !(paren.kind === "open" && paren.text === "(")) continue;
+
+      const loc = locationOf(src, tok.start);
+      warnings.push({
+        code: "SYN003",
+        severity: "warning",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: tok.start,
+        end: method.end,
+        message:
+          `fn '${decl.name}' calls console.${method.text}() — ` +
+          `direct console output bypasses the stdout/stderr capability model; ` +
+          `use stdout.write(...) or stderr.write(...) and declare uses { stdout } or uses { stderr }`,
+        rule: syn003.rule,
+        idiom: syn003.idiom,
+        rewrite: syn003.rewrite,
       });
     }
   }
