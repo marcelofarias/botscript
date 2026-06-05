@@ -243,6 +243,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
 
+  it("does NOT fire when throw is inside an unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void {\n" +
+      "  unsafe \"legacy throw path\" { throw new Error(\"x\") }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
   it("does NOT fire when 'throw' is a method signature in a type literal: { throw(): T; }", () => {
     const src =
       "?bs 0.9\n" +
@@ -335,5 +345,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("fires when throw is outside the unsafe block but inside the same fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void {\n" +
+      "  unsafe \"scoped\" { const x = 1 }\n" +
+      "  throw new Error(\"outside\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
   });
 });
