@@ -141,6 +141,18 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
     expect(warns[0]?.message).toContain("inner");
   });
 
+  it("fires when fn body calls console?.log (optional chaining)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn greet(name: string) -> void {\n" +
+      "  console?.log(`Hello, ${name}`)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN003")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN003");
+    expect(w?.message).toContain("console?.log");
+  });
+
   it("fires on ?bs 0.7 and 0.8", () => {
     for (const ver of ["0.7", "0.8"]) {
       const src =

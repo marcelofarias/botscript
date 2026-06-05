@@ -479,7 +479,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// after — explicit stdout capability\n" +
       "fn log(msg: string) uses { stdout } -> void {\n" +
-      "  stdout.write(msg)\n" +
+      "  unsafe \"stdout.write returns void\" { stdout.write(msg) }\n" +
       "}",
     example:
       "// SYN003: console.log bypasses capability model\n" +
@@ -488,7 +488,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// fix: declare the output capability\n" +
       "fn greet(name: string) uses { stdout } -> void {\n" +
-      "  stdout.write(`Hello, ${name}`)\n" +
+      "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
       "}",
   },
   DEP001: {
