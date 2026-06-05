@@ -306,3 +306,22 @@ describe("RES002: block statement brace on next line does not suppress", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RES002 — } as statement boundary
+// ---------------------------------------------------------------------------
+
+describe("RES002: closing brace is a statement boundary", () => {
+  it("fires when a discarded call immediately follows a closing brace", () => {
+    // A discarded Result call that starts right after a `}` (no newline) is
+    // still a statement — `}` is a statement terminator.
+    const src =
+      "?bs 0.9\n" +
+      "fn save(x: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn caller(x: string) -> void {\n" +
+      "  if (x) { const y = 1 } save(x)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+});
