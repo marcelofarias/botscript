@@ -38,6 +38,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const open: typeof inner = [];
     let nextInner = 0;
 
+    // Track brace depth within this function body. The body's opening { is
+    // depth 1; any inner { pushes deeper. A throw at depth 1 is always a
+    // statement. A throw at depth 2+ inside { preceded by , or an expression
+    // operator (=, :, return, etc. — not ), =>, else, try, do) is a method
+    // shorthand in an object literal and should not warn.
+    let braceDepth = 0;
     for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
       while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
       while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
@@ -47,7 +53,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (open.length > 0) continue;
 
       const tok = tokens[i];
-      if (!tok || tok.kind !== "ident" || tok.text !== "throw") continue;
+      if (!tok) continue;
+
+      // Track brace depth so we know when throw is directly in a block vs object literal.
+      if (tok.kind === "open" && tok.text === "{") { braceDepth++; continue; }
+      if (tok.kind === "close" && tok.text === "}") { braceDepth--; continue; }
+
+      if (tok.kind !== "ident" || tok.text !== "throw") continue;
 
       // Exclude property accesses: obj.throw
       const prevIdx = prevSignificant(tokens, i - 1);
@@ -55,13 +67,34 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
         continue;
 
-      // Exclude object literal property keys: { throw: 1 } or method shorthands: { throw() {} }
+      // Exclude object literal property keys: { throw: 1 }
       const nextIdx = nextSignificant(tokens, i + 1);
       const next = tokens[nextIdx];
-      if (next && (
-        (next.kind === "punct" && next.text === ":") ||
-        (next.kind === "open" && next.text === "(")
-      )) continue;
+      if (next && next.kind === "punct" && next.text === ":") continue;
+
+      // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
+      // but NOT throw (expr) — a throw statement with a parenthesized expression.
+      // At depth 1 (directly in a function block) throw (...) is always a statement.
+      // At depth 2+ it could be a method shorthand — check if the enclosing { is a block
+      // or an object literal by looking at what precedes it.
+      if (next && next.kind === "open" && next.text === "(") {
+        if (braceDepth > 1) {
+          // After a comma: definitely property context.
+          if (prev && prev.kind === "punct" && prev.text === ",") continue;
+          // After {: could be object literal or block — check the token before the {.
+          if (prev && prev.kind === "open" && prev.text === "{") {
+            const prevPrevIdx = prevSignificant(tokens, prevIdx - 1);
+            const prevPrev = prevPrevIdx >= 0 ? tokens[prevPrevIdx] : undefined;
+            const isBlock =
+              prevPrev == null ||
+              (prevPrev.kind === "close" && prevPrev.text === ")") ||
+              (prevPrev.kind === "punct" && prevPrev.text === "=>") ||
+              (prevPrev.kind === "ident" &&
+                ["else", "try", "finally", "do"].includes(prevPrev.text));
+            if (!isBlock) continue;
+          }
+        }
+      }
 
       const loc = locationOf(src, tok.start);
       warnings.push({
