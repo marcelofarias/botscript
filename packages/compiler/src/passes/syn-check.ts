@@ -177,7 +177,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     // Reset state for this fn's SYN003 scan.
     nextInner = 0;
     const open003: typeof inner = [];
-    for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
       while (open003.length > 0 && open003[open003.length - 1]!.tokenEnd <= i) open003.pop();
       while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
         open003.push(inner[nextInner]!);
@@ -207,10 +207,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const method = tokens[methodIdx];
       if (!method || method.kind !== "ident" || !CONSOLE_OUTPUT_METHODS.has(method.text)) continue;
 
-      // Must be a call: next after the method must be `(`
-      const parenIdx = nextSignificant(tokens, methodIdx + 1);
-      const paren = tokens[parenIdx];
-      if (!paren || !(paren.kind === "open" && paren.text === "(")) continue;
+      // Must be a call: next after the method must be `(` or `?.(` (optional call).
+      let afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+      let afterMethod = tokens[afterMethodIdx];
+      // Skip optional-call `?.` so `console.log?.(...)` is detected.
+      if (afterMethod && afterMethod.kind === "questionDot") {
+        afterMethodIdx = nextSignificant(tokens, afterMethodIdx + 1);
+        afterMethod = tokens[afterMethodIdx];
+      }
+      if (!afterMethod || !(afterMethod.kind === "open" && afterMethod.text === "(")) continue;
 
       if (isInsideRange(tok.start, unsafeRanges)) continue;
 
