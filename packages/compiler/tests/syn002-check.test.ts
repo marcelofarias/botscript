@@ -157,6 +157,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
 
+  it("does NOT fire when 'throw' is a method shorthand in an expression-bodied fn's object literal", () => {
+    // Expression-bodied fn: the first `{` is an object literal at braceDepth=1.
+    // `throw()` here is a method shorthand, not a throw statement.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any = ({ throw() { return 1 } })\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
   it("fires when throw (expr) appears inside an inline arrow function body", () => {
     const src =
       "?bs 0.9\n" +

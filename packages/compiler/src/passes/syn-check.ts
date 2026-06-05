@@ -37,13 +37,18 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const open: typeof inner = [];
     let nextInner = 0;
 
-    // Track brace depth within this function body. The body's opening { is
-    // depth 1; any inner { pushes deeper. A throw at depth 1 is always a
-    // statement. A throw at depth 2+ inside { preceded by , or an expression
-    // operator (=, :, return, etc. — not ), =>, else, try, do) is a method
-    // shorthand in an object literal and should not warn.
+    // Track brace depth within this function body. For block-bodied fns the
+    // opening `{` is depth 1; any inner `{` pushes deeper. A throw at depth 1
+    // in a block-bodied fn is always a statement. For expression-bodied fns
+    // (`fn x() = ...`), the first `{` encountered might be an object literal —
+    // detect this by checking whether the body starts with `{` (block) or not
+    // (expression). Apply the method-shorthand suppression at depth > 1 always,
+    // and at depth 1 only when the body is expression-bodied.
+    const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
+    const bodyFirstTok = tokens[bodyStart];
+    const isBlockBody = bodyFirstTok?.kind === "open" && bodyFirstTok?.text === "{";
     let braceDepth = 0;
-    for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
       while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
       while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
         open.push(inner[nextInner]!);
@@ -73,11 +78,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
       // but NOT throw (expr) — a throw statement with a parenthesized expression.
-      // At depth 1 (directly in a function block) throw (...) is always a statement.
-      // At depth 2+ it could be a method shorthand — check if the enclosing { is a block
-      // or an object literal by looking at what precedes it.
+      // At depth 1 in a block-bodied fn, throw(...) is always a statement (the `{` at
+      // depth 1 IS the fn body block, not an object literal). For expression-bodied fns,
+      // depth 1 could be an object literal, so apply the check there too.
       if (next && next.kind === "open" && next.text === "(") {
-        if (braceDepth > 1) {
+        if (braceDepth > 1 || (!isBlockBody && braceDepth >= 1)) {
           // After a comma: definitely property context.
           if (prev && prev.kind === "punct" && prev.text === ",") continue;
           // After {: could be object literal or block — check the token before the {.
