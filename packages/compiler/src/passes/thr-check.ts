@@ -527,18 +527,32 @@ function splitOnTopLevelPipe(s: string): string[] {
 
 /**
  * Extract the leading identifier from a type expression.
- * Returns `""` when the first non-whitespace character after the ident is `[` —
- * that means the type is an array form (e.g. `ParseError[]` or `ParseError []`)
- * which is distinct from the bare ident (`ParseError`).
- * Generics (`ParseError<T>`) are still matched.
+ * Returns `""` when the type is an array form — i.e. when `[` follows the
+ * identifier directly (`ParseError[]`), with optional trivia (`ParseError []`),
+ * or after a generic argument list (`ParseError<T>[]`).
+ * Bare generics (`ParseError<T>`) without an array suffix are still matched.
  */
 function leadingIdent(type: string): string {
   const trimmed = type.trim();
   const m = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
   if (!m) return "";
   const ident = m[1]!;
-  const afterIdent = trimmed.slice(ident.length).trimStart();
-  if (afterIdent.startsWith("[")) return "";
+  let rest = trimmed.slice(ident.length).trimStart();
+  // Skip over an optional generic argument list `<…>` so `ParseError<T>[]`
+  // reaches the `[]` check below (without this, rest would be `<T>[]` and
+  // `startsWith("[")` would be false, incorrectly matching the base ident).
+  if (rest.startsWith("<")) {
+    let depth = 0;
+    for (let i = 0; i < rest.length; i++) {
+      const ch = rest[i]!;
+      if (ch === "<") depth++;
+      else if (ch === ">" && (i === 0 || rest[i - 1] !== "-")) {
+        depth--;
+        if (depth === 0) { rest = rest.slice(i + 1).trimStart(); break; }
+      }
+    }
+  }
+  if (rest.startsWith("[")) return "";
   return ident;
 }
 

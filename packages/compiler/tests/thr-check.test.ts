@@ -425,6 +425,18 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
+  it("still fires when the error type in Result is ParseError<T>[] (generic array), not ParseError", () => {
+    // `ParseError<T>[]` is an array type — distinct from the bare `ParseError<T>` generic.
+    // Suppression must NOT apply: `ParseError` (without the generic+array suffix) is absent.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError<string>[]> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
   it("does not fire when err(new TypeName(...)) is used in a Promise<Result<T, TypeName>>-returning fn", () => {
     const src =
       "?bs 0.9\n" +
