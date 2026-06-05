@@ -210,6 +210,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
   });
 
+  it("fires when throw appears in a catch block with optional catch binding: catch { throw ... }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void {\n" +
+      "  try { doSomething() } catch { throw new Error(\"rethrowing\") }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
+  });
+
   it("fires when fn body uses = io { ... } wrapper and contains a throw statement", () => {
     const src =
       "?bs 0.9\n" +

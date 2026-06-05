@@ -98,7 +98,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               prevPrev.kind === "fatArrow" ||
               prevPrev.kind === "keyword" ||
               (prevPrev.kind === "ident" &&
-                ["else", "try", "finally", "do"].includes(prevPrev.text));
+                ["else", "try", "catch", "finally", "do"].includes(prevPrev.text));
             if (!isBlock) continue;
           }
         }
