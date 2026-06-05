@@ -436,11 +436,15 @@ function collectParamNames(fn: FnDecl): Set<string> {
  * issues and false matches on nested generics (e.g. `Wrapper<ParseError>`).
  */
 function isErrorTypeInResult(returnType: string, typeName: string): boolean {
-  // Only suppress when `Result<` is the outermost type (starts at position 0
-  // after trimming). Nested Result<> inside `Promise<Result<T,E>>` or
-  // `Wrapper<Result<T,E>>` should NOT suppress THR002 — those fns return the
-  // wrapper type, not a Result directly.
-  const rt = returnType.trimStart();
+  // Suppress when the outermost return type is `Result<T, E>` OR when it is
+  // `Promise<Result<T, E>>` (common for async fns). Any other wrapper
+  // (e.g. `Wrapper<Result<T,E>>`) should NOT suppress THR002.
+  let rt = returnType.trimStart();
+  // Unwrap a leading `Promise<…>` so `Promise<Result<T,E>>` is treated as `Result<T,E>`.
+  if (rt.match(/^Promise\s*</)) {
+    const inner = innerGenericArg(rt);
+    if (inner !== null) rt = inner.trimStart();
+  }
   if (!rt.match(/^Result\s*</)) return false;
   // Start scanning from the `<` that opens the generic arguments.
   const openAngle = rt.indexOf("<");
@@ -472,6 +476,26 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   // Split on top-level `|` to handle union error types (e.g. `E1 | E2`).
   const members = splitOnTopLevelPipe(errorPart);
   return members.some((m) => leadingIdent(m) === typeName);
+}
+
+/**
+ * Return the content of the first generic argument of a type like `Outer<Inner, ...>`.
+ * Returns the full content between the first `<` and its matching `>`, or null if
+ * the type has no well-formed generic argument list.
+ */
+function innerGenericArg(s: string): string | null {
+  const openAngle = s.indexOf("<");
+  if (openAngle === -1) return null;
+  let depth = 0;
+  for (let i = openAngle; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "<") depth++;
+    else if (ch === ">" && (i === 0 || s[i - 1] !== "-")) {
+      depth--;
+      if (depth === 0) return s.slice(openAngle + 1, i);
+    }
+  }
+  return null;
 }
 
 /** Split `s` on `|` characters that are not inside `<>`, `{}`, `()`, or `[]`. */

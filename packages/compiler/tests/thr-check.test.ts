@@ -412,4 +412,26 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).toThrow("THR002");
   });
+
+  it("does not fire when err(TypeName(...)) is used in an async fn returning Promise<Result<T, TypeName>>", () => {
+    // Async fns commonly return `Promise<Result<T, E>>`. The error is still
+    // being signalled through Result — THR002 suppression must cover this form.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) -> Promise<Result<string, ParseError>> {\n" +
+      "  if (!id) return err(ParseError(\"invalid id\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when err(new TypeName(...)) is used in a Promise<Result<T, TypeName>>-returning fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) -> Promise<Result<string, ParseError>> {\n" +
+      "  if (!id) return err(new ParseError(\"invalid id\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
 });
