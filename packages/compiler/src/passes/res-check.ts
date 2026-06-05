@@ -103,6 +103,7 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
       checkPrev === undefined ||
       ((checkPrev.kind === "newline") && !precededByContinuation(tokens, checkPrevIdx)) ||
       (checkPrev.kind === "open" && checkPrev.text === "{") ||
+      (checkPrev.kind === "close" && checkPrev.text === "}") ||
       (checkPrev.kind === "punct" && checkPrev.text === ";");
 
     if (!inStatementPos) continue;
