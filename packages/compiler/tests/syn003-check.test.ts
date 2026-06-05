@@ -165,4 +165,25 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
         `should fire on ?bs ${ver}`).toBe(true);
     }
   });
+
+  it("does NOT fire when console call is inside an unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn greet(name: string) -> void {\n" +
+      "  unsafe \"debugging only\" { console.log(name) }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN003")).toBe(false);
+  });
+
+  it("fires when console call is outside the unsafe block but inside the same fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn greet(name: string) -> void {\n" +
+      "  unsafe \"scoped\" { const x = 1 }\n" +
+      "  console.log(name)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN003")).toBe(true);
+  });
 });
