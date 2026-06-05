@@ -607,7 +607,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Direct `console.*` calls (console.log, console.error, console.warn, etc.) route output " +
       "outside the declared capability system — the compiler sees no call to a tracked namespace, " +
       "so neither CAP001 (under-declaration) nor CAP002 (over-declaration) can fire. Callers " +
-      "have no way to know the fn writes to stdout just by reading its header.\n\n" +
+      "have no way to know the fn writes to stdout or stderr just by reading its header.\n\n" +
       "This is a reliability issue in bot orchestration code: a bot that silently logs to " +
       "console in a sandboxed or pipe environment may produce output the orchestrator never " +
       "expects and cannot suppress or redirect.\n\n" +
