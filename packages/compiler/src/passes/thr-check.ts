@@ -479,9 +479,9 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
 }
 
 /**
- * Return the content of the first generic argument of a type like `Outer<Inner, ...>`.
- * Returns the full content between the first `<` and its matching `>`, or null if
- * the type has no well-formed generic argument list.
+ * Return the full content between the outermost `<` and its matching `>` in a
+ * generic type like `Outer<A, B>` (i.e. `"A, B"`), or null if the type has no
+ * well-formed generic argument list. Handles nesting: `Outer<Inner<X>, Y>` → `"Inner<X>, Y"`.
  */
 function innerGenericArg(s: string): string | null {
   const openAngle = s.indexOf("<");
