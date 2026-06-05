@@ -278,8 +278,8 @@ describe("RES002: match expression does not suppress call in scrutinee position"
       "fn load(id: string) -> Result<string, string> { ok(id) }\n" +
       "fn process(id: string) -> string {\n" +
       "  match load(id) {\n" +
-      "    ok(v) -> v\n" +
-      "    err(_) -> \"\"\n" +
+      "    ok { v } -> v\n" +
+      "    err { _ } -> \"\"\n" +
       "  }\n" +
       "}\n";
     const result = check(src);
