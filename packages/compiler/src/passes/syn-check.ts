@@ -11,7 +11,6 @@
 
 import type { Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
-import { lex } from "../parser/lex.js";
 import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
@@ -27,7 +26,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
-  const tokens = lex(src);
+  const tokens = program.tokens;
   const warnings: Diagnostic[] = [];
   const entry = getErrorCode("SYN002")!;
 
