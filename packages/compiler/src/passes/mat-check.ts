@@ -23,7 +23,7 @@
  * Over-exhaustive matches (all arms plus wildcard) are clean.
  */
 
-import { BotscriptError } from "../diagnostics.js";
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex } from "../parser/lex.js";
 import { parseMatch } from "../parser/parse-match.js";
@@ -34,17 +34,22 @@ import { collectTaggedUnionTypes, type Alt } from "./tagged-union.js";
 // Built-in tag vocabularies — MAT001/MAT002 handle these; MAT003 skips them.
 const BUILTIN_TAGS = new Set(["ok", "err", "some", "none"]);
 
-export function passMatCheck(src: string, version: VersionInfo): string {
+export function passMatCheck(
+  src: string,
+  version: VersionInfo,
+): string | { code: string; warnings: ReadonlyArray<Diagnostic> } {
   if (!atLeast(version.resolved, "0.9")) return src;
 
   const tokens = lex(src);
   const mat001 = getErrorCode("MAT001")!;
   const mat002 = getErrorCode("MAT002")!;
   const mat003 = getErrorCode("MAT003")!;
+  const mat004 = getErrorCode("MAT004")!;
 
   // Pre-collect all user-defined tagged union declarations in this file.
   // Pass the already-lexed tokens to avoid lexing the source a second time.
   const knownUnions = collectTaggedUnionTypes(tokens);
+  const warnings: Diagnostic[] = [];
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -61,7 +66,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     const armTags: string[] = [];
 
     for (const arm of expr.arms) {
-      if (arm.pattern.kind === "wildcard") { hasWildcard = true; break; }
+      if (arm.pattern.kind === "wildcard") { hasWildcard = true; continue; }
       if (arm.pattern.kind === "tag") {
         const tag = arm.pattern.tag;
         if (tag === "ok") hasOk = true;
@@ -80,11 +85,10 @@ export function passMatCheck(src: string, version: VersionInfo): string {
       }
     }
 
-    if (hasWildcard) continue;
-
     const matchStart = tokens[expr.start]!.start;
 
     if ((hasOk || hasErr) && !(hasOk && hasErr)) {
+      if (hasWildcard) continue;
       const { line, column } = locationOf(src, matchStart);
       const missing = hasOk ? "err" : "ok";
       const missingPattern = missing === "err" ? "'err { e } -> ...'" : "'ok { v } -> ...'";
@@ -104,6 +108,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     }
 
     if ((hasSome || hasNone) && !(hasSome && hasNone)) {
+      if (hasWildcard) continue;
       const { line, column } = locationOf(src, matchStart);
       const missing = hasSome ? "none" : "some";
       const missingPattern = missing === "none" ? "'none -> ...'" : "'some { v } -> ...'";
@@ -122,12 +127,12 @@ export function passMatCheck(src: string, version: VersionInfo): string {
       }]);
     }
 
-    // MAT003: user-defined tagged union exhaustiveness.
+    // MAT003/MAT004: user-defined tagged union exhaustiveness.
     // Only consider arm tags that are not built-in (ok/err/some/none).
     // If any non-tag arm (literal, binding, etc.) is present, the match is not
-    // exclusively a tagged-union match — suppress MAT003 to avoid false positives.
+    // exclusively a tagged-union match — suppress MAT003/MAT004 to avoid false positives.
     // Tagged union variants in botscript are always CapCase. Lowercase tags
-    // are binding patterns or non-union arms — exclude them from MAT003 so we
+    // are binding patterns or non-union arms — exclude them from MAT003/MAT004 so we
     // don't fire on patterns like `foo -> ...` (which are variable bindings).
     const userArmTags = armTags.filter(
       (tag) => !BUILTIN_TAGS.has(tag) && /^[A-Z]/.test(tag),
@@ -135,7 +140,7 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     if (userArmTags.length === 0) continue;
     if (hasNonTagArm) continue;
     // Mixed match: built-in Result/Option tags alongside user-defined CapCase
-    // variant arms. These are not a pure tagged-union match — MAT003 should not
+    // variant arms. These are not a pure tagged-union match — MAT003/MAT004 should not
     // fire, as the match is not exclusively over a single user-defined union.
     if (hasOk || hasErr || hasSome || hasNone) continue;
 
@@ -156,7 +161,31 @@ export function passMatCheck(src: string, version: VersionInfo): string {
 
     const union = matchingUnions[0]!;
     const missingAlts = union.alts.filter((a) => !userArmTagSet.has(a.tag));
-    if (missingAlts.length === 0) continue;
+
+    if (missingAlts.length === 0) {
+      // MAT004: match is already fully exhaustive — wildcard is dead code.
+      if (hasWildcard) {
+        const { line, column } = locationOf(src, matchStart);
+        warnings.push({
+          code: "MAT004",
+          severity: "warning",
+          file: null,
+          line,
+          column,
+          start: matchStart,
+          end: tokens[expr.start]!.end,
+          message:
+            `match on '${union.name}' covers all ${union.alts.length} variant(s) — ` +
+            `wildcard '_ -> ...' is unreachable dead code; remove it so future variants are caught by MAT003`,
+          rule: mat004.rule,
+          idiom: mat004.idiom,
+          rewrite: mat004.rewrite,
+        });
+      }
+      continue;
+    }
+
+    if (hasWildcard) continue;
 
     const { line, column } = locationOf(src, matchStart);
     const missingList = missingAlts.map((a) => `'${a.tag}'`).join(", ");
@@ -182,5 +211,5 @@ export function passMatCheck(src: string, version: VersionInfo): string {
     }]);
   }
 
-  return src;
+  return warnings.length > 0 ? { code: src, warnings } : src;
 }
