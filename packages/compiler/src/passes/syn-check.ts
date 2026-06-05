@@ -87,7 +87,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             const isBlock =
               prevPrev == null ||
               (prevPrev.kind === "close" && prevPrev.text === ")") ||
-              (prevPrev.kind === "punct" && prevPrev.text === "=>") ||
+              prevPrev.kind === "fatArrow" ||
               (prevPrev.kind === "ident" &&
                 ["else", "try", "finally", "do"].includes(prevPrev.text));
             if (!isBlock) continue;

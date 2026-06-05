@@ -156,4 +156,15 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
+
+  it("fires when throw (expr) appears inside an inline arrow function body", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn setup() -> void {\n" +
+      "  const handler = () => { throw (new Error(\"x\")) }\n" +
+      "  handler()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
+  });
 });
