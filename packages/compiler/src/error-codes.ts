@@ -592,25 +592,25 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "remove the '_ -> ...' wildcard arm",
     example:
-      "// before — Color match is exhaustive but has a redundant wildcard\n" +
+      "// before — Color match is exhaustive but has a redundant trailing wildcard\n" +
       "?bs 0.9\n" +
-      "type Color = Red | Green | Blue\n\n" +
+      "type Color = Red { hex: string } | Green | Blue\n\n" +
       "fn colorName(c: Color) -> string {\n" +
       "  match c {\n" +
-      "    Red   -> \"red\"\n" +
-      "    Green -> \"green\"\n" +
-      "    Blue  -> \"blue\"\n" +
+      "    Red { hex } -> hex\n" +
+      "    Green       -> \"green\"\n" +
+      "    Blue        -> \"blue\"\n" +
       "    _ -> \"unreachable\"  // MAT004: wildcard is dead code\n" +
       "  }\n" +
       "}\n\n" +
       "// after — remove the wildcard; MAT003 will catch new variants\n" +
       "?bs 0.9\n" +
-      "type Color = Red | Green | Blue\n\n" +
+      "type Color = Red { hex: string } | Green | Blue\n\n" +
       "fn colorName(c: Color) -> string {\n" +
       "  match c {\n" +
-      "    Red   -> \"red\"\n" +
-      "    Green -> \"green\"\n" +
-      "    Blue  -> \"blue\"\n" +
+      "    Red { hex } -> hex\n" +
+      "    Green       -> \"green\"\n" +
+      "    Blue        -> \"blue\"\n" +
       "  }\n" +
       "}",
   },

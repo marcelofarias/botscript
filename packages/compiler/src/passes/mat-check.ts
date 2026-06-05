@@ -20,19 +20,38 @@
  * Both MAT001/MAT002 are scoped to their respective tag vocabulary — they only
  * fire when at least one of the pair's tags is explicitly named in an arm.
  *
- * Over-exhaustive matches (all arms plus wildcard) are clean.
+ * Over-exhaustive matches (all explicit variant arms plus a trailing wildcard) emit
+ * MAT004 — the wildcard is unreachable dead code.
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { lex } from "../parser/lex.js";
-import { parseMatch } from "../parser/parse-match.js";
+import { parseMatch, type MatchExpr } from "../parser/parse-match.js";
 import { locationOf } from "./_location.js";
+import { nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectTaggedUnionTypes, type Alt } from "./tagged-union.js";
 
 // Built-in tag vocabularies — MAT001/MAT002 handle these; MAT003 skips them.
 const BUILTIN_TAGS = new Set(["ok", "err", "some", "none"]);
+
+/**
+ * Scan backwards through the match expression's token range to find the `_`
+ * wildcard arm token. Returns the token index of the `_` ident that is
+ * immediately followed (at the significant-token level) by `->`, which
+ * distinguishes an arm wildcard from a `_` appearing inside a binding block.
+ */
+function findTrailingWildcardToken(tokens: ReturnType<typeof lex>, expr: MatchExpr): number {
+  for (let i = expr.end - 2; i >= expr.start; i--) {
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident" || tok.text !== "_") continue;
+    const nextIdx = nextSignificant(tokens, i + 1);
+    const next = tokens[nextIdx];
+    if (next && next.kind === "arrow") return i;
+  }
+  return expr.start;
+}
 
 export function passMatCheck(
   src: string,
@@ -64,6 +83,9 @@ export function passMatCheck(
     let hasWildcard = false;
     let hasNonTagArm = false;
     const armTags: string[] = [];
+
+    const lastArm = expr.arms[expr.arms.length - 1];
+    const hasTrailingWildcard = lastArm?.pattern.kind === "wildcard";
 
     for (const arm of expr.arms) {
       if (arm.pattern.kind === "wildcard") { hasWildcard = true; continue; }
@@ -163,17 +185,21 @@ export function passMatCheck(
     const missingAlts = union.alts.filter((a) => !userArmTagSet.has(a.tag));
 
     if (missingAlts.length === 0) {
-      // MAT004: match is already fully exhaustive — wildcard is dead code.
-      if (hasWildcard) {
-        const { line, column } = locationOf(src, matchStart);
+      // MAT004: match is already fully exhaustive — trailing wildcard is dead code.
+      // Only fires when the wildcard is the last arm; a non-trailing `_` is reachable.
+      if (hasTrailingWildcard) {
+        const wildcardTokIdx = findTrailingWildcardToken(tokens, expr);
+        const wildcardTok = tokens[wildcardTokIdx];
+        const diagStart = wildcardTok ? wildcardTok.start : matchStart;
+        const { line, column } = locationOf(src, diagStart);
         warnings.push({
           code: "MAT004",
           severity: "warning",
           file: null,
           line,
           column,
-          start: matchStart,
-          end: tokens[expr.start]!.end,
+          start: diagStart,
+          end: wildcardTok ? wildcardTok.end : tokens[expr.start]!.end,
           message:
             `match on '${union.name}' covers all ${union.alts.length} variant(s) — ` +
             `wildcard '_ -> ...' is unreachable dead code; remove it so future variants are caught by MAT003`,
