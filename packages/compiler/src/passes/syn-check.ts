@@ -46,15 +46,23 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn002 = getErrorCode("SYN002")!;
   const syn003 = getErrorCode("SYN003")!;
 
-  // Collect char-offset ranges for `unsafe "reason" { ... }` block bodies.
-  // SYN002 and SYN003 are suppressed inside these ranges — an explicit unsafe
-  // block is an intentional acknowledgment that the author knows what they're doing.
+  // Collect char-offset ranges where SYN002/SYN003 are suppressed:
+  // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
+  // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
+  //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
   const unsafeRanges = collectUnsafeBlockRanges(tokens);
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) {
+      unsafeRanges.push({ start: decl.body.start, end: decl.body.end });
+    }
+  }
 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
     // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003.
+    // The range-based suppression above also covers nested non-unsafe fns within it,
+    // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
 
     const inner = nesting.get(decl) ?? [];

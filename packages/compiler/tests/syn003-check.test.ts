@@ -206,4 +206,19 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN003")).toBe(true);
   });
+
+  it("does NOT fire for a non-unsafe nested fn declared inside an unsafe fn body", () => {
+    // The nested fn lives inside the unsafe fn's body range — the entire body is exempt
+    // (matches uns-check's range-based suppression pattern).
+    const src =
+      "?bs 0.9\n" +
+      "unsafe \"legacy\" fn outer() -> void {\n" +
+      "  fn inner() -> void {\n" +
+      "    console.log(\"x\")\n" +
+      "  }\n" +
+      "  inner()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN003")).toBe(false);
+  });
 });
