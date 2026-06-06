@@ -253,4 +253,17 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
+
+  it("does NOT fire when 'throw' is a class field assignment: class X { throw = 1 }", () => {
+    // `throw` is a valid IdentifierName in TypeScript — class field assignments
+    // like `throw = 1` should not be confused with a native throw statement.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  class X { throw = 1 }\n" +
+      "  return new X()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });

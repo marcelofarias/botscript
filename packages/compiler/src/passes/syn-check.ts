@@ -65,6 +65,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const next = tokens[nextIdx];
       if (next && next.kind === "punct" && next.text === ":") continue;
 
+      // Exclude class/object field assignments: class X { throw = 1 }
+      // The lexer emits `eq` (kind="eq") for `=`; a real throw expression can never start with `=`.
+      if (next && next.kind === "eq") continue;
+
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
       // but NOT throw (expr) — a throw statement with a parenthesized expression.
       // Reliable detection: `throw(` is a method shorthand only when the token
