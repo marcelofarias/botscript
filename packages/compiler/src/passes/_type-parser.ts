@@ -171,29 +171,22 @@ export function extractOutermostGenericContent(s: string): string | null {
 /**
  * Extract the leading identifier from a type expression.
  * Returns `""` in two cases:
- *   - The type resolves to an array form (e.g. `ParseError[]`, `ParseError<T>[]`, `ParseError []`).
+ *   - The type resolves to an array form: any type expression that ends with an
+ *     empty-bracket suffix `[]` (e.g. `ParseError[]`, `ParseError<T>[]`,
+ *     `Foo["bar"][]`, `Errors.ParseError[]`).
  *   - The type does not start with an identifier (e.g. `[A, B]`, tuple literals).
  * Returns the base identifier when the type is a plain name or generic
  * (e.g. `ParseError` → `"ParseError"`, `ParseError<T>` → `"ParseError"`).
- * Indexed-access types like `Foo["bar"]` or `Foo[Bar]` return the base ident, not `""`.
+ * Indexed-access types like `Foo["bar"]` or `Foo[Bar]` (without trailing `[]`)
+ * return the base ident, not `""`.
  */
 export function stripArraySuffix(type: string): string {
   const trimmed = type.trim();
+  // Detect any trailing empty-bracket suffix, including after indexed-access forms
+  // (`Foo["bar"][]`) and qualified names (`Errors.ParseError[]`).
+  // Only empty `[]` counts — `Foo["bar"]` without trailing `[]` is not an array.
+  if (/\[\s*\]$/.test(trimmed)) return "";
   const m = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
   if (!m) return "";
-  const ident = m[1]!;
-  let rest = trimmed.slice(ident.length).trimStart();
-
-  // Skip over an optional generic argument list `<…>` so `ParseError<T>[]`
-  // reaches the `[]` check below.
-  if (rest.startsWith("<")) {
-    const openAngle = 0;
-    const closeAngle = matchingAngleClose(rest, openAngle);
-    if (closeAngle !== -1) rest = rest.slice(closeAngle + 1).trimStart();
-  }
-
-  // Only treat `[]` (empty brackets) as an array suffix. Indexed-access types
-  // like `Foo["bar"]` or `Foo[Bar]` are not array forms and should return the ident.
-  if (/^\[\s*\]/.test(rest)) return "";
-  return ident;
+  return m[1]!;
 }

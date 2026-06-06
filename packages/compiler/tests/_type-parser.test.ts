@@ -266,4 +266,16 @@ describe("stripArraySuffix", () => {
   it("returns ident for indexed-access type Foo[Bar]", () => {
     expect(stripArraySuffix("Foo[Bar]")).toBe("Foo");
   });
+
+  it("returns '' for indexed-access with trailing array suffix Foo[\"bar\"][]", () => {
+    expect(stripArraySuffix('Foo["bar"][]')).toBe("");
+  });
+
+  it("returns '' for indexed-access with trailing array suffix Foo[Bar][]", () => {
+    expect(stripArraySuffix("Foo[Bar][]")).toBe("");
+  });
+
+  it("returns '' for qualified array type Errors.ParseError[]", () => {
+    expect(stripArraySuffix("Errors.ParseError[]")).toBe("");
+  });
 });
