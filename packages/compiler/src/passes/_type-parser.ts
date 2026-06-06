@@ -185,7 +185,7 @@ export function extractOutermostGenericContent(s: string): string | null {
  * Indexed-access types like `Foo["bar"]` or `Foo[Bar]` (without trailing `[]`)
  * return the base ident, not `""`.
  */
-export function stripArraySuffix(type: string): string {
+export function leadingTypeIdent(type: string): string {
   const trimmed = type.trim();
   // Detect any trailing empty-bracket suffix, including after indexed-access forms
   // (`Foo["bar"][]`) and qualified names (`Errors.ParseError[]`).

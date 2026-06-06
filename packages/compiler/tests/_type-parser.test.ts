@@ -10,7 +10,7 @@ import {
   isTopLevelResult,
   extractResultArgs,
   extractOutermostGenericContent,
-  stripArraySuffix,
+  leadingTypeIdent,
 } from "../src/passes/_type-parser.js";
 
 describe("splitTopLevelPipe", () => {
@@ -234,52 +234,52 @@ describe("extractOutermostGenericContent", () => {
   });
 });
 
-describe("stripArraySuffix", () => {
+describe("leadingTypeIdent", () => {
   it("returns ident for plain type", () => {
-    expect(stripArraySuffix("ParseError")).toBe("ParseError");
+    expect(leadingTypeIdent("ParseError")).toBe("ParseError");
   });
 
   it("returns ident for generic type", () => {
-    expect(stripArraySuffix("ParseError<T>")).toBe("ParseError");
+    expect(leadingTypeIdent("ParseError<T>")).toBe("ParseError");
   });
 
   it("returns '' for array type ParseError[]", () => {
-    expect(stripArraySuffix("ParseError[]")).toBe("");
+    expect(leadingTypeIdent("ParseError[]")).toBe("");
   });
 
   it("returns '' for ParseError [] with trivia", () => {
-    expect(stripArraySuffix("ParseError []")).toBe("");
+    expect(leadingTypeIdent("ParseError []")).toBe("");
   });
 
   it("returns '' for generic array ParseError<T>[]", () => {
-    expect(stripArraySuffix("ParseError<T>[]")).toBe("");
+    expect(leadingTypeIdent("ParseError<T>[]")).toBe("");
   });
 
   it("handles leading/trailing whitespace", () => {
-    expect(stripArraySuffix("  ParseError  ")).toBe("ParseError");
+    expect(leadingTypeIdent("  ParseError  ")).toBe("ParseError");
   });
 
   it("returns '' for non-identifier", () => {
-    expect(stripArraySuffix("[A, B]")).toBe("");
+    expect(leadingTypeIdent("[A, B]")).toBe("");
   });
 
   it("returns ident for indexed-access type Foo[\"bar\"]", () => {
-    expect(stripArraySuffix('Foo["bar"]')).toBe("Foo");
+    expect(leadingTypeIdent('Foo["bar"]')).toBe("Foo");
   });
 
   it("returns ident for indexed-access type Foo[Bar]", () => {
-    expect(stripArraySuffix("Foo[Bar]")).toBe("Foo");
+    expect(leadingTypeIdent("Foo[Bar]")).toBe("Foo");
   });
 
   it("returns '' for indexed-access with trailing array suffix Foo[\"bar\"][]", () => {
-    expect(stripArraySuffix('Foo["bar"][]')).toBe("");
+    expect(leadingTypeIdent('Foo["bar"][]')).toBe("");
   });
 
   it("returns '' for indexed-access with trailing array suffix Foo[Bar][]", () => {
-    expect(stripArraySuffix("Foo[Bar][]")).toBe("");
+    expect(leadingTypeIdent("Foo[Bar][]")).toBe("");
   });
 
   it("returns '' for qualified array type Errors.ParseError[]", () => {
-    expect(stripArraySuffix("Errors.ParseError[]")).toBe("");
+    expect(leadingTypeIdent("Errors.ParseError[]")).toBe("");
   });
 });
