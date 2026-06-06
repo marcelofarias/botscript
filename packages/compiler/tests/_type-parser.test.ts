@@ -128,6 +128,14 @@ describe("isTopLevelResult", () => {
   it("does not recognize Promise<Result<T, E>>", () => {
     expect(isTopLevelResult("Promise<Result<T, E>>")).toBe(false);
   });
+
+  it("rejects Result<T, E> | Other (trailing union arm)", () => {
+    expect(isTopLevelResult("Result<T, E> | Other")).toBe(false);
+  });
+
+  it("rejects Result<T, E> & Extra (trailing intersection)", () => {
+    expect(isTopLevelResult("Result<T, E> & Extra")).toBe(false);
+  });
 });
 
 describe("extractResultArgs", () => {
@@ -182,6 +190,14 @@ describe("extractResultArgs", () => {
   it("returns null for Wrapper<Result<T, E>>", () => {
     expect(extractResultArgs("Wrapper<Result<string, ParseError>>")).toBeNull();
   });
+
+  it("returns null for Result<T, E> | Other (top-level union)", () => {
+    expect(extractResultArgs("Result<string, ParseError> | Other")).toBeNull();
+  });
+
+  it("returns null for Promise<Result<T, E>> | Other (Promise union)", () => {
+    expect(extractResultArgs("Promise<Result<string, ParseError>> | Other")).toBeNull();
+  });
 });
 
 describe("extractOutermostGenericContent", () => {
@@ -229,5 +245,13 @@ describe("stripArraySuffix", () => {
 
   it("returns '' for non-identifier", () => {
     expect(stripArraySuffix("[A, B]")).toBe("");
+  });
+
+  it("returns ident for indexed-access type Foo[\"bar\"]", () => {
+    expect(stripArraySuffix('Foo["bar"]')).toBe("Foo");
+  });
+
+  it("returns ident for indexed-access type Foo[Bar]", () => {
+    expect(stripArraySuffix("Foo[Bar]")).toBe("Foo");
   });
 });

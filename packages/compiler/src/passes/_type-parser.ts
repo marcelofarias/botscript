@@ -102,13 +102,18 @@ export function matchingAngleClose(s: string, openIdx: number): number {
 }
 
 /**
- * Returns true if `s` (trimmed) starts with `Result<` at the top level —
- * i.e. the outermost type constructor is exactly `Result`, not `Wrapper<Result<...>>`.
+ * Returns true if `s` (trimmed) is *exactly* `Result<…>` at the top level —
+ * i.e. the outermost type constructor is `Result` and there are no trailing tokens
+ * (rules out `Result<T,E> | Other`, `Wrapper<Result<T,E>>`, etc.).
  * Allows optional whitespace between `Result` and `<`.
  */
 export function isTopLevelResult(s: string): boolean {
-  const t = s.trimStart();
-  return /^Result\s*</.test(t);
+  const t = s.trim();
+  if (!/^Result\s*</.test(t)) return false;
+  const openAngle = t.indexOf("<");
+  const closeAngle = matchingAngleClose(t, openAngle);
+  // The matching `>` must be the very last character — no trailing tokens.
+  return closeAngle !== -1 && closeAngle === t.length - 1;
 }
 
 /**
@@ -117,14 +122,21 @@ export function isTopLevelResult(s: string): boolean {
  * Returns `null` if the type is not a (possibly Promise-wrapped) top-level `Result<T, E>`.
  */
 export function extractResultArgs(s: string): [string, string] | null {
-  let rt = s.trimStart();
+  let rt = s.trim();
 
   // Unwrap a leading `Promise<…>` — async fns still signal errors through Result.
+  // The `Promise<>` must be the whole expression; trailing tokens like `| Other`
+  // mean the overall type is not a Promise-wrapped Result.
   if (/^Promise\s*</.test(rt)) {
-    const inner = extractOutermostGenericContent(rt);
-    if (inner !== null) rt = inner.trimStart();
+    const promiseOpen = rt.indexOf("<");
+    const promiseClose = matchingAngleClose(rt, promiseOpen);
+    if (promiseClose === -1) return null;
+    // Reject if there is anything after the closing `>` of Promise<…>.
+    if (promiseClose !== rt.length - 1) return null;
+    rt = rt.slice(promiseOpen + 1, promiseClose).trim();
   }
 
+  // isTopLevelResult also verifies the matching `>` is at the end of rt.
   if (!isTopLevelResult(rt)) return null;
 
   const openAngle = rt.indexOf("<");
@@ -176,6 +188,8 @@ export function stripArraySuffix(type: string): string {
     if (closeAngle !== -1) rest = rest.slice(closeAngle + 1).trimStart();
   }
 
-  if (rest.startsWith("[")) return "";
+  // Only treat `[]` (empty brackets) as an array suffix. Indexed-access types
+  // like `Foo["bar"]` or `Foo[Bar]` are not array forms and should return the ident.
+  if (/^\[\s*\]/.test(rest)) return "";
   return ident;
 }
