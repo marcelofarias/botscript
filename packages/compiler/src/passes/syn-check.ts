@@ -37,17 +37,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const open: typeof inner = [];
     let nextInner = 0;
 
-    // Track brace depth within this function body. For block-bodied fns the
-    // opening `{` is depth 1; any inner `{` pushes deeper. A throw at depth 1
-    // in a block-bodied fn is always a statement. For expression-bodied fns
-    // (`fn x() = ...`), the first `{` encountered might be an object literal —
-    // detect this by checking whether the body starts with `{` (block) or not
-    // (expression). Apply the method-shorthand suppression at depth > 1 always,
-    // and at depth 1 only when the body is expression-bodied.
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
-    const bodyFirstTok = tokens[bodyStart];
-    const isBlockBody = bodyFirstTok?.kind === "open" && bodyFirstTok?.text === "{";
-    let braceDepth = 0;
     for (let i = bodyStart; i < decl.tokenEnd; i++) {
       while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
       while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
@@ -58,10 +48,6 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       const tok = tokens[i];
       if (!tok) continue;
-
-      // Track brace depth so we know when throw is directly in a block vs object literal.
-      if (tok.kind === "open" && tok.text === "{") { braceDepth++; continue; }
-      if (tok.kind === "close" && tok.text === "}") { braceDepth--; continue; }
 
       if (tok.kind !== "ident" || tok.text !== "throw") continue;
 
@@ -81,26 +67,19 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
       // but NOT throw (expr) — a throw statement with a parenthesized expression.
-      // At depth 1 in a block-bodied fn, throw(...) is always a statement (the `{` at
-      // depth 1 IS the fn body block, not an object literal). For expression-bodied fns,
-      // depth 1 could be an object literal, so apply the check there too.
+      // Reliable detection: `throw(` is a method shorthand only when the token
+      // immediately after its matching `)` is `{` (block body) or `=>` (arrow method).
+      // A real `throw(expr)` statement never has `{` or `=>` right after the paren.
       if (next && next.kind === "open" && next.text === "(") {
-        if (braceDepth > 1 || (!isBlockBody && braceDepth >= 1)) {
-          // After a comma: definitely property context.
-          if (prev && prev.kind === "punct" && prev.text === ",") continue;
-          // After {: could be object literal or block — check the token before the {.
-          if (prev && prev.kind === "open" && prev.text === "{") {
-            const prevPrevIdx = prevSignificant(tokens, prevIdx - 1);
-            const prevPrev = prevPrevIdx >= 0 ? tokens[prevPrevIdx] : undefined;
-            const isBlock =
-              prevPrev == null ||
-              (prevPrev.kind === "close" && prevPrev.text === ")") ||
-              prevPrev.kind === "fatArrow" ||
-              prevPrev.kind === "keyword" ||
-              (prevPrev.kind === "ident" &&
-                ["else", "try", "catch", "finally", "do"].includes(prevPrev.text));
-            if (!isBlock) continue;
-          }
+        const closeParenIdx = next.matchedAt;
+        if (closeParenIdx !== undefined) {
+          const afterParenIdx = nextSignificant(tokens, closeParenIdx + 1);
+          const afterParen = tokens[afterParenIdx];
+          if (
+            afterParen &&
+            ((afterParen.kind === "open" && afterParen.text === "{") ||
+              afterParen.kind === "fatArrow")
+          ) continue;
         }
       }
 

@@ -570,7 +570,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     body:
       "Botscript's error model is built around `Result<T, E>` and `throws {}` declarations. " +
       "Callers handle errors via `?` unwrap, `match` exhaustiveness (MAT001), and declared " +
-      "throws surfaces (THR001/DEP001).\n\n" +
+      "throws surfaces (THR001/THR002).\n\n" +
       "A native `throw` statement bypasses this contract entirely: the exception propagates " +
       "outside the Result type system, so callers relying on `?` unwrap or `match` will not " +
       "observe the error — the exception travels up the call stack unchecked, invisible to " +
