@@ -476,6 +476,9 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
     }
   }
   if (firstCommaDepth1 === -1 || closingIdx === -1) return false;
+  // Reject if there are trailing tokens after the closing `>` — e.g. `Result<T,E> | null`
+  // or `Result<T,E>[]` must not suppress THR002; only bare `Result<T,E>` qualifies.
+  if (rt.slice(closingIdx + 1).trim() !== "") return false;
   const errorPart = rt.slice(firstCommaDepth1 + 1, closingIdx).trim();
   // Split on top-level `|` to handle union error types (e.g. `E1 | E2`).
   const members = splitOnTopLevelPipe(errorPart);

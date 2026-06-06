@@ -471,6 +471,30 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).toThrow("THR002");
   });
+
+  it("still fires when return type is Result<T,E>[] (array, not bare Result)", () => {
+    // `Result<string, ParseError>[]` is an array of Results, not a plain Result<T,E>.
+    // THR002 suppression must NOT apply — the error is not being signaled via the return value.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseAll(raw: string) -> Result<string, ParseError>[] {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("still fires when return type is Result<T,E> | null (union, not bare Result)", () => {
+    // `Result<string, ParseError> | null` is a union, not a plain Result<T,E>.
+    // THR002 suppression must NOT apply.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseOpt(raw: string) -> Result<string, ParseError> | null {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
 });
 
 describe("THR004: over-declared throws — Result error-position symmetry", () => {
