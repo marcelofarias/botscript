@@ -38,13 +38,9 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./cap-check.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
+import { collectUnsafeBlockRanges, isInsideRange, type CharRange } from "./_unsafe-ranges.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
-
-interface CharRange {
-  start: number;
-  end: number;
-}
 
 export function passUnsCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.9")) return src;
@@ -58,8 +54,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
   // Collect char-offset ranges for unsafe blocks and unsafe fn bodies.
   // Any stdlib call inside these ranges is suppressed.
-  const unsafeRanges: CharRange[] = [];
-  collectUnsafeBlockRanges(tokens, unsafeRanges);
+  const unsafeRanges: CharRange[] = collectUnsafeBlockRanges(tokens);
   // Unsafe fn bodies come from the pre-parsed decls — no re-parsing needed.
   for (const decl of decls) {
     if (decl.unsafeReason !== undefined) {
@@ -107,7 +102,7 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
       if (!parenTok || parenTok.kind !== "open" || parenTok.text !== "(") continue;
 
       // Suppression 1: inside an unsafe block or unsafe fn body.
-      if (insideAnyChar(tok.start, unsafeRanges)) continue;
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
 
       // Suppression 2: direct subject of a `match` expression.
       // Skips trivia and `await` — `match await http.get(url) { }` is fine.
@@ -173,38 +168,6 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 // ---------------------------------------------------------------------------
 // Unsafe range collection
 // ---------------------------------------------------------------------------
-
-/** Collects char-offset ranges for `unsafe "reason" { body }` block bodies. */
-function collectUnsafeBlockRanges(tokens: Token[], out: CharRange[]): void {
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t || t.kind !== "keyword" || t.keyword !== "unsafe") continue;
-
-    const j = nextSignificant(tokens, i + 1);
-    const head = tokens[j];
-    if (!head) continue;
-
-    let braceIdx = -1;
-    if (head.kind === "open" && head.text === "{") {
-      braceIdx = j;
-    } else if (head.kind === "string") {
-      const k = nextSignificant(tokens, j + 1);
-      const open = tokens[k];
-      if (open && open.kind === "open" && open.text === "{") {
-        braceIdx = k;
-      }
-    }
-    if (braceIdx === -1) continue;
-
-    const open = tokens[braceIdx]!;
-    if (open.matchedAt === undefined) continue;
-    const close = tokens[open.matchedAt];
-    if (!close) continue;
-
-    out.push({ start: open.start, end: close.end });
-    i = open.matchedAt;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -320,10 +283,4 @@ function isDirectMatchSubject(tokens: Token[], callIdx: number, closingParenIdx?
   return false;
 }
 
-function insideAnyChar(offset: number, ranges: CharRange[]): boolean {
-  for (const r of ranges) {
-    if (offset >= r.start && offset < r.end) return true;
-  }
-  return false;
-}
 
