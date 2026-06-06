@@ -311,6 +311,30 @@ describe("RES002: block statement brace on next line does not suppress", () => {
 // RES002 — } as statement boundary
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// RES002 — same-name ambiguity
+// ---------------------------------------------------------------------------
+
+describe("RES002: same-name ambiguity exclusion", () => {
+  it("does NOT fire when same name has two Result overloads with different error types (ambiguous scope)", () => {
+    // Two fns named `parse` with different Result error arms — scope resolution
+    // would be needed to classify the call site. Safe default is silence.
+    const src =
+      "?bs 0.9\n" +
+      "fn parse(s: string) -> Result<void, ErrorA> { ok(undefined) }\n" +
+      "fn parse(n: number) -> Result<void, ErrorB> { ok(undefined) }\n" +
+      "fn caller(s: string) -> void {\n" +
+      "  parse(s)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES002 — } as statement boundary
+// ---------------------------------------------------------------------------
+
 describe("RES002: closing brace is a statement boundary", () => {
   it("fires when a discarded call immediately follows a closing brace", () => {
     // A discarded Result call that starts right after a `}` (no newline) is
