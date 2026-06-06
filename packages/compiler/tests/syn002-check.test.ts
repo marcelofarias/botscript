@@ -347,6 +347,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
 
+  it("does NOT fire when fn is declared 'unsafe fn' (declaration-level escape hatch)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "unsafe \"legacy throw\" fn run() -> void {\n" +
+      "  throw new Error(\"x\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
   it("fires when throw is outside the unsafe block but inside the same fn", () => {
     const src =
       "?bs 0.9\n" +
