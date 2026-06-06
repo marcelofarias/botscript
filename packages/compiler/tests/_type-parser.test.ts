@@ -210,6 +210,10 @@ describe("extractResultArgs", () => {
   it("returns null for Promise<Result<T, E>> | Other (Promise union)", () => {
     expect(extractResultArgs("Promise<Result<string, ParseError>> | Other")).toBeNull();
   });
+
+  it("returns null for Result<A, B, C> (more than two type args)", () => {
+    expect(extractResultArgs("Result<A, B, C>")).toBeNull();
+  });
 });
 
 describe("extractOutermostGenericContent", () => {

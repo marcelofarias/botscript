@@ -152,7 +152,12 @@ export function extractResultArgs(s: string): [string, string] | null {
   const commaIdx = topLevelCommaIndex(content);
   if (commaIdx === -1) return null;
 
-  return [content.slice(0, commaIdx).trim(), content.slice(commaIdx + 1).trim()];
+  const tArg = content.slice(0, commaIdx).trim();
+  const eRemainder = content.slice(commaIdx + 1);
+  // Reject if there is a second top-level comma — Result<A, B, C> is not a valid Result<T, E>.
+  if (topLevelCommaIndex(eRemainder) !== -1) return null;
+
+  return [tArg, eRemainder.trim()];
 }
 
 /**
