@@ -106,6 +106,18 @@ describe("matchingAngleClose", () => {
   it("returns -1 for unmatched", () => {
     expect(matchingAngleClose("<unclosed", 0)).toBe(-1);
   });
+
+  it("returns -1 when openIdx is negative", () => {
+    expect(matchingAngleClose("Result<T, E>", -1)).toBe(-1);
+  });
+
+  it("returns -1 when openIdx does not point at <", () => {
+    expect(matchingAngleClose("Result<T, E>", 3)).toBe(-1);
+  });
+
+  it("returns -1 when openIdx is out of bounds", () => {
+    expect(matchingAngleClose("Result<T, E>", 100)).toBe(-1);
+  });
 });
 
 describe("isTopLevelResult", () => {

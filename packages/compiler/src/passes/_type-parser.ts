@@ -84,9 +84,11 @@ export function topLevelCommaIndex(s: string): number {
 /**
  * Returns the index of the matching `>` for the `<` at `openIdx` in `s`,
  * tracking all nested depth forms and guarding `->` / `=>`.
- * Returns -1 if no matching `>` is found.
+ * Returns -1 if `openIdx` is out-of-bounds, does not point at `<`, or no
+ * matching `>` is found.
  */
 export function matchingAngleClose(s: string, openIdx: number): number {
+  if (openIdx < 0 || openIdx >= s.length || s[openIdx] !== "<") return -1;
   const d: Depth = { angle: 0, bracket: 0, paren: 0, brace: 0 };
   for (let i = openIdx; i < s.length; i++) {
     if (s[i] === "<") {
@@ -168,10 +170,12 @@ export function extractOutermostGenericContent(s: string): string | null {
 
 /**
  * Extract the leading identifier from a type expression.
- * Returns `""` when the type resolves to an array form (e.g. `ParseError[]`,
- * `ParseError<T>[]`, `ParseError []`).
+ * Returns `""` in two cases:
+ *   - The type resolves to an array form (e.g. `ParseError[]`, `ParseError<T>[]`, `ParseError []`).
+ *   - The type does not start with an identifier (e.g. `[A, B]`, tuple literals).
  * Returns the base identifier when the type is a plain name or generic
  * (e.g. `ParseError` → `"ParseError"`, `ParseError<T>` → `"ParseError"`).
+ * Indexed-access types like `Foo["bar"]` or `Foo[Bar]` return the base ident, not `""`.
  */
 export function stripArraySuffix(type: string): string {
   const trimmed = type.trim();
