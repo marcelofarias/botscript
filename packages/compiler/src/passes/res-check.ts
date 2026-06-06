@@ -43,20 +43,35 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   if (decls.length === 0) return src;
 
   // 1. Collect result-bearing fn names.
-  // If the same name appears with mixed return types (e.g. a nested fn shadows
-  // a top-level fn), treat it as ambiguous and exclude it — scope resolution
-  // would be needed to classify calls correctly, so the safe default is silence.
+  // If the same name appears with mixed return types (e.g. a nested fn shadows a
+  // top-level fn with a different type), treat it as ambiguous and exclude it —
+  // scope resolution would be needed to classify calls correctly.
+  // Two categories of ambiguity:
+  //   a. Same name has both Result/Option and non-Result/Option variants.
+  //   b. Same name appears multiple times with different Result/Option return types
+  //      (e.g. overloads with different error arms). getReturnTypeLabel() falls back
+  //      to "Result/Option" in that case, which is fine, but we should still warn.
   const resultBearing = new Set<string>();
   const nonResultBearing = new Set<string>();
+  // Track all Result/Option return types seen per name to detect same-category ambiguity.
+  const resultReturnTypes = new Map<string, Set<string>>();
   for (const decl of decls) {
     if (decl.returnType.includes("Result<") || decl.returnType.includes("Option<")) {
       resultBearing.add(decl.name);
+      const seen = resultReturnTypes.get(decl.name) ?? new Set<string>();
+      seen.add(decl.returnType.trim());
+      resultReturnTypes.set(decl.name, seen);
     } else {
       nonResultBearing.add(decl.name);
     }
   }
-  // Remove ambiguous names.
+  // Remove names that are ambiguous across Result/non-Result categories.
   for (const name of nonResultBearing) resultBearing.delete(name);
+  // Also remove names that appear multiple times with different Result/Option return types:
+  // same-category overloads have no safe scope resolution either.
+  for (const [name, types] of resultReturnTypes) {
+    if (types.size > 1) resultBearing.delete(name);
+  }
   if (resultBearing.size === 0) return src;
 
   // 2. Collect char ranges to skip: test blocks and unsafe expression blocks.
