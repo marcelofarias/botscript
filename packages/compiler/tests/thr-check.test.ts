@@ -388,6 +388,19 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
     expect(() => compile(src)).not.toThrow();
   });
 
+  it("does not fire when success type T contains `=>` (fat-arrow callback type, not generic close)", () => {
+    // The `>` in `=>` must not decrement angle-bracket depth, same as `->`.
+    // Without this guard the scanner exits Result<…> prematurely and
+    // misidentifies the error type position.
+    const src =
+      "?bs 0.9\n" +
+      "fn parseItem(raw: string) -> Result<(x: string) => string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok((x: string) => x)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
   it("still fires when the error type in Result is ParseError[] (array), not ParseError", () => {
     // `ParseError[]` (array) is distinct from the bare `ParseError` ident.
     // Suppression should NOT apply — `ParseError` is absent from the declared

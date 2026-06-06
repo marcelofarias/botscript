@@ -457,8 +457,8 @@ function isErrorTypeInResult(returnType: string, typeName: string): boolean {
   for (let i = openAngle; i < rt.length; i++) {
     const ch = rt[i];
     if (ch === "<") depth++;
-    else if (ch === ">" && (i === 0 || rt[i - 1] !== "-")) {
-      // Skip `>` that is part of `->` (arrow type syntax, not a generic close).
+    else if (ch === ">" && (i === 0 || (rt[i - 1] !== "-" && rt[i - 1] !== "="))) {
+      // Skip `>` that is part of `->` or `=>` (arrow type syntax, not a generic close).
       depth--;
       if (depth === 0) { closingIdx = i; break; }
     } else if (ch === "{") braceDepth++;
@@ -490,7 +490,7 @@ function innerGenericArg(s: string): string | null {
   for (let i = openAngle; i < s.length; i++) {
     const ch = s[i];
     if (ch === "<") depth++;
-    else if (ch === ">" && (i === 0 || s[i - 1] !== "-")) {
+    else if (ch === ">" && (i === 0 || (s[i - 1] !== "-" && s[i - 1] !== "="))) {
       depth--;
       if (depth === 0) return s.slice(openAngle + 1, i);
     }
@@ -509,7 +509,7 @@ function splitOnTopLevelPipe(s: string): string[] {
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (ch === "<") angleDepth++;
-    else if (ch === ">" && (i === 0 || s[i - 1] !== "-")) angleDepth--;
+    else if (ch === ">" && (i === 0 || (s[i - 1] !== "-" && s[i - 1] !== "="))) angleDepth--;
     else if (ch === "{") braceDepth++;
     else if (ch === "}") braceDepth--;
     else if (ch === "(") parenDepth++;
@@ -546,7 +546,7 @@ function leadingIdent(type: string): string {
     for (let i = 0; i < rest.length; i++) {
       const ch = rest[i]!;
       if (ch === "<") depth++;
-      else if (ch === ">" && (i === 0 || rest[i - 1] !== "-")) {
+      else if (ch === ">" && (i === 0 || (rest[i - 1] !== "-" && rest[i - 1] !== "="))) {
         depth--;
         if (depth === 0) { rest = rest.slice(i + 1).trimStart(); break; }
       }
