@@ -643,9 +643,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "A fn that writes to the terminal must declare `uses { stdout }` or `uses { stderr }` " +
       "so callers (and the capability check pass, CAP001/CAP002) can see the output surface.\n\n" +
       "Direct `console.*` calls (console.log, console.error, console.warn, etc.) route output " +
-      "outside the declared capability system — the compiler sees no call to a tracked namespace, " +
-      "so neither CAP001 (under-declaration) nor CAP002 (over-declaration) can fire. Callers " +
-      "have no way to know the fn writes to stdout or stderr just by reading its header.\n\n" +
+      "outside the declared capability system — the compiler sees no call to a tracked stdlib " +
+      "namespace, so CAP001 (under-declaration) cannot fire. However, CAP002 (over-declaration) " +
+      "*can* still fire: if a developer declares `uses { stdout }` on a fn that uses `console.*` " +
+      "instead of `stdout.write(...)`, CAP002 will flag the declared capability as never used. " +
+      "Either way, callers have no way to know the fn writes to stdout or stderr just by reading " +
+      "its header.\n\n" +
       "This is a reliability issue in bot orchestration code: a bot that silently logs to " +
       "console in a sandboxed or pipe environment may produce output the orchestrator never " +
       "expects and cannot suppress or redirect.\n\n" +
