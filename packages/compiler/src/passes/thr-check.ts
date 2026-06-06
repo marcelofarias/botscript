@@ -205,7 +205,11 @@ export function passThrCheck(
 
     // Justified by: paramThrows + direct body construction + transitive callee throws.
     const justifiedThrows = new Set<string>(rec.decl.paramThrows);
-    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) justifiedThrows.add(t);
+    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) {
+      // Symmetry with THR002: types suppressed because they sit in the Result
+      // error position do not justify a `throws {}` annotation either.
+      if (!isErrorTypeInResult(rec.decl.returnType, t)) justifiedThrows.add(t);
+    }
 
     let hasNonSelfCallee = false;
     for (const calleeName of rec.callees) {
@@ -492,7 +496,13 @@ function innerGenericArg(s: string): string | null {
     if (ch === "<") depth++;
     else if (ch === ">" && (i === 0 || (s[i - 1] !== "-" && s[i - 1] !== "="))) {
       depth--;
-      if (depth === 0) return s.slice(openAngle + 1, i);
+      if (depth === 0) {
+        // Trailing non-whitespace after the closing `>` means this generic wrapper
+        // is not the whole type (e.g. `Promise<Result<T,E>>[]`). Return null so
+        // the caller does not mistake an array-of-promises for a plain Promise wrapper.
+        if (s.slice(i + 1).trim() !== "") return null;
+        return s.slice(openAngle + 1, i);
+      }
     }
   }
   return null;

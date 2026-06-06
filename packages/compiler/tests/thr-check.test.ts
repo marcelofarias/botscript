@@ -459,4 +459,38 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("still fires when return type is Promise<Result<T,E>>[] (array-of-promises, not Promise wrapper)", () => {
+    // Trailing `[]` means the return type is an array of promises, not a plain
+    // Promise<Result<T,E>> wrapper. THR002 suppression must NOT apply.
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchAll(id: string) -> Promise<Result<string, ParseError>>[] {\n" +
+      "  if (!id) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+});
+
+describe("THR004: over-declared throws — Result error-position symmetry", () => {
+  it("fires when throws { X } is stale on a fn returning Result<T, X> with a callee", () => {
+    // A fn returning Result<T, ParseError> that constructs err(ParseError(...)) does not
+    // need throws { ParseError } — the error is signaled via the return value.
+    // Previously, THR004 would treat the body err() as "justifying" the throws annotation.
+    // Now it must ignore body-constructed types that sit in the Result error position.
+    // helper has no throws, so THR001 does not fire; parseUser has a callee
+    // so THR004 is not skipped by the zero-callees guard.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(x: string) -> string = x\n" +
+      "fn parseUser(id: string) throws { ParseError } -> Result<string, ParseError> {\n" +
+      "  helper(id)\n" +
+      "  return err(ParseError(\"invalid\"))\n" +
+      "}\n";
+    // parseUser declares throws { ParseError } but ParseError is only in the Result
+    // error position; the annotation is stale and should be flagged by THR004.
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "THR004" && w.message.includes("parseUser"))).toBe(true);
+  });
 });
