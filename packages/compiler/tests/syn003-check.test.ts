@@ -186,6 +186,16 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN003")).toBe(false);
   });
 
+  it("does NOT fire when fn is declared 'unsafe fn' (declaration-level escape hatch)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "unsafe \"legacy logging\" fn greet(name: string) -> void {\n" +
+      "  console.log(name)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN003")).toBe(false);
+  });
+
   it("fires when console call is outside the unsafe block but inside the same fn", () => {
     const src =
       "?bs 0.9\n" +

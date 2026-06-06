@@ -54,6 +54,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003.
+    if (decl.unsafeReason !== undefined) continue;
+
     const inner = nesting.get(decl) ?? [];
     const open: typeof inner = [];
     let nextInner = 0;
@@ -194,8 +197,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
         continue;
 
-      // Must be followed by `.` or `?.` — this implicitly excludes `{ console: ... }`
-      // (property key, followed by `:`) and any other non-member-access context.
+      // Must be followed by `.` or `?.` (member access). This correctly excludes
+      // `{ console: ... }` (property key — next token is `:`, not `.`/`?.`) and
+      // any other context where `console` is not a member-access receiver.
       const nextIdx = nextSignificant(tokens, i + 1);
       const next = tokens[nextIdx];
       const isDot = next && next.kind === "punct" && next.text === ".";
