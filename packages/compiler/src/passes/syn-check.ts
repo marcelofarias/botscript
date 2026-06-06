@@ -23,7 +23,6 @@ import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import type { Token } from "../parser/lex.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
 export interface SynCheckResult {
