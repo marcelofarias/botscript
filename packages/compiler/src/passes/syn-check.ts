@@ -68,8 +68,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
       // but NOT throw (expr) — a throw statement with a parenthesized expression.
       // Reliable detection: `throw(` is a method shorthand only when the token
-      // immediately after its matching `)` is `{` (block body) or `=>` (arrow method).
-      // A real `throw(expr)` statement never has `{` or `=>` right after the paren.
+      // immediately after its matching `)` is `{` (block body), `=>` (arrow method),
+      // or `:` (return type annotation, e.g. `throw(): T { ... }` or `throw(): T;`).
+      // A real `throw(expr)` statement is never followed by `{`, `=>`, or `:` at that position.
       if (next && next.kind === "open" && next.text === "(") {
         const closeParenIdx = next.matchedAt;
         if (closeParenIdx !== undefined) {
@@ -78,7 +79,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (
             afterParen &&
             ((afterParen.kind === "open" && afterParen.text === "{") ||
-              afterParen.kind === "fatArrow")
+              afterParen.kind === "fatArrow" ||
+              (afterParen.kind === "punct" && afterParen.text === ":"))
           ) continue;
         }
       }

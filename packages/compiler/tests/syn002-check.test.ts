@@ -229,4 +229,28 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
   });
+
+  it("does NOT fire when 'throw' is a method shorthand with a return type annotation: { throw(): T {} }", () => {
+    // TypeScript method definitions can include return type annotations: `throw(): T { ... }`
+    // The `:` after the `)` must be recognised as a method context, not a throw statement.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { throw(): number { return 1 } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire when 'throw' is a method signature in a type literal: { throw(): T; }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o: { throw(): number } = { throw(): number { return 1 } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });
