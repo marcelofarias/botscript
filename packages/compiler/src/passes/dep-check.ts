@@ -271,9 +271,9 @@ export function passDepCheck(
   //
   //    Justification uses a DFS over the callee graph rooted at rec.decl's direct
   //    callees, collecting each reachable fn's DECLARED reads/writes. The root fn
-  //    itself is excluded from the DFS to prevent circular self-justification through
-  //    mutual recursion (f calls g, g calls f -> g.transitiveReads includes f's label,
-  //    which would let f justify itself via g even if neither actually reads the resource).
+  //    itself is pre-added to `visited` so the DFS stops at it during mutual recursion
+  //    (f calls g, g calls f → DFS skips f when encountered via g, preventing
+  //    f from justifying its own labels through the cycle).
   const warnings: Diagnostic[] = [];
   for (const rec of records.values()) {
     if (rec.callees.size === 0) continue;

@@ -272,7 +272,8 @@ export function hasOpaqueCall(
 
       if (afterDot && afterDot.kind === "open" && afterDot.text === "(") {
         // Optional bare call: `fn?.()` — `?.` is immediately followed by `(`.
-        // The receiver is not a known callee, so this is opaque.
+        // Local variables and callback parameters are not opaque external callers.
+        if (effectiveLocalNames.has(tok.text)) continue;
         return true;
       }
 
