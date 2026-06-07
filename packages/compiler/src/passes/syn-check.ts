@@ -69,15 +69,25 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // The lexer emits `eq` (kind="eq") for `=`; a real throw expression can never start with `=`.
       if (next && next.kind === "eq") continue;
 
+      // Exclude optional method signatures: throw?() / throw?(): T
+      // A standalone `throw` statement cannot be followed by `?`; only method
+      // signatures in type literals / interfaces use optional-method syntax.
+      if (next && next.kind === "question") continue;
+
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
+      // and type-literal method signatures: { throw() }, { throw(): T; }
       // but NOT throw (expr) — a throw statement with a parenthesized expression.
-      // Reliable detection: `throw(` is a method shorthand only when the token
-      // immediately after its matching `)` is `{` (block body), `=>` (arrow method),
-      // or `:` (return type annotation, e.g. `throw(): T { ... }` or `throw(): T;`).
-      // A real `throw(expr)` statement is never followed by `{`, `=>`, or `:` at that position.
+      // Detection rules:
+      //  1. Empty parens (`throw()`) cannot be a throw statement (no-argument grouping
+      //     `()` is a syntax error in JS/TS), so they must be a method signature.
+      //  2. Non-empty parens: `throw(` is a method shorthand/signature when the token
+      //     immediately after its matching `)` is `{` (block body), `=>` (arrow method),
+      //     or `:` (return type annotation, e.g. `throw(): T { ... }` or `throw(): T;`).
       if (next && next.kind === "open" && next.text === "(") {
         const closeParenIdx = next.matchedAt;
         if (closeParenIdx !== undefined) {
+          const firstInsideIdx = nextSignificant(tokens, nextIdx + 1);
+          if (firstInsideIdx === closeParenIdx) continue; // empty parens → method signature
           const afterParenIdx = nextSignificant(tokens, closeParenIdx + 1);
           const afterParen = tokens[afterParenIdx];
           if (

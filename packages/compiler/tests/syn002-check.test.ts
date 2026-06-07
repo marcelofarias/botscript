@@ -266,4 +266,33 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
+
+  it("does NOT fire when 'throw' is a type-literal member with no return type: type T = { throw() }", () => {
+    // `throw()` with empty parens cannot be a throw statement (empty grouping `()` is
+    // invalid JS/TS); it must be a method signature. A type-alias declaration like
+    // `type T = { throw() }` inside a fn body should not trigger SYN002.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  type T = { throw() }\n" +
+      "  const o: T = { throw() { return 1 } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire when 'throw' is an optional method signature in a type literal: throw?(): T", () => {
+    // Optional method signatures like `throw?(): T` use `?` directly after the
+    // method name, which is not valid syntax for a throw statement. SYN002 must
+    // not fire for this pattern.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  type T = { throw?(): number }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });
