@@ -635,6 +635,43 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN003: {
+    code: "SYN003",
+    title: "console.* call bypasses stdout/stderr capability model",
+    body:
+      "Botscript tracks output capability through `stdout` and `stderr` stdlib namespaces. " +
+      "A fn that writes to the terminal must declare `uses { stdout }` or `uses { stderr }` " +
+      "so callers (and the capability check pass, CAP001/CAP002) can see the output surface.\n\n" +
+      "Direct `console.*` calls (console.log, console.error, console.warn, etc.) route output " +
+      "outside the declared capability system — the compiler sees no call to a tracked stdlib " +
+      "namespace, so CAP001 (under-declaration) cannot fire. However, CAP002 (over-declaration) " +
+      "*can* still fire: if a developer declares `uses { stdout }` on a fn that uses `console.*` " +
+      "instead of `stdout.write(...)`, CAP002 will flag the declared capability as never used. " +
+      "Either way, callers have no way to know the fn writes to stdout or stderr just by reading " +
+      "its header.\n\n" +
+      "This is a reliability issue in bot orchestration code: a bot that silently logs to " +
+      "console in a sandboxed or pipe environment may produce output the orchestrator never " +
+      "expects and cannot suppress or redirect.\n\n" +
+      "**Fix:** replace `console.log(...)` with `stdout.write(...)` wrapped in an " +
+      "`unsafe \"...\" { ... }` block (required by UNS005 at `?bs 0.9+`) and add `uses { stdout }` " +
+      "to the fn header; replace `console.error(...)` with `stderr.write(...)` (same pattern) and add " +
+      "`uses { stderr }`.\n\n" +
+      "SYN003 fires at `?bs 0.7+` as a non-blocking warning. The check is token-based and " +
+      "fires on any `console.method(...)` call where `console` is not a property of another " +
+      "expression — it does not track local `console` rebindings.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn greet(name: string) -> void {\n" +
+        "  console.log(`Hello, ${name}`)\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn greet(name: string) uses { stdout } -> void {\n" +
+        "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

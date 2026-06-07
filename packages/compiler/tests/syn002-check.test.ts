@@ -243,6 +243,16 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
 
+  it("does NOT fire when throw is inside an unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void {\n" +
+      "  unsafe \"legacy throw path\" { throw new Error(\"x\") }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
   it("does NOT fire when 'throw' is a method signature in a type literal: { throw(): T; }", () => {
     const src =
       "?bs 0.9\n" +
@@ -332,6 +342,42 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
       "fn makeObj() -> any {\n" +
       "  const o = { throw<T = Map<A, B>>(x: T): T { return x } }\n" +
       "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire when fn is declared 'unsafe fn' (declaration-level escape hatch)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "unsafe \"legacy throw\" fn run() -> void {\n" +
+      "  throw new Error(\"x\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("fires when throw is outside the unsafe block but inside the same fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn run() -> void {\n" +
+      "  unsafe \"scoped\" { const x = 1 }\n" +
+      "  throw new Error(\"outside\")\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(true);
+  });
+
+  it("does NOT fire for a non-unsafe nested fn declared inside an unsafe fn body", () => {
+    // The nested fn lives inside the unsafe fn's body range — the entire body is exempt
+    // (matches uns-check's range-based suppression pattern).
+    const src =
+      "?bs 0.9\n" +
+      "unsafe \"legacy\" fn outer() -> void {\n" +
+      "  fn inner() -> void {\n" +
+      "    throw new Error(\"x\")\n" +
+      "  }\n" +
+      "  inner()\n" +
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
