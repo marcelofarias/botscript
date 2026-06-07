@@ -15,6 +15,13 @@
  *           `stdout.write(...)` or `stderr.write(...)` so the output surface
  *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
  *           clause and visible to callers.
+ *
+ *   SYN004  A `process.exit()` or `process.abort()` call was detected in a fn body (?bs 0.7+).
+ *           These calls terminate the entire worker process — any co-located bots
+ *           sharing the process are killed, no Result error path is available to callers,
+ *           and even a wrapping try/catch cannot intercept the termination. This is the
+ *           most severe bypass of botscript's safety model. The idiomatic fix is to
+ *           bubble the exit intent as a Result return and let the orchestrator decide.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -45,6 +52,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const warnings: Diagnostic[] = [];
   const syn002 = getErrorCode("SYN002")!;
   const syn003 = getErrorCode("SYN003")!;
+  const syn004 = getErrorCode("SYN004")!;
 
   // Collect char-offset ranges where SYN002/SYN003 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -252,6 +260,73 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn003.rule,
         idiom: syn003.idiom,
         rewrite: syn003.rewrite,
+      });
+    }
+
+    // SYN004: process.exit() / process.abort() detection.
+    nextInner = 0;
+    const open004: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open004.length > 0 && open004[open004.length - 1]!.tokenEnd <= i) open004.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open004.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open004.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "process") continue;
+
+      // Exclude: `obj.process` — preceded by `.` or `?.`
+      const prevIdx = prevSignificant(tokens, i - 1);
+      const prev = tokens[prevIdx];
+      if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `.` or `?.`
+      const nextIdx = nextSignificant(tokens, i + 1);
+      const next = tokens[nextIdx];
+      const isDot4 = next && next.kind === "punct" && next.text === ".";
+      const isOptChain4 = next && next.kind === "questionDot";
+      if (!isDot4 && !isOptChain4) continue;
+
+      // Next must be `exit` or `abort`
+      const methodIdx = nextSignificant(tokens, nextIdx + 1);
+      const method = tokens[methodIdx];
+      if (!method || method.kind !== "ident" || (method.text !== "exit" && method.text !== "abort"))
+        continue;
+
+      // Must be a call: method followed by `(` or `?.(`.
+      let afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+      let afterMethod4 = tokens[afterMethodIdx];
+      let isOptCall4 = false;
+      if (afterMethod4 && afterMethod4.kind === "questionDot") {
+        isOptCall4 = true;
+        afterMethodIdx = nextSignificant(tokens, afterMethodIdx + 1);
+        afterMethod4 = tokens[afterMethodIdx];
+      }
+      if (!afterMethod4 || !(afterMethod4.kind === "open" && afterMethod4.text === "(")) continue;
+
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+      const sep4 = isOptChain4 ? "?." : ".";
+      const callSep4 = isOptCall4 ? "?." : "";
+      const loc = locationOf(src, tok.start);
+      warnings.push({
+        code: "SYN004",
+        severity: "warning",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: tok.start,
+        end: method.end,
+        message:
+          `fn '${decl.name}' calls process${sep4}${method.text}${callSep4}() — ` +
+          `this terminates the worker process; co-located bots are killed and callers cannot catch the exit; ` +
+          `use Result<T, E> and let the orchestrator decide, or wrap in unsafe`,
+        rule: syn004.rule,
+        idiom: syn004.idiom,
+        rewrite: syn004.rewrite,
       });
     }
   }

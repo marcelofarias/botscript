@@ -491,6 +491,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
       "}",
   },
+  SYN004: {
+    code: "SYN004",
+    title: "process.exit() / process.abort() terminates the worker process",
+    rule:
+      "`process.exit()` and `process.abort()` terminate the entire worker process — " +
+      "any co-located bots sharing the process are killed, no Result error path is available " +
+      "to callers, and even a wrapping try/catch at the call site cannot intercept the termination; " +
+      "this is the most severe bypass of botscript's safety model",
+    idiom:
+      "bubble the exit intent as a Result return value and let the orchestrator decide what to do; " +
+      "if termination is genuinely required, wrap in `unsafe { }` with a written reason",
+    rewrite:
+      "// before — process.exit() bypasses error contract and kills the process\n" +
+      "fn run() -> void {\n" +
+      "  process.exit(1)  // SYN004\n" +
+      "}\n\n" +
+      "// after — bubble as a Result so the orchestrator decides\n" +
+      "fn run() -> Result<void, ExitError> {\n" +
+      "  return err(new ExitError(\"run failed\"))\n" +
+      "}\n\n" +
+      "// or — if termination is genuinely required, acknowledge it explicitly\n" +
+      "fn run() -> void {\n" +
+      "  unsafe \"controlled shutdown — orchestrator has already closed all connections\" {\n" +
+      "    process.exit(0)\n" +
+      "  }\n" +
+      "}",
+    example:
+      "// SYN004: process.exit() terminates the worker process\n" +
+      "fn shutdown() -> void {\n" +
+      "  process.exit(1)\n" +
+      "}\n\n" +
+      "// fix: return the exit intent as a Result\n" +
+      "fn shutdown() -> Result<void, ShutdownError> {\n" +
+      "  return err(new ShutdownError(\"shutdown requested\"))\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

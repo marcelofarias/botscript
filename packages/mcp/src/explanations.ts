@@ -672,6 +672,37 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN004: {
+    code: "SYN004",
+    title: "process.exit() / process.abort() terminates the worker process",
+    body:
+      "Botscript's safety model assumes fns communicate failure through `Result<T, E>` return " +
+      "values. `process.exit()` and `process.abort()` break this contract entirely:\n\n" +
+      "1. They terminate the **entire worker process** — any co-located bots sharing the process are killed.\n" +
+      "2. There is no Result, no error path, and no graceful shutdown — the caller cannot observe the termination.\n" +
+      "3. Even a wrapping `try/catch` at the call site cannot intercept `process.exit()` — unlike a native `throw`, it is unrecoverable.\n" +
+      "4. The capability model has no declaration that covers process lifecycle control.\n\n" +
+      "This is the most severe bypass of botscript's safety model. A fn that can call `process.exit()` " +
+      "makes every downstream guarantee moot.\n\n" +
+      "**Fix:** bubble the exit intent as a `Result<T, E>` return value and let the orchestrator decide " +
+      "what to do. If process termination is genuinely required (e.g., a controlled shutdown), " +
+      "wrap in `unsafe \"<reason>\" { process.exit(0) }` to acknowledge the risk explicitly.\n\n" +
+      "SYN004 fires at `?bs 0.7+` as a non-blocking warning. It detects `process.exit(...)` and " +
+      "`process.abort()` where `process` is the global (not a property of another object). " +
+      "Calls inside `unsafe { }` blocks or `unsafe fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn shutdown(code: number) -> void {\n" +
+        "  process.exit(code)\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn shutdown(code: number) -> Result<void, ShutdownError> {\n" +
+        "  return err(new ShutdownError(`exit code ${code}`))\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
