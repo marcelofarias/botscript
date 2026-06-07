@@ -21,27 +21,29 @@
  *
  *   DEP002  writes under-declared: same for writes { ... }.
  *
+ *   DEP003  reads over-declared (warning): fn has at least one same-file (or
+ *           moduleEffects) callee but no callee (transitively) declares `reads { x }`.
+ *           The label likely became stale after a refactor removed the callee that
+ *           originally justified it. Leaf fns are excluded — they may be the actual
+ *           access point and the compiler cannot verify the body directly.
+ *
+ *   DEP004  writes over-declared (warning): same for writes { ... }.
+ *
  * Same-file call resolution is performed by default. Cross-file calls are
  * opaque unless the caller provides a `moduleEffects` map (via
  * `TransformOptions.moduleEffects`): any function listed there is treated as
  * if its declaration were in the current file, so a caller that omits its
  * reads/writes labels fires DEP001/DEP002 exactly as for a same-file callee.
  * Dynamic dispatch and higher-order function arguments are not tracked.
- *
- * Over-declaration is intentionally NOT checked here. The reads/writes labels
- * are user-defined strings; unlike stdlib capability names, the compiler has
- * no way to verify that a declared label is actually accessed in the body.
- * Over-declaration is therefore always allowed (conservative declarations are
- * harmless and may even be intentional for documentation purposes).
  */
 
-import { BotscriptError } from "../diagnostics.js";
+import { BotscriptError, type Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, collectCallees } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall, collectTopLevelParamNames, collectFnBodyLocalNames } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 // ---------------------------------------------------------------------------
@@ -66,19 +68,24 @@ interface FnRecord {
 // Entry point
 // ---------------------------------------------------------------------------
 
+export interface DepCheckResult {
+  code: string;
+  warnings: ReadonlyArray<Diagnostic>;
+}
+
 export function passDepCheck(
   src: string,
   version: VersionInfo,
   moduleEffects?: ModuleEffects,
-): string {
-  if (!atLeast(version.resolved, "0.9")) return src;
+): DepCheckResult {
+  if (!atLeast(version.resolved, "0.9")) return { code: src, warnings: [] };
 
   const allowGenerics = atLeast(version.resolved, "0.4");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  if (decls.length === 0) return src;
+  if (decls.length === 0) return { code: src, warnings: [] };
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` in this file should look up `fetchRow` in moduleEffects.
@@ -87,8 +94,13 @@ export function passDepCheck(
   // Build maps for external (cross-file) effect declarations.
   const extReads = new Map<string, Set<string>>();
   const extWrites = new Map<string, Set<string>>();
+  // All declared names in moduleEffects (regardless of whether they have reads/writes).
+  // Used by DEP003/DEP004 to distinguish "known callee with no labels" from "unknown callee"
+  // — only known callees count as non-self callees; unknown ones are opaque.
+  const knownExternalNames = new Set<string>();
   if (moduleEffects) {
     for (const [name, eff] of Object.entries(moduleEffects)) {
+      knownExternalNames.add(name);
       if (eff.reads?.length) extReads.set(name, new Set(eff.reads));
       if (eff.writes?.length) extWrites.set(name, new Set(eff.writes));
     }
@@ -100,11 +112,21 @@ export function passDepCheck(
   const fnNames = new Set(decls.map((d) => d.name));
 
   // Include external function names (and their local aliases) in the callee
-  // scan so cross-file calls appear in the callees set.
-  const aliasedLocalNames = new Set(importAliases.keys());
+  // scan so cross-file calls appear in the callees set.  knownExternalNames
+  // covers moduleEffects entries with no reads/writes so calls to them are
+  // collected and treated as non-self callees by DEP003/DEP004.
+  //
+  // Only include aliases whose resolved target is actually present in
+  // moduleEffects. An alias for an un-listed import is opaque — including it
+  // would mask the opaque call from hasOpaqueCall and produce false warnings.
+  const aliasedKnownNames = new Set(
+    [...importAliases.entries()]
+      .filter(([, resolved]) => knownExternalNames.has(resolved))
+      .map(([alias]) => alias),
+  );
   const allCalleeNames =
-    extReads.size > 0 || extWrites.size > 0 || aliasedLocalNames.size > 0
-      ? new Set([...fnNames, ...extReads.keys(), ...extWrites.keys(), ...aliasedLocalNames])
+    knownExternalNames.size > 0 || aliasedKnownNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...aliasedKnownNames])
       : fnNames;
 
   // Precompute each fn's nested (descendant) decls once via a single sweep,
@@ -236,7 +258,92 @@ export function passDepCheck(
     }
   }
 
-  return src;
+  // 5. DEP003/DEP004: over-declared (warning-level).
+  //    For each fn that has at least one same-file (or moduleEffects) non-self callee,
+  //    compute which declared reads/writes labels are NOT justified by any callee.
+  //    Leaf fns (no tracked callees) and self-only-recursive fns are excluded —
+  //    they may be the actual access point and the compiler can't verify the body.
+  //    Callback parameter annotations (paramReads/paramWrites) are treated as
+  //    implicit callee justification: a wrapper that receives a reads { db } callback
+  //    and propagates that label upward is not over-declaring.
+  //    Fns that call any opaque (unlisted) function are also excluded — the unknown
+  //    callee may be the actual read/write point that justifies the label.
+  //
+  //    Justification uses a DFS over the callee graph rooted at rec.decl's direct
+  //    callees, collecting each reachable fn's DECLARED reads/writes. The root fn
+  //    itself is pre-added to `visited` so the DFS stops at it during mutual recursion
+  //    (f calls g, g calls f → DFS skips f when encountered via g, preventing
+  //    f from justifying its own labels through the cycle).
+  const warnings: Diagnostic[] = [];
+  for (const rec of records.values()) {
+    if (rec.callees.size === 0) continue;
+
+    // Seed justification from callback parameter annotations. A wrapper fn that
+    // accepts a `fn() reads { db } -> T` callback and propagates reads { db }
+    // upward is not over-declaring, even if regular callees don't read db.
+    const calleeReads = new Set<string>(rec.decl.paramReads);
+    const calleeWrites = new Set<string>(rec.decl.paramWrites);
+
+    // DFS from direct callees, collecting their declared reads/writes transitively.
+    // rec.decl is pre-added so the DFS stops there, preventing circular justification.
+    const visited = new Set<FnDecl>([rec.decl]);
+    let hasNonSelfCallee = false;
+
+    const dfsStack: string[] = [...rec.callees];
+    while (dfsStack.length > 0) {
+      const calleeName = dfsStack.pop()!;
+      const calleeDecls = declsByName.get(calleeName);
+      if (calleeDecls) {
+        for (const calleeDecl of calleeDecls) {
+          if (visited.has(calleeDecl)) continue;
+          visited.add(calleeDecl);
+          hasNonSelfCallee = true;
+          const callee = records.get(calleeDecl);
+          if (!callee) continue;
+          for (const label of callee.decl.reads ?? []) calleeReads.add(label);
+          for (const label of callee.decl.writes ?? []) calleeWrites.add(label);
+          for (const nextCallee of callee.callees) dfsStack.push(nextCallee);
+        }
+        continue;
+      }
+      const resolvedCallee = importAliases.get(calleeName) ?? calleeName;
+      if (!knownExternalNames.has(resolvedCallee)) continue;
+      hasNonSelfCallee = true;
+      const extR = extReads.get(resolvedCallee);
+      if (extR) for (const label of extR) calleeReads.add(label);
+      const extW = extWrites.get(resolvedCallee);
+      if (extW) for (const label of extW) calleeWrites.add(label);
+    }
+
+    // Self-only-recursive fns are treated like leaves.
+    if (!hasNonSelfCallee) continue;
+
+    // Suppress when the fn calls any opaque (unlisted) external function — that
+    // unknown callee may be the actual read/write point that justifies the label.
+    // Combine param names and local variable names so member calls on any known
+    // local (e.g. `str.trim()`, `name.length`) are not mistaken for opaque
+    // namespace/import method calls and don't suppress DEP003/DEP004.
+    const inner = innerByDecl.get(rec.decl) ?? [];
+    const paramNames = collectTopLevelParamNames(rec.decl.args);
+    const bodyLocals = collectFnBodyLocalNames(tokens, rec.decl, inner);
+    const localNames = new Set([...paramNames, ...bodyLocals]);
+    // Include param names in knownNames so bare calls to callback parameters
+    // (e.g. `loader()`) are not treated as opaque external calls — their effects
+    // are already captured via paramReads/paramWrites.
+    const knownWithParams = new Set([...allCalleeNames, ...paramNames]);
+    if (hasOpaqueCall(tokens, rec.decl, inner, knownWithParams, localNames)) continue;
+
+    const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
+    if (overDeclaredReads.length > 0) {
+      warnings.push(mkOverDeclaredWarning(src, rec, "reads", overDeclaredReads));
+    }
+    const overDeclaredWrites = [...rec.declaredWrites].filter(l => !calleeWrites.has(l)).sort();
+    if (overDeclaredWrites.length > 0) {
+      warnings.push(mkOverDeclaredWarning(src, rec, "writes", overDeclaredWrites));
+    }
+  }
+
+  return { code: src, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -326,4 +433,49 @@ function mkError(
   };
 
   return new BotscriptError([diagnostic]);
+}
+
+function mkOverDeclaredWarning(
+  src: string,
+  rec: FnRecord,
+  kind: "reads" | "writes",
+  overLabels: string[],
+): Diagnostic {
+  const code = kind === "reads" ? "DEP003" : "DEP004";
+  const entry = getErrorCode(code)!;
+  const { line, column } = locationOf(src, rec.decl.fnKeywordStart);
+  const nameEnd = rec.decl.nameStart + rec.decl.name.length;
+
+  const labelList = overLabels.join(", ");
+  const firstLabel = overLabels[0]!;
+
+  const notPropagated =
+    overLabels.length === 1
+      ? `'${firstLabel}' is not declared by any tracked callee`
+      : `[${labelList}] are not declared by any tracked callee`;
+  const message =
+    `fn '${rec.decl.name}' declares ${kind} { ${labelList} } but ${notPropagated}; ` +
+    `annotation may be stale`;
+
+  const proposed =
+    kind === "reads"
+      ? [...rec.declaredReads].filter((l) => !overLabels.includes(l)).sort()
+      : [...rec.declaredWrites].filter((l) => !overLabels.includes(l)).sort();
+
+  return {
+    code,
+    severity: "warning",
+    file: null,
+    line,
+    column,
+    start: rec.decl.fnKeywordStart,
+    end: nameEnd,
+    message,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite:
+      proposed.length > 0
+        ? `fn ${rec.decl.name}(...) ${kind} { ${proposed.join(", ")} } -> ...  // remove stale label: ${labelList}`
+        : `fn ${rec.decl.name}(...) -> ...  // remove stale ${kind} {} clause: ${labelList}`,
+  };
 }

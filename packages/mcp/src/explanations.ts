@@ -822,9 +822,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`reads { y }`, then both B and A must declare `reads { y }`.\n\n" +
       "The purpose is completeness: reading A's header should tell you every resource " +
       "category A (or anything it calls) touches, without tracing through the call graph.\n\n" +
-      "Over-declaration is always allowed — declaring more than the minimum is conservative " +
-      "and harmless. DEP001 only fires on under-declaration (a label that is reachable but " +
-      "not declared).",
+      "Over-declaration is warned about from `?bs 0.9` (see DEP003). DEP001 only fires on " +
+      "under-declaration (a label that is reachable but not declared).",
     example: {
       fails:
         "?bs 0.9\n" +
@@ -1024,7 +1023,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`writes { x }`. The rule extends to any depth.\n\n" +
       "The purpose is completeness: reading A's header should tell you every resource " +
       "category A (or anything it calls) writes to, without tracing through the call graph.\n\n" +
-      "Over-declaration is always allowed. DEP002 only fires on under-declaration.",
+      "Over-declaration is warned about from `?bs 0.9` (see DEP004). DEP002 only fires on under-declaration.",
     example: {
       fails:
         "?bs 0.9\n" +
@@ -1034,6 +1033,58 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.9\n" +
         "fn updateMetrics(id: string) writes { metrics } -> void { }\n" +
         "fn recordEvent(id: string) writes { metrics } -> void { updateMetrics(id); }\n",
+    },
+  },
+  DEP003: {
+    code: "DEP003",
+    title: "fn declares reads {} label not justified by any callee in the same file (warning)",
+    body:
+      "From `?bs 0.9`, DEP003 fires as a **warning** (not an error) when fn A has same-file " +
+      "callees but no callee (direct or transitive) declares `reads { x }` that A also declares. " +
+      "The label is not justified by the call graph — a common sign of a refactor that removed " +
+      "the callee that originally justified the annotation.\n\n" +
+      "**Scope:** only fires for fns with at least one same-file (or moduleEffects) callee. " +
+      "Leaf fns are excluded — they may be the actual access point, and the compiler cannot " +
+      "scan the body for direct resource accesses (reads {} labels are user-defined strings, " +
+      "not stdlib references).\n\n" +
+      "DEP003 is also suppressed when the function body contains any opaque or untracked external " +
+      "call (a call to a function not visible to the same-file call graph) — the unknown callee may " +
+      "be the actual read site, so the warning is withheld to avoid false positives.\n\n" +
+      "DEP003 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP001.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn helper(id: string) -> string = id\n" +
+        "fn getUserName(id: string) reads { userDb } -> string = helper(id)\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn getUser(id: string) reads { userDb } -> string = id\n" +
+        "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n",
+    },
+  },
+  DEP004: {
+    code: "DEP004",
+    title: "fn declares writes {} label not justified by any callee in the same file (warning)",
+    body:
+      "From `?bs 0.9`, DEP004 fires as a **warning** (not an error) when fn A has same-file " +
+      "callees but no callee (direct or transitive) declares `writes { x }` that A also declares. " +
+      "The label is not justified by the call graph and may be stale.\n\n" +
+      "**Scope:** only fires for fns with at least one same-file (or moduleEffects) callee. " +
+      "Leaf fns are excluded — the compiler cannot scan the body for direct resource modifications " +
+      "(writes {} labels are user-defined strings).\n\n" +
+      "DEP004 is also suppressed when the function body contains any opaque or untracked external " +
+      "call (a call to a function not visible to the same-file call graph) — the unknown callee may " +
+      "be the actual write site, so the warning is withheld to avoid false positives.\n\n" +
+      "DEP004 is gated on `?bs 0.9`. The symmetrical under-declaration check is DEP002.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn helper(msg: string) -> void { }\n" +
+        "fn logEvent(msg: string) writes { auditLog } -> void { helper(msg) }\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn writeAudit(msg: string) writes { auditLog } -> void { }\n" +
+        "fn logEvent(msg: string) writes { auditLog } -> void { writeAudit(msg) }\n",
     },
   },
   THR001: {

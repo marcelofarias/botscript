@@ -669,6 +669,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn helper(id: string) -> string = \"ok\"\n" +
       "fn load(id: string) -> string = helper(id)",
   },
+  DEP003: {
+    code: "DEP003",
+    title: "fn declares reads {} label not justified by any callee in the same file (warning)",
+    rule:
+      "a declared reads {} label should reflect a resource the fn or its callees actually access; " +
+      "if no same-file callee (transitively) declares reads { x }, the label may be stale after a refactor",
+    idiom:
+      "remove the stale label from the reads {} clause, or verify that the fn itself directly accesses the resource; " +
+      "leaf fns that are the actual access point can safely declare the label even if no callee propagates it",
+    rewrite:
+      "fn name(...) reads { …remaining } -> ...  // remove label not propagated by any callee",
+    example:
+      "// before — getUser calls helper() but helper() does not read userDb\n" +
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"Alice\"\n" +
+      "fn getUser(id: string) reads { userDb } -> string { helper(id) }  // DEP003\n\n" +
+      "// after — remove stale label\n" +
+      "?bs 0.9\n" +
+      "fn helper(id: string) -> string = \"Alice\"\n" +
+      "fn getUser(id: string) -> string { helper(id) }",
+  },
+  DEP004: {
+    code: "DEP004",
+    title: "fn declares writes {} label not justified by any callee in the same file (warning)",
+    rule:
+      "a declared writes {} label should reflect a resource the fn or its callees actually modify; " +
+      "if no same-file callee (transitively) declares writes { x }, the label may be stale after a refactor",
+    idiom:
+      "remove the stale label from the writes {} clause, or verify that the fn itself directly modifies the resource; " +
+      "leaf fns that are the actual write point can safely declare the label even if no callee propagates it",
+    rewrite:
+      "fn name(...) writes { …remaining } -> ...  // remove label not propagated by any callee",
+    example:
+      "// before — logEvent calls save() but save() does not write auditLog\n" +
+      "?bs 0.9\n" +
+      "fn save(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { save(msg) }  // DEP004\n\n" +
+      "// after — remove stale label\n" +
+      "?bs 0.9\n" +
+      "fn save(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) -> void { save(msg) }",
+  },
   THR003: {
     code: "THR003",
     title: "outer fn declares narrower throws than a callback parameter",
