@@ -49,8 +49,8 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   // Two categories of ambiguity:
   //   a. Same name has both Result/Option and non-Result/Option variants.
   //   b. Same name appears multiple times with different Result/Option return types
-  //      (e.g. overloads with different error arms). getReturnTypeLabel() falls back
-  //      to "Result/Option" in that case, which is fine, but we should still warn.
+  //      (e.g. overloads with different error arms) — exclude these too, since scope
+  //      resolution would be needed to pick the right overload at the call site.
   const resultBearing = new Set<string>();
   const nonResultBearing = new Set<string>();
   // Track all Result/Option return types seen per name to detect same-category ambiguity.
@@ -92,9 +92,15 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     // Skip if inside a test/unsafe block.
     if (isInsideSkipRange(tok.start, skipRanges)) continue;
 
-    // Must be followed by `(` to be a call.
-    const openIdx = nextSignificant(tokens, i + 1);
-    const openTok = tokens[openIdx];
+    // Must be followed by `(` to be a call — also covers optional calls `f?.(args)`,
+    // where the token sequence is `questionDot` then `(`.
+    let openIdx = nextSignificant(tokens, i + 1);
+    let openTok = tokens[openIdx];
+    if (openTok?.kind === "questionDot") {
+      // Optional call: skip past `?.` to find the `(`
+      openIdx = nextSignificant(tokens, openIdx + 1);
+      openTok = tokens[openIdx];
+    }
     if (!openTok || openTok.kind !== "open" || openTok.text !== "(") continue;
 
     // Must be in statement position: prev token (not skipping newlines) is

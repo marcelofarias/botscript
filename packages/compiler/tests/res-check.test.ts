@@ -349,3 +349,32 @@ describe("RES002: closing brace is a statement boundary", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RES002 — optional-call syntax
+// ---------------------------------------------------------------------------
+
+describe("RES002: optional-call syntax", () => {
+  it("fires for optional call f?.(args) in statement position", () => {
+    // saveUser?.(user) must warn — `?.` before `(` is still a discarded call.
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(u: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn caller(u: string) -> void {\n" +
+      "  saveUser?.(u)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+  });
+
+  it("does NOT fire when optional call result is assigned", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(u: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn caller(u: string) -> void {\n" +
+      "  const r = saveUser?.(u)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
