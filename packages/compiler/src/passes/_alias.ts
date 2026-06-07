@@ -849,12 +849,14 @@ function scanRhsForStdlib(
       if (t.kind === "punct" && t.text === ";") break;
     }
     if (t.kind === "ident" && STDLIB_NAMES.has(t.text)) {
-      // Skip if used as an object property key: inside braces and next significant
-      // token is `:` (distinguishes `{ time: 1 }` from ternary `flag ? time : null`).
+      // Skip if used as an object/class method or property key inside braces:
+      //   `{ time: 1 }` — key followed by `:`
+      //   `{ time() {} }` — method shorthand followed by `(`
       if (braceDepth > 0) {
         const nextIdx = nextSignificant(tokens, i + 1);
         const nextTok = tokens[nextIdx];
         if (nextTok && nextTok.kind === "punct" && nextTok.text === ":") continue;
+        if (nextTok && nextTok.kind === "open" && nextTok.text === "(") continue;
       }
       return { stdlibName: t.text, end: t.end };
     }
