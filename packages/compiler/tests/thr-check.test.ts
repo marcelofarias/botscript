@@ -309,4 +309,185 @@ describe("THR002: body constructs undeclared error type (0.9+)", () => {
       "}\n";
     expect(() => compile(src)).not.toThrow();
   });
+
+  it("does not fire when err(TypeName(...)) is used in a Result<T, TypeName>-returning fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when err(new TypeName(...)) is used in a Result<T, TypeName>-returning fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError> {\n" +
+      "  if (!raw) return err(new ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when bare err(TypeName) is used in a Result<T, TypeName>-returning fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fail() -> Result<string, ParseError> = err(ParseError)\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("still fires when TypeName is in T (success type) but not E (error type) of Result", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn wrap() -> Result<ParseError, string> = err(ParseError(\"x\"))\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("does not fire for Result<T, E1 | E2> when both error types are constructed", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseOrFetch(raw: string) -> Result<string, ParseError | NetworkError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return err(NetworkError(\"timeout\"))\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when return type has whitespace before `<` in `Result <T, E>`", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result <string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when success type T is a tuple with commas inside []", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parsePair(raw: string) -> Result<[string, number], ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok([raw, 1])\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when success type T contains `->` (arrow type, not generic close)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseItem(raw: string) -> Result<(x: string) -> string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok((x: string) -> x)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when success type T contains `=>` (fat-arrow callback type)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseItem(raw: string) -> Result<(x: string) => string, ParseError> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok((x: string) => x)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("still fires when the error type in Result is ParseError[] (array, not ParseError)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError[]> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("still fires when error type in Result is ParseError [] (trivia before [)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError []> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("does not fire when return type is Promise<Result<T, TypeName>>", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) -> Promise<Result<string, ParseError>> {\n" +
+      "  if (!id) return err(ParseError(\"invalid id\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("still fires when error type is ParseError<T>[] (generic array, not ParseError)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseId(raw: string) -> Result<string, ParseError<string>[]> {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("does not fire when return type is Promise<Result<T, TypeName>> with new", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) -> Promise<Result<string, ParseError>> {\n" +
+      "  if (!id) return err(new ParseError(\"invalid id\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("still fires when return type is Promise<Result<T,E>>[] (array-of-promises)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchAll(id: string) -> Promise<Result<string, ParseError>>[] {\n" +
+      "  if (!id) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(id)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("still fires when return type is Result<T,E>[] (array of Results)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseAll(raw: string) -> Result<string, ParseError>[] {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+
+  it("still fires when return type is Result<T,E> | null (union, not bare Result)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parseOpt(raw: string) -> Result<string, ParseError> | null {\n" +
+      "  if (!raw) return err(ParseError(\"invalid\"))\n" +
+      "  return ok(raw)\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("THR002");
+  });
+});
+
+describe("THR004: over-declared throws — Result error-position symmetry", () => {
+  it("fires when throws { X } is stale on a fn returning Result<T, X> with a callee", () => {
+    // A fn returning Result<T, ParseError> that constructs err(ParseError(...)) does not
+    // need throws { ParseError }. Previously THR004 would count the body err() as
+    // justifying the annotation; now it must ignore Result-position types.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(x: string) -> string = x\n" +
+      "fn parseUser(id: string) throws { ParseError } -> Result<string, ParseError> {\n" +
+      "  helper(id)\n" +
+      "  return err(ParseError(\"invalid\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "THR004" && w.message.includes("parseUser"))).toBe(true);
+  });
 });
