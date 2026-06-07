@@ -387,6 +387,32 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after\n" +
       "let parsed = Result.try { JSON.parse(input) }?",
   },
+  RES002: {
+    code: "RES002",
+    title: "Result- or Option-returning fn called but return value discarded",
+    rule:
+      "a same-file fn whose return type contains Result<> or Option<> must not be called " +
+      "as a bare statement — the return value must be propagated (?), matched, or assigned; " +
+      "discarding it permanently seals the error/absence path from callers",
+    idiom:
+      "use '?' to propagate errors to the caller, 'match' to handle each case, or " +
+      "'let x = f()' to assign and inspect later; " +
+      "if the discard is intentional (best-effort logging, optional cache write), " +
+      "wrap the call in `unsafe \"intentional discard\" { f() }` to document it explicitly",
+    rewrite:
+      "let result = f(...)  // or f(...)?  // or match f(...) { ok { v } -> ... err { e } -> ... }",
+    example:
+      "// before — error path silently swallowed\n" +
+      "?bs 0.9\n" +
+      "fn saveUser(user: User) writes { userDb } -> Result<void, DbError> { ... }\n" +
+      "fn processUser(user: User) writes { userDb } -> void {\n" +
+      "  saveUser(user)   // RES002\n" +
+      "}\n\n" +
+      "// after\n" +
+      "fn processUser(user: User) writes { userDb } -> Result<void, DbError> {\n" +
+      "  saveUser(user)?  // propagate\n" +
+      "}",
+  },
   SYN001: {
     code: "SYN001",
     title: "duplicate or invalid fn header clause",

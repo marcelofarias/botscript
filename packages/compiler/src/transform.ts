@@ -16,6 +16,7 @@ import { passIntentCheck } from "./passes/intent-check.js";
 import { passUnsCheck } from "./passes/uns-check.js";
 import { passMatch } from "./passes/match.js";
 import { passMatCheck } from "./passes/mat-check.js";
+import { passResCheck } from "./passes/res-check.js";
 import { passPrimer } from "./passes/primer.js";
 import { passResultTry } from "./passes/result-try.js";
 import { passTaggedUnion } from "./passes/tagged-union.js";
@@ -97,6 +98,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // matCheck: exhaustiveness check on Result match (MAT001) — fires when a
   // match explicitly handles ok or err but omits the other without a wildcard.
   { name: "matCheck", fn: passMatCheck, minVersion: "0.9" },
+  // resCheck: non-blocking warning (RES002) when a Result- or Option-returning
+  // fn is called as a statement — the return value is discarded and the error/
+  // absence path is permanently sealed from callers.
+  { name: "resCheck", fn: passResCheck, minVersion: "0.9" },
   // capAssert: non-blocking warning (CAP003) when a `uses {}` claim appears on
   // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
   // Runs before capCheck so capCheck still validates the claim's content.
@@ -106,15 +111,15 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // rewrites the source and erases unsafe keywords used as suppression markers.
   { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
+  // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
+  // to build skip ranges) AND before testMocks (passTestMocks generates
+  // `as const` in compiled output which is not a botscript bare-as cast).
+  // Running on the original botscript source ensures only author-written
+  // casts are flagged. New enforced check behind a 0.5 pin per AGENTS.md rule 4.
+  { name: "bareAs", fn: passBareAs, minVersion: "0.5" },
   { name: "testMocks", fn: passTestMocks, minVersion: "0.2" },
   { name: "test", fn: passTest },
   { name: "taggedUnion", fn: passTaggedUnion, minVersion: "0.2" },
-  // bareAs MUST run before unsafe: passUnsafe rewrites the source and erases
-  // the original `unsafe` keyword, so the bare-as walk has to use the
-  // pre-rewrite token stream to find unsafe-block body ranges. New enforced
-  // check on syntax that was previously legal -> behind a 0.5 pin per
-  // AGENTS.md rule 4.
-  { name: "bareAs", fn: passBareAs, minVersion: "0.5" },
   { name: "unsafe", fn: passUnsafe, minVersion: "0.3" },
   { name: "resultTry", fn: passResultTry, minVersion: "0.3" },
   { name: "fn", fn: passFn },
