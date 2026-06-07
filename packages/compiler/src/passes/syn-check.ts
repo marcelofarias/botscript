@@ -7,6 +7,14 @@
  *           callers relying on `?` unwrap, `match`, or declared `throws {}`
  *           propagation will not observe exceptions raised via `throw`. The
  *           idiomatic fix is `return err(new ErrorType(...))`.
+ *
+ *   SYN003  A `console.*` call was detected in a fn body (?bs 0.7+).
+ *           Direct console calls bypass botscript's capability model: the
+ *           compiler cannot see or enforce the `stdout`/`stderr` capability
+ *           declaration for output that goes through `console`. Use
+ *           `stdout.write(...)` or `stderr.write(...)` so the output surface
+ *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
+ *           clause and visible to callers.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -15,11 +23,18 @@ import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
+import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
 export interface SynCheckResult {
   code: string;
   warnings: ReadonlyArray<Diagnostic>;
 }
+
+// console method names that are output/logging calls (not console.assert, console.time, etc.)
+const CONSOLE_OUTPUT_METHODS = new Set([
+  "log", "error", "warn", "info", "debug", "dir", "dirxml",
+  "table", "trace", "group", "groupCollapsed", "groupEnd",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -28,11 +43,28 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const warnings: Diagnostic[] = [];
-  const entry = getErrorCode("SYN002")!;
+  const syn002 = getErrorCode("SYN002")!;
+  const syn003 = getErrorCode("SYN003")!;
+
+  // Collect char-offset ranges where SYN002/SYN003 are suppressed:
+  // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
+  // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
+  //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
+  const unsafeRanges = collectUnsafeBlockRanges(tokens);
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) {
+      unsafeRanges.push({ start: decl.body.start, end: decl.body.end });
+    }
+  }
 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003.
+    // The range-based suppression above also covers nested non-unsafe fns within it,
+    // so this early-continue is kept purely as an optimisation.
+    if (decl.unsafeReason !== undefined) continue;
+
     const inner = nesting.get(decl) ?? [];
     const open: typeof inner = [];
     let nextInner = 0;
@@ -131,6 +163,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         }
       }
 
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
+
       const loc = locationOf(src, tok.start);
       warnings.push({
         code: "SYN002",
@@ -144,12 +178,87 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           `fn '${decl.name}' contains a native throw statement — ` +
           `callers using ? unwrap or match on Result will not observe this error; ` +
           `use return err(new ErrorType(...)) instead`,
-        rule: entry.rule,
-        idiom: entry.idiom,
-        rewrite: entry.rewrite,
+        rule: syn002.rule,
+        idiom: syn002.idiom,
+        rewrite: syn002.rewrite,
+      });
+    }
+
+    // SYN003: console.* call detection.
+    // Reset state for this fn's SYN003 scan.
+    nextInner = 0;
+    const open003: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open003.length > 0 && open003[open003.length - 1]!.tokenEnd <= i) open003.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open003.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open003.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "console") continue;
+
+      // Exclude: `obj.console` — preceded by `.` or `?.`
+      const prevIdx = prevSignificant(tokens, i - 1);
+      const prev = tokens[prevIdx];
+      if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `.` or `?.` (member access). This correctly excludes
+      // `{ console: ... }` (property key — next token is `:`, not `.`/`?.`) and
+      // any other context where `console` is not a member-access receiver.
+      const nextIdx = nextSignificant(tokens, i + 1);
+      const next = tokens[nextIdx];
+      const isDot = next && next.kind === "punct" && next.text === ".";
+      const isOptChain = next && next.kind === "questionDot";
+      if (!isDot && !isOptChain) continue;
+
+      // Next must be a `.` / `?.` then a known console output method.
+      const methodIdx = nextSignificant(tokens, nextIdx + 1);
+      const method = tokens[methodIdx];
+      if (!method || method.kind !== "ident" || !CONSOLE_OUTPUT_METHODS.has(method.text)) continue;
+
+      // Must be a call: next after the method must be `(` or `?.(` (optional call).
+      let afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+      let afterMethod = tokens[afterMethodIdx];
+      // Track whether the call itself is optional (`console.log?.()`) so the
+      // warning message renders the correct syntax.
+      let isOptCall = false;
+      if (afterMethod && afterMethod.kind === "questionDot") {
+        isOptCall = true;
+        afterMethodIdx = nextSignificant(tokens, afterMethodIdx + 1);
+        afterMethod = tokens[afterMethodIdx];
+      }
+      if (!afterMethod || !(afterMethod.kind === "open" && afterMethod.text === "(")) continue;
+
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+      const sep = isOptChain ? "?." : ".";
+      const callSep = isOptCall ? "?." : "";
+      const loc = locationOf(src, tok.start);
+      warnings.push({
+        code: "SYN003",
+        severity: "warning",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: tok.start,
+        end: method.end,
+        message:
+          `fn '${decl.name}' calls console${sep}${method.text}${callSep}() — ` +
+          `direct console output bypasses the stdout/stderr capability model; ` +
+          `use stdout.write(...) or stderr.write(...) and declare uses { stdout } or uses { stderr }`,
+        rule: syn003.rule,
+        idiom: syn003.idiom,
+        rewrite: syn003.rewrite,
       });
     }
   }
 
   return { code: src, warnings };
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------

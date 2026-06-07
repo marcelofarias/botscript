@@ -436,6 +436,35 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return ok(s)\n" +
       "}",
   },
+  SYN003: {
+    code: "SYN003",
+    title: "console.* call bypasses stdout/stderr capability model",
+    rule:
+      "direct `console.*` calls (console.log, console.error, etc.) in fn bodies bypass " +
+      "botscript's capability model — the compiler cannot see or enforce `stdout`/`stderr` " +
+      "declarations for output routed through `console`; callers cannot know the fn writes to stdout or stderr",
+    idiom:
+      "replace console.log with stdout.write(...) and declare `uses { stdout }` on the fn; " +
+      "replace console.error with stderr.write(...) and declare `uses { stderr }`",
+    rewrite:
+      "// before — console bypasses capability tracking\n" +
+      "fn log(msg: string) -> void {\n" +
+      "  console.log(msg)  // SYN003\n" +
+      "}\n\n" +
+      "// after — explicit stdout capability\n" +
+      "fn log(msg: string) uses { stdout } -> void {\n" +
+      "  unsafe \"stdout.write returns void\" { stdout.write(msg) }\n" +
+      "}",
+    example:
+      "// SYN003: console.log bypasses capability model\n" +
+      "fn greet(name: string) -> void {\n" +
+      "  console.log(`Hello, ${name}`)\n" +
+      "}\n\n" +
+      "// fix: declare the output capability\n" +
+      "fn greet(name: string) uses { stdout } -> void {\n" +
+      "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
