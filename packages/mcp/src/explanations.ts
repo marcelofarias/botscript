@@ -17,6 +17,70 @@ export interface Explanation {
 }
 
 export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
+  ALI001: {
+    code: "ALI001",
+    title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
+    body:
+      "ALI001 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
+      "contains a stdlib namespace identifier anywhere in the RHS, but the form is " +
+      "non-trivial — so static alias tracking is NOT guaranteed.\n\n" +
+      "From `?bs 0.8`, the compiler tracks direct top-level bindings like `const t = time` " +
+      "and `const t = (time)`, so `t.now()` is checked against `time`'s capability. But " +
+      "non-trivial forms — operator expressions (`time + 1`), member accesses (`time.now`), " +
+      "calls (`time()`), and conditionals where the stdlib ident appears in a non-leading " +
+      "position (`flag ? time : null`) — are not tracked. If you use the binding as if it " +
+      "were the namespace, the capability checks (CAP001/CAP002), body-level intent checks " +
+      "(INT002/INT004), and UNS005 will not see the alias and the checks will be bypassed.\n\n" +
+      "**What to do:** use a direct binding (`const t = time`) to alias a stdlib namespace, " +
+      "or reference the canonical name directly instead of creating an alias.\n\n" +
+      "ALI001 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.8\nconst t = time.now\n",
+      passes: "?bs 0.8\nconst t = time\n",
+    },
+  },
+  ALI002: {
+    code: "ALI002",
+    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
+    body:
+      "ALI002 is a **warning** (non-blocking) that fires when a module-level `const` binding " +
+      "names an existing tracked stdlib alias on the RHS: `const x = t` where `t` is itself " +
+      "an alias for a stdlib namespace (e.g. `const t = time`).\n\n" +
+      "Chain aliases are intentionally not tracked from `?bs 0.8`. Only direct bindings " +
+      "(`const x = time`) are followed. As a result, `x.now()` will not be detected by " +
+      "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), or UNS005 — " +
+      "the one-liner alias bypass is reintroduced.\n\n" +
+      "**What to do:** bind directly to the stdlib namespace (`const x = time`) or reference " +
+      "the canonical name directly wherever you intended to use `x`.\n\n" +
+      "ALI002 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.8\nconst t = time\nconst x = t\n",
+      passes: "?bs 0.8\nconst t = time\nconst x = time\n",
+    },
+  },
+  ALI003: {
+    code: "ALI003",
+    title: "stdlib namespace destructuring — extracted member references are not tracked",
+    body:
+      "ALI003 fires when a module-level `const` object-destructuring pattern extracts " +
+      "members from a stdlib namespace: `const { now } = time`.\n\n" +
+      "Extracted member references lose their namespace context at the call site. " +
+      "`now()` is just an ordinary function call — the `time` tripwire never fires, so " +
+      "capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), and " +
+      "UNS005 all miss it. The bypass is invisible and silent.\n\n" +
+      "**What to do:** use a direct namespace binding (`const t = time`) and call " +
+      "`t.now()` instead, or reference the canonical namespace directly (`time.now()`).\n\n" +
+      "**Severity by version:**\n" +
+      "- `?bs 0.8` — **warning** (non-blocking): compilation succeeds.\n" +
+      "- `?bs 0.9+` — **error** (blocking): compilation fails. There is no defensible use " +
+      "case for destructuring a stdlib namespace; the pattern is always either a mistake " +
+      "or a static-check bypass attempt.\n\n" +
+      "ALI003 is gated on `?bs 0.8`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails: "?bs 0.9\nconst { now } = time\n",
+      passes: "?bs 0.9\nconst t = time\n",
+    },
+  },
   BS001: {
     code: "BS001",
     title: "Malformed `?bs` directive",
@@ -52,9 +116,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "clause. Under ?bs 0.2 this is a direct-only check; under ?bs 0.3 the compiler also " +
       "propagates capabilities transitively across calls to other fns in the same file, " +
       "and the diagnostic names the path: `loadOne -> doFetch -> http.get`.\n\n" +
-      "Aliasing (`const t = time; t.now()`) is still not detected, by design — the rule is " +
-      "'the canonical names are tripwires.' Cross-module propagation is not yet in scope; " +
-      "the runtime $require backs that case up.",
+      "Module-level aliasing (`const t = time; t.now()`) is undetected pre-0.8 — the rule " +
+      "is: the canonical names are tripwires. From ?bs 0.8 a direct top-level binding " +
+      "`const t = time` is tracked: `t.now()` resolves to `time.now()` and the diagnostic names " +
+      "both (`'t' is an alias for 'time'`). Non-trivial RHS forms (member access, calls, " +
+      "ternaries) and block-scoped aliases inside fn bodies stay on the tripwire. Cross-module " +
+      "propagation is not yet in scope; the runtime $require backs that case up.",
     example: {
       fails: "?bs 0.3\nfn now() -> number = pure { time.now() }\n",
       passes: "?bs 0.3\nfn now() uses { time } -> number { return time.now(); }\n",

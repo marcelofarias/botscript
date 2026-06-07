@@ -146,6 +146,12 @@ goes behind a new pin.
   distinguish the two. Compilation always succeeds; the warning is returned in
   `TransformResult.warnings`.
 
+- **ALI003 upgraded to error at `?bs 0.9+`.**
+  `const { now } = time` (stdlib namespace destructuring) was a warning at `?bs 0.8`.
+  From `?bs 0.9`, it is a **blocking error** — there is no defensible use case for
+  destructuring a stdlib namespace; the pattern is always either a mistake or a
+  static-check bypass attempt. Files on `?bs 0.8` retain warning-level behaviour.
+
 - **Warning severity in `TransformResult`.**
   `TransformResult` now carries a `warnings: ReadonlyArray<Diagnostic>` field.
   All prior callers that read only `code`, `forms`, and `version` are
@@ -169,6 +175,24 @@ goes behind a new pin.
   `intent: "pure"` alongside a non-empty `reads { }` or `writes { }` clause.
   Pure functions have no read/write dependencies, same way they have no
   capabilities.
+- **Module-level stdlib alias tracking** (`_alias.ts`) — a direct top-level
+  `const t = time` binding makes `t.now()` equivalent to `time.now()` for all
+  static checks (CAP001/CAP002, INT002/INT004, UNS005). Only trivial direct
+  bindings are tracked; non-trivial RHS forms stay on the canonical-name tripwire.
+- **ALI001** (warning) — fires when a module-level `const <name> = <expr>`
+  binding contains a stdlib namespace ident anywhere in the RHS but in a
+  non-trivial form (member access, operator, call, conditional such as
+  `flag ? time : null`, parenthesized non-trivial form) that static alias
+  tracking cannot follow. Non-blocking; tells the author why `name.member()`
+  won't be seen as a stdlib call by static checks.
+- **ALI002** (warning) — fires when a module-level `const x = <ident>` binding
+  creates an alias of an already-tracked stdlib alias (alias-of-alias chain).
+  Chain aliases are not tracked; warns the author to use a direct binding or the
+  canonical namespace name instead.
+- **ALI003** (warning) — fires when `const { … } = <stdlib_namespace>` appears
+  at module scope. Destructuring extracts member references that escape all
+  static checks (CAP001, INT002, UNS005); warns the author to use a direct
+  binding or the canonical namespace name.
 - **INT005 — idempotent intent vs writes {} conflict.**
   From `?bs 0.8`, the compiler fires `INT005` when a function combines
   `intent: "idempotent"` with a non-empty `writes { ... }` clause. A fn that

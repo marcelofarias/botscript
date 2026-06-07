@@ -58,7 +58,8 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import { STDLIB_TO_CAP } from "./cap-check.js";
+import { STDLIB_TO_CAP } from "./_stdlib.js";
+import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
@@ -66,9 +67,11 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const allowGenerics = atLeast(version.resolved, "0.4");
   const checksReadsWrites = atLeast(version.resolved, "0.8");
   const checksThrows = atLeast(version.resolved, "0.9");
+  const trackAliases = atLeast(version.resolved, "0.8");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
   const allDecls = program.fns.map((s) => s.decl);
+  const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
 
   for (const slot of program.fns) {
@@ -81,10 +84,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, diagnostics);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, aliases, diagnostics, trackAliases);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, diagnostics);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
     }
   }
 
@@ -105,7 +108,9 @@ function checkPureClaim(
   allDecls: FnDecl[],
   checksReadsWrites: boolean,
   checksThrows: boolean,
+  aliases: Map<string, string>,
   diagnostics: Diagnostic[],
+  acceptOptionalChain = false,
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -161,7 +166,11 @@ function checkPureClaim(
   // INT002: intent claims "pure", uses {} is empty (and reads/writes are
   // absent or not yet enforced), but the body directly references a stdlib
   // capability. This is the under-declaration case that INT001 cannot catch.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, undefined, checksReadsWrites);
+  const declAliases = aliasesForFn(tokens, decl, allDecls, aliases);
+  const declBlockShadows = acceptOptionalChain
+    ? blockShadowsForFn(tokens, decl, allDecls, new Set(aliases.keys()))
+    : [];
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases, undefined, acceptOptionalChain, declBlockShadows);
   if (bodyUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -210,7 +219,9 @@ function checkIdempotentClaim(
   tokens: Token[],
   allDecls: FnDecl[],
   checksReadsWrites: boolean,
+  aliases: Map<string, string>,
   diagnostics: Diagnostic[],
+  acceptOptionalChain = false,
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -282,8 +293,12 @@ function checkIdempotentClaim(
 
   // INT004: body-level under-declaration — body directly references a
   // non-idempotent namespace that is not declared in uses { }.
-  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, (ns) =>
-    NON_IDEMPOTENT.has(ns), checksReadsWrites,
+  const declAliases4 = aliasesForFn(tokens, decl, allDecls, aliases);
+  const declBlockShadows4 = acceptOptionalChain
+    ? blockShadowsForFn(tokens, decl, allDecls, new Set(aliases.keys()))
+    : [];
+  const bodyUse = findFirstCapabilityUse(tokens, decl, allDecls, declAliases4, (ns) =>
+    NON_IDEMPOTENT.has(ns), acceptOptionalChain, declBlockShadows4,
   );
   if (bodyUse) {
     const entry = getErrorCode("INT004")!;
@@ -316,14 +331,17 @@ function checkIdempotentClaim(
 /**
  * Scan the fn body for a direct stdlib capability reference, excluding inner
  * fn declarations. Returns the first match or null if the body is clean.
+ * Resolves module-level aliases (e.g. `const t = time`) when `aliases` is provided.
  */
 function findFirstCapabilityUse(
   tokens: Token[],
   fn: FnDecl,
   allDecls: FnDecl[],
+  aliases: Map<string, string> = new Map(),
   filter?: (namespace: string) => boolean,
-  checkOptionalChaining = false,
-): { capability: string; namespace: string; member: string; accessOp: string } | null {
+  acceptOptionalChain = false,
+  blockShadows: BlockShadowRange[] = [],
+): { capability: string; namespace: string; member: string; accessOp: "." | "?." } | null {
   // Inner fns to exclude from the scan (same pattern as cap-check).
   const inner = allDecls.filter(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
@@ -333,13 +351,17 @@ function findFirstCapabilityUse(
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
-    const cap = STDLIB_TO_CAP[tok.text];
+    const aliasCanonical = !isInBlockShadow(tok.text, i, blockShadows)
+      ? aliases.get(tok.text)
+      : undefined;
+    const canonical = aliasCanonical ?? tok.text;
+    const cap = STDLIB_TO_CAP[canonical];
     if (!cap) continue;
-    if (filter && !filter(tok.text)) continue;
+    if (filter && !filter(canonical)) continue;
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
     const isDot = next?.kind === "punct" && next.text === ".";
-    const isOptChain = checkOptionalChaining && next?.kind === "questionDot";
+    const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
     if (!isDot && !isOptChain) continue;
     const member = nextIdent(tokens, j) ?? "…";
     return { capability: cap, namespace: tok.text, member, accessOp: isDot ? "." : "?." };

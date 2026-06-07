@@ -16,7 +16,14 @@
  *
  *            Inner `fn` declarations are excluded from the parent's body scan.
  *            Aliasing of stdlib namespaces (`const t = time`) is still not
- *            tracked — the rule remains "the canonical names are tripwires".
+ *            tracked at 0.3–0.7 — the rule remains "the canonical names are
+ *            tripwires".
+ *
+ *   ?bs 0.8  Module-level alias tracking. A direct top-level binding
+ *            `const t = time` makes `t.now()` resolve to `time.now()` for the
+ *            CAP001/CAP002 body scan (see _alias.ts). Only trivial direct
+ *            bindings are tracked; non-trivial RHS forms (member access, calls,
+ *            ternaries) and aliases inside fn bodies are left to the tripwire.
  *
  *   cross-file (0.3+, opt-in via moduleEffects): when `passCapCheck` is called
  *            with a `ModuleEffects` map that includes `capabilities` on an
@@ -32,18 +39,18 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
+import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
+import { STDLIB_TO_CAP as _STDLIB_TO_CAP } from "./_stdlib.js";
 
-/** stdlib namespace -> capability it consumes. Canonical source; import from here to avoid drift. */
-export const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
-  http: "net",
-  time: "time",
-  random: "random",
-  fs: "fs",
-  stdout: "stdout",
-  stderr: "stderr",
-};
+/**
+ * stdlib namespace -> capability it consumes.
+ * _stdlib.ts is THE canonical source; this re-export exists for
+ * backwards-compatibility so callers that already import from cap-check
+ * do not need to change.
+ */
+export const STDLIB_TO_CAP: Readonly<Record<string, string>> = _STDLIB_TO_CAP;
 
 /**
  * Subclass of BotscriptError so callers can `instanceof` against the specific
@@ -68,13 +75,18 @@ export class CapabilityCheckError extends BotscriptError {
 }
 
 /**
- * One direct stdlib usage inside a fn body. We keep one per (cap, namespace)
- * pair so the diagnostic can point at the actual offending source location.
+ * One direct stdlib usage inside a fn body. We keep one per capability
+ * so the diagnostic can point at the actual offending source location.
  */
 interface DirectUse {
   capability: string;
+  /** The token as written in source (may be an alias like `rand`). */
   namespace: string;
+  /** Set when `namespace` is a module-level alias; names the canonical stdlib namespace. */
+  aliasFor?: string;
   member: string;
+  /** The member-access operator as it appears in source: '.' or '?.'. */
+  accessOp: "." | "?.";
   line: number;
   column: number;
   /** Source offset of the namespace token (UTF-16 code units, inclusive). */
@@ -111,8 +123,9 @@ export function passCapCheck(
   moduleEffects?: ModuleEffects,
 ): string {
   const allowGenerics = atLeast(version.resolved, "0.4");
+  const trackAliases = atLeast(version.resolved, "0.8");
   if (atLeast(version.resolved, "0.3"))
-    return checkStrict(src, allowGenerics, moduleEffects);
+    return checkStrict(src, allowGenerics, moduleEffects, trackAliases);
   return checkDirect(src, allowGenerics);
 }
 
@@ -189,6 +202,7 @@ function checkStrict(
   src: string,
   allowGenerics: boolean,
   moduleEffects?: ModuleEffects,
+  trackAliases = false,
 ): string {
   // 1. Parse once with includeNestedFns so program.fns covers every decl
   //    in the file. Reuse the lexed tokens for intra-body scans.
@@ -196,8 +210,7 @@ function checkStrict(
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  // 2. Build cross-file capability maps and import alias resolution up front
-  //     so scanBody can track calls to imported functions that have capabilities.
+  // 2. Build cross-file capability maps and import alias resolution up front.
   const importAliases = moduleEffects ? buildImportAliasMap(tokens) : new Map<string, string>();
   const extCaps = new Map<string, readonly string[]>();
   if (moduleEffects) {
@@ -205,10 +218,12 @@ function checkStrict(
       if (eff.capabilities?.length) extCaps.set(name, eff.capabilities);
     }
   }
-  // Names to track as callees: external fn names and their local import aliases.
   const extCalleeNames = new Set<string>();
   for (const name of extCaps.keys()) extCalleeNames.add(name);
   for (const localAlias of importAliases.keys()) extCalleeNames.add(localAlias);
+
+  // Collect module-level stdlib aliases for ?bs 0.8+.
+  const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
 
   // 3. Build per-fn records, KEYED BY DECL IDENTITY (not name). With nested
   //    fns surfaced, two helpers with the same name in different scopes are
@@ -228,7 +243,13 @@ function checkStrict(
     const inner = decls.filter(
       (g) => g !== decl && g.tokenStart >= decl.tokenStart && g.tokenEnd <= decl.tokenEnd,
     );
-    const { direct, callNames } = scanBody(src, tokens, decl, inner, decls, extCalleeNames);
+    const fnAliases = aliasesForFn(tokens, decl, decls, aliases);
+    const fnBlockShadows = trackAliases
+      ? blockShadowsForFn(tokens, decl, decls, new Set(aliases.keys()))
+      : [];
+    const { direct, callNames } = scanBody(
+      src, tokens, decl, inner, decls, extCalleeNames, fnAliases, trackAliases, fnBlockShadows,
+    );
     records.set(decl, {
       decl,
       declared: new Set(decl.capabilities),
@@ -340,6 +361,9 @@ function scanBody(
   inner: FnDecl[],
   decls: FnDecl[],
   extraCalleeNames: ReadonlySet<string> = new Set(),
+  aliases: Map<string, string> = new Map(),
+  acceptOptionalChain = false,
+  blockShadows: BlockShadowRange[] = [],
 ): { direct: Map<string, DirectUse>; callNames: Set<string> } {
   const direct = new Map<string, DirectUse>();
   const callNames = new Set<string>();
@@ -356,21 +380,33 @@ function scanBody(
     const nextIdx = nextSignificant(tokens, i + 1);
     const next = tokens[nextIdx];
 
-    // (a) direct stdlib usage: `<stdlibName>.<member>`
-    const cap = STDLIB_TO_CAP[tok.text];
-    if (cap && next?.kind === "punct" && next.text === ".") {
+    // (a) direct stdlib usage: `<stdlibName>.<member>` or `<alias>.<member>`
+    // Optional chaining (`?.`) is also accepted from ?bs 0.8 (acceptOptionalChain).
+    // Block-level shadows (const/let at depth > 1 in the fn body) suppress alias
+    // resolution for tokens inside the shadowing block.
+    const aliasCanonical = !isInBlockShadow(tok.text, i, blockShadows)
+      ? aliases.get(tok.text)
+      : undefined;
+    const canonical = aliasCanonical ?? tok.text;
+    const cap = STDLIB_TO_CAP[canonical];
+    const isDot = next?.kind === "punct" && next.text === ".";
+    const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
+    if (cap && (isDot || isOptChain)) {
       if (!direct.has(cap)) {
         const memberName = nextIdent(tokens, nextIdx) ?? "…";
         const { line, column } = locationOf(src, tok.start);
-        direct.set(cap, {
+        const use: DirectUse = {
           capability: cap,
           namespace: tok.text,
           member: memberName,
+          accessOp: isDot ? "." : "?.",
           line,
           column,
           start: tok.start,
           end: tok.end,
-        });
+        };
+        if (canonical !== tok.text) use.aliasFor = canonical;
+        direct.set(cap, use);
       }
       continue;
     }
@@ -456,9 +492,13 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
     missing.length > 1
       ? ` (also missing: ${missing.filter((c) => c !== repCap).join(", ")})`
       : "";
+  const aliasNote =
+    !isTransitive && leafUse.aliasFor
+      ? ` ('${leafUse.namespace}' is an alias for '${leafUse.aliasFor}')`
+      : "";
   const message = isTransitive
     ? `fn '${rec.decl.name}' transitively consumes capability '${repCap}' via ${pathStr}, but uses clause is { ${granted} }${tail}`
-    : `fn '${rec.decl.name}' calls '${leafUse.namespace}.${leafUse.member}' which requires capability '${repCap}', but uses clause is { ${granted} }${tail}`;
+    : `fn '${rec.decl.name}' calls '${leafUse.namespace}${leafUse.accessOp}${leafUse.member}'${aliasNote} which requires capability '${repCap}', but uses clause is { ${granted} }${tail}`;
 
   const diagnostic: Diagnostic = {
     code: "CAP001",
@@ -469,7 +509,7 @@ function mkUnderDeclaredError(src: string, rec: FnRecord, missing: string[]): Ca
     start,
     end,
     message,
-    rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}.…')`}`,
+    rule: `a function declared 'uses { ${granted} }' may not consume capability '${repCap}'${isTransitive ? ` (reached via ${pathStr})` : ` (via '${leafUse.namespace}${leafUse.accessOp}…')`}`,
     idiom: entry.idiom,
     rewrite: `fn ${rec.decl.name}(...) uses { ${proposed} } -> ...`,
   };
@@ -518,7 +558,11 @@ function renderPath(path: Path): string {
     return parts.join(" -> ");
   }
   parts.push(cur.fnName);
-  parts.push(`${cur.use.namespace}.${cur.use.member}`);
+  const leafLabel =
+    cur.use.aliasFor
+      ? `${cur.use.namespace}${cur.use.accessOp}${cur.use.member} ('${cur.use.namespace}' is an alias for '${cur.use.aliasFor}')`
+      : `${cur.use.namespace}${cur.use.accessOp}${cur.use.member}`;
+  parts.push(leafLabel);
   return parts.join(" -> ");
 }
 
@@ -527,6 +571,7 @@ const EXTERNAL_LEAF_USE: DirectUse = {
   capability: "",
   namespace: "(imported)",
   member: "",
+  accessOp: ".",
   line: 0,
   column: 0,
   start: 0,
