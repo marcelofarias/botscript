@@ -94,7 +94,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const t = tokens[j];
           if (!t) break;
           if (t.kind === "operator" && t.text === "<") depth++;
-          else if (t.kind === "operator" && t.text === ">") depth--;
+          else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+            depth -= t.text.length;
           j++;
         }
         const afterGenericIdx = nextSignificant(tokens, j);

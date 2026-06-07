@@ -322,4 +322,18 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
+
+  it("does NOT fire for generic method name with nested type-param default: { throw<T = Map<A, B>>(x: T): T {} }", () => {
+    // The lexer emits the closing `>>` of `Map<A, B>>` as a single `>>` operator
+    // token. SYN002's generic-depth scan must decrement by 2 for `>>` (and 3 for
+    // `>>>`) so the scan correctly reaches `(` as a method-signature marker.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { throw<T = Map<A, B>>(x: T): T { return x } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });
