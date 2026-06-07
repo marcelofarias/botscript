@@ -830,6 +830,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "- `err(BuildError)` → detects `BuildError` (bare ref, not a call)\n\n" +
       "Indirect patterns (`err(e)` where `e` carries a type) require inference and are " +
       "intentionally out of scope.\n\n" +
+      "**Result suppression:** THR002 is suppressed when the constructed type appears as the " +
+      "error parameter of the fn's return type. A fn returning `Result<T, ParseError>` (or " +
+      "`Promise<Result<T, ParseError>>` for async fns) that calls `err(new ParseError(...))` " +
+      "does not need `throws { ParseError }` — the error is signaled via the return value, " +
+      "not thrown. THR002 only fires when the constructed type is absent from both the throws " +
+      "declaration and the Result error type.\n\n" +
       "THR002 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
     example: {
       fails:

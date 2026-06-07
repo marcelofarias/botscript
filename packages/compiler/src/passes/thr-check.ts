@@ -39,6 +39,7 @@ import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
 import { computeNesting, collectCallees, hasOpaqueCall, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
+import { extractResultArgs, splitTopLevelPipe, leadingTypeIdent } from "./_type-parser.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -205,7 +206,12 @@ export function passThrCheck(
 
     // Justified by: paramThrows + direct body construction + transitive callee throws.
     const justifiedThrows = new Set<string>(rec.decl.paramThrows);
-    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) justifiedThrows.add(t);
+    for (const t of bodyErrsByDecl.get(rec.decl)!.keys()) {
+      // Symmetry with THR002: types that sit in the Result error position are
+      // signaled via the return value, not thrown — they do not justify a
+      // throws {} annotation.
+      if (!isErrorTypeInResult(rec.decl.returnType, t)) justifiedThrows.add(t);
+    }
 
     let hasNonSelfCallee = false;
     for (const calleeName of rec.callees) {
@@ -427,6 +433,27 @@ function collectParamNames(fn: FnDecl): Set<string> {
 }
 
 /**
+ * Returns true when `typeName` appears as a member of the error type (second
+ * type argument) of a `Result<T, E>` return type — in which case THR002 is
+ * suppressed, since the error is signaled via the return value and no
+ * `throws {}` declaration is needed.
+ *
+ * Also handles `Promise<Result<T, E>>` (common for async fns). Any other
+ * wrapper (e.g. `Wrapper<Result<T,E>>`, `Result<T,E>[]`, `Result<T,E> | null`)
+ * is not treated as a Result return.
+ *
+ * Delegates all scanning to `_type-parser.ts` for correctness across
+ * `->` / `=>` arrows, tuple `[A, B]` success types, and array-suffix forms.
+ */
+function isErrorTypeInResult(returnType: string, typeName: string): boolean {
+  const args = extractResultArgs(returnType);
+  if (!args) return false;
+  const [, eArg] = args;
+  // Split E on top-level `|` to handle union error types like `E1 | E2`.
+  return splitTopLevelPipe(eArg).some((m) => leadingTypeIdent(m) === typeName);
+}
+
+/**
  * THR002: check pre-computed body error types against the fn's declared throws set.
  * Returns a BotscriptError on the first undeclared construction found, or null.
  */
@@ -440,6 +467,9 @@ function checkBodyErrors(
 
   for (const [typeName, loc] of bodyErrs) {
     if (declaredThrows.has(typeName)) continue;
+    // Suppress when the fn returns Result<T, E> and typeName is in E — the error
+    // is signaled via the return value, not thrown; no throws {} declaration needed.
+    if (isErrorTypeInResult(fn.returnType, typeName)) continue;
 
     const { line, column } = locationOf(src, loc.start);
     const proposed = [...new Set([...declaredThrows, typeName])].sort().join(", ");
