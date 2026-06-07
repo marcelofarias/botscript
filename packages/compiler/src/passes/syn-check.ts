@@ -69,10 +69,41 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // The lexer emits `eq` (kind="eq") for `=`; a real throw expression can never start with `=`.
       if (next && next.kind === "eq") continue;
 
+      // Exclude definite-assignment assertions: class X { throw!: T }
+      // A `!` directly after the field name (non-null assertion) always precedes `:` or `=`.
+      if (next && next.kind === "operator" && next.text === "!") {
+        const afterBangIdx = nextSignificant(tokens, nextIdx + 1);
+        const afterBang = tokens[afterBangIdx];
+        if (afterBang && (afterBang.kind === "punct" && afterBang.text === ":" || afterBang.kind === "eq")) continue;
+      }
+
       // Exclude optional method signatures: throw?() / throw?(): T
       // A standalone `throw` statement cannot be followed by `?`; only method
       // signatures in type literals / interfaces use optional-method syntax.
       if (next && next.kind === "question") continue;
+
+      // Exclude generic method names: throw<T>() — skip over `<…>` to find `(`.
+      // When `throw` is followed by `<`, look past the matching `>` for a `(`.
+      let effectiveNextIdx = nextIdx;
+      let effectiveNext = next;
+      if (next && next.kind === "operator" && next.text === "<") {
+        // Find the matching `>` for the generic parameter list.
+        let depth = 1;
+        let j = nextIdx + 1;
+        while (j < tokens.length && depth > 0) {
+          const t = tokens[j];
+          if (!t) break;
+          if (t.kind === "operator" && t.text === "<") depth++;
+          else if (t.kind === "operator" && t.text === ">") depth--;
+          j++;
+        }
+        const afterGenericIdx = nextSignificant(tokens, j);
+        const afterGeneric = tokens[afterGenericIdx];
+        if (afterGeneric && afterGeneric.kind === "open" && afterGeneric.text === "(") {
+          effectiveNextIdx = afterGenericIdx;
+          effectiveNext = afterGeneric;
+        }
+      }
 
       // Exclude object literal method shorthands: { throw() {} }, { a: 1, throw() {} }
       // and type-literal method signatures: { throw() }, { throw(): T; }
@@ -83,10 +114,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       //  2. Non-empty parens: `throw(` is a method shorthand/signature when the token
       //     immediately after its matching `)` is `{` (block body), `=>` (arrow method),
       //     or `:` (return type annotation, e.g. `throw(): T { ... }` or `throw(): T;`).
-      if (next && next.kind === "open" && next.text === "(") {
-        const closeParenIdx = next.matchedAt;
+      if (effectiveNext && effectiveNext.kind === "open" && effectiveNext.text === "(") {
+        const closeParenIdx = effectiveNext.matchedAt;
         if (closeParenIdx !== undefined) {
-          const firstInsideIdx = nextSignificant(tokens, nextIdx + 1);
+          const firstInsideIdx = nextSignificant(tokens, effectiveNextIdx + 1);
           if (firstInsideIdx === closeParenIdx) continue; // empty parens → method signature
           const afterParenIdx = nextSignificant(tokens, closeParenIdx + 1);
           const afterParen = tokens[afterParenIdx];

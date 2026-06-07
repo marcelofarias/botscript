@@ -295,4 +295,31 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
   });
+
+  it("does NOT fire for definite-assignment assertion: class X { throw!: T }", () => {
+    // `throw!: T` is a TypeScript definite-assignment assertion (`!` non-null
+    // assertion after the field name). It is not a native throw statement.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  class X { throw!: number }\n" +
+      "  return new X()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
+
+  it("does NOT fire for generic method name: { throw<T>(): number {} }", () => {
+    // `throw<T>()` is a generic method shorthand — `throw` is the method name,
+    // not a native throw statement. SYN002 must skip the `<T>` generic list and
+    // recognise the trailing `(` as a method-signature marker.
+    const src =
+      "?bs 0.9\n" +
+      "fn makeObj() -> any {\n" +
+      "  const o = { throw<T>(x: T): T { return x } }\n" +
+      "  return o\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN002")).toBe(false);
+  });
 });
