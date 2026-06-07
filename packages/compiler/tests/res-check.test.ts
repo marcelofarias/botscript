@@ -181,13 +181,16 @@ describe("RES002: grouping paren transparency", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
   });
 
-  it("does not fire when wrapped call result is used as argument", () => {
+  it("does not fire when grouping-paren-wrapped call result is used as argument", () => {
+    // `wrap((save(user)))` — the inner call is wrapped in grouping parens but
+    // used as an argument to `wrap`, not discarded as a bare statement.
+    // This exercises the grouping-paren transparency path inside an argument position.
     const src =
       "?bs 0.9\n" +
       "fn save(user: string) -> Result<void, string> { ok(undefined) }\n" +
       "fn wrap(r: Result<void, string>) -> void { }\n" +
       "fn processUser(user: string) -> void {\n" +
-      "  wrap(save(user))\n" +
+      "  wrap((save(user)))\n" +
       "}\n";
     const result = check(src);
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
@@ -306,10 +309,6 @@ describe("RES002: block statement brace on next line does not suppress", () => {
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
   });
 });
-
-// ---------------------------------------------------------------------------
-// RES002 — } as statement boundary
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // RES002 — same-name ambiguity
