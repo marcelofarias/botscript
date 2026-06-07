@@ -564,6 +564,39 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "fn load(id: string) reads { cache, db } -> string = id\n",
     },
   },
+  SYN002: {
+    code: "SYN002",
+    title: "native throw statement bypasses Result contract",
+    body:
+      "Botscript's error model is built around `Result<T, E>` and `throws {}` declarations. " +
+      "Callers handle errors via `?` unwrap, `match` exhaustiveness (MAT001), and declared " +
+      "throws surfaces (THR001/THR002).\n\n" +
+      "A native `throw` statement bypasses this contract entirely: the exception propagates " +
+      "outside the Result type system, so callers relying on `?` unwrap or `match` will not " +
+      "observe the error — the exception travels up the call stack unchecked, invisible to " +
+      "the capability and contract machinery.\n\n" +
+      "This is especially dangerous in bot orchestration code where a thrown exception can " +
+      "propagate through multiple layers without capture, bypassing error budgets and retry logic.\n\n" +
+      "Fix: replace `throw new ErrorType(...)` with `return err(new ErrorType(...))` and " +
+      "update the function's return type to `Result<T, ErrorType>`.\n\n" +
+      "SYN002 fires at `?bs 0.7+` (when the error modeling system is active) as a " +
+      "non-blocking warning.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn parse(s: string) -> string {\n" +
+        "  if (!s) throw new ParseError(\"empty\")\n" +
+        "  return s\n" +
+        "}\n",
+      passes:
+        "// use Result for error signaling — callers can unwrap with ?\n" +
+        "?bs 0.9\n" +
+        "fn parse(s: string) -> Result<string, ParseError> {\n" +
+        "  if (!s) { const e = new ParseError(\"empty\"); return err(e) }\n" +
+        "  return ok(s)\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
