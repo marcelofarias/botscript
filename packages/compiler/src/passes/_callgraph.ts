@@ -271,19 +271,36 @@ export function hasOpaqueCall(
       const afterDot = tokens[afterDotIdx];
 
       if (afterDot && afterDot.kind === "ident") {
-        // Member-access call: `db.read(...)` or optional member: `db?.read(...)`
+        // Member-access call: `db.read(...)` or chained: `obj.a.b()`
         if (STDLIB_NAMESPACES.has(tok.text)) continue;
         if (effectiveLocalNames.has(tok.text)) continue;
-        const afterMethodIdx = nextSignificant(tokens, afterDotIdx + 1);
-        const afterMethod = tokens[afterMethodIdx];
-        // Direct call: `db.read(...)` or optional call: `db.read?.(...)`
-        const isMethodCall =
-          (afterMethod?.kind === "open" && afterMethod.text === "(") ||
-          (afterMethod?.kind === "questionDot" &&
-            tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.kind === "open" &&
-            tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.text === "(");
-        if (isMethodCall) return true; // Opaque namespace/object method call
-        continue; // Property access without a following call — not opaque
+        // Walk the full member chain (handles single and multi-segment: obj.m() / obj.a.b())
+        let segIdx = afterDotIdx;
+        let chainEndsInCall = false;
+        chainWalk: while (true) {
+          const afterSegIdx = nextSignificant(tokens, segIdx + 1);
+          const afterSeg = tokens[afterSegIdx];
+          if (!afterSeg) break;
+          // seg(...) — direct call
+          if (afterSeg.kind === "open" && afterSeg.text === "(") {
+            chainEndsInCall = true; break;
+          }
+          // seg. or seg?. — either optional call seg?.() or chain continuation seg.next / seg?.next
+          if ((afterSeg.kind === "punct" && afterSeg.text === ".") || afterSeg.kind === "questionDot") {
+            const nextSegIdx = nextSignificant(tokens, afterSegIdx + 1);
+            const nextSeg = tokens[nextSegIdx];
+            if (nextSeg?.kind === "open" && nextSeg.text === "(") {
+              chainEndsInCall = true; break; // seg?.()
+            }
+            if (nextSeg && nextSeg.kind === "ident") {
+              segIdx = nextSegIdx; continue; // seg.next or seg?.next — keep walking
+            }
+            break;
+          }
+          break; // property access without a following call
+        }
+        if (chainEndsInCall) return true;
+        continue;
       }
 
       if (afterDot && afterDot.kind === "open" && afterDot.text === "(") {

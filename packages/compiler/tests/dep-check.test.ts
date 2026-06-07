@@ -683,6 +683,33 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
 
+  it("suppresses DEP003 when fn calls a chained member call obj.a.b()", () => {
+    // `client.connection.query()` — two-segment chain on an unknown namespace import.
+    // hasOpaqueCall must detect the call even with a multi-segment receiver (obj.a.b()).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  client.connection.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP004 when fn calls a chained optional member call obj.a?.b()", () => {
+    // `store.cache?.write()` — optional chain on second segment, still opaque.
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f() writes { log } -> void {\n" +
+      "  step();\n" +
+      "  store.cache?.write()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
   it("fires DEP003 when fn uses err(new TypeName(...)) — new-form error construction is not opaque", () => {
     // `err(new NetworkError(...))` is the botscript `new`-form error constructor.
     // It must NOT suppress DEP003 — the error construction is not an external read.
