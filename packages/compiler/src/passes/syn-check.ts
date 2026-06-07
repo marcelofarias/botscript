@@ -222,8 +222,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // Must be a call: next after the method must be `(` or `?.(` (optional call).
       let afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
       let afterMethod = tokens[afterMethodIdx];
-      // Skip optional-call `?.` so `console.log?.(...)` is detected.
+      // Track whether the call itself is optional (`console.log?.()`) so the
+      // warning message renders the correct syntax.
+      let isOptCall = false;
       if (afterMethod && afterMethod.kind === "questionDot") {
+        isOptCall = true;
         afterMethodIdx = nextSignificant(tokens, afterMethodIdx + 1);
         afterMethod = tokens[afterMethodIdx];
       }
@@ -232,6 +235,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (isInsideRange(tok.start, unsafeRanges)) continue;
 
       const sep = isOptChain ? "?." : ".";
+      const callSep = isOptCall ? "?." : "";
       const loc = locationOf(src, tok.start);
       warnings.push({
         code: "SYN003",
@@ -242,7 +246,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok.start,
         end: method.end,
         message:
-          `fn '${decl.name}' calls console${sep}${method.text}() — ` +
+          `fn '${decl.name}' calls console${sep}${method.text}${callSep}() — ` +
           `direct console output bypasses the stdout/stderr capability model; ` +
           `use stdout.write(...) or stderr.write(...) and declare uses { stdout } or uses { stderr }`,
         rule: syn003.rule,
