@@ -9,6 +9,7 @@
 import type { Token } from "../parser/lex.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { STDLIB_VALUE_CALL_NAMES } from "./imports.js";
+import { STDLIB_TO_CAP } from "./_stdlib.js";
 
 /**
  * Build a map from each FnDecl to all nested (direct and indirect) FnDecls
@@ -107,10 +108,9 @@ function isDirectOrOptionalCall(tokens: Token[], identIdx: number): boolean {
  * Botscript stdlib namespace names. Member calls on these (e.g. `time.now()`,
  * `http.get()`) are handled by cap-check/uns-check, not by `hasOpaqueCall`.
  *
- * `cap-check.ts` exports `STDLIB_TO_CAP` whose keys must exactly match this set.
- * Import from here rather than duplicating the list.
+ * Derived from `STDLIB_TO_CAP` in `_stdlib.ts` — the single source of truth.
  */
-export const STDLIB_NAMESPACES = new Set(["http", "time", "random", "fs", "stdout", "stderr"]);
+export const STDLIB_NAMESPACES: ReadonlySet<string> = new Set(Object.keys(STDLIB_TO_CAP));
 
 /**
  * Botscript's lexer only promotes a small set of names to `keyword` tokens
