@@ -739,6 +739,41 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN005: {
+    code: "SYN005",
+    title: "process.env access is an undeclared deployment environment dependency",
+    body:
+      "Botscript's safety model makes every dependency of a fn explicit in its header — " +
+      "capabilities via `uses {}`, resource labels via `reads {}` / `writes {}`, errors via `throws {}`. " +
+      "`process.env` is the one major dependency surface that has no corresponding declaration.\n\n" +
+      "A fn that reads `process.env.DATABASE_URL` has a real runtime dependency on the deployment " +
+      "environment. Callers cannot see this dependency from the fn's header. Tests cannot mock it " +
+      "without mutating the global process object. A misconfigured deployment silently breaks the fn " +
+      "at runtime with no compile-time signal.\n\n" +
+      "This is distinct from the capability model (SYN003, SYN004): there is no `env` capability " +
+      "to declare. The correct fix is structural — move the config dependency out of the fn body " +
+      "and into the call signature.\n\n" +
+      "**Fix:** pass config and secrets as explicit fn parameters. The caller is the right place to " +
+      "load from `process.env`; the fn should receive typed values, not raw strings from the " +
+      "environment. If env access is genuinely required at the load site, wrap in " +
+      "`unsafe \"reads deployment env\" { }` to make the escape hatch visible in the diff.\n\n" +
+      "SYN005 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `process` " +
+      "not preceded by `.` or `?.`, followed by `.`/`?.` then `env`. " +
+      "`obj.process.env` (member access on a local) is excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn connect() -> string {\n" +
+        "  return process.env.DATABASE_URL\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn connect(dbUrl: string) -> string {\n" +
+        "  return dbUrl\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

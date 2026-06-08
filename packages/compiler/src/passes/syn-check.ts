@@ -15,6 +15,14 @@
  *           `stdout.write(...)` or `stderr.write(...)` so the output surface
  *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
  *           clause and visible to callers.
+ *
+ *   SYN005  A `process.env` access was detected in a fn body (?bs 0.7+).
+ *           `process.env` is a global deployment-environment namespace. Reads
+ *           and writes to it are invisible to callers — no capability or
+ *           resource declaration covers env-var access, so the fn silently
+ *           depends on runtime deployment values that callers cannot see,
+ *           audit, or mock in tests. The idiomatic fix is to pass config
+ *           and secrets as explicit fn parameters.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -45,8 +53,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const warnings: Diagnostic[] = [];
   const syn002 = getErrorCode("SYN002")!;
   const syn003 = getErrorCode("SYN003")!;
+  const syn005 = getErrorCode("SYN005")!;
 
-  // Collect char-offset ranges where SYN002/SYN003 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN005 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -60,7 +69,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
-    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003.
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN005.
     // The range-based suppression above also covers nested non-unsafe fns within it,
     // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
@@ -252,6 +261,62 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn003.rule,
         idiom: syn003.idiom,
         rewrite: syn003.rewrite,
+      });
+    }
+
+    // SYN005: process.env access detection.
+    // Fires on any `process.env` access (read or write) — not just calls.
+    // Detection: `process` not preceded by `.`/`?.`, followed by `.`/`?.` then `env`.
+    nextInner = 0;
+    const open005: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open005.length > 0 && open005[open005.length - 1]!.tokenEnd <= i) open005.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open005.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open005.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "process") continue;
+
+      // Exclude: `obj.process` — preceded by `.` or `?.`
+      const prevIdx5 = prevSignificant(tokens, i - 1);
+      const prev5 = tokens[prevIdx5];
+      if (prev5 && ((prev5.kind === "punct" && prev5.text === ".") || prev5.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `.` or `?.`
+      const nextIdx5 = nextSignificant(tokens, i + 1);
+      const next5 = tokens[nextIdx5];
+      const isDot5 = next5 && next5.kind === "punct" && next5.text === ".";
+      const isOptChain5 = next5 && next5.kind === "questionDot";
+      if (!isDot5 && !isOptChain5) continue;
+
+      // Next must be the ident `env`
+      const envIdx = nextSignificant(tokens, nextIdx5 + 1);
+      const envTok = tokens[envIdx];
+      if (!envTok || envTok.kind !== "ident" || envTok.text !== "env") continue;
+
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+      const sep5 = isOptChain5 ? "?." : ".";
+      const loc5 = locationOf(src, tok.start);
+      warnings.push({
+        code: "SYN005",
+        severity: "warning",
+        file: null,
+        line: loc5.line,
+        column: loc5.column,
+        start: tok.start,
+        end: envTok.end,
+        message:
+          `fn '${decl.name}' accesses process${sep5}env — ` +
+          `env-var access is invisible to callers; pass config and secrets as explicit parameters, ` +
+          `or wrap in unsafe "reads deployment env" { }`,
+        rule: syn005.rule,
+        idiom: syn005.idiom,
+        rewrite: syn005.rewrite,
       });
     }
   }

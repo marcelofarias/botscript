@@ -544,6 +544,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
       "}",
   },
+  SYN005: {
+    code: "SYN005",
+    title: "process.env access is an undeclared deployment environment dependency",
+    rule:
+      "`process.env` access in a fn body is invisible to callers — no capability or resource " +
+      "declaration covers the deployment environment; the fn silently depends on env-var values " +
+      "that callers cannot see, audit, or mock in tests",
+    idiom:
+      "pass config and secrets as explicit fn parameters so the dependency is visible in the " +
+      "call signature; for module-level config loading, wrap in `unsafe \"reads deployment env\" { }` " +
+      "and narrow the scope to the load site",
+    rewrite:
+      "// before — implicit env dep\n" +
+      "fn connect() uses { net } -> Result<Client, string> {\n" +
+      "  const url = process.env.DATABASE_URL  // SYN005\n" +
+      "  return http.connect(url)\n" +
+      "}\n\n" +
+      "// after — explicit parameter\n" +
+      "fn connect(url: string) uses { net } -> Result<Client, string> {\n" +
+      "  return http.connect(url)\n" +
+      "}",
+    example:
+      "// SYN005: process.env access hides a deployment dependency\n" +
+      "fn getSecret() -> string {\n" +
+      "  return process.env.API_KEY\n" +
+      "}\n\n" +
+      "// fix: pass the value explicitly\n" +
+      "fn getSecret(apiKey: string) -> string {\n" +
+      "  return apiKey\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
