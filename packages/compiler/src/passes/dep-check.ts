@@ -333,11 +333,11 @@ export function passDepCheck(
     const knownWithParams = new Set([...allCalleeNames, ...paramNames]);
     if (hasOpaqueCall(tokens, rec.decl, inner, knownWithParams, localNames)) continue;
 
-    const overDeclaredReads = [...rec.declaredReads].filter(l => !calleeReads.has(l)).sort();
+    const overDeclaredReads = [...rec.declaredReads].filter((l) => !calleeReads.has(l)).sort();
     if (overDeclaredReads.length > 0) {
       warnings.push(mkOverDeclaredWarning(src, rec, "reads", overDeclaredReads));
     }
-    const overDeclaredWrites = [...rec.declaredWrites].filter(l => !calleeWrites.has(l)).sort();
+    const overDeclaredWrites = [...rec.declaredWrites].filter((l) => !calleeWrites.has(l)).sort();
     if (overDeclaredWrites.length > 0) {
       warnings.push(mkOverDeclaredWarning(src, rec, "writes", overDeclaredWrites));
     }

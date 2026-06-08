@@ -256,6 +256,8 @@ export function hasOpaqueCall(
 
       if (afterDot && afterDot.kind === "ident") {
         // Member-access call: `db.read(...)` or optional member: `db?.read(...)`
+        // Also catches chained calls: `obj.a.b()` — if obj is not a local or
+        // stdlib namespace, the whole chain is an opaque external call.
         if (STDLIB_NAMESPACES.has(tok.text)) continue;
         if (effectiveLocalNames.has(tok.text)) continue;
         const afterMethodIdx = nextSignificant(tokens, afterDotIdx + 1);
@@ -266,7 +268,11 @@ export function hasOpaqueCall(
           (afterMethod?.kind === "questionDot" &&
             tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.kind === "open" &&
             tokens[nextSignificant(tokens, afterMethodIdx + 1)]?.text === "(");
-        if (isMethodCall) return true; // Opaque namespace/object method call
+        // Chained member access: `obj.a.b` — afterMethod is `.` or `?.`.
+        // The base `obj` is neither local nor stdlib, so the chain is opaque.
+        const isChained =
+          afterMethod && ((afterMethod.kind === "punct" && afterMethod.text === ".") || afterMethod.kind === "questionDot");
+        if (isMethodCall || isChained) return true;
         continue; // Property access without a following call — not opaque
       }
 

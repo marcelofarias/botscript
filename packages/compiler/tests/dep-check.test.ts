@@ -647,3 +647,29 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// STDLIB_NAMESPACES / STDLIB_TO_CAP consistency
+// ---------------------------------------------------------------------------
+
+import { STDLIB_NAMESPACES } from "../src/passes/_callgraph.js";
+import { STDLIB_TO_CAP } from "../src/passes/cap-check.js";
+
+describe("STDLIB_NAMESPACES vs STDLIB_TO_CAP consistency", () => {
+  it("STDLIB_NAMESPACES and STDLIB_TO_CAP have the same keys", () => {
+    // These two structures must stay in sync: _callgraph.ts is the canonical
+    // list of stdlib namespace names; cap-check.ts maps each name to its
+    // capability label. A drift here means hasOpaqueCall would incorrectly
+    // treat a stdlib namespace call as opaque (or cap-check would miss a new
+    // namespace). Direct import from cap-check.ts in _callgraph.ts is not
+    // possible (circular dep), so this test is the sync guard.
+    const capKeys = new Set(Object.keys(STDLIB_TO_CAP));
+    for (const name of STDLIB_NAMESPACES) {
+      expect(capKeys.has(name), `STDLIB_NAMESPACES has "${name}" but STDLIB_TO_CAP does not`).toBe(true);
+    }
+    for (const name of capKeys) {
+      expect(STDLIB_NAMESPACES.has(name), `STDLIB_TO_CAP has "${name}" but STDLIB_NAMESPACES does not`).toBe(true);
+    }
+    expect(STDLIB_NAMESPACES.size).toBe(capKeys.size);
+  });
+});
