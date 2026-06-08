@@ -157,6 +157,25 @@ describe("? operator — bare form", () => {
     // No value binding after guard
     expect(out).not.toContain('__r1.value');
   });
+
+  it("correctly rewrites consecutive bare-? statements without semicolons", () => {
+    // Regression: findStatementStart used to walk past the first `?` when scanning
+    // backwards for the second, merging both into one statement.
+    const src =
+      "?bs 0.6\n" +
+      "fn writeBoth() uses { fs } -> Result<void, string> {\n" +
+      "  fs.writeText('/a', 'x')?\n" +
+      "  fs.writeText('/b', 'y')?\n" +
+      "  return ok(undefined);\n" +
+      "}\n";
+    const out = compile(src);
+    expect(out).toContain('__r1');
+    expect(out).toContain('__r2');
+    // __r2 must be based on the second writeText, not a re-expansion of the first
+    const r2Line = out.split('\n').find((l) => l.includes('__r2 ='));
+    expect(r2Line).toContain("writeText('/b'");
+    expect(out).not.toContain("__r2 = fs.writeText('/a'");
+  });
 });
 
 // ---------------------------------------------------------------------------

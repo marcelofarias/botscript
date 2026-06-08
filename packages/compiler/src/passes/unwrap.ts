@@ -182,6 +182,24 @@ function findStatementStart(tokens: Token[], from: number): number {
     }
     if (depth === 0) {
       if (t.kind === "punct" && t.text === ";") return skipTrivia(tokens, i + 1);
+      if (t.kind === "question") {
+        // A postfix `?` (unwrap) ends a statement and acts as a boundary.
+        // Distinguish from a ternary `?` by looking forward: a postfix `?` is
+        // followed (with only inline whitespace — spaces/tabs but NOT newlines)
+        // by a newline, `;`, or EOF. A ternary `?` is always followed by an
+        // expression on the same line (or immediately after the `?`).
+        //
+        // Edge case: `cond ?\n  expr : other` (ternary with `?` at line end)
+        // would also match this check. This coding style is not recommended in
+        // botscript (prefer `match`); the practical risk is negligible.
+        let j = i + 1;
+        while (j < tokens.length && tokens[j]?.kind === "whitespace") j++;
+        const fwd = tokens[j];
+        if (!fwd || fwd.kind === "newline" || fwd.kind === "eof" || (fwd.kind === "punct" && fwd.text === ";")) {
+          return skipTrivia(tokens, i + 1);
+        }
+        continue;
+      }
       if (t.kind === "newline") {
         // Newlines aren't statement boundaries on their own — `let x =\nfoo()?`
         // is one statement. Only treat as boundary if the next significant
