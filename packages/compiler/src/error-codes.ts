@@ -674,10 +674,11 @@ const E: Record<string, ErrorCodeEntry> = {
     title: "fn declares reads {} label not justified by any callee in the same file (warning)",
     rule:
       "a declared reads {} label should reflect a resource the fn or its callees actually access; " +
-      "if no same-file callee (transitively) declares reads { x }, the label may be stale after a refactor",
+      "DEP003 fires when no tracked callee (same-file or moduleEffects entry) transitively declares reads { x }; " +
+      "warning is suppressed when the fn body contains any opaque/untracked external call — the label may still be live through a cross-module dependency",
     idiom:
       "remove the stale label from the reads {} clause, or verify that the fn itself directly accesses the resource; " +
-      "leaf fns that are the actual access point can safely declare the label even if no callee propagates it",
+      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can see all callees",
     rewrite:
       "fn name(...) reads { …remaining } -> ...  // remove label not propagated by any callee",
     example:
@@ -695,10 +696,11 @@ const E: Record<string, ErrorCodeEntry> = {
     title: "fn declares writes {} label not justified by any callee in the same file (warning)",
     rule:
       "a declared writes {} label should reflect a resource the fn or its callees actually modify; " +
-      "if no same-file callee (transitively) declares writes { x }, the label may be stale after a refactor",
+      "DEP004 fires when no tracked callee (same-file or moduleEffects entry) transitively declares writes { x }; " +
+      "warning is suppressed when the fn body contains any opaque/untracked external call — the label may still be live through a cross-module dependency",
     idiom:
       "remove the stale label from the writes {} clause, or verify that the fn itself directly modifies the resource; " +
-      "leaf fns that are the actual write point can safely declare the label even if no callee propagates it",
+      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can see all callees",
     rewrite:
       "fn name(...) writes { …remaining } -> ...  // remove label not propagated by any callee",
     example:
