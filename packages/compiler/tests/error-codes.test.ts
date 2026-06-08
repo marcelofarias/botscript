@@ -5,9 +5,27 @@ import { formatExplain, getErrorCode, listErrorCodes } from "../src/index.js";
 describe("error-code registry", () => {
   it("has an entry for every code the compiler currently emits", () => {
     const codes = listErrorCodes().map((e) => e.code);
-    // If the compiler grows a new diagnostic, add it to error-codes.ts AND to this list.
-    for (const code of ["ALI001", "ALI002", "ALI003", "CAP001", "CAP002", "CAP003", "EFF002", "FMT001", "INT001", "INT002", "INT003", "INT004", "MAT001", "MAT002", "RES001", "SYN001", "UNS001", "UNS002", "UNS003", "UNS004", "UNS005"]) {
+    // Exhaustive allowlist — add here AND to error-codes.ts when introducing a new diagnostic.
+    const expected = [
+      "ALI001", "ALI002", "ALI003",
+      "CAP001", "CAP002", "CAP003",
+      "DEP001", "DEP002",
+      "EFF002", "EFF003", "EFF004",
+      "FMT001",
+      "INT001", "INT002", "INT003", "INT004", "INT005",
+      "MAT001", "MAT002", "MAT003", "MAT004",
+      "RES001", "RES002",
+      "SYN001", "SYN002", "SYN003",
+      "THR001", "THR002", "THR003", "THR004",
+      "UNS001", "UNS002", "UNS003", "UNS004", "UNS005",
+      "VER001", "VER002", "VER003",
+    ];
+    for (const code of expected) {
       expect(codes).toContain(code);
+    }
+    // Every registered code must also appear in the allowlist above.
+    for (const code of codes) {
+      expect(expected).toContain(code);
     }
   });
 
