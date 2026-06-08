@@ -36,10 +36,14 @@ export function passUnwrap(src: string): string {
     if (t.kind !== "question") continue;
 
     // Lookahead: is this end-of-statement?
+    // Inline trivia (whitespace and line comments) are allowed between the `?`
+    // and the terminator so that `foo()? // comment\n` is still a postfix unwrap.
     let j = i + 1;
     while (j < tokens.length) {
       const t2 = tokens[j]!;
       if (t2.kind === "whitespace") { j++; continue; }
+      if (t2.kind === "lineComment") { j++; continue; }
+      if (t2.kind === "blockComment" && !t2.text.includes("\n")) { j++; continue; }
       if (t2.kind === "punct" && t2.text === ";") break;
       if (t2.kind === "newline") break;
       if (t2.kind === "eof") break;
@@ -192,8 +196,22 @@ function findStatementStart(tokens: Token[], from: number): number {
         // Edge case: `cond ?\n  expr : other` (ternary with `?` at line end)
         // would also match this check. This coding style is not recommended in
         // botscript (prefer `match`); the practical risk is negligible.
+        //
+        // This fix applies to all version pins — the old behavior (merging
+        // consecutive bare-? statements into one expression) was never correct
+        // output. Bug fixes that restore intended semantics are not subject to
+        // the version-gate rule, which covers intentional behavior changes.
         let j = i + 1;
-        while (j < tokens.length && tokens[j]?.kind === "whitespace") j++;
+        // Skip inline trivia: spaces/tabs and line comments. Block comments
+        // are skipped only if they contain no newline (multi-line block
+        // comments break the statement).
+        while (j < tokens.length) {
+          const k = tokens[j]!;
+          if (k.kind === "whitespace") { j++; continue; }
+          if (k.kind === "lineComment") { j++; continue; }
+          if (k.kind === "blockComment" && !k.text.includes("\n")) { j++; continue; }
+          break;
+        }
         const fwd = tokens[j];
         if (!fwd || fwd.kind === "newline" || fwd.kind === "eof" || (fwd.kind === "punct" && fwd.text === ";")) {
           return skipTrivia(tokens, i + 1);
