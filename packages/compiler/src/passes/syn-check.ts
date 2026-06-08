@@ -298,7 +298,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const envTok = tokens[envIdx];
       if (!envTok || envTok.kind !== "ident" || envTok.text !== "env") continue;
 
-      if (isInsideRange(tok.start, unsafeRanges)) continue;
+      // Check the *env* token position, not just `process`, so the suppression
+      // boundary is the actual property access site rather than the object root.
+      if (isInsideRange(envTok.start, unsafeRanges)) continue;
 
       const sep5 = isOptChain5 ? "?." : ".";
       const loc5 = locationOf(src, tok.start);

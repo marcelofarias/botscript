@@ -557,13 +557,13 @@ const E: Record<string, ErrorCodeEntry> = {
       "and narrow the scope to the load site",
     rewrite:
       "// before — implicit env dep\n" +
-      "fn connect() uses { net } -> Result<Client, string> {\n" +
+      "fn connect() uses { net } -> Result<Response, string> {\n" +
       "  const url = process.env.DATABASE_URL  // SYN005\n" +
-      "  return http.connect(url)\n" +
+      "  return http.get(url)\n" +
       "}\n\n" +
       "// after — explicit parameter\n" +
-      "fn connect(url: string) uses { net } -> Result<Client, string> {\n" +
-      "  return http.connect(url)\n" +
+      "fn connect(url: string) uses { net } -> Result<Response, string> {\n" +
+      "  return http.get(url)\n" +
       "}",
     example:
       "// SYN005: process.env access hides a deployment dependency\n" +
