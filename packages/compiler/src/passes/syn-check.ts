@@ -53,10 +53,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const warnings: Diagnostic[] = [];
   const syn002 = getErrorCode("SYN002")!;
   const syn003 = getErrorCode("SYN003")!;
+  const syn004 = getErrorCode("SYN004")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
 
-  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN004/SYN005/SYN006 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -70,7 +71,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
-    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN005.
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN004/SYN005.
     // The range-based suppression above also covers nested non-unsafe fns within it,
     // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
@@ -263,6 +264,103 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         idiom: syn003.idiom,
         rewrite: syn003.rewrite,
       });
+    }
+
+    // SYN004: eval() and new Function() call detection.
+    // Fires on:
+    //   eval(...)       — global eval not preceded by `.`/`?.`, followed by `(`
+    //   new Function(…) — token `new` followed by `Function` followed by `(`
+    // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
+    // `.eval(...)` (method call on a local), `Function.*` member accesses, and
+    // bare `Function` references not preceded by `new` are NOT flagged.
+    let nextInner4 = 0;
+    const open4: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open4.length > 0 && open4[open4.length - 1]!.tokenEnd <= i) open4.pop();
+      while (nextInner4 < inner.length && inner[nextInner4]!.tokenStart <= i) {
+        open4.push(inner[nextInner4]!);
+        nextInner4++;
+      }
+      if (open4.length > 0) continue;
+
+      const tok4 = tokens[i];
+      if (!tok4 || tok4.kind !== "ident") continue;
+
+      // --- eval(...) detection ---
+      if (tok4.text === "eval") {
+        // Exclude: `obj.eval(...)` — preceded by `.` or `?.`
+        const prevIdx4 = prevSignificant(tokens, i - 1);
+        const prev4 = tokens[prevIdx4];
+        if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
+          continue;
+
+        // Must be followed by `(` (direct call) or `?.(` (optional call).
+        const nextIdx4 = nextSignificant(tokens, i + 1);
+        const next4 = tokens[nextIdx4];
+        let isOptEval = false;
+        let callIdx4 = nextIdx4;
+        if (next4 && next4.kind === "questionDot") {
+          isOptEval = true;
+          callIdx4 = nextSignificant(tokens, nextIdx4 + 1);
+        }
+        const callTok4 = tokens[callIdx4];
+        if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
+
+        if (isInsideRange(tok4.start, unsafeRanges)) continue;
+
+        const callSep4 = isOptEval ? "?." : "";
+        const loc4 = locationOf(src, tok4.start);
+        warnings.push({
+          code: "SYN004",
+          severity: "warning",
+          file: null,
+          line: loc4.line,
+          column: loc4.column,
+          start: tok4.start,
+          end: callTok4.start + 1,
+          message:
+            `fn '${decl.name}' calls eval${callSep4}() — ` +
+            `eval executes a string as code and bypasses all static capability, ` +
+            `resource, and safety checks; refactor to explicit code or wrap in unsafe "reason" { }`,
+          rule: syn004.rule,
+          idiom: syn004.idiom,
+          rewrite: syn004.rewrite,
+        });
+        continue;
+      }
+
+      // --- new Function(...) detection ---
+      if (tok4.text === "Function") {
+        // Must be preceded by `new`.
+        const prevIdx4 = prevSignificant(tokens, i - 1);
+        const prev4 = tokens[prevIdx4];
+        if (!prev4 || prev4.kind !== "ident" || prev4.text !== "new") continue;
+
+        // Must be followed by `(`.
+        const nextIdx4 = nextSignificant(tokens, i + 1);
+        const callTok4 = tokens[nextIdx4];
+        if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
+
+        if (isInsideRange(tok4.start, unsafeRanges)) continue;
+
+        const loc4 = locationOf(src, prev4.start);
+        warnings.push({
+          code: "SYN004",
+          severity: "warning",
+          file: null,
+          line: loc4.line,
+          column: loc4.column,
+          start: prev4.start,
+          end: callTok4.start + 1,
+          message:
+            `fn '${decl.name}' constructs new Function() — ` +
+            `the Function constructor executes a string as code and bypasses all static checks; ` +
+            `refactor to explicit code or wrap in unsafe "reason" { }`,
+          rule: syn004.rule,
+          idiom: syn004.idiom,
+          rewrite: syn004.rewrite,
+        });
+      }
     }
 
     // SYN005: process.env access detection.

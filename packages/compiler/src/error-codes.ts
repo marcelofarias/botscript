@@ -544,6 +544,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
       "}",
   },
+  SYN004: {
+    code: "SYN004",
+    title: "eval() or new Function() call bypasses all static capability and syntax checks",
+    rule:
+      "`eval(...)` and `new Function(...)` execute strings as code at runtime — " +
+      "no static analysis can see what they do; every capability check (CAP001/CAP002), " +
+      "resource declaration (reads/writes), and safety check (SYN002/SYN003) can be bypassed " +
+      "by routing the unsafe pattern through eval",
+    idiom:
+      "refactor eval-based patterns to use explicit code paths or config parameters; " +
+      "if eval is unavoidable (e.g. a sandboxed interpreter or intentional scripting surface), " +
+      "wrap in `unsafe \"<reason>\" { }` to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — eval hides config key access from static analysis\n" +
+      "fn getConfig(key: string) -> string {\n" +
+      "  return eval('process.env.' + key)  // SYN004\n" +
+      "}\n\n" +
+      "// after — explicit parameter, no eval\n" +
+      "fn getConfig(value: string) -> string {\n" +
+      "  return value\n" +
+      "}",
+    example:
+      "// SYN004: eval bypasses all static checks\n" +
+      "fn run(code: string) -> string {\n" +
+      "  return eval(code)\n" +
+      "}\n\n" +
+      "// fix: suppress with unsafe if eval is genuinely needed\n" +
+      "fn run(code: string) -> string {\n" +
+      '  return unsafe "evaluates user-provided script in sandbox" { eval(code) }\n' +
+      "}",
+  },
   SYN005: {
     code: "SYN005",
     title: "process.env access is an undeclared deployment environment dependency",
