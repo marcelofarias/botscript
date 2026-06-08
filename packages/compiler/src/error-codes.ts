@@ -26,6 +26,59 @@ export interface ErrorCodeEntry {
 }
 
 const E: Record<string, ErrorCodeEntry> = {
+  ALI001: {
+    code: "ALI001",
+    title: "stdlib namespace aliased via a non-trivial expression — alias not tracked",
+    rule:
+      "a module-level `const <name> = <stdlib>` binding is only statically tracked when the RHS is a " +
+      "direct namespace reference; operator expressions, member accesses, calls, and other non-trivial forms " +
+      "are left on the canonical-name tripwire — capability checks (CAP001/CAP002), body-level intent checks (INT002/INT004), and UNS005 will not see the alias",
+    idiom: "use a direct binding (`const t = time`) to alias a stdlib namespace; reference the canonical name directly in all other cases",
+    rewrite:
+      "// option A — use a direct binding:\nconst <name> = <stdlib>\n\n" +
+      "// option B — remove the alias and use the canonical name directly:\n// (reference '<stdlib>' wherever you used '<name>')",
+    example:
+      "// before — non-trivial RHS; alias not tracked; ALI001 fires\n" +
+      "const t = time.now\n\n" +
+      "// after — direct binding; alias is tracked\n" +
+      "const t = time\n",
+  },
+  ALI002: {
+    code: "ALI002",
+    title: "alias-of-alias chain — const x = t (where t is a stdlib alias) is not tracked",
+    rule:
+      "chain aliases are not transitively tracked: `const t = time` adds `t` to the alias map, " +
+      "but `const x = t` does NOT add `x` — capability checks (CAP001/CAP002), body-level intent checks " +
+      "(INT002/INT004), and UNS005 will not see `x` as a `time` reference",
+    idiom: "use a direct binding (`const x = time`) to alias a stdlib namespace; avoid aliasing existing aliases",
+    rewrite:
+      "// option A — bind directly to the stdlib namespace:\nconst x = time\n\n" +
+      "// option B — remove x and use the canonical name (or the tracked alias) directly",
+    example:
+      "// before — chain alias; x is not tracked; ALI002 fires\n" +
+      "const t = time\nconst x = t\n\n" +
+      "// after — direct binding; x is tracked\n" +
+      "const x = time\n",
+  },
+  ALI003: {
+    code: "ALI003",
+    title: "stdlib namespace destructuring — extracted member references are not tracked",
+    rule:
+      "object-destructuring a stdlib namespace (`const { now } = time`) produces bare ident references " +
+      "that no static check follows — capability checks (CAP001/CAP002), body-level intent checks " +
+      "(INT002/INT004), and UNS005 will not see the extracted member as a `time` reference; " +
+      "use a direct namespace binding or the canonical name directly; " +
+      "warning at ?bs 0.8, error (blocking) at ?bs 0.9+ — no defensible use case exists",
+    idiom: "use a direct binding (`const t = time`) and call `t.now()` rather than destructuring `time`",
+    rewrite:
+      "// option A — direct namespace binding:\nconst t = time\n// ... then call t.now() instead of now()\n\n" +
+      "// option B — use the canonical namespace directly:\n// call time.now() instead of destructuring",
+    example:
+      "// before — destructuring; now() is not tracked; ALI003 fires\n" +
+      "const { now } = time\n\n" +
+      "// after — direct binding; t.now() is tracked\n" +
+      "const t = time\n",
+  },
   CAP001: {
     code: "CAP001",
     title: "function calls a stdlib namespace whose capability is not declared",

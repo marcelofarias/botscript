@@ -36,9 +36,10 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import { STDLIB_TO_CAP } from "./cap-check.js";
+import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { computeNesting, nextSignificant } from "./_callgraph.js";
 import { collectUnsafeBlockRanges, isInsideRange, type CharRange } from "./_unsafe-ranges.js";
+import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases } from "./_alias.js";
 
 const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
 
@@ -62,11 +63,14 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
     }
   }
 
+  const aliases = collectStdlibAliases(tokens);
   const innerByDecl = computeNesting(decls);
   const diagnostics: Diagnostic[] = [];
 
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
+    const declAliases = aliasesForFn(tokens, decl, decls, aliases);
+    const declBlockShadows = blockShadowsForFn(tokens, decl, decls, new Set(aliases.keys()));
 
     // Cursor-based inner-fn exclusion (same pattern as dep-check).
     const open: FnDecl[] = [];
@@ -83,7 +87,11 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
 
       const tok = tokens[i];
       if (!tok || tok.kind !== "ident") continue;
-      if (!STDLIB_CAPS.has(tok.text)) continue;
+      const aliasCanonical = !isInBlockShadow(tok.text, i, declBlockShadows)
+        ? declAliases.get(tok.text)
+        : undefined;
+      const canonical = aliasCanonical ?? tok.text;
+      if (!STDLIB_CAPS.has(canonical)) continue;
 
       // Must be `stdlib.method(` or `stdlib?.method(` — confirm the shape before acting.
       const dotIdx = nextSignificant(tokens, i + 1);
