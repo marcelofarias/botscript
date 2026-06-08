@@ -674,7 +674,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN004: {
     code: "SYN004",
-    title: "process.exit() / process.abort() terminates the worker process",
+    title: "process.exit() / process.abort() / process.exitCode assignment terminates or sets exit state",
     body:
       "Botscript's safety model assumes fns communicate failure through `Result<T, E>` return " +
       "values. `process.exit()` and `process.abort()` break this contract entirely:\n\n" +

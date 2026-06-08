@@ -1,5 +1,7 @@
 /**
- * Tests for SYN004: process.exit() / process.abort() in fn bodies (?bs 0.7+).
+ * Tests for SYN004: process.exit() / process.abort() / process.exitCode assignment (?bs 0.7+).
+ *
+ * SYN004 is a non-blocking warning — transform must not throw.
  */
 
 import { describe, expect, it } from "vitest";
@@ -148,5 +150,18 @@ describe("SYN004: process.exit / process.abort detection", () => {
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
+  it("has severity 'warning' (non-blocking — transform must not throw)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn shutdown(code: number) -> void {\n" +
+      "  process.exit(code)\n" +
+      "}\n";
+    let result: ReturnType<typeof transform>;
+    expect(() => { result = transform(src); }).not.toThrow();
+    const w = result!.warnings.find((w) => w.code === "SYN004");
+    expect(w).toBeDefined();
+    expect(w!.severity).toBe("warning");
   });
 });
