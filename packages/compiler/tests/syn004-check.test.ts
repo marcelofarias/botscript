@@ -120,7 +120,7 @@ describe("SYN004: process.exit / process.abort detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
   });
 
-  it("fires on process.exitCode assignment — secondary priority, not currently detected (documents scope)", () => {
+  it("does not fire on process.exitCode assignment — assignment form is out of scope (documents boundary)", () => {
     // process.exitCode = N is the assignment form — not currently detected by SYN004
     // (the token sequence is `process.exitCode` `=` — no `(` follows).
     // This test documents the current scope boundary.

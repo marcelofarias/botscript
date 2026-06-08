@@ -54,7 +54,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn003 = getErrorCode("SYN003")!;
   const syn004 = getErrorCode("SYN004")!;
 
-  // Collect char-offset ranges where SYN002/SYN003 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN004 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -68,7 +68,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
-    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003.
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN004.
     // The range-based suppression above also covers nested non-unsafe fns within it,
     // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
@@ -322,7 +322,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         end: method.end,
         message:
           `fn '${decl.name}' calls process${sep4}${method.text}${callSep4}() — ` +
-          `this terminates the worker process; co-located bots are killed and callers cannot catch the exit; ` +
+          `this terminates the worker process; co-located bots are killed and callers cannot intercept the termination; ` +
           `use Result<T, E> and let the orchestrator decide, or wrap in unsafe`,
         rule: syn004.rule,
         idiom: syn004.idiom,
