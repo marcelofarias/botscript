@@ -750,7 +750,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "environment. Callers cannot see this dependency from the fn's header. Tests cannot mock it " +
       "without mutating the global process object. A misconfigured deployment silently breaks the fn " +
       "at runtime with no compile-time signal.\n\n" +
-      "This is distinct from the capability model (SYN003, SYN004): there is no `env` capability " +
+      "This is distinct from the capability model (SYN003): there is no `env` capability " +
       "to declare. The correct fix is structural — move the config dependency out of the fn body " +
       "and into the call signature.\n\n" +
       "**Fix:** pass config and secrets as explicit fn parameters. The caller is the right place to " +
@@ -760,7 +760,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "SYN005 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `process` " +
       "not preceded by `.` or `?.`, followed by `.`/`?.` then `env`. " +
       "`obj.process.env` (member access on a local) is excluded. " +
-      "Calls inside `unsafe { }` blocks or `unsafe fn` bodies are suppressed.",
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {
       fails:
         "?bs 0.7\n" +
