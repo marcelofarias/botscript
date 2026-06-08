@@ -138,20 +138,44 @@ export function collectTopLevelParamNames(args: string): Set<string> {
   let parenDepth = 0;
   let braceDepth = 0;
   let i = 0;
+  // True once we have consumed the param name for the current segment — skip
+  // everything until the next top-level comma (type annotation, default value,
+  // or destructured-binding type).
+  let skipUntilNextParam = false;
   while (i < args.length) {
     const c = args[i]!;
     if (c === "(") { parenDepth++; i++; continue; }
     if (c === ")") { parenDepth--; i++; continue; }
     if (c === "{") { braceDepth++; i++; continue; }
-    if (c === "}") { braceDepth--; i++; continue; }
-    if (parenDepth !== 1 || braceDepth > 0) { i++; continue; }
-    const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/.exec(args.slice(i));
-    if (m) {
-      names.add(m[1]!);
-      i += m[0].length;
-    } else {
+    if (c === "}") {
+      braceDepth--;
+      // Closing a destructured param binding at depth 1 — the type annotation
+      // (`: Type`) follows, so enter skip mode.
+      if (parenDepth === 1 && braceDepth === 0) skipUntilNextParam = true;
       i++;
+      continue;
     }
+    if (parenDepth !== 1 || braceDepth > 0) { i++; continue; }
+    if (c === ",") { skipUntilNextParam = false; i++; continue; }
+    if (skipUntilNextParam) { i++; continue; }
+
+    // Try typed or optional-typed: `name:` or `name?:`
+    const typedM = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\??\s*:/.exec(args.slice(i));
+    if (typedM) {
+      names.add(typedM[1]!);
+      skipUntilNextParam = true;
+      i += typedM[0].length;
+      continue;
+    }
+    // Try untyped or default param: bare identifier before `,`, `)`, or `=`
+    const untypedM = /^([a-zA-Z_$][a-zA-Z0-9_$]*)(?=\s*[,)=])/.exec(args.slice(i));
+    if (untypedM) {
+      names.add(untypedM[1]!);
+      skipUntilNextParam = true;
+      i += untypedM[0].length;
+      continue;
+    }
+    i++;
   }
   return names;
 }
@@ -185,7 +209,7 @@ export function collectFnBodyLocalNames(
 
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
-    if (tok.text !== "const" && tok.text !== "let") continue;
+    if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
