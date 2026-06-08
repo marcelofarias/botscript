@@ -822,7 +822,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`reads { y }`, then both B and A must declare `reads { y }`.\n\n" +
       "The purpose is completeness: reading A's header should tell you every resource " +
       "category A (or anything it calls) touches, without tracing through the call graph.\n\n" +
-      "Over-declaration is warned about from `?bs 0.9` (see DEP003). DEP001 only fires on " +
+      "Over-declaration may be warned about from `?bs 0.9` (see DEP003) for non-leaf fns with " +
+      "tracked same-file callees and no opaque external calls. DEP001 only fires on " +
       "under-declaration (a label that is reachable but not declared).",
     example: {
       fails:
@@ -1023,7 +1024,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`writes { x }`. The rule extends to any depth.\n\n" +
       "The purpose is completeness: reading A's header should tell you every resource " +
       "category A (or anything it calls) writes to, without tracing through the call graph.\n\n" +
-      "Over-declaration is warned about from `?bs 0.9` (see DEP004). DEP002 only fires on under-declaration.",
+      "Over-declaration may be warned about from `?bs 0.9` (see DEP004) for non-leaf fns with " +
+      "tracked same-file callees and no opaque external calls. DEP002 only fires on under-declaration.",
     example: {
       fails:
         "?bs 0.9\n" +
