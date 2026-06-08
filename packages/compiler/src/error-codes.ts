@@ -493,7 +493,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN004: {
     code: "SYN004",
-    title: "process.exit() / process.abort() terminates the worker process",
+    title: "process.exit() / process.abort() / process.exitCode assignment terminates or sets exit state",
     rule:
       "`process.exit()` and `process.abort()` terminate the entire worker process — " +
       "any co-located bots sharing the process are killed, no Result error path is available " +

@@ -120,17 +120,33 @@ describe("SYN004: process.exit / process.abort detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
   });
 
-  it("does not fire on process.exitCode assignment — assignment form is out of scope (documents boundary)", () => {
-    // process.exitCode = N is the assignment form — not currently detected by SYN004
-    // (the token sequence is `process.exitCode` `=` — no `(` follows).
-    // This test documents the current scope boundary.
+  it("fires on process.exitCode assignment", () => {
     const src =
       "?bs 0.7\n" +
       "fn setCode() -> void {\n" +
       "  process.exitCode = 1\n" +
       "}\n";
     const result = transform(src);
-    // Assignment form is not yet detected — warning does NOT fire.
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
+  it("does not fire on process.exitCode equality check", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn checkCode() -> bool {\n" +
+      "  return process.exitCode === 0\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
+  it("suppresses process.exitCode assignment inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      'fn setCode() -> void {\n' +
+      '  unsafe "controlled shutdown" { process.exitCode = 0 }\n' +
+      "}\n";
+    const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
   });
 });

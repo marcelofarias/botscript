@@ -687,8 +687,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Fix:** bubble the exit intent as a `Result<T, E>` return value and let the orchestrator decide " +
       "what to do. If process termination is genuinely required (e.g., a controlled shutdown), " +
       "wrap in `unsafe \"<reason>\" { process.exit(0) }` to acknowledge the risk explicitly.\n\n" +
-      "SYN004 fires at `?bs 0.7+` as a non-blocking warning. It detects `process.exit(...)` and " +
-      "`process.abort()` where `process` is the global (not a property of another object). " +
+      "SYN004 fires at `?bs 0.7+` as a non-blocking warning. It detects `process.exit(...)`, " +
+      "`process.abort()`, and `process.exitCode = ...` (assignment form). " +
+      "Detection is token-based: `process` not preceded by `.` or `?.` triggers the check — " +
+      "member access like `obj.process.exit()` is excluded, but locally rebound `process` " +
+      "identifiers with the same name would also be flagged. " +
       "Calls inside `unsafe { }` blocks or `unsafe fn` bodies are suppressed.",
     example: {
       fails:

@@ -290,11 +290,44 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const isOptChain4 = next && next.kind === "questionDot";
       if (!isDot4 && !isOptChain4) continue;
 
-      // Next must be `exit` or `abort`
+      // Next must be `exit`, `abort`, or `exitCode`
       const methodIdx = nextSignificant(tokens, nextIdx + 1);
       const method = tokens[methodIdx];
-      if (!method || method.kind !== "ident" || (method.text !== "exit" && method.text !== "abort"))
+      if (
+        !method ||
+        method.kind !== "ident" ||
+        (method.text !== "exit" && method.text !== "abort" && method.text !== "exitCode")
+      )
         continue;
+
+      if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+      const sep4 = isOptChain4 ? "?." : ".";
+      const loc = locationOf(src, tok.start);
+
+      if (method.text === "exitCode") {
+        // Assignment form: process.exitCode = N
+        const afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
+        const afterMethod4 = tokens[afterMethodIdx];
+        if (!afterMethod4 || afterMethod4.kind !== "eq") continue;
+        warnings.push({
+          code: "SYN004",
+          severity: "warning",
+          file: null,
+          line: loc.line,
+          column: loc.column,
+          start: tok.start,
+          end: method.end,
+          message:
+            `fn '${decl.name}' assigns process${sep4}exitCode — ` +
+            `this sets the exit code the worker uses on termination; ` +
+            `use Result<T, E> and let the orchestrator decide, or wrap in unsafe`,
+          rule: syn004.rule,
+          idiom: syn004.idiom,
+          rewrite: syn004.rewrite,
+        });
+        continue;
+      }
 
       // Must be a call: method followed by `(` or `?.(`.
       let afterMethodIdx = nextSignificant(tokens, methodIdx + 1);
@@ -307,11 +340,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       }
       if (!afterMethod4 || !(afterMethod4.kind === "open" && afterMethod4.text === "(")) continue;
 
-      if (isInsideRange(tok.start, unsafeRanges)) continue;
-
-      const sep4 = isOptChain4 ? "?." : ".";
       const callSep4 = isOptCall4 ? "?." : "";
-      const loc = locationOf(src, tok.start);
       warnings.push({
         code: "SYN004",
         severity: "warning",
