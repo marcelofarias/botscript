@@ -498,7 +498,9 @@ const E: Record<string, ErrorCodeEntry> = {
       "`process.exit()` and `process.abort()` terminate the entire worker process — " +
       "any co-located bots sharing the process are killed, no Result error path is available " +
       "to callers, and even a wrapping try/catch at the call site cannot intercept the termination; " +
-      "this is the most severe bypass of botscript's safety model",
+      "`process.exitCode = N` sets the exit code that will be used on termination, which has the " +
+      "same effect from the orchestrator's perspective; " +
+      "all three forms are the most severe bypass of botscript's safety model",
     idiom:
       "bubble the exit intent as a Result return value and let the orchestrator decide what to do; " +
       "if termination is genuinely required, wrap in `unsafe { }` with a written reason",

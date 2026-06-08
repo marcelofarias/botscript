@@ -16,12 +16,15 @@
  *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
  *           clause and visible to callers.
  *
- *   SYN004  A `process.exit()` or `process.abort()` call was detected in a fn body (?bs 0.7+).
- *           These calls terminate the entire worker process — any co-located bots
- *           sharing the process are killed, no Result error path is available to callers,
- *           and even a wrapping try/catch cannot intercept the termination. This is the
- *           most severe bypass of botscript's safety model. The idiomatic fix is to
- *           bubble the exit intent as a Result return and let the orchestrator decide.
+ *   SYN004  A `process.exit()`, `process.abort()`, or `process.exitCode = N` call/assignment
+ *           was detected in a fn body (?bs 0.7+).
+ *           `process.exit()` / `process.abort()` terminate the entire worker process — any
+ *           co-located bots sharing the process are killed, no Result error path is available
+ *           to callers, and even a wrapping try/catch cannot intercept the termination.
+ *           `process.exitCode = N` sets the exit code that will be used when the process
+ *           eventually terminates, which has the same effect from the orchestrator's perspective.
+ *           Both forms are the most severe bypass of botscript's safety model. The idiomatic
+ *           fix is to bubble the exit intent as a Result return and let the orchestrator decide.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
