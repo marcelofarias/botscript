@@ -147,7 +147,7 @@ function collectDestructuringStringBindings(pattern: string): string[] {
     const c = pattern[i]!;
     if (c === "{" || c === "[" || c === "(") { depth++; i++; continue; }
     if (c === "}" || c === "]" || c === ")") { depth--; i++; continue; }
-    if (depth !== 1) { i++; continue; }
+    if (depth < 1) { i++; continue; }
     const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)/.exec(pattern.slice(i));
     if (m) {
       const name = m[1]!;
@@ -176,7 +176,23 @@ export function collectTopLevelParamNames(args: string): Set<string> {
     if (c === ")") { parenDepth--; i++; continue; }
     if (parenDepth !== 1) { i++; continue; }
     if (c === ",") { skipUntilNextParam = false; i++; continue; }
-    if (skipUntilNextParam) { i++; continue; }
+    if (skipUntilNextParam) {
+      // Skip entire `{...}` and `[...]` groups so commas inside type annotations
+      // like `x: { a: string, b: number }` are not mistaken for param separators.
+      if (c === "{" || c === "[") {
+        const closeChar = c === "{" ? "}" : "]";
+        let depth = 1;
+        i++;
+        while (i < args.length && depth > 0) {
+          if (args[i] === c) depth++;
+          else if (args[i] === closeChar) depth--;
+          i++;
+        }
+        continue;
+      }
+      i++;
+      continue;
+    }
 
     // Destructuring parameter: `{ a, b: c }` or `[ x ]`
     if ((c === "{" || c === "[") && !skipUntilNextParam) {
