@@ -394,7 +394,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           message:
             `fn '${decl.name}' constructs ${hasNew ? "new " : ""}Function${funcCallSep}() — ` +
             `the Function constructor executes a string as code and bypasses all static checks; ` +
-            `refactor to explicit code or wrap in unsafe "reason" { new Function(body) }`,
+            `refactor to explicit code or wrap in unsafe "reason" { ${hasNew ? "new Function(body)" : "Function(body)"} }`,
           rule: syn004.rule,
           idiom: syn004.idiom,
           rewrite: syn004.rewrite,
