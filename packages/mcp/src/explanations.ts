@@ -789,7 +789,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "- `if (!env) { console.error(...); process.exit(1) }` — config-load failures that are invisible to orchestrators\n\n" +
       "Code-generation models commonly produce these patterns for CLI-style guard clauses and error handlers. " +
       "None of them are caught by any other diagnostic.\n\n" +
-      "**Fix:** return `err(new FatalError(...))` and let the caller decide whether to exit. " +
+      "**Fix:** return `err(...)` (e.g. `err('reason')`) and let the caller decide whether to exit. " +
       "The fn's contract is to signal failure, not to make the termination decision. " +
       "If `process.exit` is genuinely required at a bootstrap entry point (e.g. a top-level CLI script), " +
       "wrap in `unsafe \"exits on invalid config\" { process.exit(1) }` to make the escape hatch visible in the diff.\n\n" +

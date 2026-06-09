@@ -360,15 +360,23 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       const exitTok = tokens[exitIdx];
       if (!exitTok || exitTok.kind !== "ident" || exitTok.text !== "exit") continue;
 
-      // Must be followed by `(` — confirming this is a call, not `process.exit.bind`
-      const parenIdx6 = nextSignificant(tokens, exitIdx + 1);
-      const parenTok6 = tokens[parenIdx6];
-      if (!parenTok6 || !(parenTok6.kind === "open" && parenTok6.text === "(")) continue;
+      // Must be followed by `(` or `?.(` — confirming this is a call, not `process.exit.bind`
+      let afterExitIdx = nextSignificant(tokens, exitIdx + 1);
+      let afterExit = tokens[afterExitIdx];
+      let isOptCall6 = false;
+      if (afterExit && afterExit.kind === "questionDot") {
+        isOptCall6 = true;
+        afterExitIdx = nextSignificant(tokens, afterExitIdx + 1);
+        afterExit = tokens[afterExitIdx];
+      }
+      if (!afterExit || !(afterExit.kind === "open" && afterExit.text === "(")) continue;
+      const parenTok6 = afterExit;
 
       // Suppression is checked on the `exit` call token, not just `process`.
       if (isInsideRange(exitTok.start, unsafeRanges)) continue;
 
       const sep6 = isOptChain6 ? "?." : ".";
+      const callSep6 = isOptCall6 ? "?." : "";
       const loc6 = locationOf(src, tok6.start);
       warnings.push({
         code: "SYN006",
@@ -379,7 +387,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok6.start,
         end: parenTok6.start + 1,
         message:
-          `fn '${decl.name}' calls process${sep6}exit() — ` +
+          `fn '${decl.name}' calls process${sep6}exit${callSep6}() — ` +
           `process.exit terminates the entire host process; callers cannot catch it, ` +
           `no Result propagation runs; return err(...) instead or wrap in ` +
           `unsafe "exits on invalid config" { process.exit(1) }`,

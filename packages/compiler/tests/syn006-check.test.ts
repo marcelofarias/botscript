@@ -38,6 +38,16 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN006")).toBe(true);
   });
 
+  it("fires on process.exit?.() optional call form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn bail() -> void {\n" +
+      "  process.exit?.(1)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN006")).toBe(true);
+  });
+
   it("does not fire below ?bs 0.7", () => {
     const src =
       "?bs 0.2\n" +
@@ -98,15 +108,14 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN006")).toBe(false);
   });
 
-  it("has severity 'warning' (non-blocking — transform must not throw)", () => {
+  it("has severity 'warning' (non-blocking)", () => {
     const src =
       "?bs 0.7\n" +
       "fn bail() -> void {\n" +
       "  process.exit(1)\n" +
       "}\n";
-    let result: ReturnType<typeof transform>;
-    expect(() => { result = transform(src); }).not.toThrow();
-    const w = result!.warnings.find((w) => w.code === "SYN006");
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "SYN006");
     expect(w).toBeDefined();
     expect(w!.severity).toBe("warning");
   });

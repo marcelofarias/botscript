@@ -585,7 +585,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "propagation will never see this termination. There is no capability declaration, no `throws {}`, " +
       "nothing in the fn header to signal the kill.",
     idiom:
-      "return `err(new FatalError(...))` and propagate with `?` so the caller can decide whether " +
+      "return `err(...)` (e.g. `err('reason')`) and propagate with `?` so the caller can decide whether " +
       "to exit; if process.exit is genuinely required at a bootstrap entry point, wrap in " +
       "`unsafe \"exits on invalid config\" { process.exit(1) }`",
     rewrite:
