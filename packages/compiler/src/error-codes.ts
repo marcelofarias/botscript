@@ -546,12 +546,12 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN004: {
     code: "SYN004",
-    title: "eval() or new Function() call bypasses all static capability and syntax checks",
+    title: "eval() or Function() / new Function() call bypasses all static capability and syntax checks",
     rule:
-      "`eval(...)` and `new Function(...)` execute strings as code at runtime — " +
+      "`eval(...)`, `Function(...)`, and `new Function(...)` execute strings as code at runtime — " +
       "no static analysis can see what they do; every capability check (CAP001/CAP002), " +
       "resource declaration (reads/writes), and safety check (SYN002/SYN003) can be bypassed " +
-      "by routing the unsafe pattern through eval",
+      "by routing the unsafe pattern through eval or the Function constructor",
     idiom:
       "refactor eval-based patterns to use explicit code paths or config parameters; " +
       "if eval is unavoidable (e.g. a sandboxed interpreter or intentional scripting surface), " +

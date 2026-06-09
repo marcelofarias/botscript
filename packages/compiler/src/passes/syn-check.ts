@@ -341,13 +341,22 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           continue;
 
         // Exclude: `Function.prototype.*` — followed by `.` (member access, not a call)
+        // Must be followed by `(` (direct call) or `?.(` (optional call).
         const nextIdx4 = nextSignificant(tokens, i + 1);
-        const callTok4 = tokens[nextIdx4];
+        const next4 = tokens[nextIdx4];
+        let isOptFunc = false;
+        let callIdx4 = nextIdx4;
+        if (next4 && next4.kind === "questionDot") {
+          isOptFunc = true;
+          callIdx4 = nextSignificant(tokens, nextIdx4 + 1);
+        }
+        const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
         if (isInsideRange(tok4.start, unsafeRanges)) continue;
 
         const hasNew = prev4 && prev4.kind === "ident" && prev4.text === "new";
+        const funcCallSep = isOptFunc ? "?." : "";
         const warnStart = hasNew ? prev4!.start : tok4.start;
         const loc4 = locationOf(src, warnStart);
         warnings.push({
@@ -359,7 +368,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           start: warnStart,
           end: callTok4.start + 1,
           message:
-            `fn '${decl.name}' constructs ${hasNew ? "new " : ""}Function() — ` +
+            `fn '${decl.name}' constructs ${hasNew ? "new " : ""}Function${funcCallSep}() — ` +
             `the Function constructor executes a string as code and bypasses all static checks; ` +
             `refactor to explicit code or wrap in unsafe "reason" { }`,
           rule: syn004.rule,
