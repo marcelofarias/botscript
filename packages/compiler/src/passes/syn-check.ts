@@ -324,7 +324,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
 
     // SYN006: process.exit() detection.
-    // Fires when a fn body calls `process.exit(...)` or `process?.exit(...)`.
+    // Fires when a fn body calls `process.exit(...)`, `process?.exit(...)`,
+    // or the optional-call form `process.exit?.(...)`.
     // `process.exit()` terminates the host process entirely — no return value,
     // no caller recovery, no Result propagation. It is the most severe silent-exit
     // pattern botscript's capability model does not currently cover.
@@ -385,7 +386,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         line: loc6.line,
         column: loc6.column,
         start: tok6.start,
-        end: parenTok6.start + 1,
+        end: parenTok6.end,
         message:
           `fn '${decl.name}' calls process${sep6}exit${callSep6}() — ` +
           `process.exit terminates the entire host process; callers cannot catch it, ` +

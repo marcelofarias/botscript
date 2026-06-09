@@ -794,7 +794,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "If `process.exit` is genuinely required at a bootstrap entry point (e.g. a top-level CLI script), " +
       "wrap in `unsafe \"exits on invalid config\" { process.exit(1) }` to make the escape hatch visible in the diff.\n\n" +
       "SYN006 fires at `?bs 0.7+` as a non-blocking warning. Detection: `process` not preceded by `.`/`?.`, " +
-      "followed by `.`/`?.` then `exit`, then `(`. " +
+      "followed by `.`/`?.` then `exit`, then `(` or `?.(` (including optional-call form `process.exit?.()`). " +
       "`obj.process.exit(...)` (member access on a local) and `process.exit` without a call `(` are excluded. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {
