@@ -172,4 +172,34 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
     expect(w).toBeDefined();
     expect(w!.severity).toBe("warning");
   });
+
+  it("fires on eval<any>() TypeScript instantiation form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> unknown {\n" +
+      "  return eval<any>(code)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
+  it("fires on new Function<any>() TypeScript instantiation form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn build(body: string) -> unknown {\n" +
+      "  return new Function<any>(body)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
+  it("fires on Function<string>() bare instantiation form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn build(body: string) -> unknown {\n" +
+      "  return Function<string>(body)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
 });

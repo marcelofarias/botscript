@@ -294,7 +294,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
           continue;
 
-        // Must be followed by `(` (direct call) or `?.(` (optional call).
+        // Must be followed by `(` (direct call), `?.(` (optional call), or `<T>(` (TS instantiation).
         const nextIdx4 = nextSignificant(tokens, i + 1);
         const next4 = tokens[nextIdx4];
         let isOptEval = false;
@@ -302,6 +302,22 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         if (next4 && next4.kind === "questionDot") {
           isOptEval = true;
           callIdx4 = nextSignificant(tokens, nextIdx4 + 1);
+        } else if (next4 && next4.kind === "operator" && next4.text === "<") {
+          // TypeScript instantiation form: eval<T>(...)
+          let depth = 1;
+          let j = nextIdx4 + 1;
+          while (j < tokens.length && depth > 0) {
+            const t = tokens[j];
+            if (!t) break;
+            if (t.kind === "operator" && t.text === "<") depth++;
+            else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+              depth -= t.text.length;
+            j++;
+          }
+          const afterGenericIdx4 = nextSignificant(tokens, j);
+          const afterGeneric4 = tokens[afterGenericIdx4];
+          if (afterGeneric4 && afterGeneric4.kind === "open" && afterGeneric4.text === "(")
+            callIdx4 = afterGenericIdx4;
         }
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
@@ -354,7 +370,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           continue;
 
         // Exclude: `Function.prototype.*` — followed by `.` (member access, not a call)
-        // Must be followed by `(` (direct call) or `?.(` (optional call).
+        // Must be followed by `(` (direct call), `?.(` (optional call), or `<T>(` (TS instantiation).
         const nextIdx4 = nextSignificant(tokens, i + 1);
         const next4 = tokens[nextIdx4];
         let isOptFunc = false;
@@ -362,6 +378,22 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         if (next4 && next4.kind === "questionDot") {
           isOptFunc = true;
           callIdx4 = nextSignificant(tokens, nextIdx4 + 1);
+        } else if (next4 && next4.kind === "operator" && next4.text === "<") {
+          // TypeScript instantiation form: Function<T>(...) / new Function<T>(...)
+          let depth = 1;
+          let j = nextIdx4 + 1;
+          while (j < tokens.length && depth > 0) {
+            const t = tokens[j];
+            if (!t) break;
+            if (t.kind === "operator" && t.text === "<") depth++;
+            else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+              depth -= t.text.length;
+            j++;
+          }
+          const afterGenericIdx4 = nextSignificant(tokens, j);
+          const afterGeneric4 = tokens[afterGenericIdx4];
+          if (afterGeneric4 && afterGeneric4.kind === "open" && afterGeneric4.text === "(")
+            callIdx4 = afterGenericIdx4;
         }
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
