@@ -671,7 +671,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   DEP003: {
     code: "DEP003",
-    title: "fn declares reads {} label not justified by any callee in the same file (warning)",
+    title: "fn declares reads {} label not justified by any tracked callee (warning)",
     rule:
       "a declared reads {} label should reflect a resource the fn or its callees actually access; " +
       "DEP003 fires when no tracked callee (same-file or moduleEffects entry) transitively declares reads { x }; " +
@@ -693,7 +693,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   DEP004: {
     code: "DEP004",
-    title: "fn declares writes {} label not justified by any callee in the same file (warning)",
+    title: "fn declares writes {} label not justified by any tracked callee (warning)",
     rule:
       "a declared writes {} label should reflect a resource the fn or its callees actually modify; " +
       "DEP004 fires when no tracked callee (same-file or moduleEffects entry) transitively declares writes { x }; " +

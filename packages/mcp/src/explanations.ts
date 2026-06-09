@@ -1039,7 +1039,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   DEP003: {
     code: "DEP003",
-    title: "fn declares reads {} label not justified by any callee in the same file (warning)",
+    title: "fn declares reads {} label not justified by any tracked callee (warning)",
     body:
       "From `?bs 0.9`, DEP003 fires as a **warning** (not an error) when fn A has same-file " +
       "callees but no callee (direct or transitive) declares `reads { x }` that A also declares. " +
@@ -1066,7 +1066,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   DEP004: {
     code: "DEP004",
-    title: "fn declares writes {} label not justified by any callee in the same file (warning)",
+    title: "fn declares writes {} label not justified by any tracked callee (warning)",
     body:
       "From `?bs 0.9`, DEP004 fires as a **warning** (not an error) when fn A has same-file " +
       "callees but no callee (direct or transitive) declares `writes { x }` that A also declares. " +
