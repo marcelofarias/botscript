@@ -306,6 +306,19 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
+        // Exclude declarations: `function eval(params) {}` and method shorthands `{ eval(params) {} }`.
+        // If the token after the matching `)` is `{`, `:` (return-type annotation), or `=>`,
+        // this is a declaration, not a call expression.
+        if (callTok4.matchedAt !== undefined) {
+          const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
+          const afterClose = tokens[afterCloseIdx];
+          if (afterClose && (
+            (afterClose.kind === "open" && afterClose.text === "{") ||
+            (afterClose.kind === "punct" && afterClose.text === ":") ||
+            afterClose.kind === "fatArrow"
+          )) continue;
+        }
+
         if (isInsideRange(tok4.start, unsafeRanges)) continue;
 
         const callSep4 = isOptEval ? "?." : "";
@@ -321,7 +334,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           message:
             `fn '${decl.name}' calls eval${callSep4}() — ` +
             `eval executes a string as code and bypasses all static capability, ` +
-            `resource, and safety checks; refactor to explicit code or wrap in unsafe "reason" { }`,
+            `resource, and safety checks; refactor to explicit code or wrap in unsafe "reason" { eval(src) }`,
           rule: syn004.rule,
           idiom: syn004.idiom,
           rewrite: syn004.rewrite,
@@ -353,6 +366,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
+        // Exclude declarations: `function Function(params) {}` and method shorthands.
+        if (callTok4.matchedAt !== undefined) {
+          const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
+          const afterClose = tokens[afterCloseIdx];
+          if (afterClose && (
+            (afterClose.kind === "open" && afterClose.text === "{") ||
+            (afterClose.kind === "punct" && afterClose.text === ":") ||
+            afterClose.kind === "fatArrow"
+          )) continue;
+        }
+
         if (isInsideRange(tok4.start, unsafeRanges)) continue;
 
         const hasNew = prev4 && prev4.kind === "ident" && prev4.text === "new";
@@ -370,7 +394,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           message:
             `fn '${decl.name}' constructs ${hasNew ? "new " : ""}Function${funcCallSep}() — ` +
             `the Function constructor executes a string as code and bypasses all static checks; ` +
-            `refactor to explicit code or wrap in unsafe "reason" { }`,
+            `refactor to explicit code or wrap in unsafe "reason" { new Function(body) }`,
           rule: syn004.rule,
           idiom: syn004.idiom,
           rewrite: syn004.rewrite,

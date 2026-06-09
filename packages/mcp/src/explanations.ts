@@ -750,7 +750,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "The risk in bot code is concrete:\n" +
       "- `eval('process.env.' + key)` hides env dependencies from callers (invisible to static analysis)\n" +
       "- `eval('http.get(...)')` bypasses CAP001 (capability claim not in the fn's header)\n" +
-      "- `new Function('return process.exit(1)')()` bypasses SYN003 and the Result contract\n\n" +
+      "- `new Function('return process.exit(1)')()` hides arbitrary effects from all static checks (capability, Result contract, and every SYN diagnostic)\n\n" +
       "Every other SYN check is weakened by eval: a bot could route any unsafe pattern through " +
       "`eval` or the Function constructor to avoid static detection. The capability manifest hash " +
       "proves the *source* hasn't changed, not that runtime behavior is bounded.\n\n" +

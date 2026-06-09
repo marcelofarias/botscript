@@ -546,7 +546,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN004: {
     code: "SYN004",
-    title: "eval() or Function() / new Function() call bypasses all static capability and syntax checks",
+    title: "eval() or Function() / new Function() calls bypass all static capability and syntax checks",
     rule:
       "`eval(...)`, `Function(...)`, and `new Function(...)` execute strings as code at runtime — " +
       "no static analysis can see what they do; every capability check (CAP001/CAP002), " +

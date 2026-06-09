@@ -136,6 +136,30 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
   });
 
+  it("does not fire on function declaration named eval — declaration not a call", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> string {\n" +
+      "  function eval(src: string) { return src }\n" +
+      "  return eval(code)\n" +
+      "}\n";
+    const result = transform(src);
+    // Only one SYN004: the call `eval(code)`, not the declaration `function eval(src) {...}`
+    const warnings = result.warnings.filter((w) => w.code === "SYN004");
+    expect(warnings.length).toBe(1);
+  });
+
+  it("does not fire on method shorthand named Function — declaration not a call", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> unknown {\n" +
+      "  const obj = { Function(body: string) { return body } }\n" +
+      "  return obj\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
   it("has severity 'warning' (non-blocking — transform must not throw)", () => {
     const src =
       "?bs 0.7\n" +
