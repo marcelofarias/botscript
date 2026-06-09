@@ -575,6 +575,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return apiKey\n" +
       "}",
   },
+  SYN006: {
+    code: "SYN006",
+    title: "process.exit() terminates the host process and bypasses all recovery logic",
+    rule:
+      "`process.exit()` terminates the entire host process — not just the fn, not just the bot. " +
+      "It produces no return value, never runs caller code after the call, and completely bypasses " +
+      "botscript's Result-based error contract: callers relying on `?`, `match`, or `throws {}` " +
+      "propagation will never see this termination. There is no capability declaration, no `throws {}`, " +
+      "nothing in the fn header to signal the kill.",
+    idiom:
+      "return `err(new FatalError(...))` and propagate with `?` so the caller can decide whether " +
+      "to exit; if process.exit is genuinely required at a bootstrap entry point, wrap in " +
+      "`unsafe \"exits on invalid config\" { process.exit(1) }`",
+    rewrite:
+      "// before — silent process kill; callers have no recovery path\n" +
+      "fn loadConfig() -> Config {\n" +
+      "  if (!process.env.CONFIG_PATH) process.exit(1)  // SYN006\n" +
+      "  return readConfig(process.env.CONFIG_PATH)\n" +
+      "}\n\n" +
+      "// after — explicit error propagation\n" +
+      "fn loadConfig(configPath: string) -> Result<Config, string> {\n" +
+      "  if (!configPath) return err('CONFIG_PATH not set')\n" +
+      "  return readConfig(configPath)\n" +
+      "}",
+    example:
+      "// SYN006: process.exit kills the host process; callers cannot recover\n" +
+      "fn validate(cfg: Config) -> void {\n" +
+      "  if (!cfg.valid) process.exit(1)\n" +
+      "}\n\n" +
+      "// fix: return an error and let the caller decide\n" +
+      "fn validate(cfg: Config) -> Result<void, string> {\n" +
+      "  if (!cfg.valid) return err('invalid config')\n" +
+      "  return ok(undefined)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

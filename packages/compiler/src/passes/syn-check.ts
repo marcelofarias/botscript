@@ -54,8 +54,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn002 = getErrorCode("SYN002")!;
   const syn003 = getErrorCode("SYN003")!;
   const syn005 = getErrorCode("SYN005")!;
+  const syn006 = getErrorCode("SYN006")!;
 
-  // Collect char-offset ranges where SYN002/SYN003/SYN005 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -319,6 +320,72 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn005.rule,
         idiom: syn005.idiom,
         rewrite: syn005.rewrite,
+      });
+    }
+
+    // SYN006: process.exit() detection.
+    // Fires when a fn body calls `process.exit(...)` or `process?.exit(...)`.
+    // `process.exit()` terminates the host process entirely — no return value,
+    // no caller recovery, no Result propagation. It is the most severe silent-exit
+    // pattern botscript's capability model does not currently cover.
+    // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
+    nextInner = 0;
+    const open006: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open006.length > 0 && open006[open006.length - 1]!.tokenEnd <= i) open006.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open006.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open006.length > 0) continue;
+
+      const tok6 = tokens[i];
+      if (!tok6 || tok6.kind !== "ident" || tok6.text !== "process") continue;
+
+      // Exclude: `obj.process.exit(...)` — `process` preceded by `.` or `?.`
+      const prevIdx6 = prevSignificant(tokens, i - 1);
+      const prev6 = tokens[prevIdx6];
+      if (prev6 && ((prev6.kind === "punct" && prev6.text === ".") || prev6.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `.` or `?.`
+      const nextIdx6 = nextSignificant(tokens, i + 1);
+      const next6 = tokens[nextIdx6];
+      const isDot6 = next6 && next6.kind === "punct" && next6.text === ".";
+      const isOptChain6 = next6 && next6.kind === "questionDot";
+      if (!isDot6 && !isOptChain6) continue;
+
+      // Next must be the ident `exit`
+      const exitIdx = nextSignificant(tokens, nextIdx6 + 1);
+      const exitTok = tokens[exitIdx];
+      if (!exitTok || exitTok.kind !== "ident" || exitTok.text !== "exit") continue;
+
+      // Must be followed by `(` — confirming this is a call, not `process.exit.bind`
+      const parenIdx6 = nextSignificant(tokens, exitIdx + 1);
+      const parenTok6 = tokens[parenIdx6];
+      if (!parenTok6 || !(parenTok6.kind === "open" && parenTok6.text === "(")) continue;
+
+      // Suppression is checked on the `exit` call token, not just `process`.
+      if (isInsideRange(exitTok.start, unsafeRanges)) continue;
+
+      const sep6 = isOptChain6 ? "?." : ".";
+      const loc6 = locationOf(src, tok6.start);
+      warnings.push({
+        code: "SYN006",
+        severity: "warning",
+        file: null,
+        line: loc6.line,
+        column: loc6.column,
+        start: tok6.start,
+        end: parenTok6.start + 1,
+        message:
+          `fn '${decl.name}' calls process${sep6}exit() — ` +
+          `process.exit terminates the entire host process; callers cannot catch it, ` +
+          `no Result propagation runs; return err(...) instead or wrap in ` +
+          `unsafe "exits on invalid config" { process.exit(1) }`,
+        rule: syn006.rule,
+        idiom: syn006.idiom,
+        rewrite: syn006.rewrite,
       });
     }
   }
