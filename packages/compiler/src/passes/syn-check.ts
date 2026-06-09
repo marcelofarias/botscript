@@ -315,7 +315,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         message:
           `fn '${decl.name}' accesses process${sep5}env — ` +
           `env-var access is invisible to callers; pass config and secrets as explicit parameters, ` +
-          `or wrap in unsafe "reads deployment env" { }`,
+          `or wrap in unsafe "reads deployment env" { process.env.KEY }`,
         rule: syn005.rule,
         idiom: syn005.idiom,
         rewrite: syn005.rewrite,

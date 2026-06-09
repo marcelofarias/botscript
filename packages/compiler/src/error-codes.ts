@@ -553,7 +553,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "that callers cannot see, audit, or mock in tests",
     idiom:
       "pass config and secrets as explicit fn parameters so the dependency is visible in the " +
-      "call signature; for module-level config loading, wrap in `unsafe \"reads deployment env\" { }` " +
+      "call signature; for module-level config loading, wrap in `unsafe \"reads deployment env\" { process.env.KEY }` " +
       "and narrow the scope to the load site",
     rewrite:
       "// before — implicit env dep\n" +

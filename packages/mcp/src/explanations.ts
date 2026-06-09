@@ -756,7 +756,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Fix:** pass config and secrets as explicit fn parameters. The caller is the right place to " +
       "load from `process.env`; the fn should receive typed values, not raw strings from the " +
       "environment. If env access is genuinely required at the load site, wrap in " +
-      "`unsafe \"reads deployment env\" { }` to make the escape hatch visible in the diff.\n\n" +
+      "`unsafe \"reads deployment env\" { process.env.DATABASE_URL }` to make the escape hatch visible in the diff.\n\n" +
       "SYN005 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `process` " +
       "not preceded by `.` or `?.`, followed by `.`/`?.` then `env`. " +
       "`obj.process.env` (member access on a local) is excluded. " +
