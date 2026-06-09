@@ -181,11 +181,11 @@ export function collectTopLevelParamNames(args: string): Set<string> {
 }
 
 /**
- * Collect names of `const`/`let` simple-binding variables declared in `fn`'s
+ * Collect names of `const`/`let`/`var` simple-binding variables declared in `fn`'s
  * body (excluding tokens inside nested fn declarations).
  *
- * Only plain `const name = ...` and `let name = ...` forms are collected —
- * destructuring patterns are intentionally skipped. The result is used as
+ * Only plain `const name = ...`, `let name = ...`, and `var name = ...` forms are
+ * collected — destructuring patterns are intentionally skipped. The result is used as
  * the `localNames` set for `hasOpaqueCall` so that method calls on local
  * variables (e.g. `name.trim()`) are not mistaken for opaque import calls.
  */
