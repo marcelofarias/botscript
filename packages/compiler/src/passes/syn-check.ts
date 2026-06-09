@@ -323,14 +323,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
         // Exclude declarations: `function eval(params) {}` and method shorthands `{ eval(params) {} }`.
-        // If the token after the matching `)` is `{`, `:` (return-type annotation), or `=>`,
-        // this is a declaration, not a call expression.
+        // Only exclude when `)` is directly followed by `{` (method body) or `=>` (arrow method).
+        // We intentionally omit `:` here: `eval(x) : y` in a ternary would be incorrectly
+        // excluded, causing a false negative. Real `eval(): T {}` declarations are caught by
+        // the `{` check via the type annotation scan, and the pattern is rare in botscript.
         if (callTok4.matchedAt !== undefined) {
           const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
           const afterClose = tokens[afterCloseIdx];
           if (afterClose && (
             (afterClose.kind === "open" && afterClose.text === "{") ||
-            (afterClose.kind === "punct" && afterClose.text === ":") ||
             afterClose.kind === "fatArrow"
           )) continue;
         }
@@ -399,12 +400,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
         // Exclude declarations: `function Function(params) {}` and method shorthands.
+        // Omit `:` for the same reason as the eval check above — it causes false negatives
+        // in ternary branches (e.g. `cond ? Function(body) : fallback`).
         if (callTok4.matchedAt !== undefined) {
           const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
           const afterClose = tokens[afterCloseIdx];
           if (afterClose && (
             (afterClose.kind === "open" && afterClose.text === "{") ||
-            (afterClose.kind === "punct" && afterClose.text === ":") ||
             afterClose.kind === "fatArrow"
           )) continue;
         }
