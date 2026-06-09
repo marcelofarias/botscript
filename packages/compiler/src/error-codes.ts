@@ -590,13 +590,13 @@ const E: Record<string, ErrorCodeEntry> = {
       "`unsafe \"exits on invalid config\" { process.exit(1) }`",
     rewrite:
       "// before — silent process kill; callers have no recovery path\n" +
-      "fn loadConfig() -> Config {\n" +
-      "  if (!process.env.CONFIG_PATH) process.exit(1)  // SYN006\n" +
-      "  return readConfig(process.env.CONFIG_PATH)\n" +
+      "fn loadConfig(configPath: string) -> Config {\n" +
+      "  if (!configPath) process.exit(1)  // SYN006\n" +
+      "  return readConfig(configPath)\n" +
       "}\n\n" +
       "// after — explicit error propagation\n" +
       "fn loadConfig(configPath: string) -> Result<Config, string> {\n" +
-      "  if (!configPath) return err('CONFIG_PATH not set')\n" +
+      "  if (!configPath) return err('configPath not set')\n" +
       "  return readConfig(configPath)\n" +
       "}",
     example:
