@@ -266,13 +266,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       });
     }
 
-    // SYN004: eval() and new Function() call detection.
+    // SYN004: eval() and Function() / new Function() call detection.
     // Fires on:
-    //   eval(...)       — global eval not preceded by `.`/`?.`, followed by `(`
-    //   new Function(…) — token `new` followed by `Function` followed by `(`
+    //   eval(...)          — global eval not preceded by `.`/`?.`, followed by `(`
+    //   Function(…)        — bare Function call not preceded by `.`/`?.`, followed by `(`
+    //   new Function(…)    — same as bare Function call, `new` prefix only affects message
     // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
-    // `.eval(...)` (method call on a local), `Function.*` member accesses, and
-    // bare `Function` references not preceded by `new` are NOT flagged.
+    // `.eval(...)` (method call on a local) and `Function.*` member accesses are NOT flagged.
     let nextInner4 = 0;
     const open4: typeof inner = [];
     for (let i = bodyStart; i < decl.tokenEnd; i++) {
@@ -329,31 +329,37 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         continue;
       }
 
-      // --- new Function(...) detection ---
+      // --- new Function(...) / Function(...) detection ---
+      // Both `new Function(body)` and bare `Function(body)` execute a string as
+      // code at runtime and are equivalent bypasses.
       if (tok4.text === "Function") {
-        // Must be preceded by `new`.
         const prevIdx4 = prevSignificant(tokens, i - 1);
         const prev4 = tokens[prevIdx4];
-        if (!prev4 || prev4.kind !== "ident" || prev4.text !== "new") continue;
 
-        // Must be followed by `(`.
+        // Exclude: `obj.Function(...)` — preceded by `.` or `?.`
+        if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
+          continue;
+
+        // Exclude: `Function.prototype.*` — followed by `.` (member access, not a call)
         const nextIdx4 = nextSignificant(tokens, i + 1);
         const callTok4 = tokens[nextIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
         if (isInsideRange(tok4.start, unsafeRanges)) continue;
 
-        const loc4 = locationOf(src, prev4.start);
+        const hasNew = prev4 && prev4.kind === "ident" && prev4.text === "new";
+        const warnStart = hasNew ? prev4!.start : tok4.start;
+        const loc4 = locationOf(src, warnStart);
         warnings.push({
           code: "SYN004",
           severity: "warning",
           file: null,
           line: loc4.line,
           column: loc4.column,
-          start: prev4.start,
+          start: warnStart,
           end: callTok4.start + 1,
           message:
-            `fn '${decl.name}' constructs new Function() — ` +
+            `fn '${decl.name}' constructs ${hasNew ? "new " : ""}Function() — ` +
             `the Function constructor executes a string as code and bypasses all static checks; ` +
             `refactor to explicit code or wrap in unsafe "reason" { }`,
           rule: syn004.rule,

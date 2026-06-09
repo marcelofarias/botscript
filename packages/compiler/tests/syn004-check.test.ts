@@ -106,7 +106,17 @@ describe("SYN004: eval() and new Function() checks (0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
   });
 
-  it("does not fire on bare Function reference — not called with new", () => {
+  it("fires on bare Function() call without new — equivalent runtime bypass", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn build(body: string) -> unknown {\n" +
+      "  return Function(body)()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
+  it("does not fire on bare Function reference — not called", () => {
     const src =
       "?bs 0.7\n" +
       "fn check(f: unknown) -> boolean {\n" +

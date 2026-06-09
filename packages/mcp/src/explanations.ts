@@ -748,7 +748,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`eval(...)` and `new Function(...)` shatter that foundation — they execute arbitrary " +
       "strings as code at runtime, and no static pass can see what those strings will do.\n\n" +
       "The risk in bot code is concrete:\n" +
-      "- `eval('process.env.' + key)` bypasses SYN005 (env dependency hidden from callers)\n" +
+      "- `eval('process.env.' + key)` hides env dependencies from callers (invisible to static analysis)\n" +
       "- `eval('http.get(...)')` bypasses CAP001 (capability claim not in the fn's header)\n" +
       "- `new Function('return process.exit(1)')()` bypasses SYN003 and the Result contract\n\n" +
       "Every other SYN check is weakened by eval: a bot could route any unsafe pattern through " +
