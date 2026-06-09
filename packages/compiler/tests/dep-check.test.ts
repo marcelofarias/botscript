@@ -752,4 +752,33 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
+
+  it("fires DEP003 when fn has destructured object param whose member is called — destructured name is local, not opaque", () => {
+    // `{ name }: User` — `name` is a local binding from the destructured param.
+    // `name.trim()` must NOT be treated as an opaque external call; DEP003 must still fire.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f({ name }: { name: string }) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  return name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 when fn has destructured const local whose member is called — destructured local is not opaque", () => {
+    // `const { key } = obj` — `key` is a locally-bound name from destructuring.
+    // `key.trim()` must NOT suppress DEP003 as an opaque external call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f(obj: { key: string }) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  const { key } = obj\n" +
+      "  return key.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
 });

@@ -133,10 +133,38 @@ const CONTROL_FLOW_IDENTS = new Set([
  * Used by `hasOpaqueCall` (and exported for callers that also need param names)
  * to avoid treating method calls on fn parameters as opaque namespace calls.
  */
+/**
+ * Extract binding names from a destructuring pattern substring (`{ a, b: c }`
+ * or `[ x, y ]`). An identifier is a binding name if it is NOT immediately
+ * followed by `:` (which would mark it as a property key in object destructuring).
+ * Recurses into nested patterns.
+ */
+function collectDestructuringStringBindings(pattern: string): string[] {
+  const names: string[] = [];
+  let i = 0;
+  let depth = 0;
+  while (i < pattern.length) {
+    const c = pattern[i]!;
+    if (c === "{" || c === "[" || c === "(") { depth++; i++; continue; }
+    if (c === "}" || c === "]" || c === ")") { depth--; i++; continue; }
+    if (depth !== 1) { i++; continue; }
+    const m = /^([a-zA-Z_$][a-zA-Z0-9_$]*)/.exec(pattern.slice(i));
+    if (m) {
+      const name = m[1]!;
+      const after = pattern.slice(i + m[0].length).trimStart();
+      // Not a property key if not followed by `:`
+      if (!after.startsWith(":")) names.push(name);
+      i += m[0].length;
+      continue;
+    }
+    i++;
+  }
+  return names;
+}
+
 export function collectTopLevelParamNames(args: string): Set<string> {
   const names = new Set<string>();
   let parenDepth = 0;
-  let braceDepth = 0;
   let i = 0;
   // True once we have consumed the param name for the current segment — skip
   // everything until the next top-level comma (type annotation, default value,
@@ -146,18 +174,28 @@ export function collectTopLevelParamNames(args: string): Set<string> {
     const c = args[i]!;
     if (c === "(") { parenDepth++; i++; continue; }
     if (c === ")") { parenDepth--; i++; continue; }
-    if (c === "{") { braceDepth++; i++; continue; }
-    if (c === "}") {
-      braceDepth--;
-      // Closing a destructured param binding at depth 1 — the type annotation
-      // (`: Type`) follows, so enter skip mode.
-      if (parenDepth === 1 && braceDepth === 0) skipUntilNextParam = true;
-      i++;
-      continue;
-    }
-    if (parenDepth !== 1 || braceDepth > 0) { i++; continue; }
+    if (parenDepth !== 1) { i++; continue; }
     if (c === ",") { skipUntilNextParam = false; i++; continue; }
     if (skipUntilNextParam) { i++; continue; }
+
+    // Destructuring parameter: `{ a, b: c }` or `[ x ]`
+    if ((c === "{" || c === "[") && !skipUntilNextParam) {
+      // Find the matching close bracket by tracking depth
+      const openChar = c;
+      const closeChar = c === "{" ? "}" : "]";
+      let depth = 0;
+      let j = i;
+      while (j < args.length) {
+        if (args[j] === openChar) depth++;
+        else if (args[j] === closeChar) { depth--; if (depth === 0) { j++; break; } }
+        j++;
+      }
+      const pattern = args.slice(i, j);
+      for (const name of collectDestructuringStringBindings(pattern)) names.add(name);
+      skipUntilNextParam = true;
+      i = j;
+      continue;
+    }
 
     // Try typed or optional-typed: `name:` or `name?:`
     const typedM = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\??\s*:/.exec(args.slice(i));
@@ -181,13 +219,47 @@ export function collectTopLevelParamNames(args: string): Set<string> {
 }
 
 /**
- * Collect names of `const`/`let`/`var` simple-binding variables declared in `fn`'s
- * body (excluding tokens inside nested fn declarations).
+ * Collect all binding names from a destructuring pattern token range
+ * `[openIdx, closeIdx]` (inclusive). Works for both object (`{}`) and array
+ * (`[]`) destructuring, and recurses into nested patterns.
  *
- * Only plain `const name = ...`, `let name = ...`, and `var name = ...` forms are
- * collected — destructuring patterns are intentionally skipped. The result is used as
- * the `localNames` set for `hasOpaqueCall` so that method calls on local
- * variables (e.g. `name.trim()`) are not mistaken for opaque import calls.
+ * Rule: an identifier is a binding name unless it is immediately followed by
+ * `:` at the same depth — that form marks a property key, not a binding.
+ */
+function collectDestructuredTokenBindings(
+  tokens: Token[],
+  openIdx: number,
+  names: Set<string>,
+): void {
+  const openTok = tokens[openIdx];
+  if (!openTok || openTok.matchedAt === undefined) return;
+  const closeIdx = openTok.matchedAt;
+  for (let j = openIdx + 1; j < closeIdx; j++) {
+    const t = tokens[j];
+    if (!t) continue;
+    // Recurse into nested destructuring patterns
+    if (t.kind === "open" && (t.text === "{" || t.text === "[")) {
+      collectDestructuredTokenBindings(tokens, j, names);
+      if (t.matchedAt !== undefined) j = t.matchedAt;
+      continue;
+    }
+    if (t.kind !== "ident") continue;
+    // Property key in object destructuring: `key: binding` — `key` is followed by `:`
+    const nextIdx = nextSignificant(tokens, j + 1);
+    const nextTok = tokens[nextIdx];
+    const isPropertyKey = nextTok && nextTok.kind === "punct" && nextTok.text === ":";
+    if (!isPropertyKey) names.add(t.text);
+  }
+}
+
+/**
+ * Collect names of `const`/`let`/`var` variables declared in `fn`'s body
+ * (excluding tokens inside nested fn declarations).
+ *
+ * Handles both simple bindings (`const name = ...`) and destructuring patterns
+ * (`const { a, b: c } = ...`, `const [x] = ...`). The result is used as the
+ * `localNames` set for `hasOpaqueCall` so that method calls on local variables
+ * (e.g. `name.trim()`, `x.method()`) are not mistaken for opaque import calls.
  */
 export function collectFnBodyLocalNames(
   tokens: Token[],
@@ -213,8 +285,12 @@ export function collectFnBodyLocalNames(
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
-    // Only simple `const name` bindings — skip destructuring (`{`, `[`)
-    if (nameTok && nameTok.kind === "ident") names.add(nameTok.text);
+    if (!nameTok) continue;
+    if (nameTok.kind === "ident") {
+      names.add(nameTok.text);
+    } else if (nameTok.kind === "open" && (nameTok.text === "{" || nameTok.text === "[")) {
+      collectDestructuredTokenBindings(tokens, nameIdx, names);
+    }
   }
 
   return names;
