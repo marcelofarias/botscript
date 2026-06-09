@@ -153,7 +153,28 @@ function collectDestructuringStringBindings(pattern: string): string[] {
       const name = m[1]!;
       const after = pattern.slice(i + m[0].length).trimStart();
       // Not a property key if not followed by `:`
-      if (!after.startsWith(":")) names.push(name);
+      if (!after.startsWith(":")) {
+        names.push(name);
+        // Skip default value expression to avoid collecting its identifiers as bindings.
+        // e.g. `{ a = externalDb }` should bind only `a`, not `externalDb`.
+        if (after.startsWith("=")) {
+          i += m[0].length; // advance past ident
+          while (i < pattern.length && (pattern[i] === " " || pattern[i] === "\t")) i++;
+          i++; // skip `=`
+          const skipDepth = depth;
+          while (i < pattern.length) {
+            const sc = pattern[i]!;
+            if (sc === "{" || sc === "[" || sc === "(") { depth++; i++; continue; }
+            if (sc === "}" || sc === "]" || sc === ")") {
+              if (depth === skipDepth) break; // closing bracket; outer loop handles it
+              depth--; i++; continue;
+            }
+            if (sc === "," && depth === skipDepth) break;
+            i++;
+          }
+          continue;
+        }
+      }
       i += m[0].length;
       continue;
     }
@@ -264,7 +285,24 @@ function collectDestructuredTokenBindings(
     const nextIdx = nextSignificant(tokens, j + 1);
     const nextTok = tokens[nextIdx];
     const isPropertyKey = nextTok && nextTok.kind === "punct" && nextTok.text === ":";
-    if (!isPropertyKey) names.add(t.text);
+    if (!isPropertyKey) {
+      names.add(t.text);
+      // Skip default value expression to avoid collecting its identifiers as bindings.
+      // e.g. `{ a = externalDb }` should bind only `a`, not `externalDb`.
+      if (nextTok && nextTok.kind === "eq") {
+        j = nextIdx + 1; // advance past `=`
+        let skipDepth = 0;
+        while (j < closeIdx) {
+          const st = tokens[j];
+          if (!st) { j++; continue; }
+          if (st.kind === "open") { skipDepth++; j++; continue; }
+          if (st.kind === "close") { skipDepth--; j++; continue; }
+          if (skipDepth === 0 && st.kind === "punct" && st.text === ",") break;
+          j++;
+        }
+        j--; // outer for-loop will j++ to resume at `,` or closeIdx
+      }
+    }
   }
 }
 
