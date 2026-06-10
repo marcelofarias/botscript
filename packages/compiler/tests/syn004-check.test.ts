@@ -116,6 +116,16 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
   });
 
+  it("fires on eval?.() optional call form in fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> unknown {\n" +
+      "  return eval?.(code)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
   it("fires on Function?.() optional call form in fn body", () => {
     const src =
       "?bs 0.7\n" +
