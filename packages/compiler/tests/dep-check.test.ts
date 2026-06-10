@@ -683,6 +683,25 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
   });
 
+  it("fires DEP003 when param has generic type with object type arg — inner idents not param names", () => {
+    // `x: Map<T, { a }>` — the comma inside `<...>` is NOT a param separator.
+    // Without the angle-bracket fix, collectTopLevelParamNames resets skipUntilNextParam
+    // on the `,` inside `<T, { a }>`, then parses `{ a }` as a destructuring *parameter*,
+    // falsely adding `a` to the param-names set. That causes `a.method()` in the body to
+    // be classified as a local-param call rather than an opaque external call, so
+    // DEP003 would fire when it should be suppressed by the opaque call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f(x: Map<T, { a }>) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  a.method()\n" +
+      "}\n";
+    const result = transform(src);
+    // `a.method()` is an opaque external call — DEP003 must be suppressed
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
   it("suppresses DEP003 when fn uses optional bare call to unknown external fn?.()", () => {
     // `externalLib?.()` is an optional call to a function not declared in this file — opaque,
     // so DEP003 must be suppressed (the external may perform the read).

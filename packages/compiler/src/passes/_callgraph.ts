@@ -186,6 +186,10 @@ function collectDestructuringStringBindings(pattern: string): string[] {
 export function collectTopLevelParamNames(args: string): Set<string> {
   const names = new Set<string>();
   let parenDepth = 0;
+  // Tracks < > nesting inside type annotations (skipUntilNextParam mode) so
+  // commas in generic types like `Map<K, V>` or `Result<T, E>` are not
+  // mistaken for top-level parameter separators.
+  let angleDepth = 0;
   let i = 0;
   // True once we have consumed the param name for the current segment — skip
   // everything until the next top-level comma (type annotation, default value,
@@ -196,8 +200,14 @@ export function collectTopLevelParamNames(args: string): Set<string> {
     if (c === "(") { parenDepth++; i++; continue; }
     if (c === ")") { parenDepth--; i++; continue; }
     if (parenDepth !== 1) { i++; continue; }
-    if (c === ",") { skipUntilNextParam = false; i++; continue; }
+    // Only reset on a comma that is not inside a generic type argument list.
+    if (c === ",") { if (angleDepth === 0) skipUntilNextParam = false; i++; continue; }
     if (skipUntilNextParam) {
+      // Track `<...>` angle-bracket groups so commas inside generic type args
+      // (e.g. `x: Map<{ a: string }, T>`) do not end the skip prematurely.
+      if (c === "<") { angleDepth++; i++; continue; }
+      if (c === ">") { if (angleDepth > 0) angleDepth--; i++; continue; }
+      if (angleDepth > 0) { i++; continue; }
       // Skip entire `{...}` and `[...]` groups so commas inside type annotations
       // like `x: { a: string, b: number }` are not mistaken for param separators.
       if (c === "{" || c === "[") {
