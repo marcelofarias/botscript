@@ -37,8 +37,9 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
-import { computeNesting, collectCallees, hasOpaqueCall, nextSignificant, prevSignificant } from "./_callgraph.js";
+import { computeNesting, collectCallees, hasOpaqueCall, collectFnBodyLocalNames, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
+import { collectStdlibAliases } from "./_alias.js";
 import { extractResultArgs, splitTopLevelPipe, leadingTypeIdent } from "./_type-parser.js";
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,10 @@ export function passThrCheck(
   const decls = program.fns.map((s) => s.decl);
 
   if (decls.length === 0) return { code: src, warnings: [] };
+
+  // Stdlib alias names (e.g. `const t = time`): collected once so hasOpaqueCall
+  // can treat `t.now()` as a known local, not an opaque external member call.
+  const stdlibAliasNames = new Set(collectStdlibAliases(tokens).keys());
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` should look up `fetchRow` in moduleEffects.
@@ -238,12 +243,16 @@ export function passThrCheck(
     // Fn parameter names are excluded from the opaque-call check because their
     // effect surface is already captured by `paramThrows` — calling a typed
     // callback param is not an unknown external call.
+    // Stdlib aliases (e.g. `const t = time`) are also excluded so that `t.now()`
+    // is not mistaken for an opaque external member call.
     const inner = innerByDecl.get(rec.decl) ?? [];
     const paramNames = collectParamNames(rec.decl);
     const knownForOpaque = paramNames.size > 0
       ? new Set([...allCalleeNames, ...paramNames])
       : allCalleeNames;
-    if (hasOpaqueCall(tokens, rec.decl, inner, knownForOpaque)) continue;
+    const bodyLocals = collectFnBodyLocalNames(tokens, rec.decl, inner);
+    const localNames = new Set([...paramNames, ...bodyLocals, ...stdlibAliasNames]);
+    if (hasOpaqueCall(tokens, rec.decl, inner, knownForOpaque, localNames)) continue;
 
     const overDeclared = [...rec.declaredThrows].filter((l) => !justifiedThrows.has(l)).sort();
     if (overDeclared.length > 0) {

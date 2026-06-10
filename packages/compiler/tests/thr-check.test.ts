@@ -490,4 +490,21 @@ describe("THR004: over-declared throws — Result error-position symmetry", () =
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "THR004" && w.message.includes("parseUser"))).toBe(true);
   });
+
+  it("fires THR004 when fn uses a module-level stdlib alias — alias is not an opaque external", () => {
+    // `const t = time` at module scope; `t.now()` in a fn body should NOT be treated as an
+    // opaque external call suppressing THR004. The alias resolves to the `time` stdlib namespace
+    // which is a known, tracked surface, not an unknown external callee.
+    const src =
+      "?bs 0.9\n" +
+      "const t = time\n" +
+      "fn helper(x: string) -> string = x\n" +
+      "fn run(id: string) uses { time } throws { ParseError } -> Result<string, ParseError> {\n" +
+      '  unsafe "reading wall clock" { t.now() }\n' +
+      "  helper(id)\n" +
+      "  return err(ParseError(\"invalid\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "THR004" && w.message.includes("run"))).toBe(true);
+  });
 });
