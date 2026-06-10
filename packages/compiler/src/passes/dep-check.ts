@@ -45,6 +45,7 @@ import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, collectCallees, hasOpaqueCall, collectTopLevelParamNames, collectFnBodyLocalNames } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
+import { collectStdlibAliases } from "./_alias.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,6 +87,10 @@ export function passDepCheck(
   const decls = program.fns.map((s) => s.decl);
 
   if (decls.length === 0) return { code: src, warnings: [] };
+
+  // Module-level stdlib alias names (e.g. `const t = time` → `t`). These are
+  // excluded from opaque-call detection so `t.now()` does not suppress DEP003/DEP004.
+  const stdlibAliasNames = new Set(collectStdlibAliases(tokens).keys());
 
   // Resolve import aliases: `import { fetchRow as fetchUser }` means a call
   // to `fetchUser` in this file should look up `fetchRow` in moduleEffects.
@@ -326,7 +331,7 @@ export function passDepCheck(
     const inner = innerByDecl.get(rec.decl) ?? [];
     const paramNames = collectTopLevelParamNames(rec.decl.args);
     const bodyLocals = collectFnBodyLocalNames(tokens, rec.decl, inner);
-    const localNames = new Set([...paramNames, ...bodyLocals]);
+    const localNames = new Set([...paramNames, ...bodyLocals, ...stdlibAliasNames]);
     // Include param names in knownNames so bare calls to callback parameters
     // (e.g. `loader()`) are not treated as opaque external calls — their effects
     // are already captured via paramReads/paramWrites.

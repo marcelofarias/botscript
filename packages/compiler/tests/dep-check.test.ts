@@ -781,4 +781,19 @@ describe("DEP003/DEP004: opaque external call suppression", () => {
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
+
+  it("fires DEP003 when fn uses a module-level stdlib alias — alias is not an opaque external", () => {
+    // `const t = time` at module scope; `t.now()` in a fn body should NOT be treated as an
+    // opaque external call — it resolves to the `time` stdlib namespace. DEP003 must still fire.
+    const src =
+      "?bs 0.9\n" +
+      "const t = time\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() uses { time } reads { db } -> number {\n" +
+      "  helper();\n" +
+      '  return unsafe "reading wall clock" { t.now() }\n' +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
 });
