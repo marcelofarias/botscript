@@ -741,7 +741,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN004: {
     code: "SYN004",
-    title: "eval() or Function() / new Function() bypasses all static capability and syntax checks",
+    title: "eval() or Function() / new Function() bypass all static capability and syntax checks",
     body:
       "Botscript's safety model relies on static analysis: capability declarations, resource " +
       "labels, and syntax checks (SYN002/SYN003) all operate on visible, unchanging source text. " +

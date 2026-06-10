@@ -160,6 +160,39 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
   });
 
+  it("does not fire on function declaration named eval with return-type annotation", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> string {\n" +
+      "  function eval(src: string): string { return src }\n" +
+      "  return code\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
+  it("does not fire on method shorthand named eval with return-type annotation", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> unknown {\n" +
+      "  const obj = { eval(src: string): string { return src } }\n" +
+      "  return obj\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
+  it("does not fire on method shorthand named Function with return-type annotation", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> unknown {\n" +
+      "  const obj = { Function(body: string): Function { return () => body } }\n" +
+      "  return obj\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(false);
+  });
+
   it("fires on eval() in a ternary then-branch — not confused with a method signature", () => {
     const src =
       "?bs 0.7\n" +
@@ -175,6 +208,16 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
       "?bs 0.7\n" +
       "fn run(flag: boolean, body: string) -> unknown {\n" +
       "  return flag ? body : Function(body)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
+  it("fires on Function() in a ternary then-branch — not suppressed by ternary colon", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(flag: boolean, body: string) -> unknown {\n" +
+      "  return flag ? Function(body) : body\n" +
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);

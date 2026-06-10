@@ -322,17 +322,18 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
-        // Exclude declarations: `function eval(params) {}` and method shorthands `{ eval(params) {} }`.
-        // Only exclude when `)` is directly followed by `{` (method body) or `=>` (arrow method).
-        // We intentionally omit `:` here: `eval(x) : y` in a ternary would be incorrectly
-        // excluded, causing a false negative. Real `eval(): T {}` declarations are caught by
-        // the `{` check via the type annotation scan, and the pattern is rare in botscript.
+        // Exclude declarations: `function eval(params) {}`, `{ eval(params) {} }`, and
+        // return-type-annotated forms `function eval(params): T {}` / `{ eval(params): T {} }`.
+        // The `:` check is guarded: in a ternary (`? eval(x) : y`), the token before `eval`
+        // is `?` (question) — that is a call, not a declaration, so `:` is skipped there.
         if (callTok4.matchedAt !== undefined) {
           const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
           const afterClose = tokens[afterCloseIdx];
+          const isTernaryConsequent = prev4 && prev4.kind === "question";
           if (afterClose && (
             (afterClose.kind === "open" && afterClose.text === "{") ||
-            afterClose.kind === "fatArrow"
+            afterClose.kind === "fatArrow" ||
+            (!isTernaryConsequent && afterClose.kind === "punct" && afterClose.text === ":")
           )) continue;
         }
 
@@ -399,15 +400,18 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const callTok4 = tokens[callIdx4];
         if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
 
-        // Exclude declarations: `function Function(params) {}` and method shorthands.
-        // Omit `:` for the same reason as the eval check above — it causes false negatives
-        // in ternary branches (e.g. `cond ? Function(body) : fallback`).
+        // Exclude declarations: `function Function(params) {}`, method shorthands, and
+        // return-type-annotated forms `function Function(params): T {}` / `{ Function(params): T {} }`.
+        // Guard `:` against ternary then-branch: `? Function(body) : fallback` has `?` before
+        // Function — that is a call, not a declaration, so `:` is skipped there.
         if (callTok4.matchedAt !== undefined) {
           const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
           const afterClose = tokens[afterCloseIdx];
+          const isTernaryConsequent4 = prev4 && prev4.kind === "question";
           if (afterClose && (
             (afterClose.kind === "open" && afterClose.text === "{") ||
-            afterClose.kind === "fatArrow"
+            afterClose.kind === "fatArrow" ||
+            (!isTernaryConsequent4 && afterClose.kind === "punct" && afterClose.text === ":")
           )) continue;
         }
 
