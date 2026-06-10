@@ -48,6 +48,16 @@ describe("SYN007: fetch() call detection (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(true);
   });
 
+  it("fires on fetch<Promise<Response>>() nested generic instantiation form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn loadData(url: string) -> string {\n" +
+      "  return fetch<Promise<Response>>(url)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(true);
+  });
+
   it("does not fire when fetch is inside an unsafe block", () => {
     const src =
       "?bs 0.7\n" +

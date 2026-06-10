@@ -827,9 +827,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "- A bot author inspecting another module's header has no signal that it makes network calls\n\n" +
       "This is the same class of bypass as `console.*` (SYN003): both are real-effects calls " +
       "that sidestep the declared capability surface.\n\n" +
-      "**Fix:** replace `fetch(url)` with `http.get(url)` (or `http.post(url, body)`) and add " +
-      "`uses { net }` to the fn header. The stdlib `http.*` methods return `Result<Response, Error>`, " +
-      "so the error path is explicit and the net dependency is now visible to callers. " +
+      "**Fix:** replace `fetch(url)` with `http.get(url)` (or `http.post(url, { body })`) and add " +
+      "`uses { net }` to the fn header. The stdlib `http.*` methods return `Promise<Result<Response, Error>>` — " +
+      "`await` them to get a `Result`, making the error path explicit and the net dependency visible to callers. " +
       "If the raw `fetch` API is genuinely required (e.g. a thin compatibility adapter), " +
       "wrap in `unsafe \"wraps fetch directly\" { fetch(...) }` to make the escape hatch visible in the diff.\n\n" +
       "SYN007 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +

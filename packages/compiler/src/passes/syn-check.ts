@@ -447,7 +447,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (at.kind === "operator" && at.text === "<") { anglDepth++; }
           else if (at.kind === "operator" && at.text === ">") { anglDepth--; }
           else if (at.kind === "operator" && (at.text === ">>" || at.text === ">>>")) {
-            anglDepth -= at.text.length - 1;
+            anglDepth -= at.text.length;
           }
           afterFetchIdx++;
         }

@@ -621,7 +621,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "has an undeclared network dependency — no `uses { net }` will reflect it in the fn header, " +
       "no audit tool can see it, and callers cannot reason about the blast radius.",
     idiom:
-      "replace `fetch(url, init)` with `http.get(url)` or `http.post(url, body)` and add " +
+      "replace `fetch(url, init)` with `http.get(url)` or `http.post(url, { body })` and add " +
       "`uses { net }` to the fn header; if the raw `fetch` API is genuinely required " +
       "(e.g. a thin adapter that wraps the global for a specific use case), " +
       "wrap in `unsafe \"wraps fetch directly\" { fetch(...) }`",
