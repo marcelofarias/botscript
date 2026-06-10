@@ -441,7 +441,7 @@ export function hasOpaqueCall(
         // Walk the full member chain (handles single and multi-segment: obj.m() / obj.a.b())
         let segIdx = afterDotIdx;
         let chainEndsInCall = false;
-        chainWalk: while (true) {
+        while (true) {
           const afterSegIdx = nextSignificant(tokens, segIdx + 1);
           const afterSeg = tokens[afterSegIdx];
           if (!afterSeg) break;
