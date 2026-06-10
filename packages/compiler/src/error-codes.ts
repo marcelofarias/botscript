@@ -579,8 +579,9 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN006",
     title: "process.exit() terminates the host process and bypasses all recovery logic",
     rule:
-      "`process.exit()` terminates the entire host process — not just the fn, not just the bot. " +
-      "It produces no return value, never runs caller code after the call, and completely bypasses " +
+      "`process.exit()`, `process?.exit()`, and `process.exit?.()` all terminate the entire host process — " +
+      "not just the fn, not just the bot. " +
+      "They produce no return value, never run caller code after the call, and completely bypass " +
       "botscript's Result-based error contract: callers relying on `?`, `match`, or `throws {}` " +
       "propagation will never see this termination. There is no capability declaration, no `throws {}`, " +
       "nothing in the fn header to signal the kill.",

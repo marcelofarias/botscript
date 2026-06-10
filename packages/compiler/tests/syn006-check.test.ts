@@ -51,7 +51,7 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
   it("does not fire below ?bs 0.7", () => {
     const src =
       "?bs 0.2\n" +
-      "fn bail(code) {\n" +
+      "fn bail(code: number) -> void {\n" +
       "  process.exit(code)\n" +
       "}\n";
     const result = transform(src);

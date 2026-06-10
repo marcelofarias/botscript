@@ -386,7 +386,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         line: loc6.line,
         column: loc6.column,
         start: tok6.start,
-        end: parenTok6.end,
+        end: exitTok.end,
         message:
           `fn '${decl.name}' calls process${sep6}exit${callSep6}() — ` +
           `process.exit terminates the entire host process; callers cannot catch it, ` +
