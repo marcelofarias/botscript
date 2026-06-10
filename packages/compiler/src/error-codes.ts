@@ -598,7 +598,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after — explicit error propagation\n" +
       "fn loadConfig(configPath: string) -> Result<Config, string> {\n" +
       "  if (!configPath) return err('configPath not set')\n" +
-      "  return readConfig(configPath)\n" +
+      "  return ok(readConfig(configPath))\n" +
       "}",
     example:
       "// SYN006: process.exit kills the host process; callers cannot recover\n" +

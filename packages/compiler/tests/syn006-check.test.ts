@@ -54,6 +54,7 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
       "fn bail(code: number) -> void {\n" +
       "  process.exit(code)\n" +
       "}\n";
+    // version 0.2 is below the 0.7 floor — SYN006 must not fire
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN006")).toBe(false);
   });
@@ -114,7 +115,6 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
       "fn bail() -> void {\n" +
       "  process.exit(1)\n" +
       "}\n";
-    expect(() => transform(src)).not.toThrow();
     const result = transform(src);
     const w = result.warnings.find((w) => w.code === "SYN006");
     expect(w).toBeDefined();

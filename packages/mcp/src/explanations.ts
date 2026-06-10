@@ -778,14 +778,15 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "SYN006",
     title: "process.exit() terminates the host process and bypasses all recovery logic",
     body:
-      "`process.exit()` is the most severe silent-exit pattern botscript does not already cover. " +
-      "Unlike `throw` (SYN002), `console.*` (SYN003), or `process.env` (SYN005), `process.exit()` " +
-      "doesn't just affect the current fn — it terminates the entire host process. " +
+      "`process.exit()`, `process?.exit(...)`, and `process.exit?.(...)` are the most severe silent-exit " +
+      "patterns botscript does not already cover. " +
+      "Unlike `throw` (SYN002), `console.*` (SYN003), or `process.env` (SYN005), these calls " +
+      "don't just affect the current fn — they terminate the entire host process. " +
       "The call produces no return value, never runs any caller code after it, and permanently " +
       "seals off every recovery path: `?` propagation, `match`, `try/catch`, `throws {}` — none of them run.\n\n" +
       "The risk in bot code is concrete:\n" +
       "- `if (!cfg.valid) process.exit(1)` — callers have no way to recover; the process dies silently\n" +
-      "- `try { ... } catch (e) { process.exit(1) }` — error handlers that kill instead of propagating; the bot runtime never sees it\n" +
+      "- `try { doWork() } catch (e) { process.exit(1) }` — error handlers that kill instead of propagating; the bot runtime never sees it\n" +
       "- `if (!env) { console.error(...); process.exit(1) }` — config-load failures that are invisible to orchestrators\n\n" +
       "Code-generation models commonly produce these patterns for CLI-style guard clauses and error handlers. " +
       "None of them are caught by any other diagnostic.\n\n" +
