@@ -371,7 +371,6 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         afterExit = tokens[afterExitIdx];
       }
       if (!afterExit || !(afterExit.kind === "open" && afterExit.text === "(")) continue;
-      const parenTok6 = afterExit;
 
       // Suppression is checked on the `exit` call token, not just `process`.
       if (isInsideRange(exitTok.start, unsafeRanges)) continue;

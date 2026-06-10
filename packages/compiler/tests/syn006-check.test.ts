@@ -114,9 +114,9 @@ describe("SYN006: process.exit() call detection (?bs 0.7+)", () => {
       "fn bail() -> void {\n" +
       "  process.exit(1)\n" +
       "}\n";
-    let result: ReturnType<typeof transform>;
-    expect(() => { result = transform(src); }).not.toThrow();
-    const w = result!.warnings.find((w) => w.code === "SYN006");
+    expect(() => transform(src)).not.toThrow();
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "SYN006");
     expect(w).toBeDefined();
     expect(w!.severity).toBe("warning");
   });
