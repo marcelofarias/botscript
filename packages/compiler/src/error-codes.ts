@@ -611,6 +611,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return ok(undefined)\n" +
       "}",
   },
+  SYN008: {
+    code: "SYN008",
+    title: "new WebSocket() / WebSocket() call bypasses the net capability model",
+    rule:
+      "`new WebSocket(url)`, `WebSocket(url)`, and TypeScript instantiation forms like " +
+      "`new WebSocket<T>(url)` open persistent bidirectional connections at runtime but are " +
+      "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
+      "not the `WebSocket` global. A fn that constructs a WebSocket has an undeclared network " +
+      "dependency — no `uses { net }` reflects it, no audit tool can see it, and the connection " +
+      "outlives the fn's return value.",
+    idiom:
+      "wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
+      "to make the escape hatch visible in the diff; for full capability tracking, write a thin " +
+      "wrapper fn that calls `$require(\"net\")` before constructing the socket",
+    rewrite:
+      "// before — WebSocket is invisible to the capability model\n" +
+      "fn openFeed(url: string) -> WebSocket {\n" +
+      "  return new WebSocket(url)  // SYN008\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openFeed(url: string) -> WebSocket {\n" +
+      '  return unsafe "wraps WebSocket for streaming feed" { new WebSocket(url) }\n' +
+      "}",
+    example:
+      "// SYN008: WebSocket bypasses the net capability model\n" +
+      "fn subscribe(url: string) -> void {\n" +
+      "  const ws = new WebSocket(url)  // SYN008\n" +
+      "  ws.onmessage = (e) => handle(e.data)\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn subscribe(url: string) -> void {\n" +
+      '  const ws = unsafe "wraps WebSocket for live updates" { new WebSocket(url) }\n' +
+      "  ws.onmessage = (e) => handle(e.data)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

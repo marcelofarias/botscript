@@ -812,6 +812,48 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN008: {
+    code: "SYN008",
+    title: "new WebSocket() / WebSocket() call bypasses the net capability model",
+    body:
+      "Botscript's capability model maps network access to `uses { net }` via the `http` stdlib " +
+      "namespace. CAP001 enforces this by checking for `http.*` member calls (e.g. `http.get()`, " +
+      "`http.post()`). But the `WebSocket` global opens a persistent bidirectional connection without " +
+      "any `http.*` call — CAP001 never fires, and `uses { net }` is absent from the fn header.\n\n" +
+      "The impact is more severe than `fetch` (SYN007):\n" +
+      "- A WebSocket connection persists beyond the fn's return, making the connection lifetime " +
+      "invisible to the caller\n" +
+      "- A fn that constructs a WebSocket has a live, long-lived network dependency that callers " +
+      "cannot see, audit, or mock in tests\n" +
+      "- Audit tools and orchestrators that read `uses { net }` declarations will miss the dependency\n" +
+      "- The connection can receive data and trigger callbacks after the constructing fn has returned\n\n" +
+      "This is the same bypass class as `fetch` (SYN007) and `console.*` (SYN003): real network " +
+      "effects that sidestep the declared capability surface.\n\n" +
+      "**Fix:** wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
+      "to make the escape hatch visible in the diff. Note that simply adding `uses { net }` to the fn header " +
+      "without an `http.*` call will trigger CAP002 (over-declared capability) — the stdlib currently has no " +
+      "WebSocket wrapper. For full capability tracking, write a thin wrapper fn that calls `$require(\"net\")` " +
+      "before constructing the socket.\n\n" +
+      "SYN008 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
+      "`WebSocket` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`. " +
+      "Both `new WebSocket(url)` and `WebSocket(url)` (without `new`) are detected. " +
+      "`obj.WebSocket(...)` (method call on a local object) is excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn subscribe(url: string) -> void {\n" +
+        "  const ws = new WebSocket(url)\n" +
+        "  ws.onmessage = (e) => handle(e.data)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn subscribe(url: string) -> void {\n" +
+        '  const ws = unsafe "wraps WebSocket for live updates" { new WebSocket(url) }\n' +
+        "  ws.onmessage = (e) => handle(e.data)\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

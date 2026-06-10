@@ -23,6 +23,13 @@
  *           depends on runtime deployment values that callers cannot see,
  *           audit, or mock in tests. The idiomatic fix is to pass config
  *           and secrets as explicit fn parameters.
+ *
+ *   SYN008  A `new WebSocket(...)` or `WebSocket(...)` call was detected in a
+ *           fn body (?bs 0.7+). WebSocket opens a persistent bidirectional
+ *           connection that is invisible to CAP001 (which checks `http.*`
+ *           member calls). A fn that constructs a WebSocket has an undeclared
+ *           `net` dependency. Wrap in `unsafe "reason" { }` and declare
+ *           `uses { net }`, or write a thin `$require("net")`-checked wrapper.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -55,8 +62,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn003 = getErrorCode("SYN003")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
+  const syn008 = getErrorCode("SYN008")!;
 
-  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006/SYN008 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -394,6 +402,85 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn006.rule,
         idiom: syn006.idiom,
         rewrite: syn006.rewrite,
+      });
+    }
+
+    // SYN008: WebSocket constructor/call detection.
+    // Fires when a fn body contains `new WebSocket(...)`, `WebSocket(...)`, or
+    // TypeScript instantiation form `new WebSocket<T>(...)` / `WebSocket<T>(...)`.
+    // All forms open a persistent bidirectional network connection at runtime
+    // but are invisible to CAP001 (which checks `http.*` member calls only).
+    // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
+    nextInner = 0;
+    const open8: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open8.length > 0 && open8[open8.length - 1]!.tokenEnd <= i) open8.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open8.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open8.length > 0) continue;
+
+      const tok8 = tokens[i];
+      if (!tok8 || tok8.kind !== "ident" || tok8.text !== "WebSocket") continue;
+
+      // Exclude: `obj.WebSocket(...)` or `obj?.WebSocket(...)` — member call on a local.
+      const prevIdx8 = prevSignificant(tokens, i - 1);
+      const prev8 = tokens[prevIdx8];
+      if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a
+      // constructor or direct call, not a bare `WebSocket` reference.
+      let afterWsIdx = nextSignificant(tokens, i + 1);
+      const afterWs = tokens[afterWsIdx];
+      if (!afterWs) continue;
+
+      // TypeScript instantiation form: `WebSocket<T>(...)` or `new WebSocket<T>(...)`
+      if (afterWs.kind === "operator" && afterWs.text === "<") {
+        let anglDepth = 1;
+        afterWsIdx++;
+        while (afterWsIdx < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[afterWsIdx];
+          if (!at) { afterWsIdx++; continue; }
+          if (at.kind === "operator" && at.text === "<") { anglDepth++; }
+          else if (at.kind === "operator" && at.text === ">") { anglDepth--; }
+          else if (at.kind === "operator" && (at.text === ">>" || at.text === ">>>")) {
+            anglDepth -= at.text.length;
+          }
+          afterWsIdx++;
+        }
+        afterWsIdx = nextSignificant(tokens, afterWsIdx);
+        const afterAngle8 = tokens[afterWsIdx];
+        if (!afterAngle8 || !(afterAngle8.kind === "open" && afterAngle8.text === "(")) continue;
+      } else if (afterWs.kind === "questionDot") {
+        // `WebSocket?.(...)` — optional call
+        const afterQD8 = nextSignificant(tokens, afterWsIdx + 1);
+        const afterQDTok8 = tokens[afterQD8];
+        if (!afterQDTok8 || !(afterQDTok8.kind === "open" && afterQDTok8.text === "(")) continue;
+      } else if (!(afterWs.kind === "open" && afterWs.text === "(")) {
+        continue;
+      }
+
+      // Suppression check: unsafe block or unsafe fn body
+      if (isInsideRange(tok8.start, unsafeRanges)) continue;
+
+      const loc8 = locationOf(src, tok8.start);
+      warnings.push({
+        code: "SYN008",
+        severity: "warning",
+        file: null,
+        line: loc8.line,
+        column: loc8.column,
+        start: tok8.start,
+        end: tok8.end,
+        message:
+          `fn '${decl.name}' constructs a WebSocket — WebSocket bypasses the net capability model; ` +
+          `CAP001 cannot see it; declare uses { net } and wrap in ` +
+          `unsafe "wraps WebSocket directly" { new WebSocket(url) }`,
+        rule: syn008.rule,
+        idiom: syn008.idiom,
+        rewrite: syn008.rewrite,
       });
     }
   }
