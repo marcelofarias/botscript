@@ -812,6 +812,48 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN007: {
+    code: "SYN007",
+    title: "fetch() call bypasses the net capability model — use http.get() / http.post() instead",
+    body:
+      "Botscript's capability model maps network access to `uses { net }` via the `http` stdlib " +
+      "namespace. CAP001 enforces this by checking for `http.*` member calls (e.g. `http.get()`, " +
+      "`http.post()`). But the `fetch` global makes real HTTP requests without any `http.*` call — " +
+      "CAP001 never fires, and `uses { net }` is absent from the fn header.\n\n" +
+      "The impact is concrete:\n" +
+      "- A fn that calls `fetch(url)` has a live network dependency that callers cannot see\n" +
+      "- The capability manifest hash proves the source unchanged, but the network surface is invisible\n" +
+      "- Audit tools and orchestrators that read `uses { net }` declarations will miss the dependency\n" +
+      "- A bot author inspecting another module's header has no signal that it makes network calls\n\n" +
+      "This is the same class of bypass as `console.*` (SYN003): both are real-effects calls " +
+      "that sidestep the declared capability surface.\n\n" +
+      "**Fix:** replace `fetch(url)` with `http.get(url)` (or `http.post(url, body)`) and add " +
+      "`uses { net }` to the fn header. The stdlib `http.*` methods return `Result<Response, Error>`, " +
+      "so the error path is explicit and the net dependency is now visible to callers. " +
+      "If the raw `fetch` API is genuinely required (e.g. a thin compatibility adapter), " +
+      "wrap in `unsafe \"wraps fetch directly\" { fetch(...) }` to make the escape hatch visible in the diff.\n\n" +
+      "SYN007 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
+      "`fetch` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`; " +
+      "TypeScript instantiation forms `fetch<T>(...)` are also detected. " +
+      "`obj.fetch(...)` (method call on a local object) is excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn loadData(url: string) -> string {\n" +
+        "  const res = await fetch(url)\n" +
+        "  return await res.text()\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn loadData(url: string) uses { net } -> Result<string, string> {\n" +
+        "  match await http.get(url) {\n" +
+        "    ok { res } -> ok(await res.text())\n" +
+        "    err { e } -> err(e.message)\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

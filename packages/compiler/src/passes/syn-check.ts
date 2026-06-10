@@ -23,6 +23,14 @@
  *           depends on runtime deployment values that callers cannot see,
  *           audit, or mock in tests. The idiomatic fix is to pass config
  *           and secrets as explicit fn parameters.
+ *
+ *   SYN007  A `fetch(...)` call was detected in a fn body (?bs 0.7+).
+ *           `fetch()` makes real HTTP requests at runtime but is invisible to
+ *           botscript's capability model: CAP001 checks for `http.*` member
+ *           calls, not the `fetch` global. A fn that calls `fetch` has an
+ *           undeclared network dependency — no `uses { net }` in the fn header
+ *           will reflect it. Use `http.get()` or `http.post()` instead so the
+ *           net capability is declared and visible to callers.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -55,8 +63,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn003 = getErrorCode("SYN003")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
+  const syn007 = getErrorCode("SYN007")!;
 
-  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006 are suppressed:
+  // Collect char-offset ranges where SYN002/SYN003/SYN005/SYN006/SYN007 are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -394,6 +403,85 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn006.rule,
         idiom: syn006.idiom,
         rewrite: syn006.rewrite,
+      });
+    }
+
+    // SYN007: fetch() call detection.
+    // Fires when a fn body calls `fetch(...)`, `fetch?.(...)`, or a TypeScript
+    // instantiation form `fetch<T>(...)`. All forms make real HTTP requests
+    // at runtime but are invisible to CAP001 (which only checks `http.*` member
+    // calls). A fn that uses `fetch` directly has an undeclared `net` dependency.
+    // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
+    nextInner = 0;
+    const open007: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open007.length > 0 && open007[open007.length - 1]!.tokenEnd <= i) open007.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open007.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open007.length > 0) continue;
+
+      const tok7 = tokens[i];
+      if (!tok7 || tok7.kind !== "ident" || tok7.text !== "fetch") continue;
+
+      // Exclude: `obj.fetch(...)` or `obj?.fetch(...)` — member call on a local.
+      const prevIdx7 = prevSignificant(tokens, i - 1);
+      const prev7 = tokens[prevIdx7];
+      if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a call,
+      // not a bare `fetch` reference or a property access like `fetch.name`.
+      let afterFetchIdx = nextSignificant(tokens, i + 1);
+      const afterFetch = tokens[afterFetchIdx];
+      if (!afterFetch) continue;
+
+      // TypeScript instantiation form: `fetch<T>(...)` — skip over `<...>` to find `(`
+      if (afterFetch.kind === "operator" && afterFetch.text === "<") {
+        let anglDepth = 1;
+        afterFetchIdx++;
+        while (afterFetchIdx < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[afterFetchIdx];
+          if (!at) { afterFetchIdx++; continue; }
+          if (at.kind === "operator" && at.text === "<") { anglDepth++; }
+          else if (at.kind === "operator" && at.text === ">") { anglDepth--; }
+          else if (at.kind === "operator" && (at.text === ">>" || at.text === ">>>")) {
+            anglDepth -= at.text.length - 1;
+          }
+          afterFetchIdx++;
+        }
+        afterFetchIdx = nextSignificant(tokens, afterFetchIdx);
+        const afterAngle = tokens[afterFetchIdx];
+        if (!afterAngle || !(afterAngle.kind === "open" && afterAngle.text === "(")) continue;
+      } else if (afterFetch.kind === "questionDot") {
+        // `fetch?.(...)` — optional call
+        const afterQD7 = nextSignificant(tokens, afterFetchIdx + 1);
+        const afterQDTok = tokens[afterQD7];
+        if (!afterQDTok || !(afterQDTok.kind === "open" && afterQDTok.text === "(")) continue;
+      } else if (!(afterFetch.kind === "open" && afterFetch.text === "(")) {
+        continue;
+      }
+
+      // Suppression check: unsafe block or unsafe fn body
+      if (isInsideRange(tok7.start, unsafeRanges)) continue;
+
+      const loc7 = locationOf(src, tok7.start);
+      warnings.push({
+        code: "SYN007",
+        severity: "warning",
+        file: null,
+        line: loc7.line,
+        column: loc7.column,
+        start: tok7.start,
+        end: tok7.end,
+        message:
+          `fn '${decl.name}' calls fetch() — fetch bypasses the net capability model; ` +
+          `CAP001 cannot see it; use http.get() or http.post() and declare uses { net }, ` +
+          `or wrap in unsafe "wraps fetch directly" { fetch(...) }`,
+        rule: syn007.rule,
+        idiom: syn007.idiom,
+        rewrite: syn007.rewrite,
       });
     }
   }
