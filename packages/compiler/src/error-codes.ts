@@ -555,7 +555,7 @@ const E: Record<string, ErrorCodeEntry> = {
     idiom:
       "refactor eval-based patterns to use explicit code paths or config parameters; " +
       "if eval is unavoidable (e.g. a sandboxed interpreter or intentional scripting surface), " +
-      "wrap in `unsafe \"<reason>\" { }` to make the escape hatch visible in the diff",
+      "wrap in `unsafe \"<reason>\" { eval(...) }` to make the escape hatch visible in the diff",
     rewrite:
       "// before — eval hides config key access from static analysis\n" +
       "fn getConfig(key: string) -> string {\n" +

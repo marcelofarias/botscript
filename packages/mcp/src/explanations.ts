@@ -759,8 +759,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "wrap the call in `unsafe \"<reason>\" { eval(src) }` to make the escape hatch visible " +
       "in the diff and in code review.\n\n" +
       "SYN004 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
-      "`eval` not preceded by `.`/`?.` followed by `(` or `?.(`; bare `Function(...)` / " +
-      "`Function?.(...)` / `new Function(...)` not preceded by `.`/`?.`. " +
+      "`eval` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`; bare `Function(...)` / " +
+      "`Function?.(...)` / `new Function(...)` — including TypeScript instantiation forms " +
+      "`eval<T>(...)`, `Function<T>(...)`, and `new Function<T>(...)` — not preceded by `.`/`?.`. " +
       "`.eval(...)` (method call on a local object) and `Function.*` member accesses are excluded.",
     example: {
       fails:
