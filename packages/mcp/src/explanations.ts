@@ -774,6 +774,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN006: {
+    code: "SYN006",
+    title: "process.exit() terminates the host process and bypasses all recovery logic",
+    body:
+      "`process.exit()`, `process?.exit(...)`, and `process.exit?.(...)` are the most severe silent-exit " +
+      "patterns botscript does not already cover. " +
+      "Unlike `throw` (SYN002), `console.*` (SYN003), or `process.env` (SYN005), these calls " +
+      "don't just affect the current fn — they terminate the entire host process. " +
+      "The call produces no return value, never runs any caller code after it, and permanently " +
+      "seals off every recovery path: `?` propagation, `match`, `try/catch`, `throws {}` — none of them run.\n\n" +
+      "The risk in bot code is concrete:\n" +
+      "- `if (!cfg.valid) process.exit(1)` — callers have no way to recover; the process dies silently\n" +
+      "- `try { doWork() } catch (e) { process.exit(1) }` — error handlers that kill instead of propagating; the bot runtime never sees it\n" +
+      "- `if (!env) { console.error(...); process.exit(1) }` — config-load failures that are invisible to orchestrators\n\n" +
+      "Code-generation models commonly produce these patterns for CLI-style guard clauses and error handlers. " +
+      "None of them are caught by any other diagnostic.\n\n" +
+      "**Fix:** return `err(...)` (e.g. `err('reason')`) and let the caller decide whether to exit. " +
+      "The fn's contract is to signal failure, not to make the termination decision. " +
+      "If `process.exit` is genuinely required at a bootstrap entry point (e.g. a top-level CLI script), " +
+      "wrap in `unsafe \"exits on invalid config\" { process.exit(1) }` to make the escape hatch visible in the diff.\n\n" +
+      "SYN006 fires at `?bs 0.7+` as a non-blocking warning. Detection: `process` not preceded by `.`/`?.`, " +
+      "followed by `.`/`?.` then `exit`, then `(` or `?.(` (including optional-call form `process.exit?.()`). " +
+      "`obj.process.exit(...)` (member access on a local) and `process.exit` without a call `(` are excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn validate(cfg: Config) -> void {\n" +
+        "  if (!cfg.valid) process.exit(1)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn validate(cfg: Config) -> Result<void, string> {\n" +
+        "  if (!cfg.valid) return err('invalid config')\n" +
+        "  return ok(undefined)\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
