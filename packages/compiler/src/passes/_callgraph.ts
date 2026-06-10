@@ -126,14 +126,6 @@ const CONTROL_FLOW_IDENTS = new Set([
 
 
 /**
- * Parse the top-level parameter names from a fn's `args` string (verbatim,
- * including outer parens). Depth-tracks parentheses so names inside nested
- * callback type annotations (e.g. `cb: (item: string) -> void`) are excluded.
- *
- * Used by `hasOpaqueCall` (and exported for callers that also need param names)
- * to avoid treating method calls on fn parameters as opaque namespace calls.
- */
-/**
  * Extract binding names from a destructuring pattern substring (`{ a, b: c }`
  * or `[ x, y ]`). An identifier is a binding name if it is NOT immediately
  * followed by `:` (which would mark it as a property key in object destructuring).
@@ -183,6 +175,14 @@ function collectDestructuringStringBindings(pattern: string): string[] {
   return names;
 }
 
+/**
+ * Parse the top-level parameter names from a fn's `args` string (verbatim,
+ * including outer parens). Depth-tracks parentheses so names inside nested
+ * callback type annotations (e.g. `cb: (item: string) -> void`) are excluded.
+ *
+ * Used by `hasOpaqueCall` (and exported for callers that also need param names)
+ * to avoid treating method calls on fn parameters as opaque namespace calls.
+ */
 export function collectTopLevelParamNames(args: string): Set<string> {
   const names = new Set<string>();
   let parenDepth = 0;
