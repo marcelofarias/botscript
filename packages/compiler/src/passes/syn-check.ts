@@ -57,6 +57,8 @@ const CONSOLE_OUTPUT_METHODS = new Set([
   "table", "trace", "group", "groupCollapsed", "groupEnd",
 ]);
 
+const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
 
@@ -595,7 +597,6 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     // callbacks to run after the fn returns. Any side effects inside those callbacks are
     // invisible to callers: no capability, writes {}, or throws {} can reflect them.
     // Suppressed inside `unsafe "reason" { }` blocks and `unsafe "reason" fn` bodies.
-    const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
     nextInner = 0;
     const open010: typeof inner = [];
     for (let i = bodyStart; i < decl.tokenEnd; i++) {

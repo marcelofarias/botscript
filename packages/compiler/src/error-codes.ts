@@ -662,7 +662,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// after — caller controls the timing\n" +
       "async fn scheduleRetry(fn: () -> void, ms: number) -> Promise<void> {\n" +
-      "  await new Promise(resolve => setTimeout(resolve, ms))\n" +
+      "  await new Promise(resolve => unsafe \"schedules deferred effect\" { setTimeout(resolve, ms) })\n" +
       "  fn()\n" +
       "}",
     example:

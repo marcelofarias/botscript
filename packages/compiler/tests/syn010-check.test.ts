@@ -97,8 +97,8 @@ describe("SYN010: timer / microtask global call detection", () => {
   it("does NOT fire inside an unsafe fn body", () => {
     const src =
       "?bs 0.7\n" +
-      'unsafe "uses timers" fn scheduleRetry(fn: () -> void) -> void {\n' +
-      "  setTimeout(fn, 1000)\n" +
+      'unsafe "uses timers" fn scheduleRetry(callback: () -> void) -> void {\n' +
+      "  setTimeout(callback, 1000)\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN010")).toBe(false);
