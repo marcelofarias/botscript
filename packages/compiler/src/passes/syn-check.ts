@@ -643,8 +643,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
 
     // SYN009: new XMLHttpRequest() / XMLHttpRequest() detection.
-    // Fires when a fn body constructs an XMLHttpRequest via `new XMLHttpRequest(url)`,
-    // `XMLHttpRequest(url)`, or TypeScript instantiation form `new XMLHttpRequest<T>(url)`.
+    // Fires when a fn body constructs an XMLHttpRequest via `new XMLHttpRequest()`,
+    // `XMLHttpRequest()`, `new XMLHttpRequest` (no parens), or TypeScript form `new XMLHttpRequest<T>()`.
     // XMLHttpRequest opens an HTTP connection at runtime but is invisible to CAP001
     // (which only checks `http.*` member calls). A fn that constructs an XHR has an
     // undeclared `net` dependency.
@@ -698,6 +698,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const afterQDTok9 = tokens[afterQD9];
         if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
       } else if (!(afterXhr && afterXhr.kind === "open" && afterXhr.text === "(")) {
+        // Member access on the constructor itself (e.g. new XMLHttpRequest.prototype.open()) — not a construction
+        if (afterXhr && afterXhr.kind === "punct" && afterXhr.text === ".") continue;
         // No parens — only fire if preceded by `new` (bare construction form)
         if (!isNewExpr9) continue;
       }
