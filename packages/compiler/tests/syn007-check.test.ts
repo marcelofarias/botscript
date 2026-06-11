@@ -78,6 +78,27 @@ describe("SYN007: fetch() call detection (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
   });
 
+  it("does not fire on fetch() as an object-literal method shorthand inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeClient() -> any {\n" +
+      "  return { fetch(url: string) { return url } }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
+
+  it("does not fire on fetch() as a type-literal method signature inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(client: any) -> any {\n" +
+      "  const typed: { fetch(url: string): string } = client\n" +
+      "  return typed\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
+
   it("does not fire on .fetch() — method call on a local object", () => {
     const src =
       "?bs 0.7\n" +

@@ -469,6 +469,25 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         continue;
       }
 
+      // Exclude object-literal method shorthands and type-literal method signatures:
+      // `{ fetch(url) { ... } }` and `{ fetch(url): RetType }` inside a fn body.
+      // Detection: if the `(` has a matching `)` and the token after `)` is `{`, `=>`,
+      // or `:`, this is a method definition/annotation, not a runtime call.
+      if (afterFetch.kind === "open" && afterFetch.text === "(") {
+        const closeParenIdx7 = afterFetch.matchedAt;
+        if (closeParenIdx7 !== undefined) {
+          const afterParenIdx7 = nextSignificant(tokens, closeParenIdx7 + 1);
+          const afterParen7 = tokens[afterParenIdx7];
+          if (
+            afterParen7 &&
+            ((afterParen7.kind === "open" && afterParen7.text === "{") ||
+              afterParen7.kind === "fatArrow" ||
+              (afterParen7.kind === "punct" && afterParen7.text === ":"))
+          )
+            continue;
+        }
+      }
+
       // Suppression check: unsafe block or unsafe fn body
       if (isInsideRange(tok7.start, unsafeRanges)) continue;
 
