@@ -440,17 +440,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a call,
       // not a bare `fetch` reference or a property access like `fetch.name`.
-      // parenIdx7 is always normalized to the actual `(` token index.
-      const afterFetchFirstIdx = nextSignificant(tokens, i + 1);
-      const afterFetch = tokens[afterFetchFirstIdx];
+      // afterFetchIdx is advanced past `?.` for optional-call forms so it always
+      // points at the effective `(` token; the object-literal/type-literal
+      // exclusion below relies on this invariant.
+      let afterFetchIdx = nextSignificant(tokens, i + 1);
+      const afterFetch = tokens[afterFetchIdx];
       if (!afterFetch) continue;
-
-      let parenIdx7: number;
 
       if (afterFetch.kind === "operator" && afterFetch.text === "<") {
         // TypeScript instantiation form: `fetch<T>(...)` — skip over `<...>` to find `(`
         let anglDepth = 1;
-        let j = afterFetchFirstIdx + 1;
+        let j = afterFetchIdx + 1;
         while (j < decl.tokenEnd && anglDepth > 0) {
           const at = tokens[j];
           if (!at) { j++; continue; }
@@ -459,24 +459,22 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             anglDepth -= at.text.length;
           j++;
         }
-        parenIdx7 = nextSignificant(tokens, j);
+        afterFetchIdx = nextSignificant(tokens, j);
       } else if (afterFetch.kind === "questionDot") {
-        // `fetch?.(...)` — optional call
-        parenIdx7 = nextSignificant(tokens, afterFetchFirstIdx + 1);
-      } else if (afterFetch.kind === "open" && afterFetch.text === "(") {
-        // Direct call: `fetch(...)`
-        parenIdx7 = afterFetchFirstIdx;
-      } else {
+        // `fetch?.(...)` — optional call: advance past `?.` so afterFetchIdx points at `(`
+        afterFetchIdx = nextSignificant(tokens, afterFetchIdx + 1);
+      } else if (!(afterFetch.kind === "open" && afterFetch.text === "(")) {
+        // Not a call form we recognise — bare reference or property access
         continue;
       }
 
-      const parenTok7 = tokens[parenIdx7];
+      const parenTok7 = tokens[afterFetchIdx];
       if (!parenTok7 || !(parenTok7.kind === "open" && parenTok7.text === "(")) continue;
 
       // Exclude object-literal method shorthands and type-literal method signatures:
       // `{ fetch(url) { ... } }` and `{ fetch(url): RetType }` — applies to all call forms
-      // including generic (`fetch<T>(...)`) and optional (`fetch?.(...)`) since parenTok7
-      // is always the actual `(` token.
+      // including generic (`fetch<T>(...)`) and optional (`fetch?.(...)`) since
+      // tokens[afterFetchIdx] is always the actual `(` token.
       const closeParenIdx7 = parenTok7.matchedAt;
       if (closeParenIdx7 !== undefined) {
         const afterParenIdx7 = nextSignificant(tokens, closeParenIdx7 + 1);

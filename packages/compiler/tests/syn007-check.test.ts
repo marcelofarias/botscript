@@ -152,11 +152,33 @@ describe("SYN007: fetch() call detection (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
   });
 
-  it("does not fire on fetch?.() as an optional method shorthand inside an object", () => {
+  it("does not fire on fetch() as an object-literal method with return-type annotation inside a fn body", () => {
     const src =
       "?bs 0.7\n" +
       "fn makeClient() -> any {\n" +
       "  return { fetch(url: string): string { return url } }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
+
+  it("does not fire on a type-literal member signature { fetch(url: string): string } inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(client: any) -> any {\n" +
+      "  const adapter: { fetch(url: string): string } = client\n" +
+      "  return adapter\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
+
+  it("does not fire on a generic type-literal method signature { fetch<T>(url: string): string } inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(client: any) -> any {\n" +
+      "  const adapter: { fetch<T>(url: string): string } = client\n" +
+      "  return adapter\n" +
       "}\n";
     const result = transform(src);
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
