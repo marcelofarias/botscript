@@ -52,6 +52,16 @@ describe("SYN008 — WebSocket bypasses the net capability model", () => {
     expect(result.warnings.some((w) => w.code === "SYN008")).toBe(true);
   });
 
+  it("fires on WebSocket?.<MessageEvent>(url) optional call with type arguments", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn subscribe(url: string) -> void {\n" +
+      "  const ws = WebSocket?.<MessageEvent>(url)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN008")).toBe(true);
+  });
+
   it("does not fire below ?bs 0.7", () => {
     const src =
       "?bs 0.6\n" +

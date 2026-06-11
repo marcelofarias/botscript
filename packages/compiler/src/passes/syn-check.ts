@@ -461,9 +461,24 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const afterAngle8 = tokens[afterWsIdx];
         if (!afterAngle8 || !(afterAngle8.kind === "open" && afterAngle8.text === "(")) continue;
       } else if (afterWs.kind === "questionDot") {
-        // `WebSocket?.(...)` — optional call
-        const afterQD8 = nextSignificant(tokens, afterWsIdx + 1);
-        const afterQDTok8 = tokens[afterQD8];
+        // `WebSocket?.(...)` or `WebSocket?.<T>(...)` — optional call (with or without type args)
+        let afterQD8 = nextSignificant(tokens, afterWsIdx + 1);
+        let afterQDTok8 = tokens[afterQD8];
+        if (afterQDTok8 && afterQDTok8.kind === "operator" && afterQDTok8.text === "<") {
+          let qdAnglDepth = 1;
+          afterQD8++;
+          while (afterQD8 < decl.tokenEnd && qdAnglDepth > 0) {
+            const at8 = tokens[afterQD8];
+            if (!at8) { afterQD8++; continue; }
+            if (at8.kind === "operator" && at8.text === "<") { qdAnglDepth++; }
+            else if (at8.kind === "operator" && (at8.text === ">" || at8.text === ">>" || at8.text === ">>>")) {
+              qdAnglDepth -= at8.text.length;
+            }
+            afterQD8++;
+          }
+          afterQD8 = nextSignificant(tokens, afterQD8);
+          afterQDTok8 = tokens[afterQD8];
+        }
         if (!afterQDTok8 || !(afterQDTok8.kind === "open" && afterQDTok8.text === "(")) continue;
       } else if (!(afterWs.kind === "open" && afterWs.text === "(")) {
         continue;
