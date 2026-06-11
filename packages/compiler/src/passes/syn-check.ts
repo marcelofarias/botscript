@@ -699,10 +699,27 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev11 && ((prev11.kind === "punct" && prev11.text === ".") || prev11.kind === "questionDot"))
         continue;
 
+      // Exclude fn / function declarations: `fn import(...)` or `function import(...)`
+      if (prev11 && prev11.kind === "ident" && (prev11.text === "fn" || prev11.text === "function"))
+        continue;
+
       // Must be followed by `(` — import.meta is followed by `.` and must be excluded.
       const afterIdx11 = nextSignificant(tokens, i + 1);
       const afterTok11 = tokens[afterIdx11];
       if (!afterTok11 || !(afterTok11.kind === "open" && afterTok11.text === "(")) continue;
+
+      // Exclude method shorthands and class methods: { import(x) { ... } }
+      // When after the closing `)` is `{` (method body) or `:` (return type), it's a definition.
+      const closeParenIdx11 = afterTok11.matchedAt;
+      if (closeParenIdx11 !== undefined) {
+        const afterParenIdx11 = nextSignificant(tokens, closeParenIdx11 + 1);
+        const afterParen11 = tokens[afterParenIdx11];
+        if (
+          afterParen11 &&
+          ((afterParen11.kind === "open" && afterParen11.text === "{") ||
+            (afterParen11.kind === "punct" && afterParen11.text === ":"))
+        ) continue;
+      }
 
       if (isInsideRange(tok11.start, unsafeRanges)) continue;
 

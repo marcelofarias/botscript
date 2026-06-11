@@ -8,12 +8,7 @@ import { describe, it, expect } from "vitest";
 import { transform } from "../src/index.js";
 
 function compile(src: string) {
-  try {
-    return transform(src, {});
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`transform failed unexpectedly: ${msg}`);
-  }
+  return transform(src, {});
 }
 
 describe("SYN011: dynamic import() call detection", () => {
@@ -118,6 +113,16 @@ describe("SYN011: dynamic import() call detection", () => {
       "?bs 0.7\n" +
       "fn getImport() -> any {\n" +
       "  return import\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire on object method shorthands named import", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  const handler = { import(x) { return x; } };\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
