@@ -618,8 +618,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
         continue;
 
-      // Exclude function declarations: function setTimeout(fn, ms) {}
+      // Exclude function declarations: function setTimeout(fn, ms) {} or fn setTimeout(...) -> void {}
       if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
+      if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
 
       // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
       let afterIdx10 = nextSignificant(tokens, i + 1);
