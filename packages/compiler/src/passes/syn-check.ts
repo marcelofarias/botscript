@@ -38,6 +38,13 @@
  *           no `writes {}` label, and no `throws {}` entry covers them.
  *           Excluded: member calls (`obj.setTimeout`), function declarations
  *           named `setTimeout`, and object/class method shorthands.
+ *
+ *   SYN011  A dynamic `import(specifier)` call was detected in a fn body (?bs 0.7+).
+ *           Dynamic imports load a module at runtime whose capability surface is
+ *           unbounded: CAP001 checks for stdlib namespace calls, not dynamic module
+ *           loads. A fn that calls `import()` has an undeclared capability surface
+ *           proportional to everything the dynamically loaded module might do at runtime.
+ *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -74,6 +81,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
   const syn010 = getErrorCode("SYN010")!;
+  const syn011 = getErrorCode("SYN011")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -663,6 +671,57 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn010.rule,
         idiom: syn010.idiom,
         rewrite: syn010.rewrite,
+      });
+    }
+
+    // SYN011: dynamic import() detection.
+    // Fires when a fn body calls `import(specifier)` — the dynamic import form.
+    // Dynamic imports load a module at runtime whose capability surface is unbounded:
+    // CAP001 cannot see what the dynamically loaded module does at runtime.
+    // `import.meta` (followed by `.`) is excluded — it's a property, not a call.
+    // Suppressed inside `unsafe "reason" { }` blocks and `unsafe "reason" fn` bodies.
+    nextInner = 0;
+    const open011: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open011.length > 0 && open011[open011.length - 1]!.tokenEnd <= i) open011.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open011.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open011.length > 0) continue;
+
+      const tok11 = tokens[i];
+      if (!tok11 || tok11.kind !== "ident" || tok11.text !== "import") continue;
+
+      // Exclude property accesses: obj.import(...)
+      const prevIdx11 = prevSignificant(tokens, i - 1);
+      const prev11 = tokens[prevIdx11];
+      if (prev11 && ((prev11.kind === "punct" && prev11.text === ".") || prev11.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `(` — import.meta is followed by `.` and must be excluded.
+      const afterIdx11 = nextSignificant(tokens, i + 1);
+      const afterTok11 = tokens[afterIdx11];
+      if (!afterTok11 || !(afterTok11.kind === "open" && afterTok11.text === "(")) continue;
+
+      if (isInsideRange(tok11.start, unsafeRanges)) continue;
+
+      const loc11 = locationOf(src, tok11.start);
+      warnings.push({
+        code: "SYN011",
+        severity: "warning",
+        file: null,
+        line: loc11.line,
+        column: loc11.column,
+        start: tok11.start,
+        end: tok11.end,
+        message:
+          `fn '${decl.name}' calls import() — dynamic import loads a module at runtime; ` +
+          `the capability surface of the loaded module is unbounded and invisible to CAP001; ` +
+          `wrap in unsafe "loads plugin dynamically" { import(specifier) }`,
+        rule: syn011.rule,
+        idiom: syn011.idiom,
+        rewrite: syn011.rewrite,
       });
     }
   }

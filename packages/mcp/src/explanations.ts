@@ -887,6 +887,47 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN011: {
+    code: "SYN011",
+    title: "dynamic import() call bypasses the module capability model",
+    body:
+      "SYN011 fires when a fn body calls `import(specifier)` — the dynamic import form. " +
+      "This is the same class of capability-surface bypass as `fetch` (SYN007), `WebSocket` (SYN008), " +
+      "XMLHttpRequest (SYN009), and timer globals (SYN010): a real runtime effect that sidesteps " +
+      "the declared capability surface.\n\n" +
+      "**Why it matters:** CAP001 checks for direct stdlib namespace calls (`http.get`, `fs.read`, " +
+      "etc.) in a fn body. A dynamic `import()` call loads an entirely separate module at runtime. " +
+      "That module can call `http.get`, write to the filesystem, spawn processes, or do anything else " +
+      "— none of it visible to the static analysis. The fn's capability manifest hash proves the fn " +
+      "body unchanged; it says nothing about what the dynamically loaded module does at runtime. " +
+      "The capability surface of a fn that calls `import()` is unbounded and invisible to CAP001.\n\n" +
+      "**Detection:** the check looks for an `import` token (kind=ident) not preceded by `.`/`?.` " +
+      "(which would make it a property access), followed by `(` (confirming it is a call). " +
+      "`import.meta.url` and other `import.meta` property accesses are excluded because they are " +
+      "followed by `.`, not `(`. Static `import { ... } from` declarations at the top level are " +
+      "outside fn bodies and are never seen by this scan.\n\n" +
+      "**Fix:** if the module is known at compile time, use a static top-level " +
+      "`import { ... } from '...'` declaration instead. If dynamic loading is genuinely required " +
+      "(e.g. a plugin system, lazy code splitting), wrap in " +
+      "`unsafe \"loads plugin dynamically\" { import(specifier) }` to make the escape hatch visible " +
+      "in the diff and give reviewers the reason.\n\n" +
+      "SYN011 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "async fn getAdapter(type: string) -> any {\n" +
+        "  const m = await import(`./adapters/${type}`)\n" +
+        "  return m.default\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "async fn getAdapter(type: string) -> any {\n" +
+        "  const m = await unsafe \"adapter type is validated by the registry\" { import(`./adapters/${type}`) }\n" +
+        "  return m.default\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

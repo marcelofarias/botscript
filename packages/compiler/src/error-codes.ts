@@ -676,6 +676,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return () => clearInterval(id)\n" +
       "}",
   },
+  SYN011: {
+    code: "SYN011",
+    title: "dynamic import() call bypasses the module capability model",
+    rule:
+      "`import(specifier)` at runtime loads a module whose capabilities are not statically declared: " +
+      "CAP001 checks for stdlib namespace calls, not dynamic module loads. " +
+      "A fn that calls `import()` has an unbounded, undeclared capability surface proportional to " +
+      "everything the dynamically loaded module might do — the capability manifest hash proves the " +
+      "fn body unchanged; it says nothing about what the loaded module does at runtime.",
+    idiom:
+      "if the module is known at compile time, use a static `import { ... } from` declaration at the top level instead; " +
+      "if dynamic loading is genuinely required (e.g. a plugin system), wrap in " +
+      "`unsafe \"loads plugin dynamically\" { import(specifier) }`",
+    rewrite:
+      "// before — unbounded capability surface from dynamic load\n" +
+      "async fn loadPlugin(name: string) -> Plugin {\n" +
+      "  const mod = await import(`./plugins/${name}`)  // SYN011\n" +
+      "  return mod.default\n" +
+      "}\n\n" +
+      "// after — explicit escape hatch\n" +
+      "async fn loadPlugin(name: string) -> Plugin {\n" +
+      "  const mod = await unsafe \"loads plugin by name from trusted plugin dir\" { import(`./plugins/${name}`) }\n" +
+      "  return mod.default\n" +
+      "}",
+    example:
+      "// SYN011: dynamic import loads a module with unknown capability surface\n" +
+      "async fn getAdapter(type: string) -> any {\n" +
+      "  const m = await import(`./adapters/${type}`)  // SYN011\n" +
+      "  return m.default\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason that names the trust boundary\n" +
+      "async fn getAdapter(type: string) -> any {\n" +
+      "  const m = await unsafe \"adapter type is validated by the registry\" { import(`./adapters/${type}`) }\n" +
+      "  return m.default\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
