@@ -440,52 +440,53 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a call,
       // not a bare `fetch` reference or a property access like `fetch.name`.
-      let afterFetchIdx = nextSignificant(tokens, i + 1);
-      const afterFetch = tokens[afterFetchIdx];
+      // parenIdx7 is always normalized to the actual `(` token index.
+      const afterFetchFirstIdx = nextSignificant(tokens, i + 1);
+      const afterFetch = tokens[afterFetchFirstIdx];
       if (!afterFetch) continue;
 
-      // TypeScript instantiation form: `fetch<T>(...)` — skip over `<...>` to find `(`
+      let parenIdx7: number;
+
       if (afterFetch.kind === "operator" && afterFetch.text === "<") {
+        // TypeScript instantiation form: `fetch<T>(...)` — skip over `<...>` to find `(`
         let anglDepth = 1;
-        afterFetchIdx++;
-        while (afterFetchIdx < decl.tokenEnd && anglDepth > 0) {
-          const at = tokens[afterFetchIdx];
-          if (!at) { afterFetchIdx++; continue; }
-          if (at.kind === "operator" && at.text === "<") { anglDepth++; }
-          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>")) {
+        let j = afterFetchFirstIdx + 1;
+        while (j < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[j];
+          if (!at) { j++; continue; }
+          if (at.kind === "operator" && at.text === "<") anglDepth++;
+          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
             anglDepth -= at.text.length;
-          }
-          afterFetchIdx++;
+          j++;
         }
-        afterFetchIdx = nextSignificant(tokens, afterFetchIdx);
-        const afterAngle = tokens[afterFetchIdx];
-        if (!afterAngle || !(afterAngle.kind === "open" && afterAngle.text === "(")) continue;
+        parenIdx7 = nextSignificant(tokens, j);
       } else if (afterFetch.kind === "questionDot") {
         // `fetch?.(...)` — optional call
-        const afterQD7 = nextSignificant(tokens, afterFetchIdx + 1);
-        const afterQDTok = tokens[afterQD7];
-        if (!afterQDTok || !(afterQDTok.kind === "open" && afterQDTok.text === "(")) continue;
-      } else if (!(afterFetch.kind === "open" && afterFetch.text === "(")) {
+        parenIdx7 = nextSignificant(tokens, afterFetchFirstIdx + 1);
+      } else if (afterFetch.kind === "open" && afterFetch.text === "(") {
+        // Direct call: `fetch(...)`
+        parenIdx7 = afterFetchFirstIdx;
+      } else {
         continue;
       }
 
+      const parenTok7 = tokens[parenIdx7];
+      if (!parenTok7 || !(parenTok7.kind === "open" && parenTok7.text === "(")) continue;
+
       // Exclude object-literal method shorthands and type-literal method signatures:
-      // `{ fetch(url) { ... } }` and `{ fetch(url): RetType }` inside a fn body.
-      // Detection: if the `(` has a matching `)` and the token after `)` is `{`, `=>`,
-      // or `:`, this is a method definition/annotation, not a runtime call.
-      if (afterFetch.kind === "open" && afterFetch.text === "(") {
-        const closeParenIdx7 = afterFetch.matchedAt;
-        if (closeParenIdx7 !== undefined) {
-          const afterParenIdx7 = nextSignificant(tokens, closeParenIdx7 + 1);
-          const afterParen7 = tokens[afterParenIdx7];
-          if (
-            afterParen7 &&
-            ((afterParen7.kind === "open" && afterParen7.text === "{") ||
-              afterParen7.kind === "fatArrow" ||
-              (afterParen7.kind === "punct" && afterParen7.text === ":"))
-          )
-            continue;
-        }
+      // `{ fetch(url) { ... } }` and `{ fetch(url): RetType }` — applies to all call forms
+      // including generic (`fetch<T>(...)`) and optional (`fetch?.(...)`) since parenTok7
+      // is always the actual `(` token.
+      const closeParenIdx7 = parenTok7.matchedAt;
+      if (closeParenIdx7 !== undefined) {
+        const afterParenIdx7 = nextSignificant(tokens, closeParenIdx7 + 1);
+        const afterParen7 = tokens[afterParenIdx7];
+        if (
+          afterParen7 &&
+          ((afterParen7.kind === "open" && afterParen7.text === "{") ||
+            afterParen7.kind === "fatArrow" ||
+            (afterParen7.kind === "punct" && afterParen7.text === ":"))
+        ) continue;
       }
 
       // Suppression check: unsafe block or unsafe fn body
