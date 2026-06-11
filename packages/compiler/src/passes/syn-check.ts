@@ -28,8 +28,8 @@
  *           fn body (?bs 0.7+). WebSocket opens a persistent bidirectional
  *           connection that is invisible to CAP001 (which checks `http.*`
  *           member calls). A fn that constructs a WebSocket has an undeclared
- *           `net` dependency. Wrap in `unsafe "reason" { }` and declare
- *           `uses { net }`, or write a thin `$require("net")`-checked wrapper.
+ *           `net` dependency. Wrap in `unsafe "reason" { }`; for full
+ *           capability tracking, write a thin `$require("net")`-checked wrapper.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -476,8 +476,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         end: tok8.end,
         message:
           `fn '${decl.name}' constructs a WebSocket — WebSocket bypasses the net capability model; ` +
-          `CAP001 cannot see it; declare uses { net } and wrap in ` +
-          `unsafe "wraps WebSocket directly" { new WebSocket(url) }`,
+          `CAP001 cannot see it; wrap in ` +
+          `unsafe "wraps WebSocket directly" { new WebSocket(url) }, or write a $require("net")-checked wrapper`,
         rule: syn008.rule,
         idiom: syn008.idiom,
         rewrite: syn008.rewrite,
