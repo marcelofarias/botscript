@@ -851,10 +851,10 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN009: {
     code: "SYN009",
-    title: "XMLHttpRequest() call bypasses the net capability model — use http.get() / http.post() instead",
+    title: "XMLHttpRequest construction bypasses the net capability model — use http.get() / http.post() instead",
     body:
       "SYN009 fires when a fn body constructs an `XMLHttpRequest` via `new XMLHttpRequest()`, " +
-      "bare `XMLHttpRequest()`, or TypeScript instantiation forms like `new XMLHttpRequest<T>()`. " +
+      "bare `XMLHttpRequest()`, `new XMLHttpRequest` (no-parens), or TypeScript instantiation forms like `new XMLHttpRequest<T>()`. " +
       "XMLHttpRequest is the predecessor to `fetch` in the browser HTTP API. Like `fetch` (SYN007) " +
       "and `WebSocket` (SYN008), it makes real network calls at runtime but is invisible to " +
       "botscript's capability model: CAP001 checks for `http.*` member calls, not the XHR global. " +
@@ -872,8 +872,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "upload), wrap in `unsafe \"wraps XHR directly\" { new XMLHttpRequest() }` to make the " +
       "escape hatch visible in the diff.\n\n" +
       "SYN009 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
-      "`XMLHttpRequest` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`; " +
-      "TypeScript instantiation forms `new XMLHttpRequest<T>()` are also detected. " +
+      "`XMLHttpRequest` not preceded by `.`/`?.` followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`); " +
+      "TypeScript instantiation forms `new XMLHttpRequest<T>()` and `new XMLHttpRequest<T>` (no-parens) are also detected. " +
       "`obj.XMLHttpRequest(...)` (method call on a local object) is excluded. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {

@@ -644,9 +644,9 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN009: {
     code: "SYN009",
-    title: "XMLHttpRequest() call bypasses the net capability model — use http.get() / http.post() instead",
+    title: "XMLHttpRequest construction bypasses the net capability model — use http.get() / http.post() instead",
     rule:
-      "`new XMLHttpRequest()`, `XMLHttpRequest()`, and TypeScript instantiation forms like " +
+      "`new XMLHttpRequest()`, `XMLHttpRequest()`, `new XMLHttpRequest` (no-parens), and TypeScript instantiation forms like " +
       "`new XMLHttpRequest<T>()` open HTTP connections at runtime but are invisible to " +
       "botscript's capability model: CAP001 checks for `http.*` member calls, not the " +
       "`XMLHttpRequest` global. A fn that constructs an XHR has an undeclared network " +
