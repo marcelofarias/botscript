@@ -85,7 +85,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
-    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN005.
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — all SYN checks are skipped.
     // The range-based suppression above also covers nested non-unsafe fns within it,
     // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
