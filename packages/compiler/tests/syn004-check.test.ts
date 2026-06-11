@@ -233,6 +233,16 @@ describe("SYN004: eval(), Function(), and new Function() checks (0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
   });
 
+  it("fires on new Function() in a ternary then-branch — prev is new, not ? directly", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(flag: boolean, body: string) -> unknown {\n" +
+      "  return flag ? new Function(body) : body\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN004")).toBe(true);
+  });
+
   it("has severity 'warning' (non-blocking — transform must not throw)", () => {
     const src =
       "?bs 0.7\n" +

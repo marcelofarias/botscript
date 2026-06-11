@@ -402,12 +402,16 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // Exclude declarations: `function Function(params) {}`, method shorthands, and
         // return-type-annotated forms `function Function(params): T {}` / `{ Function(params): T {} }`.
-        // Guard `:` against ternary then-branch: `? Function(body) : fallback` has `?` before
-        // Function — that is a call, not a declaration, so `:` is skipped there.
+        // Guard `:` against ternary then-branch: `? Function(body) :` has `?` before Function.
+        // `? new Function(body) :` has `new` before Function but `?` before `new` — check both.
         if (callTok4.matchedAt !== undefined) {
           const afterCloseIdx = nextSignificant(tokens, callTok4.matchedAt + 1);
           const afterClose = tokens[afterCloseIdx];
-          const isTernaryConsequent4 = prev4 && prev4.kind === "question";
+          const prevBeforeNew4 = (prev4 && prev4.kind === "ident" && prev4.text === "new")
+            ? tokens[prevSignificant(tokens, prevIdx4 - 1)]
+            : undefined;
+          const isTernaryConsequent4 = (prev4 && prev4.kind === "question") ||
+            (prevBeforeNew4 !== undefined && prevBeforeNew4 !== null && prevBeforeNew4.kind === "question");
           if (afterClose && (
             (afterClose.kind === "open" && afterClose.text === "{") ||
             afterClose.kind === "fatArrow" ||
