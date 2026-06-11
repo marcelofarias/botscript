@@ -57,6 +57,13 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN009  A `new XMLHttpRequest()` or `XMLHttpRequest()` call was detected
+ *           in a fn body (?bs 0.7+). XMLHttpRequest opens an HTTP connection
+ *           that is invisible to CAP001 (which checks `http.*` member calls).
+ *           A fn that constructs an XHR has an undeclared `net` dependency.
+ *           Excluded: member calls (`obj.XMLHttpRequest`), object/class method
+ *           shorthands, and TypeScript method signatures.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -113,6 +120,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn006 = getErrorCode("SYN006")!;
   const syn007 = getErrorCode("SYN007")!;
   const syn008 = getErrorCode("SYN008")!;
+  const syn009 = getErrorCode("SYN009")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
 
@@ -809,6 +817,83 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
       }
+    }
+
+    // SYN009: new XMLHttpRequest() / XMLHttpRequest() detection.
+    // Fires when a fn body constructs an XMLHttpRequest via `new XMLHttpRequest(url)`,
+    // `XMLHttpRequest(url)`, or TypeScript instantiation form `new XMLHttpRequest<T>(url)`.
+    // XMLHttpRequest opens an HTTP connection at runtime but is invisible to CAP001
+    // (which only checks `http.*` member calls). A fn that constructs an XHR has an
+    // undeclared `net` dependency.
+    // Suppressed inside `unsafe "reason" { }` blocks and `unsafe "reason" fn` bodies.
+    nextInner = 0;
+    const open009: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open009.length > 0 && open009[open009.length - 1]!.tokenEnd <= i) open009.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open009.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open009.length > 0) continue;
+
+      const tok9 = tokens[i];
+      if (!tok9 || tok9.kind !== "ident" || tok9.text !== "XMLHttpRequest") continue;
+
+      // Exclude property accesses: obj.XMLHttpRequest(...)
+      const prevIdx9 = prevSignificant(tokens, i - 1);
+      const prev9 = tokens[prevIdx9];
+      if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a construction/call.
+      let afterXhrIdx = nextSignificant(tokens, i + 1);
+      let afterXhr = tokens[afterXhrIdx];
+
+      // TypeScript instantiation form: `XMLHttpRequest<T>(...)` — skip over `<...>` to find `(`
+      if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
+        let anglDepth = 1;
+        afterXhrIdx++;
+        while (afterXhrIdx < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[afterXhrIdx];
+          if (!at) { afterXhrIdx++; continue; }
+          if (at.kind === "operator" && at.text === "<") { anglDepth++; }
+          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>")) {
+            anglDepth -= at.text.length;
+          }
+          afterXhrIdx++;
+        }
+        afterXhrIdx = nextSignificant(tokens, afterXhrIdx);
+        const afterAngle9 = tokens[afterXhrIdx];
+        if (!afterAngle9 || !(afterAngle9.kind === "open" && afterAngle9.text === "(")) continue;
+      } else if (afterXhr && afterXhr.kind === "questionDot") {
+        // `XMLHttpRequest?.(...)` — optional call (unusual but possible)
+        const afterQD9 = nextSignificant(tokens, afterXhrIdx + 1);
+        const afterQDTok9 = tokens[afterQD9];
+        if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
+      } else if (!(afterXhr && afterXhr.kind === "open" && afterXhr.text === "(")) {
+        continue;
+      }
+
+      // Suppression check: unsafe block or unsafe fn body
+      if (isInsideRange(tok9.start, unsafeRanges)) continue;
+
+      const loc9 = locationOf(src, tok9.start);
+      warnings.push({
+        code: "SYN009",
+        severity: "warning",
+        file: null,
+        line: loc9.line,
+        column: loc9.column,
+        start: tok9.start,
+        end: tok9.end,
+        message:
+          `fn '${decl.name}' constructs an XMLHttpRequest — XMLHttpRequest bypasses the net capability model; ` +
+          `CAP001 cannot see it; wrap in ` +
+          `unsafe "wraps XHR directly" { new XMLHttpRequest() }, or write a $require("net")-checked wrapper`,
+        rule: syn009.rule,
+        idiom: syn009.idiom,
+        rewrite: syn009.rewrite,
+      });
     }
   }
 

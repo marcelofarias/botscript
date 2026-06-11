@@ -707,6 +707,53 @@ const E: Record<string, ErrorCodeEntry> = {
       "  ws.onmessage = (e) => handle(e.data)\n" +
       "}",
   },
+  SYN009: {
+    code: "SYN009",
+    title: "XMLHttpRequest() call bypasses the net capability model — use http.get() / http.post() instead",
+    rule:
+      "`new XMLHttpRequest()`, `XMLHttpRequest()`, and TypeScript instantiation forms like " +
+      "`new XMLHttpRequest<T>()` open HTTP connections at runtime but are invisible to " +
+      "botscript's capability model: CAP001 checks for `http.*` member calls, not the " +
+      "`XMLHttpRequest` global. A fn that constructs an XHR has an undeclared network " +
+      "dependency — no `uses { net }` will reflect it in the fn header, " +
+      "no audit tool can see it, and callers cannot reason about the blast radius.",
+    idiom:
+      "replace `new XMLHttpRequest()` with `http.get(url)` or `http.post(url, { body })` and add " +
+      "`uses { net }` to the fn header; if the raw XHR API is genuinely required " +
+      "(e.g. a thin adapter), wrap in `unsafe \"wraps XHR directly\" { new XMLHttpRequest() }`",
+    rewrite:
+      "// before — XHR is invisible to the capability model\n" +
+      "async fn loadData(url: string) -> Promise<Result<string, string>> {\n" +
+      "  return new Promise((resolve) => {\n" +
+      "    const xhr = new XMLHttpRequest()  // SYN009\n" +
+      "    xhr.open('GET', url)\n" +
+      "    xhr.onload = () => resolve(ok(xhr.responseText))\n" +
+      "    xhr.onerror = () => resolve(err('request failed'))\n" +
+      "    xhr.send()\n" +
+      "  })\n" +
+      "}\n\n" +
+      "// after — http.get declares the net dependency\n" +
+      "async fn loadData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
+      "  match await http.get(url) {\n" +
+      "    ok { res } -> ok(await res.text())\n" +
+      "    err { e } -> err(e.message)\n" +
+      "  }\n" +
+      "}",
+    example:
+      "// SYN009: XMLHttpRequest bypasses the net capability model\n" +
+      "fn getData(url: string) -> void {\n" +
+      "  const xhr = new XMLHttpRequest()  // SYN009\n" +
+      "  xhr.open('GET', url)\n" +
+      "  xhr.send()\n" +
+      "}\n\n" +
+      "// fix: use http.get and declare the capability\n" +
+      "async fn getData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
+      "  match await http.get(url) {\n" +
+      "    ok { res } -> ok(await res.text())\n" +
+      "    err { e } -> err(e.message)\n" +
+      "  }\n" +
+      "}",
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",
