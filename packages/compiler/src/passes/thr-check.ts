@@ -106,6 +106,21 @@ export function passThrCheck(
       ? new Set([...fnNames, ...knownExternalNames, ...aliasedLocalNames])
       : fnNames;
 
+  // For opaque-call detection, only import aliases whose resolved target is
+  // tracked in moduleEffects count as "known". An alias to an untracked
+  // external (not in moduleEffects) is itself an opaque call — including it
+  // in knownForOpaque would suppress THR004 for fns that genuinely have
+  // unknown external dependencies.
+  const trackedAliasNames = new Set(
+    [...importAliases.entries()]
+      .filter(([, resolved]) => knownExternalNames.has(resolved))
+      .map(([alias]) => alias),
+  );
+  const opaqueKnownBase =
+    knownExternalNames.size > 0 || trackedAliasNames.size > 0
+      ? new Set([...fnNames, ...knownExternalNames, ...trackedAliasNames])
+      : fnNames;
+
   const innerByDecl = computeNesting(decls);
 
   for (const decl of decls) {
@@ -248,8 +263,8 @@ export function passThrCheck(
     const inner = innerByDecl.get(rec.decl) ?? [];
     const paramNames = collectParamNames(rec.decl);
     const knownForOpaque = paramNames.size > 0
-      ? new Set([...allCalleeNames, ...paramNames])
-      : allCalleeNames;
+      ? new Set([...opaqueKnownBase, ...paramNames])
+      : opaqueKnownBase;
     const bodyLocals = collectFnBodyLocalNames(tokens, rec.decl, inner);
     const localNames = new Set([...paramNames, ...bodyLocals, ...stdlibAliasNames]);
     if (hasOpaqueCall(tokens, rec.decl, inner, knownForOpaque, localNames)) continue;
