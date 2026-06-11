@@ -152,4 +152,14 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
+
+  it("fires on new XMLHttpRequest<ResponseType> — TypeScript generic without call parens", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeXhr() -> any {\n" +
+      "  return new XMLHttpRequest<string>\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
 });
