@@ -673,12 +673,14 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "DEP003",
     title: "fn declares reads {} label not justified by any tracked callee (warning)",
     rule:
-      "a declared reads {} label should reflect a resource the fn or its callees actually access; " +
-      "DEP003 fires when no tracked callee (same-file or moduleEffects entry) transitively declares reads { x }; " +
-      "warning is suppressed when the fn body contains any opaque/untracked external call — the label may still be live through a cross-module dependency",
+      "a declared reads {} label must be justified by at least one tracked callee declaring the same label; " +
+      "DEP003 fires when the pass can resolve all same-file callees and none of them (nor any moduleEffects entry) " +
+      "transitively declares reads { x }; the pass does not scan fn bodies for direct resource access — " +
+      "it is a call-graph heuristic, not a body scanner; suppressed when the fn has any opaque/untracked external call",
     idiom:
-      "remove the stale label from the reads {} clause, or verify that the fn itself directly accesses the resource; " +
-      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can see all callees",
+      "remove the stale label from the reads {} clause when no tracked callee propagates it; " +
+      "if the label is live through a cross-module call, the opaque-call suppression prevents a false positive; " +
+      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can fully resolve the call graph",
     rewrite:
       "fn name(...) reads { …remaining } -> ...  // remove label not propagated by any callee",
     example:
@@ -695,12 +697,14 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "DEP004",
     title: "fn declares writes {} label not justified by any tracked callee (warning)",
     rule:
-      "a declared writes {} label should reflect a resource the fn or its callees actually modify; " +
-      "DEP004 fires when no tracked callee (same-file or moduleEffects entry) transitively declares writes { x }; " +
-      "warning is suppressed when the fn body contains any opaque/untracked external call — the label may still be live through a cross-module dependency",
+      "a declared writes {} label must be justified by at least one tracked callee declaring the same label; " +
+      "DEP004 fires when the pass can resolve all same-file callees and none of them (nor any moduleEffects entry) " +
+      "transitively declares writes { x }; the pass does not scan fn bodies for direct resource access — " +
+      "it is a call-graph heuristic, not a body scanner; suppressed when the fn has any opaque/untracked external call",
     idiom:
-      "remove the stale label from the writes {} clause, or verify that the fn itself directly modifies the resource; " +
-      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can see all callees",
+      "remove the stale label from the writes {} clause when no tracked callee propagates it; " +
+      "if the label is live through a cross-module call, the opaque-call suppression prevents a false positive; " +
+      "leaf fns and fns with opaque external calls are excluded — the warning only fires when the pass can fully resolve the call graph",
     rewrite:
       "fn name(...) writes { …remaining } -> ...  // remove label not propagated by any callee",
     example:
