@@ -437,8 +437,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
         continue;
 
-      // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a
-      // constructor or direct call, not a bare `WebSocket` reference.
+      // Must be followed by `(`, `?.(`, `<T>(`, or `?.<T>(` — confirming this is a
+      // constructor or direct call (including optional-call-with-type-args), not a bare `WebSocket` reference.
       // parenIdx8 is normalized to the actual `(` token index for all forms.
       const afterWsFirstIdx = nextSignificant(tokens, i + 1);
       const afterWs = tokens[afterWsFirstIdx];
@@ -512,7 +512,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok8.start,
         end: tok8.end,
         message:
-          `fn '${decl.name}' constructs a WebSocket — bypasses the net capability model; ` +
+          `fn '${decl.name}' calls or constructs a WebSocket — bypasses the net capability model; ` +
           `wrap in unsafe "wraps WebSocket directly" { new WebSocket(url) } or write a $require("net")-checked wrapper`,
         rule: syn008.rule,
         idiom: syn008.idiom,

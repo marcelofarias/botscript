@@ -830,12 +830,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "This is the same bypass class as bare `fetch(...)` calls and `console.*` (SYN003): real network " +
       "effects that sidestep the declared capability surface.\n\n" +
       "**Fix:** wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
-      "to make the escape hatch visible in the diff. Note that simply adding `uses { net }` to the fn header " +
-      "without an `http.*` call will trigger CAP002 (over-declared capability) — the stdlib currently has no " +
-      "WebSocket wrapper. For full capability tracking, write a thin wrapper fn that calls `$require(\"net\")` " +
-      "before constructing the socket.\n\n" +
+      "to make the escape hatch visible in the diff. You can add `uses { net }` to the fn header, but without " +
+      "an `http.*` call the compiler cannot verify the net usage and CAP002 (over-declared capability) will fire — " +
+      "the stdlib currently has no WebSocket wrapper. For full capability tracking, write a thin wrapper fn that " +
+      "calls `$require(\"net\")` before constructing the socket.\n\n" +
       "SYN008 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
-      "`WebSocket` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`. " +
+      "`WebSocket` not preceded by `.`/`?.` followed by `(`, `?.(`, `<T>(`, or `?.<T>(`. " +
       "Both `new WebSocket(url)` and `WebSocket(url)` (without `new`) are detected. " +
       "`obj.WebSocket(...)` (method call on a local object) is excluded. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
