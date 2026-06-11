@@ -36,6 +36,18 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
   });
 
+  it("fires on new XMLHttpRequest without parens (bare new-expression)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn sendRequest(url: string) -> void {\n" +
+      "  const xhr = new XMLHttpRequest\n" +
+      "  xhr.open('GET', url)\n" +
+      "  xhr.send()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
   it("fires on TypeScript instantiation form new XMLHttpRequest<T>()", () => {
     const src =
       "?bs 0.7\n" +

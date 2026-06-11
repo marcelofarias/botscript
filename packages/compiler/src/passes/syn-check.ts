@@ -845,7 +845,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
         continue;
 
+      // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
+      const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
+
       // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a construction/call.
+      // Exception: `new XMLHttpRequest` with no parens is also a valid construction.
       let afterXhrIdx = nextSignificant(tokens, i + 1);
       let afterXhr = tokens[afterXhrIdx];
 
@@ -871,7 +875,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const afterQDTok9 = tokens[afterQD9];
         if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
       } else if (!(afterXhr && afterXhr.kind === "open" && afterXhr.text === "(")) {
-        continue;
+        // No parens — only fire if preceded by `new` (bare construction form)
+        if (!isNewExpr9) continue;
       }
 
       // Suppression check: unsafe block or unsafe fn body
@@ -889,7 +894,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         message:
           `fn '${decl.name}' constructs an XMLHttpRequest — XMLHttpRequest bypasses the net capability model; ` +
           `CAP001 cannot see it; wrap in ` +
-          `unsafe "wraps XHR directly" { new XMLHttpRequest() }, or write a $require("net")-checked wrapper`,
+          `unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
         rule: syn009.rule,
         idiom: syn009.idiom,
         rewrite: syn009.rewrite,
