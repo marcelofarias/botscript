@@ -36,6 +36,8 @@
  *           callbacks to run after the current fn returns — any effects inside
  *           those callbacks are invisible to callers: no capability declaration,
  *           no `writes {}` label, and no `throws {}` entry covers them.
+ *           Excluded: member calls (`obj.setTimeout`), function declarations
+ *           named `setTimeout`, and object/class method shorthands.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -616,6 +618,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
         continue;
 
+      // Exclude function declarations: function setTimeout(fn, ms) {}
+      if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
+
       // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
       let afterIdx10 = nextSignificant(tokens, i + 1);
       let afterTok10 = tokens[afterIdx10];
@@ -624,6 +629,19 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         afterTok10 = tokens[afterIdx10];
       }
       if (!afterTok10 || !(afterTok10.kind === "open" && afterTok10.text === "(")) continue;
+
+      // Exclude method shorthands and class methods: { setTimeout(fn) { ... } }
+      // When after the closing `)` is `{` (method body) or `:` (return type), it's a definition.
+      const closeParenIdx10 = afterTok10.matchedAt;
+      if (closeParenIdx10 !== undefined) {
+        const afterParenIdx10 = nextSignificant(tokens, closeParenIdx10 + 1);
+        const afterParen10 = tokens[afterParenIdx10];
+        if (
+          afterParen10 &&
+          ((afterParen10.kind === "open" && afterParen10.text === "{") ||
+            (afterParen10.kind === "punct" && afterParen10.text === ":"))
+        ) continue;
+      }
 
       if (isInsideRange(tok10.start, unsafeRanges)) continue;
 

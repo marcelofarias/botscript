@@ -864,7 +864,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "- `setTimeout(() => db.write(state), 0)` — a write that runs after the fn returns; callers cannot observe it\n" +
       "- `setInterval(() => pollApi(), 60_000)` — a recurring effect started by the fn; the caller has no teardown handle\n" +
       "- `queueMicrotask(() => emitEvent())` — a microtask-queued side effect, invisible to the static analysis\n\n" +
-      "This is the same bypass class as `fetch` (SYN007) and `WebSocket` (SYN008): real effects that " +
+      "This is the same bypass class as `fetch()` and `WebSocket` globals: real effects that " +
       "sidestep the declared capability surface, but deferred rather than immediate.\n\n" +
       "**Fix:** make the timing explicit. If the fn needs to delay work, return a `Promise` the caller " +
       "awaits, or return a teardown function the caller can control. If a timer is genuinely required, " +
