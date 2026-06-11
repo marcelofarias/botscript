@@ -24,6 +24,13 @@
  *           audit, or mock in tests. The idiomatic fix is to pass config
  *           and secrets as explicit fn parameters.
  *
+ *   SYN006  A `process.exit()` call was detected in a fn body (?bs 0.7+).
+ *           `process.exit()` terminates the entire host process — not just the
+ *           fn, not just the bot. It produces no return value and bypasses
+ *           Result propagation, throws {}, match, and any caller recovery
+ *           path. The idiomatic fix is `return err(...)` so the caller can
+ *           decide whether to terminate.
+ *
  *   SYN008  A `new WebSocket(...)` or `WebSocket(...)` call was detected in a
  *           fn body (?bs 0.7+). WebSocket opens a persistent bidirectional
  *           connection that is invisible to CAP001 (which checks `http.*`

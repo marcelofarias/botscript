@@ -820,14 +820,14 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "namespace. CAP001 enforces this by checking for `http.*` member calls (e.g. `http.get()`, " +
       "`http.post()`). But the `WebSocket` global opens a persistent bidirectional connection without " +
       "any `http.*` call — CAP001 never fires, and `uses { net }` is absent from the fn header.\n\n" +
-      "The impact is more severe than `fetch` (SYN007):\n" +
+      "The impact is more severe than the `fetch` global bypass:\n" +
       "- A WebSocket connection persists beyond the fn's return, making the connection lifetime " +
       "invisible to the caller\n" +
       "- A fn that constructs a WebSocket has a live, long-lived network dependency that callers " +
       "cannot see, audit, or mock in tests\n" +
       "- Audit tools and orchestrators that read `uses { net }` declarations will miss the dependency\n" +
       "- The connection can receive data and trigger callbacks after the constructing fn has returned\n\n" +
-      "This is the same bypass class as `fetch` (SYN007) and `console.*` (SYN003): real network " +
+      "This is the same bypass class as bare `fetch(...)` calls and `console.*` (SYN003): real network " +
       "effects that sidestep the declared capability surface.\n\n" +
       "**Fix:** wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
       "to make the escape hatch visible in the diff. Note that simply adding `uses { net }` to the fn header " +
