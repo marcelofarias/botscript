@@ -24,6 +24,13 @@
  *           audit, or mock in tests. The idiomatic fix is to pass config
  *           and secrets as explicit fn parameters.
  *
+ *   SYN006  A `process.exit()` call was detected in a fn body (?bs 0.7+).
+ *           `process.exit()` terminates the entire host process — not just the
+ *           fn, not just the bot. It produces no return value and bypasses
+ *           Result propagation, throws {}, match, and any caller recovery
+ *           path. The idiomatic fix is `return err(...)` so the caller can
+ *           decide whether to terminate.
+ *
  *   SYN007  A `fetch(...)` call was detected in a fn body (?bs 0.7+).
  *           `fetch()` makes real HTTP requests at runtime but is invisible to
  *           botscript's capability model: CAP001 checks for `http.*` member
@@ -445,8 +452,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const at = tokens[afterFetchIdx];
           if (!at) { afterFetchIdx++; continue; }
           if (at.kind === "operator" && at.text === "<") { anglDepth++; }
-          else if (at.kind === "operator" && at.text === ">") { anglDepth--; }
-          else if (at.kind === "operator" && (at.text === ">>" || at.text === ">>>")) {
+          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>")) {
             anglDepth -= at.text.length;
           }
           afterFetchIdx++;

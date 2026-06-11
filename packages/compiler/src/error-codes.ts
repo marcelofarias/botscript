@@ -627,12 +627,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "wrap in `unsafe \"wraps fetch directly\" { fetch(...) }`",
     rewrite:
       "// before — fetch is invisible to the capability model\n" +
-      "fn loadData(url: string) -> Result<string, string> {\n" +
+      "async fn loadData(url: string) -> Promise<Result<string, string>> {\n" +
       "  const res = await fetch(url)  // SYN007\n" +
       "  return ok(await res.text())\n" +
       "}\n\n" +
       "// after — http.get declares the net dependency\n" +
-      "fn loadData(url: string) uses { net } -> Result<string, string> {\n" +
+      "async fn loadData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
       "  match await http.get(url) {\n" +
       "    ok { res } -> ok(await res.text())\n" +
       "    err { e } -> err(e.message)\n" +
@@ -640,12 +640,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "}",
     example:
       "// SYN007: fetch bypasses the net capability model\n" +
-      "fn getData(url: string) -> string {\n" +
+      "async fn getData(url: string) -> Promise<string> {\n" +
       "  const res = await fetch(url)  // SYN007\n" +
       "  return await res.text()\n" +
       "}\n\n" +
       "// fix: use http.get and declare the capability\n" +
-      "fn getData(url: string) uses { net } -> Result<string, string> {\n" +
+      "async fn getData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
       "  match await http.get(url) {\n" +
       "    ok { res } -> ok(await res.text())\n" +
       "    err { e } -> err(e.message)\n" +

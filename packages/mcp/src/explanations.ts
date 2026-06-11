@@ -840,13 +840,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn loadData(url: string) -> string {\n" +
+        "async fn loadData(url: string) -> Promise<string> {\n" +
         "  const res = await fetch(url)\n" +
         "  return await res.text()\n" +
         "}\n",
       passes:
         "?bs 0.7\n" +
-        "fn loadData(url: string) uses { net } -> Result<string, string> {\n" +
+        "async fn loadData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
         "  match await http.get(url) {\n" +
         "    ok { res } -> ok(await res.text())\n" +
         "    err { e } -> err(e.message)\n" +
