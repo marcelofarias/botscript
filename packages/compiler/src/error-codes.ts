@@ -642,6 +642,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return ok(undefined)\n" +
       "}",
   },
+  SYN010: {
+    code: "SYN010",
+    title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",
+    rule:
+      "`setTimeout(fn, ms)`, `setInterval(fn, ms)`, and `queueMicrotask(fn)` schedule callbacks that run " +
+      "after the current fn returns — any effects inside those callbacks are invisible to the caller: " +
+      "no capability declaration, no `writes {}` label, no `throws {}` entry can reflect them. " +
+      "Callers see a fn that returns normally; the real work happens later, in a different call frame, " +
+      "with no signal in the fn header.",
+    idiom:
+      "pass the delay and callback to the caller as a return value so the timing is visible (e.g. return a Promise " +
+      "the caller awaits); if a timer is genuinely required here, wrap in " +
+      "`unsafe \"schedules deferred effect\" { setTimeout(...) }`",
+    rewrite:
+      "// before — deferred effect invisible to callers\n" +
+      "fn scheduleRetry(fn: () -> void, ms: number) -> void {\n" +
+      "  setTimeout(fn, ms)  // SYN010\n" +
+      "}\n\n" +
+      "// after — caller controls the timing\n" +
+      "async fn scheduleRetry(fn: () -> void, ms: number) -> Promise<void> {\n" +
+      "  await new Promise(resolve => setTimeout(resolve, ms))\n" +
+      "  fn()\n" +
+      "}",
+    example:
+      "// SYN010: deferred callback hides a network effect from callers\n" +
+      "fn pollStatus(url: string) uses { net } -> void {\n" +
+      "  setInterval(() => http.get(url), 5000)  // SYN010\n" +
+      "}\n\n" +
+      "// fix: return a teardown fn so the polling is visible at the call site\n" +
+      "fn pollStatus(url: string) uses { net } -> () -> void {\n" +
+      "  const id = setInterval(() => http.get(url), 5000)\n" +
+      "  return () => clearInterval(id)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
