@@ -142,4 +142,14 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
+
+  it("does NOT fire on new XMLHttpRequest.prototype.open() (member access on constructor)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  const open = new XMLHttpRequest.prototype.open()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
 });
