@@ -123,4 +123,24 @@ describe("SYN008 — WebSocket bypasses the net capability model", () => {
     expect(w).toBeDefined();
     expect(w!.severity).toBe("warning");
   });
+
+  it("does NOT fire on WebSocket() as an object-literal method shorthand inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeClient() -> any {\n" +
+      "  return { WebSocket(url: string) { return url } }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN008")).toBe(false);
+  });
+
+  it("fires on WebSocket<Array<Array<string>>>(url) — depth-3 generic with >>> composite token", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn connect(url: string) -> void {\n" +
+      "  const ws = new WebSocket<Array<Array<string>>>(url)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN008")).toBe(true);
+  });
 });

@@ -439,49 +439,64 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a
       // constructor or direct call, not a bare `WebSocket` reference.
-      let afterWsIdx = nextSignificant(tokens, i + 1);
-      const afterWs = tokens[afterWsIdx];
+      // parenIdx8 is normalized to the actual `(` token index for all forms.
+      const afterWsFirstIdx = nextSignificant(tokens, i + 1);
+      const afterWs = tokens[afterWsFirstIdx];
       if (!afterWs) continue;
 
-      // TypeScript instantiation form: `WebSocket<T>(...)` or `new WebSocket<T>(...)`
+      let parenIdx8: number;
+
       if (afterWs.kind === "operator" && afterWs.text === "<") {
+        // TypeScript instantiation form: `WebSocket<T>(...)` or `new WebSocket<T>(...)`
         let anglDepth = 1;
-        afterWsIdx++;
-        while (afterWsIdx < decl.tokenEnd && anglDepth > 0) {
-          const at = tokens[afterWsIdx];
-          if (!at) { afterWsIdx++; continue; }
-          if (at.kind === "operator" && at.text === "<") { anglDepth++; }
-          else if (at.kind === "operator" && at.text === ">") { anglDepth--; }
-          else if (at.kind === "operator" && (at.text === ">>" || at.text === ">>>")) {
-            anglDepth -= at.text.length;
-          }
-          afterWsIdx++;
+        let j = afterWsFirstIdx + 1;
+        while (j < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[j];
+          if (!at) { j++; continue; }
+          if (at.kind === "operator" && at.text === "<") anglDepth++;
+          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+            anglDepth = Math.max(0, anglDepth - at.text.length);
+          j++;
         }
-        afterWsIdx = nextSignificant(tokens, afterWsIdx);
-        const afterAngle8 = tokens[afterWsIdx];
-        if (!afterAngle8 || !(afterAngle8.kind === "open" && afterAngle8.text === "(")) continue;
+        parenIdx8 = nextSignificant(tokens, j);
       } else if (afterWs.kind === "questionDot") {
-        // `WebSocket?.(...)` or `WebSocket?.<T>(...)` — optional call (with or without type args)
-        let afterQD8 = nextSignificant(tokens, afterWsIdx + 1);
-        let afterQDTok8 = tokens[afterQD8];
+        // `WebSocket?.(...)` or `WebSocket?.<T>(...)` — optional call
+        let afterQD8 = nextSignificant(tokens, afterWsFirstIdx + 1);
+        const afterQDTok8 = tokens[afterQD8];
         if (afterQDTok8 && afterQDTok8.kind === "operator" && afterQDTok8.text === "<") {
           let qdAnglDepth = 1;
-          afterQD8++;
-          while (afterQD8 < decl.tokenEnd && qdAnglDepth > 0) {
-            const at8 = tokens[afterQD8];
-            if (!at8) { afterQD8++; continue; }
-            if (at8.kind === "operator" && at8.text === "<") { qdAnglDepth++; }
-            else if (at8.kind === "operator" && (at8.text === ">" || at8.text === ">>" || at8.text === ">>>")) {
-              qdAnglDepth -= at8.text.length;
-            }
-            afterQD8++;
+          let k = afterQD8 + 1;
+          while (k < decl.tokenEnd && qdAnglDepth > 0) {
+            const at8 = tokens[k];
+            if (!at8) { k++; continue; }
+            if (at8.kind === "operator" && at8.text === "<") qdAnglDepth++;
+            else if (at8.kind === "operator" && (at8.text === ">" || at8.text === ">>" || at8.text === ">>>"))
+              qdAnglDepth = Math.max(0, qdAnglDepth - at8.text.length);
+            k++;
           }
-          afterQD8 = nextSignificant(tokens, afterQD8);
-          afterQDTok8 = tokens[afterQD8];
+          afterQD8 = nextSignificant(tokens, k);
         }
-        if (!afterQDTok8 || !(afterQDTok8.kind === "open" && afterQDTok8.text === "(")) continue;
-      } else if (!(afterWs.kind === "open" && afterWs.text === "(")) {
+        parenIdx8 = afterQD8;
+      } else if (afterWs.kind === "open" && afterWs.text === "(") {
+        parenIdx8 = afterWsFirstIdx;
+      } else {
         continue;
+      }
+
+      const parenTok8 = tokens[parenIdx8];
+      if (!parenTok8 || !(parenTok8.kind === "open" && parenTok8.text === "(")) continue;
+
+      // Exclude object/class method shorthands: `{ WebSocket(url) { ... } }`
+      const closeParenIdx8 = parenTok8.matchedAt;
+      if (closeParenIdx8 !== undefined) {
+        const afterParenIdx8 = nextSignificant(tokens, closeParenIdx8 + 1);
+        const afterParen8 = tokens[afterParenIdx8];
+        if (
+          afterParen8 &&
+          ((afterParen8.kind === "open" && afterParen8.text === "{") ||
+            afterParen8.kind === "fatArrow" ||
+            (afterParen8.kind === "punct" && afterParen8.text === ":"))
+        ) continue;
       }
 
       // Suppression check: unsafe block or unsafe fn body
@@ -497,9 +512,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok8.start,
         end: tok8.end,
         message:
-          `fn '${decl.name}' constructs a WebSocket — WebSocket bypasses the net capability model; ` +
-          `CAP001 cannot see it; wrap in ` +
-          `unsafe "wraps WebSocket directly" { new WebSocket(url) }, or write a $require("net")-checked wrapper`,
+          `fn '${decl.name}' constructs a WebSocket — bypasses the net capability model; ` +
+          `wrap in unsafe "wraps WebSocket directly" { new WebSocket(url) } or write a $require("net")-checked wrapper`,
         rule: syn008.rule,
         idiom: syn008.idiom,
         rewrite: syn008.rewrite,
