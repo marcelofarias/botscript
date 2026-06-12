@@ -642,6 +642,47 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return ok(undefined)\n" +
       "}",
   },
+  SYN007: {
+    code: "SYN007",
+    title: "fetch() call bypasses the net capability model — use http.get() / http.post() instead",
+    rule:
+      "`fetch(...)`, `fetch?.(...)`, and TypeScript instantiation forms like `fetch<T>(...)` " +
+      "make real HTTP requests at runtime but are invisible to botscript's capability model: " +
+      "CAP001 checks for `http.*` member calls, not the `fetch` global. A fn that calls `fetch` " +
+      "has an undeclared network dependency — no `uses { net }` will reflect it in the fn header, " +
+      "no audit tool can see it, and callers cannot reason about the blast radius.",
+    idiom:
+      "replace `fetch(url, init)` with `http.get(url)` or `http.post(url, { body })` and add " +
+      "`uses { net }` to the fn header; if the raw `fetch` API is genuinely required " +
+      "(e.g. a thin adapter that wraps the global for a specific use case), " +
+      "wrap in `unsafe \"wraps fetch directly\" { fetch(...) }`",
+    rewrite:
+      "// before — fetch is invisible to the capability model\n" +
+      "async fn loadData(url: string) -> Promise<Result<string, string>> {\n" +
+      "  const res = await fetch(url)  // SYN007\n" +
+      "  return ok(await res.text())\n" +
+      "}\n\n" +
+      "// after — http.get declares the net dependency\n" +
+      "async fn loadData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
+      "  match await http.get(url) {\n" +
+      "    ok { res } -> ok(await res.text())\n" +
+      "    err { e } -> err(e.message)\n" +
+      "  }\n" +
+      "}",
+    example:
+      "// SYN007: fetch bypasses the net capability model\n" +
+      "async fn getData(url: string) -> Promise<string> {\n" +
+      "  const res = await fetch(url)  // SYN007\n" +
+      "  return await res.text()\n" +
+      "}\n\n" +
+      "// fix: use http.get and declare the capability\n" +
+      "async fn getData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
+      "  match await http.get(url) {\n" +
+      "    ok { res } -> ok(await res.text())\n" +
+      "    err { e } -> err(e.message)\n" +
+      "  }\n" +
+      "}",
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",

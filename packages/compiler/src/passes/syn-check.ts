@@ -31,6 +31,14 @@
  *           path. The idiomatic fix is `return err(...)` so the caller can
  *           decide whether to terminate.
  *
+ *   SYN007  A `fetch(...)` call was detected in a fn body (?bs 0.7+).
+ *           `fetch()` makes real HTTP requests at runtime but is invisible to
+ *           botscript's capability model: CAP001 checks for `http.*` member
+ *           calls, not the `fetch` global. A fn that calls `fetch` has an
+ *           undeclared network dependency — no `uses { net }` in the fn header
+ *           will reflect it. Use `http.get()` or `http.post()` instead so the
+ *           net capability is declared and visible to callers.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -73,6 +81,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn004 = getErrorCode("SYN004")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
+  const syn007 = getErrorCode("SYN007")!;
   const syn010 = getErrorCode("SYN010")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
@@ -663,6 +672,102 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn010.rule,
         idiom: syn010.idiom,
         rewrite: syn010.rewrite,
+      });
+    }
+
+    // SYN007: fetch() call detection.
+    // Fires when a fn body calls `fetch(...)`, `fetch?.(...)`, or a TypeScript
+    // instantiation form `fetch<T>(...)`. All forms make real HTTP requests
+    // at runtime but are invisible to CAP001 (which only checks `http.*` member
+    // calls). A fn that uses `fetch` directly has an undeclared `net` dependency.
+    // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.
+    nextInner = 0;
+    const open007: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open007.length > 0 && open007[open007.length - 1]!.tokenEnd <= i) open007.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open007.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open007.length > 0) continue;
+
+      const tok7 = tokens[i];
+      if (!tok7 || tok7.kind !== "ident" || tok7.text !== "fetch") continue;
+
+      // Exclude: `obj.fetch(...)` or `obj?.fetch(...)` — member call on a local.
+      const prevIdx7 = prevSignificant(tokens, i - 1);
+      const prev7 = tokens[prevIdx7];
+      if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
+        continue;
+
+      // Must be followed by `(`, `?.(`, or `<T>(` — confirming this is a call,
+      // not a bare `fetch` reference or a property access like `fetch.name`.
+      // afterFetchIdx is advanced past `?.` for optional-call forms so it always
+      // points at the effective `(` token; the object-literal/type-literal
+      // exclusion below relies on this invariant.
+      let afterFetchIdx = nextSignificant(tokens, i + 1);
+      const afterFetch = tokens[afterFetchIdx];
+      if (!afterFetch) continue;
+
+      if (afterFetch.kind === "operator" && afterFetch.text === "<") {
+        // TypeScript instantiation form: `fetch<T>(...)` — skip over `<...>` to find `(`
+        let anglDepth = 1;
+        let j = afterFetchIdx + 1;
+        while (j < decl.tokenEnd && anglDepth > 0) {
+          const at = tokens[j];
+          if (!at) { j++; continue; }
+          if (at.kind === "operator" && at.text === "<") anglDepth++;
+          else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+            anglDepth -= at.text.length;
+          j++;
+        }
+        afterFetchIdx = nextSignificant(tokens, j);
+      } else if (afterFetch.kind === "questionDot") {
+        // `fetch?.(...)` — optional call: advance past `?.` so afterFetchIdx points at `(`
+        afterFetchIdx = nextSignificant(tokens, afterFetchIdx + 1);
+      } else if (!(afterFetch.kind === "open" && afterFetch.text === "(")) {
+        // Not a call form we recognise — bare reference or property access
+        continue;
+      }
+
+      const parenTok7 = tokens[afterFetchIdx];
+      if (!parenTok7 || !(parenTok7.kind === "open" && parenTok7.text === "(")) continue;
+
+      // Exclude object-literal method shorthands and type-literal method signatures:
+      // `{ fetch(url) { ... } }` and `{ fetch(url): RetType }` — applies to all call forms
+      // including generic (`fetch<T>(...)`) and optional (`fetch?.(...)`) since
+      // tokens[afterFetchIdx] is always the actual `(` token.
+      const closeParenIdx7 = parenTok7.matchedAt;
+      if (closeParenIdx7 !== undefined) {
+        const afterParenIdx7 = nextSignificant(tokens, closeParenIdx7 + 1);
+        const afterParen7 = tokens[afterParenIdx7];
+        if (
+          afterParen7 &&
+          ((afterParen7.kind === "open" && afterParen7.text === "{") ||
+            afterParen7.kind === "fatArrow" ||
+            (afterParen7.kind === "punct" && afterParen7.text === ":"))
+        ) continue;
+      }
+
+      // Suppression check: unsafe block or unsafe fn body
+      if (isInsideRange(tok7.start, unsafeRanges)) continue;
+
+      const loc7 = locationOf(src, tok7.start);
+      warnings.push({
+        code: "SYN007",
+        severity: "warning",
+        file: null,
+        line: loc7.line,
+        column: loc7.column,
+        start: tok7.start,
+        end: tok7.end,
+        message:
+          `fn '${decl.name}' calls fetch() — fetch bypasses the net capability model; ` +
+          `CAP001 cannot see it; use http.get() or http.post() and declare uses { net }, ` +
+          `or wrap in unsafe "wraps fetch directly" { fetch(...) }`,
+        rule: syn007.rule,
+        idiom: syn007.idiom,
+        rewrite: syn007.rewrite,
       });
     }
   }
