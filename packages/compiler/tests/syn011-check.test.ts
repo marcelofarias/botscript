@@ -8,7 +8,12 @@ import { describe, it, expect } from "vitest";
 import { transform } from "../src/index.js";
 
 function compile(src: string) {
-  return transform(src, {});
+  try {
+    return transform(src, {});
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`transform failed unexpectedly: ${msg}`);
+  }
 }
 
 describe("SYN011: dynamic import() call detection", () => {

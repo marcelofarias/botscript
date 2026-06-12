@@ -716,9 +716,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         start: tok11.start,
         end: tok11.end,
         message:
-          `fn '${decl.name}' calls import() — dynamic import loads a module at runtime; ` +
-          `the capability surface of the loaded module is unbounded and invisible to CAP001; ` +
-          `wrap in unsafe "loads plugin dynamically" { import(specifier) }`,
+          `fn '${decl.name}' calls import() — dynamic import bypasses the capability model; ` +
+          `use static import or wrap in unsafe "loads plugin dynamically" { import(specifier) }`,
         rule: syn011.rule,
         idiom: syn011.idiom,
         rewrite: syn011.rewrite,
