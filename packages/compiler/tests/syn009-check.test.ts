@@ -182,4 +182,16 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
+
+  it("fires on XMLHttpRequest() inside a ternary expression (regression: `:` must not suppress)", () => {
+    // `cond ? XMLHttpRequest() : other` — the `:` after the closing `)` must not trigger
+    // the method-signature exclusion and hide SYN009.
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean) -> any {\n" +
+      "  return cond ? new XMLHttpRequest() : new XMLHttpRequest()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN009").length).toBe(2);
+  });
 });

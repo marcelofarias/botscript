@@ -848,6 +848,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
       const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
 
+      // Ternary guard: `cond ? XMLHttpRequest(url) : other` / `cond ? new XMLHttpRequest(url) : other`.
+      // When `:` appears after the closing `)`, it is the ternary else-branch, not a method signature.
+      const prevBeforeNew9 = isNewExpr9
+        ? tokens[prevSignificant(tokens, prevIdx9 - 1)]
+        : undefined;
+      const isTernaryConsequent9 =
+        (prev9 !== undefined && prev9 !== null && prev9.kind === "question") ||
+        (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question");
+
       // Must be followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`).
       const afterXhrFirstIdx = nextSignificant(tokens, i + 1);
       const afterXhr = tokens[afterXhrFirstIdx];
@@ -875,7 +884,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (afterClose9 && (
               (afterClose9.kind === "open" && afterClose9.text === "{") ||
               afterClose9.kind === "fatArrow" ||
-              (afterClose9.kind === "punct" && afterClose9.text === ":")
+              (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
             )) continue;
           }
         } else if (!isNewExpr9) {
@@ -895,7 +904,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (afterClose9 && (
             (afterClose9.kind === "open" && afterClose9.text === "{") ||
             afterClose9.kind === "fatArrow" ||
-            (afterClose9.kind === "punct" && afterClose9.text === ":")
+            (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
           )) continue;
         }
       } else {
