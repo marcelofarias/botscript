@@ -149,4 +149,17 @@ describe("SYN011: dynamic import() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
   });
+
+  it("fires on import() in ternary consequent — not suppressed by trailing ':'", () => {
+    // Regression: the `:` exclusion (for TS method signatures) must not suppress
+    // import() when it appears as the true-branch of a ternary expression.
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadMod(flag: boolean, a: string, b: string) -> any {\n" +
+      "  return flag ? import(a) : import(b)\n" +
+      "}\n";
+    const result = compile(src);
+    const codes = result.warnings.filter((w) => w.code === "SYN011");
+    expect(codes.length).toBe(2);
+  });
 });

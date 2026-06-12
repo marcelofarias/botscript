@@ -538,13 +538,16 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           // Exclude object/class method shorthands: { import(x) { ... } }
           // and TypeScript method signatures: { import(x): T; }
+          // Exception: when prev11 is `?` (ternary), a trailing `:` is the
+          // ternary else-branch, not a method return type — don't suppress.
+          const isTernaryConsequent = prev11 && prev11.kind === "question";
           if (callTok11.matchedAt !== undefined) {
             const afterCloseIdx = nextSignificant(tokens, callTok11.matchedAt + 1);
             const afterClose = tokens[afterCloseIdx];
             if (afterClose && (
               (afterClose.kind === "open" && afterClose.text === "{") ||
               afterClose.kind === "fatArrow" ||
-              (afterClose.kind === "punct" && afterClose.text === ":")
+              (!isTernaryConsequent && afterClose.kind === "punct" && afterClose.text === ":")
             )) continue;
           }
 
