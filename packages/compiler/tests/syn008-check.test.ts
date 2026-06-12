@@ -85,7 +85,7 @@ describe("SYN008: WebSocket() call detection", () => {
   it("does NOT fire on member call obj.WebSocket(url)", () => {
     const src =
       "?bs 0.7\n" +
-      "fn subscribe(ctx: any) -> void {\n" +
+      "fn subscribe(ctx: any, url: string) -> void {\n" +
       "  const ws = ctx.WebSocket(url)\n" +
       "}\n";
     const result = compile(src);
@@ -140,10 +140,32 @@ describe("SYN008: WebSocket() call detection", () => {
       "?bs 0.7\n" +
       "fn compare(x: number, y: number) -> boolean {\n" +
       "  const WebSocket = 42\n" +
-      "  return WebSocket < x\n" +
+      "  return WebSocket < x > (y)\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN008")).toBe(false);
+  });
+
+  it("fires on WebSocket() inside a ternary expression (regression: `:` must not suppress)", () => {
+    // `cond ? WebSocket(a) : WebSocket(b)` — the `:` after WebSocket(a)'s closing `)`
+    // used to incorrectly match the method-shorthand exclusion, hiding SYN008.
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean, a: string, b: string) -> any {\n" +
+      "  return cond ? WebSocket(a) : WebSocket(b)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN008").length).toBe(2);
+  });
+
+  it("fires on new WebSocket() inside a ternary expression (regression: `:` must not suppress)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean, a: string, b: string) -> any {\n" +
+      "  return cond ? new WebSocket(a) : new WebSocket(b)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN008").length).toBe(2);
   });
 
   it("fires once per distinct WebSocket construction in the same fn", () => {

@@ -51,7 +51,10 @@
  *           calls, not the `WebSocket` global. A fn that constructs a WebSocket has an
  *           undeclared network dependency that no capability declaration can see.
  *           Excluded: member calls (`obj.WebSocket`), `function`/`fn` declarations named
- *           `WebSocket`, object method shorthands. Generic `<T>` detection only when
+ *           `WebSocket`, object/class method shorthands, and TypeScript method
+ *           signatures (`{ WebSocket(url): T; }`). The `:` exclusion is guarded
+ *           against ternary consequents (`cond ? WebSocket(url) : other`, including
+ *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
@@ -612,6 +615,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
 
           const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
+          // For ternary guard: check if token before WebSocket (or before `new`) is `?`
+          const prevBeforeNew8 = hasNew8
+            ? tokens[prevSignificant(tokens, prevIdx8 - 1)]
+            : undefined;
+          const isTernaryConsequent8 = (prev8 !== undefined && prev8 !== null && prev8.kind === "question") ||
+            (prevBeforeNew8 !== undefined && prevBeforeNew8 !== null && prevBeforeNew8.kind === "question");
 
           const nextIdx8 = nextSignificant(tokens, i + 1);
           const next8 = tokens[nextIdx8];
@@ -642,14 +651,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const callTok8 = tokens[callIdx8];
           if (!callTok8 || !(callTok8.kind === "open" && callTok8.text === "(")) continue;
 
-          // Exclude method shorthands: { WebSocket(url) { ... } }
+          // Exclude method shorthands and TS method signatures: { WebSocket(url) { ... } } / { WebSocket(url): T; }
+          // Guard the `:` check against ternary consequents: `cond ? WebSocket(url) : other`
           if (callTok8.matchedAt !== undefined) {
             const afterCloseIdx8 = nextSignificant(tokens, callTok8.matchedAt + 1);
             const afterClose8 = tokens[afterCloseIdx8];
             if (afterClose8 && (
               (afterClose8.kind === "open" && afterClose8.text === "{") ||
               afterClose8.kind === "fatArrow" ||
-              (afterClose8.kind === "punct" && afterClose8.text === ":")
+              (!isTernaryConsequent8 && afterClose8.kind === "punct" && afterClose8.text === ":")
             )) continue;
           }
 
