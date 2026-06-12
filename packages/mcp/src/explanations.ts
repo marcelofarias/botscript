@@ -919,15 +919,15 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     body:
       "SYN009 fires when a fn body constructs an `XMLHttpRequest` via `new XMLHttpRequest()`, " +
       "bare `XMLHttpRequest()`, `new XMLHttpRequest` (no-parens), or TypeScript instantiation forms like `new XMLHttpRequest<T>()`. " +
-      "XMLHttpRequest is the predecessor to `fetch` in the browser HTTP API. Like `fetch` (SYN007) " +
-      "and `WebSocket` (SYN008), it makes real network calls at runtime but is invisible to " +
+      "XMLHttpRequest is the predecessor to `fetch` in the browser HTTP API. Like direct `fetch()` " +
+      "calls and `WebSocket` constructions, it makes real network calls at runtime but is invisible to " +
       "botscript's capability model: CAP001 checks for `http.*` member calls, not the XHR global. " +
       "A fn that constructs an XHR has an undeclared `net` dependency — `uses { net }` is never " +
       "triggered, callers cannot see the network dependency in the fn header, and the capability " +
       "manifest does not reflect it.\n\n" +
-      "The risk class is the same as SYN007 and SYN008: static analysis cannot reason about the " +
-      "blast radius of a fn that quietly opens HTTP connections. Code-generation models still " +
-      "produce XHR patterns, especially in browser-targeting code.\n\n" +
+      "The risk class is the same as direct `fetch()` or `WebSocket` usage: static analysis cannot " +
+      "reason about the blast radius of a fn that quietly opens HTTP connections. Code-generation " +
+      "models still produce XHR patterns, especially in browser-targeting code.\n\n" +
       "**Fix:** replace `new XMLHttpRequest()` with `http.get(url)` or `http.post(url, { body })` " +
       "and add `uses { net }` to the fn header. The stdlib `http.*` methods return " +
       "`Promise<Result<Response, Error>>` — `await` them to get a `Result`, making the error path " +
