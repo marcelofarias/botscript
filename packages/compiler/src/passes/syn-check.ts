@@ -708,9 +708,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
       )
         continue;
 
-      // Must be followed by `(` — import.meta is followed by `.` and must be excluded.
-      const afterIdx11 = nextSignificant(tokens, i + 1);
-      const afterTok11 = tokens[afterIdx11];
+      // Must be followed by `(` or `?.(` — import.meta is followed by `.` and must be excluded.
+      let afterIdx11 = nextSignificant(tokens, i + 1);
+      let afterTok11 = tokens[afterIdx11];
+      if (afterTok11 && afterTok11.kind === "questionDot") {
+        afterIdx11 = nextSignificant(tokens, afterIdx11 + 1);
+        afterTok11 = tokens[afterIdx11];
+      }
       if (!afterTok11 || !(afterTok11.kind === "open" && afterTok11.text === "(")) continue;
 
       // Exclude method shorthands and class methods: { import(x) { ... } }

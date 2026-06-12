@@ -139,4 +139,14 @@ describe("SYN011: dynamic import() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
   });
+
+  it("fires on optional-call form import?.(specifier)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadMod(path: string) -> any {\n" +
+      "  return await import?.(path)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
+  });
 });
