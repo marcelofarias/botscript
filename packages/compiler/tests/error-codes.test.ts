@@ -15,7 +15,7 @@ describe("error-code registry", () => {
       "INT001", "INT002", "INT003", "INT004", "INT005",
       "MAT001", "MAT002", "MAT003", "MAT004",
       "RES001", "RES002",
-      "SYN001", "SYN002", "SYN003", "SYN004", "SYN005", "SYN006", "SYN010",
+      "SYN001", "SYN002", "SYN003", "SYN004", "SYN005", "SYN006", "SYN010", "SYN011",
       "THR001", "THR002", "THR003", "THR004",
       "UNS001", "UNS002", "UNS003", "UNS004", "UNS005",
       "VER001", "VER002", "VER003",
