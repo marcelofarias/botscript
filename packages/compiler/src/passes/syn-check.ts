@@ -23,6 +23,21 @@
  *           depends on runtime deployment values that callers cannot see,
  *           audit, or mock in tests. The idiomatic fix is to pass config
  *           and secrets as explicit fn parameters.
+ *
+ *   SYN006  A `process.exit()` call was detected in a fn body (?bs 0.7+).
+ *           `process.exit()` terminates the entire host process — not just the
+ *           fn, not just the bot. It produces no return value and bypasses
+ *           Result propagation, throws {}, match, and any caller recovery
+ *           path. The idiomatic fix is `return err(...)` so the caller can
+ *           decide whether to terminate.
+ *
+ *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
+ *           call was detected in a fn body (?bs 0.7+). These globals schedule
+ *           callbacks to run after the current fn returns — any effects inside
+ *           those callbacks are invisible to callers: no capability declaration,
+ *           no `writes {}` label, and no `throws {}` entry covers them.
+ *           Excluded: member calls (`obj.setTimeout`), function declarations
+ *           named `setTimeout`, and object/class method shorthands.
  */
 
 import type { Diagnostic } from "../diagnostics.js";
@@ -44,6 +59,8 @@ const CONSOLE_OUTPUT_METHODS = new Set([
   "table", "trace", "group", "groupCollapsed", "groupEnd",
 ]);
 
+const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
 
@@ -56,8 +73,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn004 = getErrorCode("SYN004")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
+  const syn010 = getErrorCode("SYN010")!;
 
-  // Collect char-offset ranges where SYN002/SYN003/SYN004/SYN005/SYN006 are suppressed:
+  // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
   // 2. `unsafe "reason" fn` bodies — the entire body is exempt, including any
   //    non-unsafe nested fns declared inside it (matching uns-check's pattern).
@@ -71,7 +89,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
-    // An `unsafe "reason" fn` body is an explicit acknowledgment — skip SYN002/SYN003/SYN004/SYN005.
+    // An `unsafe "reason" fn` body is an explicit acknowledgment — all SYN checks are skipped.
     // The range-based suppression above also covers nested non-unsafe fns within it,
     // so this early-continue is kept purely as an optimisation.
     if (decl.unsafeReason !== undefined) continue;
@@ -573,6 +591,78 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn006.rule,
         idiom: syn006.idiom,
         rewrite: syn006.rewrite,
+      });
+    }
+
+    // SYN010: setTimeout / setInterval / queueMicrotask detection.
+    // Fires when a fn body calls any of these timer/microtask globals, which schedule
+    // callbacks to run after the fn returns. Any side effects inside those callbacks are
+    // invisible to callers: no capability, writes {}, or throws {} can reflect them.
+    // Suppressed inside `unsafe "reason" { }` blocks and `unsafe "reason" fn` bodies.
+    nextInner = 0;
+    const open010: typeof inner = [];
+    for (let i = bodyStart; i < decl.tokenEnd; i++) {
+      while (open010.length > 0 && open010[open010.length - 1]!.tokenEnd <= i) open010.pop();
+      while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+        open010.push(inner[nextInner]!);
+        nextInner++;
+      }
+      if (open010.length > 0) continue;
+
+      const tok10 = tokens[i];
+      if (!tok10 || tok10.kind !== "ident" || !TIMER_GLOBALS.has(tok10.text)) continue;
+
+      // Exclude property accesses: obj.setTimeout(...)
+      const prevIdx10 = prevSignificant(tokens, i - 1);
+      const prev10 = tokens[prevIdx10];
+      if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
+        continue;
+
+      // Exclude function declarations: function setTimeout(fn, ms) {} or fn setTimeout(...) -> void {}
+      if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
+      if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
+
+      // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
+      let afterIdx10 = nextSignificant(tokens, i + 1);
+      let afterTok10 = tokens[afterIdx10];
+      if (afterTok10 && afterTok10.kind === "questionDot") {
+        afterIdx10 = nextSignificant(tokens, afterIdx10 + 1);
+        afterTok10 = tokens[afterIdx10];
+      }
+      if (!afterTok10 || !(afterTok10.kind === "open" && afterTok10.text === "(")) continue;
+
+      // Exclude method shorthands and class methods: { setTimeout(fn) { ... } }
+      // When after the closing `)` is `{` (method body) or `:` (return type), it's a definition.
+      const closeParenIdx10 = afterTok10.matchedAt;
+      if (closeParenIdx10 !== undefined) {
+        const afterParenIdx10 = nextSignificant(tokens, closeParenIdx10 + 1);
+        const afterParen10 = tokens[afterParenIdx10];
+        if (
+          afterParen10 &&
+          ((afterParen10.kind === "open" && afterParen10.text === "{") ||
+            (afterParen10.kind === "punct" && afterParen10.text === ":"))
+        ) continue;
+      }
+
+      if (isInsideRange(tok10.start, unsafeRanges)) continue;
+
+      const loc10 = locationOf(src, tok10.start);
+      warnings.push({
+        code: "SYN010",
+        severity: "warning",
+        file: null,
+        line: loc10.line,
+        column: loc10.column,
+        start: tok10.start,
+        end: tok10.end,
+        message:
+          `fn '${decl.name}' calls ${tok10.text}() — ` +
+          `${tok10.text} schedules a callback that runs after the fn returns; ` +
+          `any effects inside that callback are invisible to callers and cannot be declared in the fn header; ` +
+          `wrap in unsafe "schedules deferred effect" { ${tok10.text}(...) }`,
+        rule: syn010.rule,
+        idiom: syn010.idiom,
+        rewrite: syn010.rewrite,
       });
     }
   }

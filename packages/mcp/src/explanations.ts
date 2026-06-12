@@ -849,6 +849,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN010: {
+    code: "SYN010",
+    title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",
+    body:
+      "Botscript's capability model is static: the compiler reads the fn header and infers what that fn " +
+      "may do — network access, resource reads/writes, error types. Timer and microtask globals break this " +
+      "contract by scheduling work to run *after* the fn returns.\n\n" +
+      "When a fn calls `setTimeout(() => http.get(url), 5000)`, it has a live network dependency — but " +
+      "that dependency runs in a callback that fires in a future event-loop tick. The fn returns `void` " +
+      "(or a timer ID) immediately. No `uses { net }` declaration in the header can cover it, because the " +
+      "capability lives in the deferred callback, not in the fn's direct call graph.\n\n" +
+      "The impact in bot code is concrete:\n" +
+      "- `setTimeout(() => db.write(state), 0)` — a write that runs after the fn returns; callers cannot observe it\n" +
+      "- `setInterval(() => pollApi(), 60_000)` — a recurring effect started by the fn; the caller has no teardown handle\n" +
+      "- `queueMicrotask(() => emitEvent())` — a microtask-queued side effect, invisible to the static analysis\n\n" +
+      "This is the same bypass class as `fetch()` and `WebSocket` globals: real effects that " +
+      "sidestep the declared capability surface, but deferred rather than immediate.\n\n" +
+      "**Fix:** make the timing explicit. If the fn needs to delay work, return a `Promise` the caller " +
+      "awaits, or return a teardown function the caller can control. If a timer is genuinely required, " +
+      "wrap in `unsafe \"schedules deferred effect\" { setTimeout(...) }` to make the escape hatch visible.\n\n" +
+      "SYN010 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `setTimeout`, " +
+      "`setInterval`, or `queueMicrotask` not preceded by `.`/`?.`, followed by `(` or `?.(`. " +
+      "Member calls (`obj.setTimeout(...)`) are excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn pollStatus(url: string) uses { net } -> void {\n" +
+        "  setInterval(() => http.get(url), 5000)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn pollStatus(url: string) uses { net } -> () -> void {\n" +
+        "  const id = unsafe \"schedules polling\" { setInterval(() => http.get(url), 5000) }\n" +
+        "  return () => clearInterval(id)\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
