@@ -16,6 +16,13 @@
  *           is explicit in the fn's `uses { stdout }` / `uses { stderr }`
  *           clause and visible to callers.
  *
+ *   SYN004  An `eval()` or `new Function()` call was detected in a fn body (?bs 0.7+).
+ *           `eval` and `Function` construct and execute arbitrary code at runtime,
+ *           bypassing every static guarantee botscript provides: capability checks,
+ *           result typing, throws declarations, and the entire diagnostic model.
+ *           The idiomatic fix is to restructure code to avoid dynamic evaluation;
+ *           if the raw call is genuinely required, wrap in `unsafe`.
+ *
  *   SYN005  A `process.env` access was detected in a fn body (?bs 0.7+).
  *           `process.env` is a global deployment-environment namespace. Reads
  *           and writes to it are invisible to callers — no capability or
