@@ -827,8 +827,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "cannot see, audit, or mock in tests\n" +
       "- Audit tools and orchestrators that read `uses { net }` declarations will miss the dependency\n" +
       "- The connection can receive data and trigger callbacks after the constructing fn has returned\n\n" +
-      "This is the same bypass class as bare `fetch(...)` calls and `console.*` (SYN003): real network " +
-      "effects that sidestep the declared capability surface.\n\n" +
+      "This is the same bypass class as bare `fetch(...)` calls: network effects that sidestep the " +
+      "declared capability surface.\n\n" +
       "**Fix:** wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
       "to make the escape hatch visible in the diff. You can add `uses { net }` to the fn header, but without " +
       "an `http.*` call the compiler cannot verify the net usage and CAP002 (over-declared capability) will fire — " +

@@ -514,7 +514,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         end: tok8.end,
         message:
           `fn '${decl.name}' calls or constructs a WebSocket — bypasses the net capability model; ` +
-          `wrap in unsafe "wraps WebSocket directly" { new WebSocket(url) } or write a $require("net")-checked wrapper`,
+          `wrap in unsafe "wraps WebSocket directly" { WebSocket(...) } or write a $require("net")-checked wrapper`,
         rule: syn008.rule,
         idiom: syn008.idiom,
         rewrite: syn008.rewrite,
