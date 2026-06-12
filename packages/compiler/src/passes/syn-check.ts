@@ -700,7 +700,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         continue;
 
       // Exclude fn / function declarations: `fn import(...)` or `function import(...)`
-      if (prev11 && prev11.kind === "ident" && (prev11.text === "fn" || prev11.text === "function"))
+      // `fn` is a keyword token; `function` is an ident token.
+      if (
+        prev11 &&
+        ((prev11.kind === "keyword" && prev11.text === "fn") ||
+          (prev11.kind === "ident" && prev11.text === "function"))
+      )
         continue;
 
       // Must be followed by `(` — import.meta is followed by `.` and must be excluded.

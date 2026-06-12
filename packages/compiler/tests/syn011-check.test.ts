@@ -127,4 +127,16 @@ describe("SYN011: dynamic import() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
   });
+
+  it("does NOT fire on a botscript fn declaration named import", () => {
+    // `fn` is a keyword token (kind==='keyword'), not an ident — the exclusion
+    // must check kind==='keyword' to avoid false positives on fn declarations.
+    const src =
+      "?bs 0.7\n" +
+      "fn import(specifier: string) -> any {\n" +
+      "  return specifier\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
 });
