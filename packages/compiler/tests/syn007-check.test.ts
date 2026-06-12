@@ -134,6 +134,18 @@ describe("SYN007: fetch() call detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
   });
 
+  it("fires on fetch() inside a ternary expression (regression: `:` must not suppress)", () => {
+    // `cond ? fetch(a) : fetch(b)` — the `:` after fetch(a)'s closing `)` used to
+    // incorrectly match the TS method-signature exclusion, hiding SYN007.
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean, a: string, b: string) -> any {\n" +
+      "  return cond ? fetch(a) : fetch(b)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN007").length).toBe(2);
+  });
+
   it("fires once per distinct fetch() call in the same fn", () => {
     const src =
       "?bs 0.7\n" +

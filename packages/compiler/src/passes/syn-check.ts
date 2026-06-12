@@ -41,7 +41,9 @@
  *           capability model: CAP001 checks for `http.*` member calls, not the `fetch`
  *           global. A fn that calls `fetch` has an undeclared network dependency.
  *           Excluded: member calls (`obj.fetch`), function/fn declarations named
- *           `fetch`, and object/class method shorthands.
+ *           `fetch`, object/class method shorthands, and TypeScript method
+ *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
+ *           against ternary consequents (`cond ? fetch(url) : other`).
  *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
@@ -545,13 +547,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!callTok7 || !(callTok7.kind === "open" && callTok7.text === "(")) continue;
 
           // Exclude method shorthands and TS method signatures: { fetch(url) { } } / { fetch(url): T; }
+          // Guard the `:` check against ternary consequents: `cond ? fetch(url) : other`
+          const isTernaryConsequent7 = prev7 !== undefined && prev7 !== null && prev7.kind === "question";
           if (callTok7.matchedAt !== undefined) {
             const afterCloseIdx7 = nextSignificant(tokens, callTok7.matchedAt + 1);
             const afterClose7 = tokens[afterCloseIdx7];
             if (afterClose7 && (
               (afterClose7.kind === "open" && afterClose7.text === "{") ||
               afterClose7.kind === "fatArrow" ||
-              (afterClose7.kind === "punct" && afterClose7.text === ":")
+              (!isTernaryConsequent7 && afterClose7.kind === "punct" && afterClose7.text === ":")
             )) continue;
           }
 
