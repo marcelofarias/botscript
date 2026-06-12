@@ -3,6 +3,8 @@
  *
  * DEP001: fn A calls fn B which reads { x }, but A doesn't declare reads { x }.
  * DEP002: fn A calls fn B which writes { x }, but A doesn't declare writes { x }.
+ * DEP003: fn declares reads { x } but no callee (transitively) reads { x }.
+ * DEP004: fn declares writes { x } but no callee (transitively) writes { x }.
  */
 
 import { describe, expect, it } from "vitest";
@@ -268,5 +270,549 @@ describe("DEP001/DEP002: optional direct call syntax fn?.()", () => {
       "fn cache(id: string) writes { storage } -> void { }\n" +
       "fn runner(obj: any) -> void { cache?.update(); }\n";
     expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP003: reads over-declared
+// ---------------------------------------------------------------------------
+
+describe("DEP003: reads over-declared (0.9+)", () => {
+  it("fires when a fn declares reads { x } but no callee declares reads { x }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn formatName(s: string) -> string = s\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = formatName(\"Alice\")\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+    expect(result.warnings.find((w) => w.code === "DEP003")!.message).toContain("userDb");
+  });
+
+  it("does NOT fire when the declared label is justified by a same-file callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getUser(id: string) reads { userDb } -> string = id\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does NOT fire when the declared label is justified transitively", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readDb(id: string) reads { userDb } -> string = id\n" +
+      "fn getUser(id: string) reads { userDb } -> string = readDb(id)\n" +
+      "fn getUserName(id: string) reads { userDb } -> string = getUser(id)\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("fires a single warning listing all over-declared labels when multiple are stale", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db, cache } -> string = helper()\n";
+    const result = transform(src);
+    const dep3warns = result.warnings.filter((w) => w.code === "DEP003");
+    expect(dep3warns).toHaveLength(1);
+    expect(dep3warns[0]!.message).toContain("db");
+    expect(dep3warns[0]!.message).toContain("cache");
+  });
+
+  it("fires warning with severity 'warning'", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> string = \"ok\"\n" +
+      "fn f() reads { x } -> string = noop()\n";
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "DEP003");
+    expect(w).toBeDefined();
+    expect(w!.severity).toBe("warning");
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn helper() -> string = \"ok\"\n" +
+      "fn f() reads { x } -> string = helper()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not throw — DEP003 is non-blocking", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"Alice\"\n" +
+      "fn f() reads { userDb } -> string = helper()\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP004: writes over-declared
+// ---------------------------------------------------------------------------
+
+describe("DEP004: writes over-declared (0.9+)", () => {
+  it("fires when a fn declares writes { x } but no callee declares writes { x }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+    expect(result.warnings.find((w) => w.code === "DEP004")!.message).toContain("auditLog");
+  });
+
+  it("does NOT fire when the declared label is justified by a same-file callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn writeAudit(msg: string) writes { auditLog } -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { writeAudit(msg) }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("fires with severity 'warning' and does not throw", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
+    expect(() => compile(src)).not.toThrow();
+    const result = transform(src);
+    expect(result.warnings.find((w) => w.code === "DEP004")!.severity).toBe("warning");
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn noop(msg: string) -> void { }\n" +
+      "fn logEvent(msg: string) writes { auditLog } -> void { noop(msg); }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP003/DEP004: self-recursive fns and callback parameter justification
+// ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: transitive callee justification", () => {
+  it("does NOT fire DEP003 when a multi-hop callee chain justifies the label", () => {
+    // f reads { db } calls g, g calls h, h reads { db }.
+    // The DFS must reach h through g to find the justification.
+    const src =
+      "?bs 0.9\n" +
+      "fn h() reads { db } -> string = \"row\"\n" +
+      "fn g() reads { db } -> string = h()\n" +
+      "fn f() reads { db } -> string = g()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does NOT fire DEP003 when a callee (leaf) declares the same label", () => {
+    // f reads { db } calls g, g reads { db } (leaf). f is justified by g.
+    const src =
+      "?bs 0.9\n" +
+      "fn g() reads { db } -> string = \"row\"\n" +
+      "fn f() reads { db } -> string = g()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+});
+
+describe("DEP003/DEP004: self-recursive fn exclusion", () => {
+  it("does not fire DEP003 for a self-recursive fn — treated as leaf/access-point", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn countdown(n: number) reads { store } -> void {\n" +
+      "  if (n > 0) countdown(n - 1);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 for a self-recursive fn — treated as leaf/access-point", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn accumulate(n: number) writes { store } -> void {\n" +
+      "  if (n > 0) accumulate(n - 1);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+});
+
+describe("DEP003/DEP004: callback parameter justification", () => {
+  it("does not fire DEP003 when reads label is justified by a callback parameter annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withCache(loader: () reads { cache } -> string) reads { cache } -> string {\n" +
+      "  noop();\n" +
+      "  loader()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when writes label is justified by a callback parameter annotation", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn noop() -> void { }\n" +
+      "fn withAudit(cb: () writes { auditLog } -> void) writes { auditLog } -> void {\n" +
+      "  noop();\n" +
+      "  cb()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP003/DEP004: opaque external call suppression
+// ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: opaque external call suppression", () => {
+  it("does not fire DEP003 when fn also calls an unlisted external helper", () => {
+    // localHelper is tracked (same-file), unknownHelper is NOT in allCalleeNames.
+    // DEP003 must be suppressed because unknownHelper may be the actual reader.
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string { localHelper(); unknownHelper() }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when fn also calls an unlisted external helper", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> void { }\n" +
+      "fn f() writes { db } -> void { localHelper(); unknownHelper() }\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("fires DEP003 when all callees are tracked and none declare the label", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string = localHelper()\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn body contains if/while control flow", () => {
+    // `if (cond)` must not be treated as an opaque function call — it's
+    // control flow, not an external callee.
+    const src =
+      "?bs 0.9\n" +
+      "fn localHelper(x: number) -> string = \"ok\"\n" +
+      "fn f(flag: bool) reads { db } -> string {\n" +
+      "  if (flag) localHelper(1);\n" +
+      "  localHelper(2)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP004 even when fn body contains while control flow", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step(n: number) -> void { }\n" +
+      "fn f(n: number) writes { log } -> void {\n" +
+      "  while (n > 0) step(n);\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+  });
+
+  it("does not fire DEP003 when fn calls an unknown namespace object method", () => {
+    // `dbClient.query()` is a member call on an unknown namespace import.
+    // hasOpaqueCall must treat it as opaque so DEP003 is suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  dbClient.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("does not fire DEP004 when fn calls an unknown namespace object method", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f() writes { log } -> void {\n" +
+      "  step();\n" +
+      "  logger.write()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("does not suppress DEP003 for stdlib namespace method calls (time.now)", () => {
+    // Stdlib namespaces are excluded from opaque detection — they are handled
+    // by cap-check, not by DEP003 suppression.
+    // Use `unsafe` to suppress UNS005 so the DEP003 check is reached.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() uses { time } reads { db } -> number {\n" +
+      "  helper();\n" +
+      "  unsafe \"known\" { time.now() }\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn calls a method on a string parameter (name.trim())", () => {
+    // `name.trim()` is a method call on a fn parameter — it is NOT an opaque
+    // external import. hasOpaqueCall must exclude parameter names from the
+    // namespace-receiver check so DEP003 is not incorrectly suppressed.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f(name: string) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP004 even when fn calls a method on an array parameter (items.map())", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f(items: string[]) writes { log } -> void {\n" +
+      "  step();\n" +
+      "  items.map(step)\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn calls a method on an untyped parameter (name.trim())", () => {
+    // Untyped params like `fn f(name)` must be collected by collectTopLevelParamNames
+    // so that `name.trim()` is not treated as an opaque external call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f(name) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn calls a method on a local var binding (x.trim())", () => {
+    // `var x = ...` bindings must be collected alongside const/let so that
+    // `x.method()` is not mistaken for an opaque namespace call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  var name = helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn calls a method on a local const binding (name.trim())", () => {
+    // Local `const name = ...` followed by `name.trim()` is NOT an opaque external call.
+    // Without collectFnBodyLocalNames, `name` is absent from localNames and name.trim()
+    // incorrectly suppresses DEP003.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  const name = helper();\n" +
+      "  name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 even when fn constructs an error type (err(NetworkError{...})) as an arg", () => {
+    // CapCase error-type constructors inside err(...) must NOT suppress DEP003.
+    // Standalone CapCase calls like `LoadUser()` SHOULD suppress (opaque external).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  err(NotFoundError { msg: \"x\" })\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("suppresses DEP003 when fn calls an unknown CapCase external function (LoadUser())", () => {
+    // A CapCase function call that is NOT inside err(...) is a genuine opaque
+    // external and should suppress DEP003 — the external may perform the read.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  LoadUser()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP003 when param has object type annotation — inner idents are not param names", () => {
+    // `opts: { dbClient: string }` — `dbClient` is a property name in the type
+    // annotation, not an actual fn parameter. Before the brace-depth fix,
+    // collectTopLevelParamNames would add `dbClient` to localNames, causing
+    // `dbClient.query()` in the body to look like a local param method call
+    // rather than an opaque external call, which incorrectly allowed DEP003 to fire.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f(opts: { dbClient: string }) reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  dbClient.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("fires DEP003 when param has generic type with object type arg — inner idents not param names", () => {
+    // `x: Map<T, { a }>` — the comma inside `<...>` is NOT a param separator.
+    // Without the angle-bracket fix, collectTopLevelParamNames resets skipUntilNextParam
+    // on the `,` inside `<T, { a }>`, then parses `{ a }` as a destructuring *parameter*,
+    // falsely adding `a` to the param-names set. That causes `a.method()` in the body to
+    // be classified as a local-param call rather than an opaque external call, so
+    // DEP003 would fire when it should be suppressed by the opaque call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f(x: Map<T, { a }>) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  a.method()\n" +
+      "}\n";
+    const result = transform(src);
+    // `a.method()` is an opaque external call — DEP003 must be suppressed
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP003 when fn uses optional bare call to unknown external fn?.()", () => {
+    // `externalLib?.()` is an optional call to a function not declared in this file — opaque,
+    // so DEP003 must be suppressed (the external may perform the read).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  externalLib?.()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP003 when fn calls an unknown namespace via optional member call obj.method?.()", () => {
+    // `db.read?.()` — optional method call on an unknown namespace object.
+    // hasOpaqueCall must detect the call pattern even with the `?.` operator.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  externalDb.read?.()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP003 when fn calls a chained member call obj.a.b()", () => {
+    // `client.connection.query()` — two-segment chain on an unknown namespace import.
+    // hasOpaqueCall must detect the call even with a multi-segment receiver (obj.a.b()).
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() reads { db } -> void {\n" +
+      "  helper();\n" +
+      "  client.connection.query()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("suppresses DEP004 when fn calls a chained optional member call obj.a?.b()", () => {
+    // `store.cache?.write()` — optional chain on second segment, still opaque.
+    const src =
+      "?bs 0.9\n" +
+      "fn step() -> void { }\n" +
+      "fn f() writes { log } -> void {\n" +
+      "  step();\n" +
+      "  store.cache?.write()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP004")).toBe(false);
+  });
+
+  it("fires DEP003 when fn uses err(new TypeName(...)) — new-form error construction is not opaque", () => {
+    // `err(new NetworkError(...))` is the botscript `new`-form error constructor.
+    // It must NOT suppress DEP003 — the error construction is not an external read.
+    // (throws { NetworkError } declared so THR002 does not fire independently)
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> string = \"x\"\n" +
+      "fn f() reads { db } throws { NetworkError } -> Result<string, string> {\n" +
+      "  helper();\n" +
+      "  return err(new NetworkError(\"failed\"))\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 when fn has destructured object param whose member is called — destructured name is local, not opaque", () => {
+    // `{ name }: User` — `name` is a local binding from the destructured param.
+    // `name.trim()` must NOT be treated as an opaque external call; DEP003 must still fire.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f({ name }: { name: string }) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  return name.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 when fn has destructured const local whose member is called — destructured local is not opaque", () => {
+    // `const { key } = obj` — `key` is a locally-bound name from destructuring.
+    // `key.trim()` must NOT suppress DEP003 as an opaque external call.
+    const src =
+      "?bs 0.9\n" +
+      "fn helper() -> void { }\n" +
+      "fn f(obj: { key: string }) reads { db } -> string {\n" +
+      "  helper();\n" +
+      "  const { key } = obj\n" +
+      "  return key.trim()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("fires DEP003 when fn uses a module-level stdlib alias — alias is not an opaque external", () => {
+    // `const t = time` at module scope; `t.now()` in a fn body should NOT be treated as an
+    // opaque external call — it resolves to the `time` stdlib namespace. DEP003 must still fire.
+    const src =
+      "?bs 0.9\n" +
+      "const t = time\n" +
+      "fn helper() -> void { }\n" +
+      "fn f() uses { time } reads { db } -> number {\n" +
+      "  helper();\n" +
+      '  return unsafe "reading wall clock" { t.now() }\n' +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "DEP003")).toBe(true);
   });
 });

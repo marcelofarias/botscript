@@ -9,7 +9,7 @@ describe("error-code registry", () => {
     const expected = [
       "ALI001", "ALI002", "ALI003",
       "CAP001", "CAP002", "CAP003",
-      "DEP001", "DEP002",
+      "DEP001", "DEP002", "DEP003", "DEP004",
       "EFF002", "EFF003", "EFF004",
       "FMT001",
       "INT001", "INT002", "INT003", "INT004", "INT005",

@@ -16,6 +16,10 @@ function compile(src: string, moduleEffects?: ModuleEffects): string {
   return transform(src, { moduleEffects }).code;
 }
 
+function compileWarnings(src: string, moduleEffects?: ModuleEffects) {
+  return transform(src, { moduleEffects }).warnings;
+}
+
 // ---------------------------------------------------------------------------
 // DEP001: cross-file reads transitivity
 // ---------------------------------------------------------------------------
@@ -310,11 +314,14 @@ describe("buildModuleEffects builder", () => {
     expect(Object.hasOwn(effects, "__proto__")).toBe(true);
   });
 
-  it("omits fns with no declared effects", () => {
+  it("includes fns with no declared effects as empty entries", () => {
+    // Pure helpers (no reads/writes/throws) are included so DEP003/DEP004 can
+    // distinguish "known callee with no labels" from "unknown opaque callee".
     const effects = buildModuleEffects([
-      "?bs 0.9\nfn pure(x: string) -> string = x\n",
+      "?bs 0.9\nfn helper(x: string) -> string = x\n",
     ]);
-    expect(Object.keys(effects)).toEqual([]);
+    expect(Object.hasOwn(effects, "helper")).toBe(true);
+    expect(effects.helper).toEqual({});
   });
 
   it("includes only exported fns when the source has export statements", () => {
@@ -562,5 +569,43 @@ describe("CAP001: cross-file capability transitivity via moduleEffects", () => {
       fetchRow: { capabilities: ["net"] },
     };
     expect(() => compile(src, moduleEffects)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEP003/DEP004: cross-file callee with no labels counts as non-self callee
+// ---------------------------------------------------------------------------
+
+describe("DEP003/DEP004: moduleEffects entry with no reads/writes is a known callee", () => {
+  it("fires DEP003 when fn calls a moduleEffects entry with no reads and declares reads { x }", () => {
+    // `helper` is a known external callee ({} — no declared reads) so the
+    // caller's `reads { userDb }` is over-declared.  Before the fix,
+    // `helper` was absent from allCalleeNames and the fn was treated as a
+    // leaf, suppressing the warning.
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { userDb } -> string = helper(id)\n";
+    const mods: ModuleEffects = { helper: {} };
+    const warnings = compileWarnings(src, mods);
+    expect(warnings.some((w) => w.code === "DEP003")).toBe(true);
+  });
+
+  it("does NOT fire DEP003 when the external callee is unknown (not in moduleEffects)", () => {
+    // Unknown callees are opaque: we cannot tell whether they read anything,
+    // so we must not warn about the caller's annotation being stale.
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { userDb } -> string = helper(id)\n";
+    const warnings = compileWarnings(src);
+    expect(warnings.some((w) => w.code === "DEP003")).toBe(false);
+  });
+
+  it("fires DEP004 when fn calls a moduleEffects entry with no writes and declares writes { x }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(id: string) writes { auditLog } -> string = helper(id)\n";
+    const mods: ModuleEffects = { helper: {} };
+    const warnings = compileWarnings(src, mods);
+    expect(warnings.some((w) => w.code === "DEP004")).toBe(true);
   });
 });
