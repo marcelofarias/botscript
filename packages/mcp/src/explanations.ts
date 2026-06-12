@@ -819,7 +819,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "Botscript's capability model maps network access to `uses { net }` via the `http` stdlib " +
       "namespace. CAP001 enforces this by checking for `http.*` member calls (e.g. `http.get()`, " +
       "`http.post()`). But the `WebSocket` global opens a persistent bidirectional connection without " +
-      "any `http.*` call — CAP001 never fires, and `uses { net }` is absent from the fn header.\n\n" +
+      "any `http.*` call — CAP001 never fires, and the capability model cannot require `uses { net }` for it.\n\n" +
       "The impact is more severe than the `fetch` global bypass:\n" +
       "- A WebSocket connection persists beyond the fn's return, making the connection lifetime " +
       "invisible to the caller\n" +
@@ -835,8 +835,10 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "the stdlib currently has no WebSocket wrapper. For full capability tracking, write a thin wrapper fn that " +
       "calls `$require(\"net\")` before constructing the socket.\n\n" +
       "SYN008 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
-      "`WebSocket` not preceded by `.`/`?.` followed by `(`, `?.(`, `<T>(`, or `?.<T>(`. " +
-      "Both `new WebSocket(url)` and `WebSocket(url)` (without `new`) are detected. " +
+      "`WebSocket` not preceded by `.`/`?.`, followed by `(`, `?.(`, `<T>(`, or `?.<T>(`. " +
+      "All five surface forms are detected: `new WebSocket(url)`, `WebSocket(url)` (without `new`), " +
+      "`new WebSocket<T>(url)` (generic instantiation), `WebSocket?.(url)` (optional call), and " +
+      "`WebSocket?.<T>(url)` (optional-call-with-type-args). " +
       "`obj.WebSocket(...)` (method call on a local object) is excluded. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {

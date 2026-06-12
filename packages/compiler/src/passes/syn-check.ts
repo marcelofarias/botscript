@@ -413,8 +413,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
 
     // SYN008: WebSocket constructor/call detection.
-    // Fires when a fn body contains `new WebSocket(...)`, `WebSocket(...)`, or
-    // TypeScript instantiation form `new WebSocket<T>(...)` / `WebSocket<T>(...)`.
+    // Fires when a fn body contains `new WebSocket(...)`, `WebSocket(...)`,
+    // TypeScript instantiation form `new WebSocket<T>(...)` / `WebSocket<T>(...)`,
+    // optional-call `WebSocket?.(...)`, or optional-call-with-type-args `WebSocket?.<T>(...)`.
     // All forms open a persistent bidirectional network connection at runtime
     // but are invisible to CAP001 (which checks `http.*` member calls only).
     // Suppressed inside `unsafe { }` blocks and `unsafe fn` bodies.

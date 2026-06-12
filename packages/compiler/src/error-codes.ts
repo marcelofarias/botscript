@@ -619,8 +619,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "`new WebSocket<T>(url)` open persistent bidirectional connections at runtime but are " +
       "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
       "not the `WebSocket` global. A fn that constructs a WebSocket has an undeclared network " +
-      "dependency — no `http.*` call is present to justify a `uses { net }` declaration, no audit tool can see it, and the connection " +
-      "outlives the fn's return value.",
+      "dependency — the capability model cannot see it (there is no `http.*` call for CAP001 to track), " +
+      "no audit tool can observe the dependency from the fn header, and the connection outlives the fn's return value.",
     idiom:
       "wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
       "to make the escape hatch visible in the diff; for full capability tracking, write a thin " +
