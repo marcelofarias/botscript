@@ -868,7 +868,16 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const afterAngle9 = tokens[afterAngleIdx];
         // With parens: `XMLHttpRequest<T>(...)` — fire; without parens but with `new`: also fire.
         if (afterAngle9 && afterAngle9.kind === "open" && afterAngle9.text === "(") {
-          // has parens, proceed to fire
+          // has parens — exclude method shorthands: { XMLHttpRequest<T>(x) { } } / signatures: { XMLHttpRequest<T>(x): T; }
+          if (afterAngle9.matchedAt !== undefined) {
+            const afterCloseIdx9 = nextSignificant(tokens, afterAngle9.matchedAt + 1);
+            const afterClose9 = tokens[afterCloseIdx9];
+            if (afterClose9 && (
+              (afterClose9.kind === "open" && afterClose9.text === "{") ||
+              afterClose9.kind === "fatArrow" ||
+              (afterClose9.kind === "punct" && afterClose9.text === ":")
+            )) continue;
+          }
         } else if (!isNewExpr9) {
           continue; // bare `XMLHttpRequest<T>` without new and without parens — not a construction
         }
@@ -877,7 +886,19 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const afterQD9 = nextSignificant(tokens, afterXhrFirstIdx + 1);
         const afterQDTok9 = tokens[afterQD9];
         if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
-      } else if (!(afterXhr && afterXhr.kind === "open" && afterXhr.text === "(")) {
+      } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
+        // Direct call: `XMLHttpRequest(...)` — exclude method shorthands: { XMLHttpRequest(x) { } }
+        // and TypeScript method signatures: { XMLHttpRequest(x): T; }
+        if (afterXhr.matchedAt !== undefined) {
+          const afterCloseIdx9 = nextSignificant(tokens, afterXhr.matchedAt + 1);
+          const afterClose9 = tokens[afterCloseIdx9];
+          if (afterClose9 && (
+            (afterClose9.kind === "open" && afterClose9.text === "{") ||
+            afterClose9.kind === "fatArrow" ||
+            (afterClose9.kind === "punct" && afterClose9.text === ":")
+          )) continue;
+        }
+      } else {
         // Member access on the constructor itself — not a construction
         if (afterXhr && afterXhr.kind === "punct" && afterXhr.text === ".") continue;
         // No parens — only fire if preceded by `new` (bare construction: `new XMLHttpRequest`)
