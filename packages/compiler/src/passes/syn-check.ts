@@ -721,7 +721,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         end: tok9.end,
         message:
           `fn '${decl.name}' constructs an XMLHttpRequest — bypasses the net capability model; ` +
-          `use http.get()/http.post() and declare uses { net }, or wrap in unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
+          `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
+          `or wrap in unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
         rule: syn009.rule,
         idiom: syn009.idiom,
         rewrite: syn009.rewrite,
