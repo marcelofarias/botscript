@@ -739,6 +739,43 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN004: {
+    code: "SYN004",
+    title: "eval() or Function() / new Function() bypass all static capability and syntax checks",
+    body:
+      "Botscript's safety model relies on static analysis: capability declarations, resource " +
+      "labels, and syntax checks (SYN002/SYN003) all operate on visible, unchanging source text. " +
+      "`eval(...)`, `Function(...)`, and `new Function(...)` shatter that foundation — they " +
+      "execute arbitrary strings as code at runtime, and no static pass can see what those strings will do.\n\n" +
+      "The risk in bot code is concrete:\n" +
+      "- `eval('process.env.' + key)` hides env dependencies from callers (invisible to static analysis)\n" +
+      "- `eval('http.get(...)')` bypasses CAP001 (capability claim not in the fn's header)\n" +
+      "- `new Function('return process.exit(1)')()` hides arbitrary effects from all static checks (capability, Result contract, and every SYN diagnostic)\n\n" +
+      "Every other SYN check is weakened by eval: a bot could route any unsafe pattern through " +
+      "`eval` or the Function constructor to avoid static detection. The capability manifest hash " +
+      "proves the *source* hasn't changed, not that runtime behavior is bounded.\n\n" +
+      "**Fix:** refactor the eval-based pattern to use explicit code paths. If the use case " +
+      "genuinely requires eval-level dynamism (e.g. a sandboxed user-script interpreter), " +
+      "wrap the call in `unsafe \"<reason>\" { eval(src) }` to make the escape hatch visible " +
+      "in the diff and in code review.\n\n" +
+      "SYN004 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
+      "`eval` not preceded by `.`/`?.` followed by `(`, `?.(`, or `<T>(`; bare `Function(...)` / " +
+      "`Function?.(...)` / `new Function(...)` — including TypeScript instantiation forms " +
+      "`eval<T>(...)`, `Function<T>(...)`, and `new Function<T>(...)` — not preceded by `.`/`?.`. " +
+      "`.eval(...)` (method call on a local object) and `Function.*` member accesses are excluded.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn run(code: string) -> string {\n" +
+        "  return eval(code)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn run(code: string) -> string {\n" +
+        "  return unsafe \"evaluates user-provided script in sandbox\" { eval(code) }\n" +
+        "}\n",
+    },
+  },
   SYN005: {
     code: "SYN005",
     title: "process.env access is an undeclared deployment environment dependency",
