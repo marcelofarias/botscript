@@ -849,6 +849,38 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN007: {
+    code: "SYN007",
+    title: "fetch() call bypasses the net capability model",
+    body:
+      "Botscript's capability model is static: the compiler reads the fn header and infers what that fn " +
+      "may do — network access, resource reads/writes, error types. The `fetch` global bypasses this " +
+      "by making HTTP requests at runtime that CAP001 cannot see.\n\n" +
+      "CAP001 checks for `http.*` member calls (the stdlib's declared network surface). `fetch` is a " +
+      "browser/Node global — calling it does not require a `uses { net }` declaration, and the compiler " +
+      "cannot enforce that callers know the fn has a network dependency.\n\n" +
+      "**Fix:** replace `fetch(url)` with `http.get(url)` (or `http.post(url, { body })`) and add " +
+      "`uses { net }` to the fn header. If the native fetch API is genuinely required (e.g. for " +
+      "streaming, credentials, or non-standard headers), wrap in " +
+      "`unsafe \"calls fetch directly\" { fetch(url) }` to make the escape hatch visible.\n\n" +
+      "SYN007 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `fetch` not " +
+      "preceded by `.`/`?.` (member call exclusion), followed by `(` or `?.(`. " +
+      "Object method shorthands (`{ fetch(url) {} }`), TypeScript method signatures, fn/function " +
+      "declarations named `fetch`, and bare `fetch` references are excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getUser(url: string) -> any {\n" +
+        "  return fetch(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getUser(url: string) uses { net } -> any {\n" +
+        "  return http.get(url)\n" +
+        "}\n",
+    },
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",

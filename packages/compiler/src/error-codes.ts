@@ -676,6 +676,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return () => clearInterval(id)\n" +
       "}",
   },
+  SYN007: {
+    code: "SYN007",
+    title: "fetch() call bypasses the net capability model",
+    rule:
+      "`fetch(url)` and `fetch?.(url)` make HTTP requests at runtime but are invisible to " +
+      "botscript's capability model: CAP001 checks for `http.*` member calls, not the `fetch` " +
+      "global. A fn that calls `fetch` has an undeclared network dependency — no `uses { net }` " +
+      "declaration in the header covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "replace `fetch(url)` with `http.get(url)` (or `http.post(url, { body })`) and add " +
+      "`uses { net }` to the fn header; if the native fetch API is required, wrap in " +
+      '`unsafe "calls fetch directly" { fetch(url) }`',
+    rewrite:
+      "// before — fetch is invisible to the capability model\n" +
+      "fn getUser(id: string) -> Promise<User> {\n" +
+      "  return fetch(`/api/users/${id}`).then(r => r.json())  // SYN007\n" +
+      "}\n\n" +
+      "// after — declared network dependency\n" +
+      "fn getUser(id: string) uses { net } -> Promise<User> {\n" +
+      "  return http.get(`/api/users/${id}`)\n" +
+      "}",
+    example:
+      "// SYN007: fetch bypasses the net capability model\n" +
+      "fn getUser(id: string) -> Promise<User> {\n" +
+      "  return fetch(`/api/users/${id}`).then(r => r.json())  // SYN007\n" +
+      "}\n\n" +
+      "// fix: declare the dependency\n" +
+      "fn getUser(id: string) uses { net } -> Promise<User> {\n" +
+      "  return http.get(`/api/users/${id}`)\n" +
+      "}",
+  },
   SYN011: {
     code: "SYN011",
     title: "dynamic import() call bypasses the module capability model",
