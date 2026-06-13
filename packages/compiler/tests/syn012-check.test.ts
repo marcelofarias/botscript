@@ -95,7 +95,7 @@ describe("SYN012: EventSource() construction detection", () => {
   it("does NOT fire on obj.EventSource(...) — member call on a local", () => {
     const src =
       "?bs 0.7\n" +
-      "fn openFeed(obj: any) -> any {\n" +
+      "fn openFeed(obj: any, url: string) -> any {\n" +
       "  return obj.EventSource(url)\n" +
       "}\n";
     const result = compile(src);
