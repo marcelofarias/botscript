@@ -684,7 +684,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "not the `WebSocket` global. A fn that constructs a WebSocket has an undeclared network " +
       "dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
     idiom:
-      "wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
+      "wrap the `WebSocket` constructor in `unsafe \"<reason>\" { new WebSocket(url) }` " +
       "to make the escape hatch visible in the diff",
     rewrite:
       "// before — WebSocket is invisible to the capability model\n" +
