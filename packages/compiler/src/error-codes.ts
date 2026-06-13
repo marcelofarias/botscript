@@ -777,6 +777,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return m.default\n" +
       "}",
   },
+  SYN014: {
+    code: "SYN014",
+    title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
+    rule:
+      "`new BroadcastChannel(name)` and `BroadcastChannel(name)` open a cross-context message channel " +
+      "at runtime — any tab, window, or worker on the same origin can post to or receive from this channel. " +
+      "This is invisible to botscript's capability model: CAP001 checks for stdlib namespace calls, not " +
+      "the `BroadcastChannel` global. A fn that constructs a BroadcastChannel has an undeclared cross-context " +
+      "messaging dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `BroadcastChannel` constructor in `unsafe \"<reason>\" { new BroadcastChannel(name) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — BroadcastChannel is invisible to the capability model\n" +
+      "fn openChannel(name: string) -> BroadcastChannel {\n" +
+      "  return new BroadcastChannel(name)  // SYN014\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openChannel(name: string) -> BroadcastChannel {\n" +
+      "  return unsafe \"wraps BroadcastChannel for tab coordination\" { new BroadcastChannel(name) }\n" +
+      "}",
+    example:
+      "// SYN014: BroadcastChannel bypasses the messaging capability model\n" +
+      "fn subscribe(channel: string) -> BroadcastChannel {\n" +
+      "  const bc = new BroadcastChannel(channel)  // SYN014\n" +
+      "  bc.onmessage = (e) => handle(e.data)\n" +
+      "  return bc\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn subscribe(channel: string) -> BroadcastChannel {\n" +
+      "  const bc = unsafe \"wraps BroadcastChannel for live updates\" { new BroadcastChannel(channel) }\n" +
+      "  bc.onmessage = (e) => handle(e.data)\n" +
+      "  return bc\n" +
+      "}",
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",
