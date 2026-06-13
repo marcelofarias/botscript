@@ -83,6 +83,15 @@
  *           `EventSource`, object/class method shorthands, and TypeScript method signatures.
  *           The `:` exclusion is guarded against ternary consequents.
  *
+ *   SYN013  A `new Worker(scriptURL)` or `new SharedWorker(scriptURL)` was detected in a fn
+ *           body (?bs 0.7+). Worker construction spawns a new JS execution context whose
+ *           capability surface is unbounded: the worker script can make network requests,
+ *           access storage, and perform any operation — none of it visible in the spawning
+ *           fn's `uses {}`, `reads {}`, or `writes {}` declarations.
+ *           Excluded: member calls (`obj.Worker`), `function`/`fn` declarations named
+ *           `Worker`/`SharedWorker`, object/class method shorthands, and TypeScript method
+ *           signatures. The `:` exclusion is guarded against ternary consequents.
+ *
  *   SYN014  A `new BroadcastChannel(name)`, `BroadcastChannel(name)`, or TypeScript
  *           instantiation form `new BroadcastChannel<T>(name)` was detected in a fn body
  *           (?bs 0.7+). `BroadcastChannel` opens a cross-context message channel at runtime
@@ -187,6 +196,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
   const syn012 = getErrorCode("SYN012")!;
+  const syn013 = getErrorCode("SYN013")!;
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
@@ -948,6 +958,86 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn012.rule,
             idiom: syn012.idiom,
             rewrite: syn012.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN013: new Worker() / new SharedWorker() ───────────────────────
+        case "Worker":
+        case "SharedWorker": {
+          // Exclude: `obj.Worker(...)` — preceded by `.` or `?.`
+          const prevIdx13 = prevSignificant(tokens, i - 1);
+          const prev13 = tokens[prevIdx13];
+          if (prev13 && ((prev13.kind === "punct" && prev13.text === ".") || prev13.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named Worker/SharedWorker
+          if (prev13 && prev13.kind === "ident" && prev13.text === "function") continue;
+          if (prev13 && prev13.kind === "keyword" && prev13.text === "fn") continue;
+
+          const hasNew13 = prev13 && prev13.kind === "ident" && prev13.text === "new";
+          // Ternary guard: `cond ? new Worker(url) : other`
+          const prevBeforeNew13 = hasNew13
+            ? tokens[prevSignificant(tokens, prevIdx13 - 1)]
+            : undefined;
+          const isTernaryConsequent13 =
+            (prev13 !== undefined && prev13 !== null && prev13.kind === "question") ||
+            (prevBeforeNew13 !== undefined && prevBeforeNew13 !== null && prevBeforeNew13.kind === "question");
+
+          const nextIdx13 = nextSignificant(tokens, i + 1);
+          const next13 = tokens[nextIdx13];
+
+          let callIdx13 = nextIdx13;
+
+          if (hasNew13 && next13 && next13.kind === "operator" && next13.text === "<") {
+            // new Worker<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx13 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx13 = nextSignificant(tokens, j);
+          }
+
+          const callTok13 = tokens[callIdx13];
+          if (!callTok13 || !(callTok13.kind === "open" && callTok13.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { Worker(url) { } } / { Worker(url): T; }
+          if (callTok13.matchedAt !== undefined) {
+            const afterCloseIdx13 = nextSignificant(tokens, callTok13.matchedAt + 1);
+            const afterClose13 = tokens[afterCloseIdx13];
+            if (afterClose13 && (
+              (afterClose13.kind === "open" && afterClose13.text === "{") ||
+              afterClose13.kind === "fatArrow" ||
+              (!isTernaryConsequent13 && afterClose13.kind === "punct" && afterClose13.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const workerName13 = tok.text;
+          const warnStart13 = hasNew13 ? prev13!.start : tok.start;
+          const loc13 = locationOf(src, warnStart13);
+          warnings.push({
+            code: "SYN013",
+            severity: "warning",
+            file: null,
+            line: loc13.line,
+            column: loc13.column,
+            start: warnStart13,
+            end: callTok13.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew13 ? "constructs new " : "calls "}${workerName13}() — ` +
+              `${workerName13} spawns a new execution context with an unbounded capability surface invisible to the capability model; ` +
+              `wrap in unsafe "<reason>" { ${hasNew13 ? "new " : ""}${workerName13}(scriptURL) }`,
+            rule: syn013.rule,
+            idiom: syn013.idiom,
+            rewrite: syn013.rewrite,
           });
           break;
         }

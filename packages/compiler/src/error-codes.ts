@@ -808,6 +808,37 @@ const E: Record<string, ErrorCodeEntry> = {
       '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
       "}",
   },
+  SYN013: {
+    code: "SYN013",
+    title: "new Worker() / new SharedWorker() construction spawns an unbounded execution context",
+    rule:
+      "`new Worker(scriptURL)` and `new SharedWorker(scriptURL)` spawn a new JS execution context " +
+      "that is invisible to botscript's capability model: the worker script runs with its own global scope, " +
+      "can make network requests, access storage, and perform any operation — none of which is visible in the " +
+      "spawning fn's `uses {}`, `reads {}`, or `writes {}` declarations. CAP001 cannot infer any capability " +
+      "from worker construction; the capability surface of the spawned context is unbounded.",
+    idiom:
+      "wrap the constructor in `unsafe \"<reason>\" { new Worker(scriptURL) }` to make the escape " +
+      "hatch visible in the diff; document what capabilities the worker script is expected to use in the reason string",
+    rewrite:
+      "// before — Worker is invisible to the capability model\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no external I/O" { new Worker(url) }\n' +
+      "}",
+    example:
+      "// SYN013: Worker spawns unbounded execution context\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no net access" { new Worker(url) }\n' +
+      "}",
+  },
   SYN014: {
     code: "SYN014",
     title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
