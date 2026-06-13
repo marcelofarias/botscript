@@ -548,7 +548,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           // Exclude method shorthands and TS method signatures: { fetch(url) { } } / { fetch(url): T; }
           // Guard the `:` check against ternary consequents: `cond ? fetch(url) : other`
-          const isTernaryConsequent7 = prev7 !== undefined && prev7 !== null && prev7.kind === "question";
+          // Also handles `cond ? await fetch(url) : other` — if prev is `await`, look one further back.
+          const prevBeforeAwait7 = (prev7 && prev7.kind === "ident" && prev7.text === "await")
+            ? tokens[prevSignificant(tokens, prevIdx7 - 1)]
+            : undefined;
+          const isTernaryConsequent7 = (prev7 !== undefined && prev7 !== null && prev7.kind === "question") ||
+            (prevBeforeAwait7 !== undefined && prevBeforeAwait7 !== null && prevBeforeAwait7.kind === "question");
           if (callTok7.matchedAt !== undefined) {
             const afterCloseIdx7 = nextSignificant(tokens, callTok7.matchedAt + 1);
             const afterClose7 = tokens[afterCloseIdx7];

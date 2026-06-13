@@ -146,6 +146,18 @@ describe("SYN007: fetch() call detection", () => {
     expect(result.warnings.filter((w) => w.code === "SYN007").length).toBe(2);
   });
 
+  it("fires on await fetch() inside a ternary expression (regression: await must not hide ternary context)", () => {
+    // `cond ? await fetch(a) : other` — prev token before fetch is `await`, not `?`.
+    // The ternary guard must look one token further back when prev is `await`.
+    const src =
+      "?bs 0.7\n" +
+      "async fn pick(cond: boolean, a: string, b: string) -> any {\n" +
+      "  return cond ? await fetch(a) : await fetch(b)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN007").length).toBe(2);
+  });
+
   it("fires once per distinct fetch() call in the same fn", () => {
     const src =
       "?bs 0.7\n" +
