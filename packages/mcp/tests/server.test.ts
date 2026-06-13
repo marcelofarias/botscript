@@ -78,6 +78,7 @@ describe("botscript-mcp explanations", () => {
       "SYN004",
       "SYN005",
       "SYN006",
+      "SYN007",
       "SYN010",
       "SYN011",
       "THR001",

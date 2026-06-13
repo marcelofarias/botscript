@@ -36,6 +36,15 @@
  *           path. The idiomatic fix is `return err(...)` so the caller can
  *           decide whether to terminate.
  *
+ *   SYN007  A `fetch(url)` or `fetch?.(url)` call was detected in a fn body (?bs 0.7+).
+ *           `fetch` makes HTTP requests at runtime but is invisible to botscript's
+ *           capability model: CAP001 checks for `http.*` member calls, not the `fetch`
+ *           global. A fn that calls `fetch` has an undeclared network dependency.
+ *           Excluded: member calls (`obj.fetch`), function/fn declarations named
+ *           `fetch`, object/class method shorthands, and TypeScript method
+ *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
+ *           against ternary consequents (`cond ? fetch(url) : other`).
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -90,6 +99,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn004 = getErrorCode("SYN004")!;
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
+  const syn007 = getErrorCode("SYN007")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
 
@@ -507,6 +517,74 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rewrite: syn006.rewrite,
             });
           }
+          break;
+        }
+
+        // ── SYN007: fetch() call ─────────────────────────────────────────────
+        case "fetch": {
+          const prevIdx7 = prevSignificant(tokens, i - 1);
+          const prev7 = tokens[prevIdx7];
+
+          // Exclude: `obj.fetch(...)` — preceded by `.` or `?.`
+          if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named fetch
+          if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
+          if (prev7 && prev7.kind === "keyword" && prev7.text === "fn") continue;
+
+          // Must be followed by `(` or `?.(` — confirming this is a call.
+          const nextIdx7 = nextSignificant(tokens, i + 1);
+          const next7 = tokens[nextIdx7];
+
+          let callIdx7 = nextIdx7;
+          let isOpt7 = false;
+          if (next7 && next7.kind === "questionDot") {
+            isOpt7 = true;
+            callIdx7 = nextSignificant(tokens, nextIdx7 + 1);
+          }
+          const callTok7 = tokens[callIdx7];
+          if (!callTok7 || !(callTok7.kind === "open" && callTok7.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { fetch(url) { } } / { fetch(url): T; }
+          // Guard the `:` check against ternary consequents: `cond ? fetch(url) : other`
+          // Also handles `cond ? await fetch(url) : other` — if prev is `await`, look one further back.
+          const prevBeforeAwait7 = (prev7 && prev7.kind === "ident" && prev7.text === "await")
+            ? tokens[prevSignificant(tokens, prevIdx7 - 1)]
+            : undefined;
+          const isTernaryConsequent7 = (prev7 !== undefined && prev7 !== null && prev7.kind === "question") ||
+            (prevBeforeAwait7 !== undefined && prevBeforeAwait7 !== null && prevBeforeAwait7.kind === "question");
+          if (callTok7.matchedAt !== undefined) {
+            const afterCloseIdx7 = nextSignificant(tokens, callTok7.matchedAt + 1);
+            const afterClose7 = tokens[afterCloseIdx7];
+            if (afterClose7 && (
+              (afterClose7.kind === "open" && afterClose7.text === "{") ||
+              afterClose7.kind === "fatArrow" ||
+              (!isTernaryConsequent7 && afterClose7.kind === "punct" && afterClose7.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep7 = isOpt7 ? "?." : "";
+          const loc7 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN007",
+            severity: "warning",
+            file: null,
+            line: loc7.line,
+            column: loc7.column,
+            start: tok.start,
+            end: callTok7.start + 1,
+            message:
+              `fn '${decl.name}' calls fetch${callSep7}() — ` +
+              `fetch makes an HTTP request invisible to the capability model; ` +
+              `replace with http.get(url)/http.post(url, { body }) and add uses { net }, ` +
+              `or wrap in unsafe "calls fetch directly" { fetch(url) }`,
+            rule: syn007.rule,
+            idiom: syn007.idiom,
+            rewrite: syn007.rewrite,
+          });
           break;
         }
 
