@@ -777,6 +777,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return m.default\n" +
       "}",
   },
+  SYN012: {
+    code: "SYN012",
+    title: "new EventSource() / EventSource() call bypasses the net capability model",
+    rule:
+      "`new EventSource(url)`, `EventSource(url)`, and TypeScript instantiation forms like " +
+      "`new EventSource<T>(url)` open persistent server-sent-events connections at runtime but are " +
+      "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
+      "not the `EventSource` global. A fn that constructs an EventSource has an undeclared network " +
+      "dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `EventSource` constructor in `unsafe \"wraps EventSource directly\" { new EventSource(url) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — EventSource is invisible to the capability model\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+    example:
+      "// SYN012: EventSource bypasses the net capability model\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

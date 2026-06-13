@@ -992,6 +992,43 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN012: {
+    code: "SYN012",
+    title: "new EventSource() / EventSource() call bypasses the net capability model",
+    body:
+      "SYN012 fires when a fn body constructs an `EventSource` via `new EventSource(url)`, " +
+      "bare `EventSource(url)`, or TypeScript instantiation form `new EventSource<T>(url)`. " +
+      "This is the same bypass class as `new WebSocket(url)` (SYN008): a persistent connection " +
+      "that is real network I/O but invisible to the declared capability surface.\n\n" +
+      "**Why it matters:** `EventSource` opens a persistent HTTP GET connection to the server " +
+      "and streams server-sent events. CAP001 checks for `http.*` member calls, not the " +
+      "`EventSource` global. A fn that constructs an EventSource has an undeclared `net` " +
+      "dependency — the capability manifest hash proves the fn body unchanged; the actual " +
+      "network effect is invisible to callers and to audit tooling.\n\n" +
+      "**Detection:** the check looks for an `EventSource` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member call on a local), followed by `(` or `?.(` (with optional " +
+      "`new` preceding for the constructor form). TypeScript generic instantiation " +
+      "`new EventSource<T>(url)` is also detected — the generic scan is gated on `new` to " +
+      "prevent `EventSource < x > (y)` comparison expressions from false-firing. " +
+      "Object method shorthands and TypeScript method signatures named `EventSource` are " +
+      "excluded via the trailing-`:` check (guarded against ternary consequents).\n\n" +
+      "**Fix:** wrap the construction in an `unsafe` block with a justification:\n" +
+      "`unsafe \"wraps EventSource for live feed\" { new EventSource(url) }`\n\n" +
+      "SYN012 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn openFeed(url: string) -> any {\n" +
+        "  return new EventSource(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn openFeed(url: string) -> any {\n" +
+        '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

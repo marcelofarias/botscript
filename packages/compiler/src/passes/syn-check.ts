@@ -73,6 +73,16 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
+ *   SYN012  A `new EventSource(url)`, `EventSource(url)`, or TypeScript instantiation form
+ *           `new EventSource<T>(url)` was detected in a fn body (?bs 0.7+).
+ *           `EventSource` opens a persistent server-sent-events connection at runtime but is
+ *           invisible to botscript's capability model: CAP001 checks for `http.*` member
+ *           calls, not the `EventSource` global. A fn that constructs an EventSource has an
+ *           undeclared network dependency.
+ *           Excluded: member calls (`obj.EventSource`), `function`/`fn` declarations named
+ *           `EventSource`, object/class method shorthands, and TypeScript method signatures.
+ *           The `:` exclusion is guarded against ternary consequents.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -115,6 +125,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn008 = getErrorCode("SYN008")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
+  const syn012 = getErrorCode("SYN012")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -747,6 +758,90 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn011.rule,
             idiom: syn011.idiom,
             rewrite: syn011.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN012: new EventSource() / EventSource() call ──────────────────
+        case "EventSource": {
+          // Exclude: `obj.EventSource(...)` — preceded by `.` or `?.`
+          const prevIdx12 = prevSignificant(tokens, i - 1);
+          const prev12 = tokens[prevIdx12];
+          if (prev12 && ((prev12.kind === "punct" && prev12.text === ".") || prev12.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named EventSource
+          if (prev12 && prev12.kind === "ident" && prev12.text === "function") continue;
+          if (prev12 && prev12.kind === "keyword" && prev12.text === "fn") continue;
+
+          const hasNew12 = prev12 && prev12.kind === "ident" && prev12.text === "new";
+          // Ternary guard: `cond ? EventSource(url) : other` / `cond ? new EventSource(url) : other`
+          const prevBeforeNew12 = hasNew12
+            ? tokens[prevSignificant(tokens, prevIdx12 - 1)]
+            : undefined;
+          const isTernaryConsequent12 =
+            (prev12 !== undefined && prev12 !== null && prev12.kind === "question") ||
+            (prevBeforeNew12 !== undefined && prevBeforeNew12 !== null && prevBeforeNew12.kind === "question");
+
+          const nextIdx12 = nextSignificant(tokens, i + 1);
+          const next12 = tokens[nextIdx12];
+
+          let isOpt12 = false;
+          let callIdx12 = nextIdx12;
+
+          if (next12 && next12.kind === "questionDot") {
+            // EventSource?.( — optional call (no generic scan to avoid false-positives)
+            isOpt12 = true;
+            callIdx12 = nextSignificant(tokens, nextIdx12 + 1);
+          } else if (hasNew12 && next12 && next12.kind === "operator" && next12.text === "<") {
+            // new EventSource<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx12 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx12 = nextSignificant(tokens, j);
+          }
+
+          const callTok12 = tokens[callIdx12];
+          if (!callTok12 || !(callTok12.kind === "open" && callTok12.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { EventSource(url) { } } / { EventSource(url): T; }
+          if (callTok12.matchedAt !== undefined) {
+            const afterCloseIdx12 = nextSignificant(tokens, callTok12.matchedAt + 1);
+            const afterClose12 = tokens[afterCloseIdx12];
+            if (afterClose12 && (
+              (afterClose12.kind === "open" && afterClose12.text === "{") ||
+              afterClose12.kind === "fatArrow" ||
+              (!isTernaryConsequent12 && afterClose12.kind === "punct" && afterClose12.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep12 = isOpt12 ? "?." : "";
+          const warnStart12 = hasNew12 ? prev12!.start : tok.start;
+          const loc12 = locationOf(src, warnStart12);
+          warnings.push({
+            code: "SYN012",
+            severity: "warning",
+            file: null,
+            line: loc12.line,
+            column: loc12.column,
+            start: warnStart12,
+            end: callTok12.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew12 ? "constructs new " : "calls "}EventSource${callSep12}() — ` +
+              `EventSource opens a server-sent-events connection invisible to the capability model; ` +
+              `wrap in unsafe "wraps EventSource for <reason>" { ${hasNew12 ? "new " : ""}EventSource${isOpt12 ? "?." : ""}(url) }`,
+            rule: syn012.rule,
+            idiom: syn012.idiom,
+            rewrite: syn012.rewrite,
           });
           break;
         }
