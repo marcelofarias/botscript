@@ -44,6 +44,14 @@
  *           Excluded: member calls (`obj.setTimeout`), function declarations
  *           named `setTimeout`, and object/class method shorthands.
  *
+ *   SYN011  A dynamic `import(specifier)` call was detected in a fn body (?bs 0.7+).
+ *           Dynamic imports load a module at runtime whose capability surface is
+ *           unbounded: CAP001 checks for stdlib namespace calls, not dynamic module
+ *           loads. A fn that calls `import()` has an undeclared capability surface
+ *           proportional to everything the dynamically loaded module might do at runtime.
+ *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
+ *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -83,6 +91,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
   const syn010 = getErrorCode("SYN010")!;
+  const syn011 = getErrorCode("SYN011")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -498,6 +507,70 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rewrite: syn006.rewrite,
             });
           }
+          break;
+        }
+
+        // ── SYN011: dynamic import() call ────────────────────────────────────
+        case "import": {
+          // Exclude: `obj.import(...)` — preceded by `.` or `?.`
+          const prevIdx11 = prevSignificant(tokens, i - 1);
+          const prev11 = tokens[prevIdx11];
+          if (prev11 && ((prev11.kind === "punct" && prev11.text === ".") || prev11.kind === "questionDot"))
+            continue;
+
+          // Exclude: `fn import(...)` botscript declarations — `fn` is kind="keyword".
+          if (prev11 && prev11.kind === "keyword" && prev11.text === "fn") continue;
+
+          // Exclude: `import.meta` and other `import.something` property accesses.
+          const nextIdx11 = nextSignificant(tokens, i + 1);
+          const next11 = tokens[nextIdx11];
+          if (next11 && next11.kind === "punct" && next11.text === ".") continue;
+
+          // Must be followed by `(` or `?.(` — confirming this is a dynamic import call.
+          let isOptImport = false;
+          let callIdx11 = nextIdx11;
+          if (next11 && next11.kind === "questionDot") {
+            isOptImport = true;
+            callIdx11 = nextSignificant(tokens, nextIdx11 + 1);
+          }
+          const callTok11 = tokens[callIdx11];
+          if (!callTok11 || !(callTok11.kind === "open" && callTok11.text === "(")) continue;
+
+          // Exclude object/class method shorthands: { import(x) { ... } }
+          // and TypeScript method signatures: { import(x): T; }
+          // Exception: when prev11 is `?` (ternary), a trailing `:` is the
+          // ternary else-branch, not a method return type — don't suppress.
+          const isTernaryConsequent = prev11 && prev11.kind === "question";
+          if (callTok11.matchedAt !== undefined) {
+            const afterCloseIdx = nextSignificant(tokens, callTok11.matchedAt + 1);
+            const afterClose = tokens[afterCloseIdx];
+            if (afterClose && (
+              (afterClose.kind === "open" && afterClose.text === "{") ||
+              afterClose.kind === "fatArrow" ||
+              (!isTernaryConsequent && afterClose.kind === "punct" && afterClose.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep11 = isOptImport ? "?." : "";
+          const loc11 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN011",
+            severity: "warning",
+            file: null,
+            line: loc11.line,
+            column: loc11.column,
+            start: tok.start,
+            end: callTok11.start + 1,
+            message:
+              `fn '${decl.name}' calls import${callSep11}() — ` +
+              `dynamic imports load a module at runtime whose capability surface is unbounded; ` +
+              `wrap in unsafe "loads <module> for <reason>" { import(specifier) }`,
+            rule: syn011.rule,
+            idiom: syn011.idiom,
+            rewrite: syn011.rewrite,
+          });
           break;
         }
 

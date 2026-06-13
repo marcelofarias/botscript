@@ -1,0 +1,165 @@
+/**
+ * Tests for SYN011: dynamic import() call detection (?bs 0.7+).
+ *
+ * SYN011 is a non-blocking warning — transform must not throw.
+ */
+
+import { describe, it, expect } from "vitest";
+import { transform } from "../src/index.js";
+
+function compile(src: string) {
+  return transform(src, {});
+}
+
+describe("SYN011: dynamic import() call detection", () => {
+  it("fires on bare import(specifier) inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn loadMod(path: string) -> any {\n" +
+      "  return import(path)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
+  });
+
+  it("fires on template literal import(`./module`)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn loadMod(name: string) -> any {\n" +
+      "  return import(`./modules/${name}`)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
+  });
+
+  it("fires on awaited const mod = await import(path)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadPlugin(path: string) -> any {\n" +
+      "  const mod = await import(path)\n" +
+      "  return mod\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
+  });
+
+  it("does NOT fire inside an unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadPlugin(path: string) -> any {\n" +
+      '  const mod = await unsafe "loads plugin dynamically" { import(path) }\n' +
+      "  return mod\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire inside an unsafe fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      'unsafe "dynamic loader" async fn loadPlugin(path: string) -> any {\n' +
+      "  const mod = await import(path)\n" +
+      "  return mod\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire on import.meta.url (import.meta property access)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getUrl() -> string {\n" +
+      "  return import.meta.url\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire below ?bs 0.7", () => {
+    const src =
+      "?bs 0.6\n" +
+      "fn loadMod(path: string) -> any {\n" +
+      "  return import(path)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("severity is warning (non-blocking)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn loadMod(path: string) -> any {\n" +
+      "  return import(path)\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN011");
+    expect(w?.severity).toBe("warning");
+  });
+
+  it("fires once per distinct import() call in the same fn", () => {
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadBoth(a: string, b: string) -> any {\n" +
+      "  const m1 = await import(a)\n" +
+      "  const m2 = await import(b)\n" +
+      "  return { m1, m2 }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.filter((w) => w.code === "SYN011").length).toBe(2);
+  });
+
+  it("does NOT fire on bare import reference (not called)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getImport() -> any {\n" +
+      "  return import\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire on object method shorthands named import", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  const handler = { import(x) { return x; } };\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("does NOT fire on a botscript fn declaration named import", () => {
+    // `fn` is a keyword token (kind==='keyword'), not an ident — the exclusion
+    // must check kind==='keyword' to avoid false positives on fn declarations.
+    const src =
+      "?bs 0.7\n" +
+      "fn import(specifier: string) -> any {\n" +
+      "  return specifier\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(false);
+  });
+
+  it("fires on optional-call form import?.(specifier)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadMod(path: string) -> any {\n" +
+      "  return await import?.(path)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN011")).toBe(true);
+  });
+
+  it("fires on import() in ternary consequent — not suppressed by trailing ':'", () => {
+    // Regression: the `:` exclusion (for TS method signatures) must not suppress
+    // import() when it appears as the true-branch of a ternary expression.
+    const src =
+      "?bs 0.7\n" +
+      "async fn loadMod(flag: boolean, a: string, b: string) -> any {\n" +
+      "  return flag ? import(a) : import(b)\n" +
+      "}\n";
+    const result = compile(src);
+    const codes = result.warnings.filter((w) => w.code === "SYN011");
+    expect(codes.length).toBe(2);
+  });
+});
