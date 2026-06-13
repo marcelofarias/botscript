@@ -1006,7 +1006,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`uses {}` declaration covering that messaging surface. Callers reading the fn header see " +
       "no indication that the fn participates in a cross-context pub/sub channel.\n\n" +
       "**Detection:** the check looks for a `BroadcastChannel` token (kind=ident) not preceded " +
-      "by `.`/`?.` (property access exclusion), followed by `(`, `?.(`, or `<T>(`. " +
+      "by `.`/`?.` (property access exclusion), followed by `(` or `?.(` — or `<T>(` when " +
+      "preceded by `new` (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives). " +
       "Object/class method shorthands, TypeScript method signatures, and " +
       "`fn`/`function` declarations named `BroadcastChannel` are excluded. " +
       "The `:` check for method signatures is guarded against ternary consequents " +

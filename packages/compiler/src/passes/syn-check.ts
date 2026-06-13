@@ -788,7 +788,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
           if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
 
-          // Must be followed by `(`, `?.(`, or `<T>(` — confirming a call/construction.
+          // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
+          // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
           const nextIdx14 = nextSignificant(tokens, i + 1);
           const next14 = tokens[nextIdx14];
 
@@ -856,7 +857,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             message:
               `fn '${decl.name}' ${hasNew14 ? "constructs new " : "calls "}BroadcastChannel${callSep14}() — ` +
               `BroadcastChannel opens a cross-context message channel any same-origin tab or worker can post to, ` +
-              `invisible to the capability model; wrap in unsafe "<reason>" { new BroadcastChannel(name) }`,
+              `invisible to the capability model; wrap in unsafe "<reason>" { ${hasNew14 ? "new " : ""}BroadcastChannel${callSep14}(name) }`,
             rule: syn014.rule,
             idiom: syn014.idiom,
             rewrite: syn014.rewrite,
