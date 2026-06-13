@@ -679,7 +679,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             message:
               `fn '${decl.name}' ${hasNew8 ? "constructs new " : "calls "}WebSocket${callSep8}() — ` +
               `WebSocket opens a network connection invisible to the capability model; ` +
-              `wrap in unsafe "wraps WebSocket for <reason>" { ${hasNew8 ? "new " : ""}WebSocket(url) }`,
+              `wrap in unsafe "wraps WebSocket for <reason>" { ${hasNew8 ? "new " : ""}WebSocket${isOpt8 ? "?." : ""}(url) }`,
             rule: syn008.rule,
             idiom: syn008.idiom,
             rewrite: syn008.rewrite,
