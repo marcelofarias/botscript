@@ -622,7 +622,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "dependency — the capability model cannot see it (there is no `http.*` call for CAP001 to track), " +
       "no audit tool can observe the dependency from the fn header, and the connection outlives the fn's return value.",
     idiom:
-      "wrap the `WebSocket` constructor in `unsafe \"wraps WebSocket directly\" { new WebSocket(url) }` " +
+      "wrap the `WebSocket` constructor in `unsafe \"<reason>\" { new WebSocket(url) }` " +
       "to make the escape hatch visible in the diff; for full capability tracking, write a thin " +
       "wrapper fn that calls `$require(\"net\")` before constructing the socket",
     rewrite:
