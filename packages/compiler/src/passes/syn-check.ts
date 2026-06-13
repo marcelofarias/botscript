@@ -1034,7 +1034,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             message:
               `fn '${decl.name}' ${hasNew13 ? "constructs new " : "calls "}${workerName13}() — ` +
               `${workerName13} spawns a new execution context with an unbounded capability surface invisible to the capability model; ` +
-              `wrap in unsafe "<reason>" { new ${workerName13}(scriptURL) }`,
+              `wrap in unsafe "<reason>" { ${hasNew13 ? "new " : ""}${workerName13}(scriptURL) }`,
             rule: syn013.rule,
             idiom: syn013.idiom,
             rewrite: syn013.rewrite,
