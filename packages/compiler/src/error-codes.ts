@@ -810,12 +810,13 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN013: {
     code: "SYN013",
-    title: "new Worker() / new SharedWorker() construction spawns an unbounded execution context",
+    title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
     rule:
-      "`new Worker(scriptURL)` and `new SharedWorker(scriptURL)` spawn a new JS execution context " +
-      "that is invisible to botscript's capability model: the worker script runs with its own global scope, " +
-      "can make network requests, access storage, and perform any operation — none of which is visible in the " +
-      "spawning fn's `uses {}`, `reads {}`, or `writes {}` declarations. CAP001 cannot infer any capability " +
+      "`new Worker(scriptURL)`, bare `Worker(scriptURL)`, `new SharedWorker(scriptURL)`, and bare " +
+      "`SharedWorker(scriptURL)` spawn a new JS execution context that is invisible to botscript's " +
+      "capability model: the worker script runs with its own global scope, can make network requests, " +
+      "access storage, and perform any operation — none of which is visible in the spawning fn's " +
+      "`uses {}`, `reads {}`, or `writes {}` declarations. CAP001 cannot infer any capability " +
       "from worker construction; the capability surface of the spawned context is unbounded.",
     idiom:
       "wrap the constructor in `unsafe \"<reason>\" { new Worker(scriptURL) }` to make the escape " +

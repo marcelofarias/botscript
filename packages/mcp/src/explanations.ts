@@ -1031,7 +1031,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN013: {
     code: "SYN013",
-    title: "new Worker() / new SharedWorker() construction spawns an unbounded execution context",
+    title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
     body:
       "SYN013 fires when a fn body constructs a `Worker` or `SharedWorker` via `new Worker(scriptURL)`, " +
       "bare `Worker(scriptURL)`, `new SharedWorker(scriptURL)`, or TypeScript instantiation forms.\n\n" +
