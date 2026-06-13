@@ -838,6 +838,26 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               afterClose14.kind === "fatArrow" ||
               (!isTernaryConsequent14 && afterClose14.kind === "punct" && afterClose14.text === ":")
             )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ BroadcastChannel(name: string) }` — no `{`, `=>`, or `:` after `)`,
+            // but a `:` at depth 0 inside the parens that isn't part of a ternary.
+            let hasTypeAnnotation14 = false;
+            let depth14 = 0;
+            let ternaryDepth14 = 0;
+            for (let k14 = callIdx14 + 1; k14 < callTok14.matchedAt; k14++) {
+              const at14 = tokens[k14];
+              if (!at14) continue;
+              if (at14.kind === "open") { depth14++; continue; }
+              if (at14.kind === "close") { depth14--; continue; }
+              if (depth14 !== 0) continue;
+              if (at14.kind === "question") { ternaryDepth14++; continue; }
+              if (at14.kind === "punct" && at14.text === ":") {
+                if (ternaryDepth14 > 0) { ternaryDepth14--; continue; }
+                hasTypeAnnotation14 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation14) continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
