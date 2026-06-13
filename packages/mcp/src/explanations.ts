@@ -998,7 +998,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     body:
       "SYN012 fires when a fn body constructs an `EventSource` via `new EventSource(url)`, " +
       "bare `EventSource(url)`, or TypeScript instantiation form `new EventSource<T>(url)`. " +
-      "This is the same bypass class as `new WebSocket(url)` (SYN008): a persistent connection " +
+      "This is the same bypass class as `new WebSocket(url)`: a persistent connection " +
       "that is real network I/O but invisible to the declared capability surface.\n\n" +
       "**Why it matters:** `EventSource` opens a persistent HTTP GET connection to the server " +
       "and streams server-sent events. CAP001 checks for `http.*` member calls, not the " +
