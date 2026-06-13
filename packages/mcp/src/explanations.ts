@@ -881,6 +881,38 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN008: {
+    code: "SYN008",
+    title: "WebSocket construction bypasses the net capability model",
+    body:
+      "Botscript's capability model is static: the compiler reads the fn header and infers what that fn " +
+      "may do — network access, resource reads/writes, error types. The `WebSocket` global bypasses this " +
+      "by opening a persistent bidirectional connection at runtime that CAP001 cannot see.\n\n" +
+      "CAP001 checks for `http.*` member calls (the stdlib's declared network surface). `WebSocket` is a " +
+      "global — constructing one does not require a `uses { net }` declaration, and the compiler cannot " +
+      "enforce that callers know the fn has a network dependency.\n\n" +
+      "This is the same bypass class as `fetch()` (bare global that CAP001 misses): real network effects " +
+      "invisible to the declared capability surface.\n\n" +
+      "**Fix:** wrap the construction in `unsafe \"wraps WebSocket for <reason>\" { new WebSocket(url) }` " +
+      "to make the escape hatch visible in the diff and to callers reading the fn.\n\n" +
+      "SYN008 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: `WebSocket` not " +
+      "preceded by `.`/`?.` (member call exclusion), followed by `(`, `?.(`, or — when preceded by " +
+      "`new` — `<T>(` (TypeScript generic instantiation). Generic scanning is gated on `new` to avoid " +
+      "false-positives on comparison expressions like `WebSocket < x > (y)`. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn subscribe(url: string) -> void {\n" +
+        "  const ws = new WebSocket(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn subscribe(url: string) -> void {\n" +
+        '  const ws = unsafe "wraps WebSocket for live updates" { new WebSocket(url) }\n' +
+        "}\n",
+    },
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",

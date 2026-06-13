@@ -674,6 +674,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(`/api/users/${id}`)\n" +
       "}",
   },
+  SYN008: {
+    code: "SYN008",
+    title: "new WebSocket() / WebSocket() call bypasses the net capability model",
+    rule:
+      "`new WebSocket(url)`, `WebSocket(url)`, and TypeScript instantiation forms like " +
+      "`new WebSocket<T>(url)` open persistent bidirectional connections at runtime but are " +
+      "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
+      "not the `WebSocket` global. A fn that constructs a WebSocket has an undeclared network " +
+      "dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `WebSocket` constructor in `unsafe \"<reason>\" { new WebSocket(url) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — WebSocket is invisible to the capability model\n" +
+      "fn openFeed(url: string) -> WebSocket {\n" +
+      "  return new WebSocket(url)  // SYN008\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openFeed(url: string) -> WebSocket {\n" +
+      '  return unsafe "wraps WebSocket for streaming feed" { new WebSocket(url) }\n' +
+      "}",
+    example:
+      "// SYN008: WebSocket bypasses the net capability model\n" +
+      "fn subscribe(url: string) -> void {\n" +
+      "  const ws = new WebSocket(url)  // SYN008\n" +
+      "  ws.onmessage = (e) => handle(e.data)\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn subscribe(url: string) -> void {\n" +
+      '  const ws = unsafe "wraps WebSocket for live updates" { new WebSocket(url) }\n' +
+      "  ws.onmessage = (e) => handle(e.data)\n" +
+      "}",
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",

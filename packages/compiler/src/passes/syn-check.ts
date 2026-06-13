@@ -45,6 +45,18 @@
  *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? fetch(url) : other`).
  *
+ *   SYN008  A `new WebSocket(url)` / `WebSocket(url)` call was detected in a fn body (?bs 0.7+).
+ *           `WebSocket` opens a persistent bidirectional connection at runtime but is
+ *           invisible to botscript's capability model: CAP001 checks for `http.*` member
+ *           calls, not the `WebSocket` global. A fn that constructs a WebSocket has an
+ *           undeclared network dependency that no capability declaration can see.
+ *           Excluded: member calls (`obj.WebSocket`), `function`/`fn` declarations named
+ *           `WebSocket`, object/class method shorthands, and TypeScript method
+ *           signatures (`{ WebSocket(url): T; }`). The `:` exclusion is guarded
+ *           against ternary consequents (`cond ? WebSocket(url) : other`, including
+ *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
+ *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -100,6 +112,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn005 = getErrorCode("SYN005")!;
   const syn006 = getErrorCode("SYN006")!;
   const syn007 = getErrorCode("SYN007")!;
+  const syn008 = getErrorCode("SYN008")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
 
@@ -584,6 +597,92 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn007.rule,
             idiom: syn007.idiom,
             rewrite: syn007.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN008: new WebSocket() / WebSocket() call ───────────────────────
+        case "WebSocket": {
+          const prevIdx8 = prevSignificant(tokens, i - 1);
+          const prev8 = tokens[prevIdx8];
+
+          // Exclude: `obj.WebSocket(...)` — preceded by `.` or `?.`
+          if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named WebSocket
+          if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
+          if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
+
+          const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
+          // For ternary guard: check if token before WebSocket (or before `new`) is `?`
+          const prevBeforeNew8 = hasNew8
+            ? tokens[prevSignificant(tokens, prevIdx8 - 1)]
+            : undefined;
+          const isTernaryConsequent8 = (prev8 !== undefined && prev8 !== null && prev8.kind === "question") ||
+            (prevBeforeNew8 !== undefined && prevBeforeNew8 !== null && prevBeforeNew8.kind === "question");
+
+          const nextIdx8 = nextSignificant(tokens, i + 1);
+          const next8 = tokens[nextIdx8];
+
+          let isOpt8 = false;
+          let callIdx8 = nextIdx8;
+
+          if (next8 && next8.kind === "questionDot") {
+            // WebSocket?.( — optional call (no generic scan to avoid false-positives)
+            isOpt8 = true;
+            callIdx8 = nextSignificant(tokens, nextIdx8 + 1);
+          } else if (hasNew8 && next8 && next8.kind === "operator" && next8.text === "<") {
+            // new WebSocket<T>( — generic scan only when `new` precedes, preventing
+            // `WebSocket < x > (y)` comparison expressions from false-firing.
+            let depth = 1;
+            let j = nextIdx8 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx8 = nextSignificant(tokens, j);
+          }
+
+          const callTok8 = tokens[callIdx8];
+          if (!callTok8 || !(callTok8.kind === "open" && callTok8.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { WebSocket(url) { ... } } / { WebSocket(url): T; }
+          // Guard the `:` check against ternary consequents: `cond ? WebSocket(url) : other`
+          if (callTok8.matchedAt !== undefined) {
+            const afterCloseIdx8 = nextSignificant(tokens, callTok8.matchedAt + 1);
+            const afterClose8 = tokens[afterCloseIdx8];
+            if (afterClose8 && (
+              (afterClose8.kind === "open" && afterClose8.text === "{") ||
+              afterClose8.kind === "fatArrow" ||
+              (!isTernaryConsequent8 && afterClose8.kind === "punct" && afterClose8.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep8 = isOpt8 ? "?." : "";
+          const warnStart8 = hasNew8 ? prev8!.start : tok.start;
+          const loc8 = locationOf(src, warnStart8);
+          warnings.push({
+            code: "SYN008",
+            severity: "warning",
+            file: null,
+            line: loc8.line,
+            column: loc8.column,
+            start: warnStart8,
+            end: callTok8.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew8 ? "constructs new " : "calls "}WebSocket${callSep8}() — ` +
+              `WebSocket opens a network connection invisible to the capability model; ` +
+              `wrap in unsafe "wraps WebSocket for <reason>" { ${hasNew8 ? "new " : ""}WebSocket${isOpt8 ? "?." : ""}(url) }`,
+            rule: syn008.rule,
+            idiom: syn008.idiom,
+            rewrite: syn008.rewrite,
           });
           break;
         }
