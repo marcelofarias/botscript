@@ -1031,6 +1031,53 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN015: {
+    code: "SYN015",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    body:
+      "SYN015 fires when a fn body accesses `localStorage.*` or `sessionStorage.*` — " +
+      "any member access (`.getItem`, `.setItem`, `.removeItem`, `.clear`, `.key`, `.length`, etc.) " +
+      "on either global storage object.\n\n" +
+      "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource identifiers " +
+      "(e.g. `reads { db }`, `writes { cache }`). The Web Storage API globals — `localStorage` and " +
+      "`sessionStorage` — are not part of the stdlib namespace system. A fn that calls " +
+      "`localStorage.setItem(key, val)` writes persistent same-origin state at runtime but declares " +
+      "nothing about it in its header. Callers cannot see the dependency, and no audit tool can observe " +
+      "it from the fn signature. The persistent state also outlives the fn invocation: a side effect " +
+      "written in one call is visible in a completely unrelated future call, across any tab on the same origin.\n\n" +
+      "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not preceded " +
+      "by `.`/`?.` (which would make it a member of another object), followed by `.` or `?.` " +
+      "(confirming this is an access on the storage global, not a bare reference or a declaration). " +
+      "Fn/function declarations named `localStorage`/`sessionStorage` are excluded.\n\n" +
+      "**Fix (preferred):** pass a `Storage`-compatible object as an explicit fn parameter. This makes " +
+      "the dependency visible in the fn signature and tests can inject a mock:\n\n" +
+      "```\n" +
+      "// SYN015\n" +
+      "fn getToken() -> string | null {\n" +
+      "  return localStorage.getItem(\"auth_token\")\n" +
+      "}\n\n" +
+      "// fix — storage is now an explicit parameter\n" +
+      "fn getToken(storage: Storage) -> string | null {\n" +
+      "  return storage.getItem(\"auth_token\")\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct access is genuinely required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"reads auth token from localStorage\" { localStorage.getItem(\"auth_token\") }`\n\n" +
+      "SYN015 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn saveUser(user: User) -> void {\n" +
+        "  localStorage.setItem(\"user\", JSON.stringify(user))\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn saveUser(storage: Storage, user: User) -> void {\n" +
+        "  storage.setItem(\"user\", JSON.stringify(user))\n" +
+        "}\n",
+    },
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",

@@ -57,6 +57,16 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN015  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
+ *           Both globals are persistent same-origin storage — reads and writes are invisible to
+ *           botscript's capability model: `reads {}` / `writes {}` labels cover declared resource
+ *           identifiers, not the Web Storage API globals. A fn that accesses `localStorage` or
+ *           `sessionStorage` has undeclared persistent state dependencies invisible to callers and
+ *           audit tooling.
+ *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
+ *           `localStorage`/`sessionStorage`, and object method shorthands.
+ *           The check fires on any member access (`.` or `?.`): both reads and writes.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -138,6 +148,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
   const syn014 = getErrorCode("SYN014")!;
+  const syn015 = getErrorCode("SYN015")!;
   const syn016 = getErrorCode("SYN016")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
@@ -892,6 +903,53 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn014.rule,
             idiom: syn014.idiom,
             rewrite: syn014.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN015: localStorage / sessionStorage access ─────────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          const prevIdx15 = prevSignificant(tokens, i - 1);
+          const prev15 = tokens[prevIdx15];
+
+          // Exclude: `obj.localStorage.*` — preceded by `.` or `?.`
+          if (prev15 && ((prev15.kind === "punct" && prev15.text === ".") || prev15.kind === "questionDot"))
+            continue;
+
+          // Exclude: `function localStorage(...)` / `fn localStorage(...)` declarations
+          if (prev15 && prev15.kind === "ident" && prev15.text === "function") continue;
+          if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
+
+          // Must be followed by `.` or `?.` — confirming this is a property/method access
+          // on the storage object (not a bare reference or assignment target).
+          const nextIdx15 = nextSignificant(tokens, i + 1);
+          const next15 = tokens[nextIdx15];
+          if (!next15 || !(
+            (next15.kind === "punct" && next15.text === ".") ||
+            next15.kind === "questionDot"
+          )) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const storageName15 = tok.text;
+          const loc15 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN015",
+            severity: "warning",
+            file: null,
+            line: loc15.line,
+            column: loc15.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' accesses ${storageName15} — ` +
+              `${storageName15} is persistent same-origin storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.method(...) }`,
+            rule: syn015.rule,
+            idiom: syn015.idiom,
+            rewrite: syn015.rewrite,
           });
           break;
         }
