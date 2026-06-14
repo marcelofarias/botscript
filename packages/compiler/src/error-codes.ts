@@ -860,7 +860,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "randomness dependency — no `uses {}` declaration covers it, callers cannot see it, " +
       "and tests cannot deterministically mock or suppress it the way they can the `random` stdlib.",
     idiom:
-      "replace `Math.random()` with `random.float()` and add `uses { random }` to the fn header; " +
+      "replace `Math.random()` with `random.next()` and add `uses { random }` to the fn header; " +
       "if the raw `Math.random` API is required, wrap in `unsafe \"uses Math.random for <reason>\" { Math.random() }`",
     rewrite:
       "// before — Math.random() invisible to the capability model\n" +
@@ -869,16 +869,16 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// after — random capability declared; tests can control the output\n" +
       "fn jitter(base: number) uses { random } -> number {\n" +
-      "  return base + random.float() * 10\n" +
+      "  return base + random.next() * 10\n" +
       "}",
     example:
       "// SYN018: Math.random() bypasses the random capability model\n" +
       "fn roll(sides: number) -> number {\n" +
       "  return Math.floor(Math.random() * sides) + 1  // SYN018\n" +
       "}\n\n" +
-      "// fix: use random.float() and declare uses { random }\n" +
+      "// fix: use random.next() and declare uses { random }\n" +
       "fn roll(sides: number) uses { random } -> number {\n" +
-      "  return Math.floor(random.float() * sides) + 1\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
   },
   DEP001: {

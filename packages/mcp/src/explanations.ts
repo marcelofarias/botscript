@@ -1098,7 +1098,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "(member-call exclusion), followed by `.` or `?.`, then `random`, then `(` or `?.(` " +
       "(call confirmation). Bare `Math.random` references (without a trailing `(`) are " +
       "excluded — only actual calls are flagged.\n\n" +
-      "**Fix (preferred):** replace `Math.random()` with `random.float()` from the botscript " +
+      "**Fix (preferred):** replace `Math.random()` with `random.next()` from the botscript " +
       "stdlib and add `uses { random }` to the fn header. This makes the non-determinism " +
       "visible in the signature and allows tests to inject a deterministic `random` mock:\n\n" +
       "```\n" +
@@ -1108,7 +1108,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "}\n\n" +
       "// fix — random capability declared; tests control the output\n" +
       "fn roll(sides: number) uses { random } -> number {\n" +
-      "  return Math.floor(random.float() * sides) + 1\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
       "}\n" +
       "```\n\n" +
       "**Fix (escape hatch):** if `Math.random` is required (e.g. for compatibility with a " +
@@ -1125,7 +1125,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes:
         "?bs 0.7\n" +
         "fn roll(sides: number) uses { random } -> number {\n" +
-        "  return Math.floor(random.float() * sides) + 1\n" +
+        "  return Math.floor(random.next() * sides) + 1\n" +
         "}\n",
     },
   },

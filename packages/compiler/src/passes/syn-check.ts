@@ -1003,7 +1003,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: memberTok18.end,
             message:
               `fn '${decl.name}' calls Math${sep18}random${callSep18}() — ` +
-              `Math.random is invisible to the capability model; use random.float() with uses { random } ` +
+              `Math.random is invisible to the capability model; use random.next() with uses { random } ` +
               `so tests can control the output, or wrap in unsafe "uses Math.random for <reason>" { Math.random() }`,
             rule: syn018.rule,
             idiom: syn018.idiom,
