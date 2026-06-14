@@ -123,6 +123,17 @@ describe("SYN014: BroadcastChannel() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN014")).toBe(false);
   });
 
+  it("does NOT fire on TS type-literal method signature with optional parameter", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeType() -> any {\n" +
+      "  type T = { BroadcastChannel(name?: string) }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN014")).toBe(false);
+  });
+
   it("fires in ternary consequent — not suppressed by trailing ':'", () => {
     const src =
       "?bs 0.7\n" +

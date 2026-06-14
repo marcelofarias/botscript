@@ -841,6 +841,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             // Exclude TS method signatures with omitted return type:
             // `{ BroadcastChannel(name: string) }` — no `{`, `=>`, or `:` after `)`,
             // but a `:` at depth 0 inside the parens that isn't part of a ternary.
+            // Also handles optional params: `{ BroadcastChannel(name?: string) }`.
             let hasTypeAnnotation14 = false;
             let depth14 = 0;
             let ternaryDepth14 = 0;
@@ -850,7 +851,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               if (at14.kind === "open") { depth14++; continue; }
               if (at14.kind === "close") { depth14--; continue; }
               if (depth14 !== 0) continue;
-              if (at14.kind === "question") { ternaryDepth14++; continue; }
+              if (at14.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ14 = nextSignificant(tokens, k14 + 1);
+                const nextTokQ14 = tokens[nextAfterQ14];
+                if (nextTokQ14 && nextTokQ14.kind === "punct" && nextTokQ14.text === ":") {
+                  hasTypeAnnotation14 = true;
+                  break;
+                }
+                ternaryDepth14++;
+                continue;
+              }
               if (at14.kind === "punct" && at14.text === ":") {
                 if (ternaryDepth14 > 0) { ternaryDepth14--; continue; }
                 hasTypeAnnotation14 = true;
