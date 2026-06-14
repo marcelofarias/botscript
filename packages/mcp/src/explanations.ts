@@ -992,6 +992,54 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN016: {
+    code: "SYN016",
+    title: "indexedDB access bypasses the storage capability model",
+    body:
+      "SYN016 fires when a fn body accesses `indexedDB.*` — any member access (`.open`, " +
+      "`.deleteDatabase`, `.databases`, `.cmp`, etc.) on the `indexedDB` global.\n\n" +
+      "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource identifiers " +
+      "(e.g. `reads { db }`, `writes { cache }`). The `indexedDB` global is not part of the stdlib " +
+      "namespace system. A fn that calls `indexedDB.open(name)` opens a persistent database at runtime " +
+      "but declares nothing about it in its header. Callers cannot see the dependency, and no audit tool " +
+      "can observe it from the fn signature. Unlike `localStorage`, `indexedDB` is asynchronous and has " +
+      "no practical size limit — invisible access is higher-impact.\n\n" +
+      "**Detection:** the check looks for an `indexedDB` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member of another object), followed by `.` or `?.` " +
+      "(confirming this is an access on the global, not a bare reference or a declaration). " +
+      "Fn/function declarations named `indexedDB` are excluded.\n\n" +
+      "**Fix (preferred):** open the database at the call site and pass the `IDBDatabase` handle as " +
+      "an explicit fn parameter. This makes the dependency visible in the signature and tests can inject a mock:\n\n" +
+      "```\n" +
+      "// SYN016\n" +
+      "async fn loadSettings() -> Settings {\n" +
+      "  const req = indexedDB.open('app-db', 1)\n" +
+      "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+      "}\n\n" +
+      "// fix — database handle is now an explicit parameter\n" +
+      "async fn loadSettings(db: IDBDatabase) -> Settings {\n" +
+      "  return db.transaction('settings').objectStore('settings').get('all')\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct access is genuinely required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }`\n\n" +
+      "SYN016 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "async fn loadSettings() -> Settings {\n" +
+        "  const req = indexedDB.open('app-db', 1)\n" +
+        "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "async fn loadSettings() -> Settings {\n" +
+        "  const req = unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }\n" +
+        "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
