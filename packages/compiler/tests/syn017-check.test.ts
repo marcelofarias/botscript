@@ -219,4 +219,34 @@ describe("SYN017: Notification() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
   });
+
+  it("does NOT fire on function* Notification() generator declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> void {\n" +
+      "  function* Notification(title: string) { yield title }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
+
+  it("fires on Notification() in ternary consequent with await (not a method signature)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(cond: boolean, title: string) -> void {\n" +
+      "  cond ? await Notification(title) : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
+
+  it("fires on new Notification() in ternary consequent with await (not a method signature)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(cond: boolean, title: string) -> void {\n" +
+      "  cond ? await new Notification(title) : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
 });

@@ -1347,18 +1347,33 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev17 && ((prev17.kind === "punct" && prev17.text === ".") || prev17.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named Notification
+          // Exclude: function/fn/function* declarations named Notification
           if (prev17 && prev17.kind === "ident" && prev17.text === "function") continue;
           if (prev17 && prev17.kind === "keyword" && prev17.text === "fn") continue;
+          // Generator: `function* Notification` — prev token is `*`, token before that is `function`
+          if (prev17 && prev17.kind === "punct" && prev17.text === "*") {
+            const prevPrevIdx17 = prevSignificant(tokens, prevIdx17 - 1);
+            const prevPrev17 = tokens[prevPrevIdx17];
+            if (prevPrev17 && prevPrev17.kind === "ident" && prevPrev17.text === "function") continue;
+          }
 
           const hasNew17 = prev17 && prev17.kind === "ident" && prev17.text === "new";
-          // Ternary guard: `cond ? new Notification(title) : other`
+          // Ternary guard: `cond ? Notification(title) : other`, `cond ? new Notification(title) : other`,
+          // `cond ? await Notification(title) : other`, `cond ? await new Notification(title) : other`
           const prevBeforeNew17 = hasNew17
             ? tokens[prevSignificant(tokens, prevIdx17 - 1)]
             : undefined;
+          // Look through `await` between ternary `?` and the call/construction
+          const awaitIdx17 = (!hasNew17 && prev17 && prev17.kind === "ident" && prev17.text === "await")
+            ? prevIdx17
+            : (prevBeforeNew17 && prevBeforeNew17.kind === "ident" && prevBeforeNew17.text === "await")
+              ? prevSignificant(tokens, prevIdx17 - 1)
+              : -1;
+          const prevBeforeAwait17 = awaitIdx17 >= 0 ? tokens[prevSignificant(tokens, awaitIdx17 - 1)] : undefined;
           const isTernaryConsequent17 =
             (prev17 !== undefined && prev17 !== null && prev17.kind === "question") ||
-            (prevBeforeNew17 !== undefined && prevBeforeNew17 !== null && prevBeforeNew17.kind === "question");
+            (prevBeforeNew17 !== undefined && prevBeforeNew17 !== null && prevBeforeNew17.kind === "question") ||
+            (prevBeforeAwait17 !== undefined && prevBeforeAwait17 !== null && prevBeforeAwait17.kind === "question");
 
           const nextIdx17 = nextSignificant(tokens, i + 1);
           const next17 = tokens[nextIdx17];
