@@ -945,6 +945,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
   },
+  SYN019: {
+    code: "SYN019",
+    title: "crypto.getRandomValues() / crypto.randomUUID() call bypasses the random capability model",
+    rule:
+      "`crypto.getRandomValues()` and `crypto.randomUUID()` generate cryptographic randomness at runtime " +
+      "but are invisible to botscript's capability model: `uses { random }` covers `random.*` stdlib calls, " +
+      "not the `crypto` global. A fn that calls these methods has an undeclared randomness dependency — " +
+      "tests cannot control the output and callers cannot observe the dependency from the fn header.",
+    idiom:
+      "use `random.bytes()` or `random.uuid()` from the `random` stdlib namespace with `uses { random }` " +
+      "so the randomness dependency is visible in the fn header and tests can inject a mock; " +
+      "if direct crypto access is genuinely required, wrap in " +
+      "`unsafe \"uses crypto for <reason>\" { crypto.getRandomValues(buf) }`",
+    rewrite:
+      "// before — crypto call invisible to the capability model\n" +
+      "fn makeToken() uses { } -> string {\n" +
+      "  const arr = new Uint8Array(16)\n" +
+      "  crypto.getRandomValues(arr)  // SYN019\n" +
+      "  return Array.from(arr).map(b => b.toString(16)).join('')\n" +
+      "}\n\n" +
+      "// after — randomness declared in uses {}; tests can control output\n" +
+      "fn makeToken() uses { random } -> string {\n" +
+      "  return random.bytes(16).map(b => b.toString(16)).join('')\n" +
+      "}",
+    example:
+      "// SYN019: crypto call bypasses the random capability model\n" +
+      "fn generateId() uses { } -> string {\n" +
+      "  const buf = new Uint8Array(16)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return buf.join('-')\n" +
+      "}\n\n" +
+      "// fix: use random stdlib or wrap in unsafe\n" +
+      "fn generateId() uses { random } -> string {\n" +
+      "  return random.bytes(16).join('-')\n" +
+      "}",
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",

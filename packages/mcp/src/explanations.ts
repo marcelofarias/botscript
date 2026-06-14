@@ -1205,6 +1205,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN019: {
+    code: "SYN019",
+    title: "crypto.getRandomValues() / crypto.randomUUID() call bypasses the random capability model",
+    body:
+      "SYN019 fires when a fn body calls `crypto.getRandomValues(buf)` or `crypto.randomUUID()` " +
+      "(including optional-chain forms like `crypto?.getRandomValues(buf)` and optional-call forms like " +
+      "`crypto.getRandomValues?.(buf)`).\n\n" +
+      "**Why it matters:** `uses { random }` in botscript covers calls to the `random.*` stdlib namespace " +
+      "(e.g. `random.bytes()`, `random.uuid()`). It does NOT cover the `crypto` Web API global. " +
+      "A fn that calls `crypto.getRandomValues()` or `crypto.randomUUID()` generates cryptographic " +
+      "randomness at runtime without any entry in its `uses {}` clause — callers cannot see the dependency, " +
+      "and tests cannot mock or control the output.\n\n" +
+      "**Detection:** the check looks for a `crypto` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member of another object), followed by `.` or `?.`, followed by " +
+      "`getRandomValues` or `randomUUID`, followed by `(` or `?.(` (confirming this is a call, not a " +
+      "bare reference). Fn/function declarations named `crypto` and non-randomness members " +
+      "(e.g. `crypto.subtle.digest(...)`) are excluded.\n\n" +
+      "**Fix (preferred):** use `random.bytes()` or `random.uuid()` from the `random` stdlib namespace " +
+      "and declare `uses { random }` in the fn header. This makes the randomness dependency visible " +
+      "to callers and lets tests inject a deterministic mock.\n\n" +
+      "**Fix (escape hatch):** if direct crypto access is genuinely required (e.g. for specific " +
+      "algorithm reasons), wrap in an `unsafe` block with a justification:\n" +
+      "`unsafe \"uses crypto for FIPS-compliant key generation\" { crypto.getRandomValues(buf) }`\n\n" +
+      "SYN019 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn makeId() -> string {\n" +
+        "  return crypto.randomUUID()\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn makeId() uses { random } -> string {\n" +
+        "  return random.uuid()\n" +
+        "}\n",
+    },
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
