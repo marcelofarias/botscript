@@ -285,4 +285,14 @@ describe("SYN013: Worker() / SharedWorker() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN013")).toBe(true);
   });
+
+  it("does NOT fire on Worker<x>(y) comparison expression — generic scan gated on new", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn check(Worker: number, x: number, y: number) -> boolean {\n" +
+      "  return Worker < x > (y)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
+  });
 });
