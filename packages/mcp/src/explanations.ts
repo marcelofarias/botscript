@@ -1034,9 +1034,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
     body:
       "SYN013 fires when a fn body constructs a `Worker` or `SharedWorker` via `new Worker(scriptURL)`, " +
-      "bare `Worker(scriptURL)`, `new SharedWorker(scriptURL)`, or TypeScript instantiation forms.\n\n" +
+      "bare `Worker(scriptURL)`, optional call `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, or TypeScript instantiation forms.\n\n" +
       "**Why it matters:** Worker construction is the most severe capability bypass in the SYN series. " +
-      "Unlike `fetch` (SYN007) or `WebSocket` which have bounded effects, a Worker spawns an entirely new " +
+      "Unlike the `fetch` global or `WebSocket` which have bounded effects, a Worker spawns an entirely new " +
       "JS execution context. The worker script can make network requests, access storage, spawn its own " +
       "workers, and perform any operation — none of which is visible in the spawning fn's " +
       "`uses {}`, `reads {}`, or `writes {}` declarations. CAP001 checks for stdlib namespace calls; " +
@@ -1044,7 +1044,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "context is unbounded and invisible to callers and audit tooling.\n\n" +
       "**Detection:** the check looks for a `Worker` or `SharedWorker` ident token not preceded by `.`/`?.` " +
       "(which would make it a member call on a local), followed by `(` (with optional `new` preceding for " +
-      "the constructor form). TypeScript generic instantiation `new Worker<T>(url)` is also detected — " +
+      "the constructor form or `?.` for optional calls). TypeScript generic instantiation `new Worker<T>(url)` is also detected — " +
       "the generic scan is gated on `new` to prevent comparison expressions from false-firing. " +
       "Object method shorthands and TypeScript method signatures named `Worker` or `SharedWorker` are " +
       "excluded via the trailing-`:` check (guarded against ternary consequents).\n\n" +

@@ -154,6 +154,17 @@ describe("SYN012: EventSource() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN012")).toBe(false);
   });
 
+  it("does NOT fire on TS type-literal method signature with optional parameter", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  type T = { EventSource(url?: string) }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN012")).toBe(false);
+  });
+
   it("does NOT false-fire on EventSource < x > (y) comparison expression", () => {
     const src =
       "?bs 0.7\n" +

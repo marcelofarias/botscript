@@ -939,6 +939,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             )) continue;
             // Exclude TS method signatures with omitted return type:
             // `{ EventSource(url: string) }` — a `:` at depth 0 inside the parens.
+            // Also handles optional params: `{ EventSource(url?: string) }`.
             let hasTypeAnnotation12 = false;
             let depth12 = 0;
             let ternaryDepth12 = 0;
@@ -948,7 +949,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               if (at12.kind === "open") { depth12++; continue; }
               if (at12.kind === "close") { depth12--; continue; }
               if (depth12 !== 0) continue;
-              if (at12.kind === "question") { ternaryDepth12++; continue; }
+              if (at12.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ12 = nextSignificant(tokens, k12 + 1);
+                const nextTokQ12 = tokens[nextAfterQ12];
+                if (nextTokQ12 && nextTokQ12.kind === "punct" && nextTokQ12.text === ":") {
+                  hasTypeAnnotation12 = true;
+                  break;
+                }
+                ternaryDepth12++;
+                continue;
+              }
               if (at12.kind === "punct" && at12.text === ":") {
                 if (ternaryDepth12 > 0) { ternaryDepth12--; continue; }
                 hasTypeAnnotation12 = true;
@@ -1007,9 +1018,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const nextIdx13 = nextSignificant(tokens, i + 1);
           const next13 = tokens[nextIdx13];
 
+          let isOpt13 = false;
           let callIdx13 = nextIdx13;
 
-          if (hasNew13 && next13 && next13.kind === "operator" && next13.text === "<") {
+          if (next13 && next13.kind === "questionDot") {
+            // Worker?.( — optional call
+            isOpt13 = true;
+            callIdx13 = nextSignificant(tokens, nextIdx13 + 1);
+          } else if (hasNew13 && next13 && next13.kind === "operator" && next13.text === "<") {
             // new Worker<T>( — generic scan only when `new` precedes
             let depth = 1;
             let j = nextIdx13 + 1;
@@ -1038,6 +1054,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             )) continue;
             // Exclude TS method signatures with omitted return type:
             // `{ Worker(url: string) }` — a `:` at depth 0 inside the parens.
+            // Also handles optional params: `{ Worker(url?: string) }`.
             let hasTypeAnnotation13 = false;
             let depth13 = 0;
             let ternaryDepth13 = 0;
@@ -1047,7 +1064,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               if (at13.kind === "open") { depth13++; continue; }
               if (at13.kind === "close") { depth13--; continue; }
               if (depth13 !== 0) continue;
-              if (at13.kind === "question") { ternaryDepth13++; continue; }
+              if (at13.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ13 = nextSignificant(tokens, k13 + 1);
+                const nextTokQ13 = tokens[nextAfterQ13];
+                if (nextTokQ13 && nextTokQ13.kind === "punct" && nextTokQ13.text === ":") {
+                  hasTypeAnnotation13 = true;
+                  break;
+                }
+                ternaryDepth13++;
+                continue;
+              }
               if (at13.kind === "punct" && at13.text === ":") {
                 if (ternaryDepth13 > 0) { ternaryDepth13--; continue; }
                 hasTypeAnnotation13 = true;
@@ -1071,9 +1098,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: warnStart13,
             end: callTok13.start + 1,
             message:
-              `fn '${decl.name}' ${hasNew13 ? "constructs new " : "calls "}${workerName13}() — ` +
+              `fn '${decl.name}' ${hasNew13 ? "constructs new " : "calls "}${workerName13}${isOpt13 ? "?." : ""}() — ` +
               `${workerName13} spawns a new execution context with an unbounded capability surface invisible to the capability model; ` +
-              `wrap in unsafe "<reason>" { ${hasNew13 ? "new " : ""}${workerName13}(scriptURL) }`,
+              `wrap in unsafe "<reason>" { ${hasNew13 ? "new " : ""}${workerName13}${isOpt13 ? "?." : ""}(scriptURL) }`,
             rule: syn013.rule,
             idiom: syn013.idiom,
             rewrite: syn013.rewrite,

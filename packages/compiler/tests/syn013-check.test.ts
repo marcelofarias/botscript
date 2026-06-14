@@ -144,6 +144,38 @@ describe("SYN013: Worker() / SharedWorker() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
   });
 
+  it("does NOT fire on TS type-literal method signature with optional parameter", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  type T = { Worker(url?: string) }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
+  });
+
+  it("fires on Worker?.(url) optional call form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn startWorker(url: string) -> any {\n" +
+      "  return Worker?.(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("message preserves ?. for Worker?.() optional call form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn startWorker(url: string) -> any {\n" +
+      "  return Worker?.(url)\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN013");
+    expect(w?.message).toContain("calls Worker?.()");
+  });
+
   it("fires in ternary consequent — not suppressed by trailing ':'", () => {
     const src =
       "?bs 0.7\n" +
