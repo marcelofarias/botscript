@@ -87,6 +87,17 @@ describe("SYN016: indexedDB access detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN016")).toBe(false);
   });
 
+  it("does NOT fire on JS generator function* indexedDB() declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  function* indexedDB(n: string) { yield n }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN016")).toBe(false);
+  });
+
   it("is suppressed inside unsafe {} blocks", () => {
     const src =
       "?bs 0.7\n" +

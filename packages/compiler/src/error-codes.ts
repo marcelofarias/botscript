@@ -795,7 +795,8 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "// before — indexedDB access invisible to the capability model\n" +
       "async fn getUser(id: string) -> User | null {\n" +
-      "  const db = await openDb(indexedDB)  // SYN016\n" +
+      "  const req = indexedDB.open('users-db', 1)  // SYN016\n" +
+      "  const db = await new Promise<IDBDatabase>((res) => { req.onsuccess = (e) => res(e.target.result) })\n" +
       "  return db.transaction('users').objectStore('users').get(id)\n" +
       "}\n\n" +
       "// after — database handle passed as parameter; dependency visible in the signature\n" +

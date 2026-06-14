@@ -73,7 +73,7 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
- *   SYN016  A `indexedDB.*` access was detected in a fn body (?bs 0.7+).
+ *   SYN016  An `indexedDB.*` access was detected in a fn body (?bs 0.7+).
  *           `indexedDB` is same-origin persistent database storage invisible to botscript's
  *           capability model: `reads {}` / `writes {}` labels cover declared resource
  *           identifiers, not the Web Storage API globals. Unlike `localStorage`, `indexedDB`
@@ -771,9 +771,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev16 && ((prev16.kind === "punct" && prev16.text === ".") || prev16.kind === "questionDot"))
             continue;
 
-          // Exclude: fn/function declarations named indexedDB
+          // Exclude: fn/function/function* declarations named indexedDB
           if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
           if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
+          // Generator: `function* indexedDB` — prev token is `*`, token before that is `function`
+          if (prev16 && prev16.kind === "punct" && prev16.text === "*") {
+            const prevPrevIdx16 = prevSignificant(tokens, prevIdx16 - 1);
+            const prevPrev16 = tokens[prevPrevIdx16];
+            if (prevPrev16 && prevPrev16.kind === "ident" && prevPrev16.text === "function") continue;
+          }
 
           // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
           const nextIdx16 = nextSignificant(tokens, i + 1);
