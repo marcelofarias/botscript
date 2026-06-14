@@ -58,11 +58,12 @@
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
  *   SYN015  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
- *           Both globals are persistent same-origin storage — reads and writes are invisible to
+ *           Both globals are same-origin storage whose reads and writes are invisible to
  *           botscript's capability model: `reads {}` / `writes {}` labels cover declared resource
  *           identifiers, not the Web Storage API globals. A fn that accesses `localStorage` or
- *           `sessionStorage` has undeclared persistent state dependencies invisible to callers and
- *           audit tooling.
+ *           `sessionStorage` has undeclared state dependencies invisible to callers and audit
+ *           tooling. (`localStorage` persists across browser sessions; `sessionStorage` is
+ *           per-tab and cleared when the tab closes.)
  *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
  *           `localStorage`/`sessionStorage`, and object method shorthands.
  *           The check fires on any member access (`.` or `?.`): both reads and writes.
@@ -946,7 +947,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               `fn '${decl.name}' accesses ${storageName15} — ` +
               `${storageName15} is same-origin storage invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
-              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.method(...) }`,
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.getItem(key) }`,
             rule: syn015.rule,
             idiom: syn015.idiom,
             rewrite: syn015.rewrite,
