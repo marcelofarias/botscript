@@ -777,6 +777,44 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return m.default\n" +
       "}",
   },
+  SYN016: {
+    code: "SYN016",
+    title: "indexedDB access bypasses the storage capability model",
+    rule:
+      "`indexedDB.*` accesses are same-origin persistent database operations invisible to botscript's " +
+      "capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
+      "Web Storage API globals. A fn that accesses `indexedDB` has undeclared persistent state dependencies " +
+      "— no `reads {}` / `writes {}` declaration in the fn header covers the access, and callers cannot " +
+      "observe or audit the dependency from the fn's declared surface. Unlike `localStorage`, `indexedDB` " +
+      "is asynchronous and has no practical size limit, making invisible access higher-impact.",
+    idiom:
+      "pass an `IDBDatabase` or an explicit storage abstraction as a fn parameter so callers control " +
+      "what database is accessed, the dependency is visible in the fn signature, and tests can inject a mock; " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes indexedDB for <reason>\" { indexedDB.open(name) }`",
+    rewrite:
+      "// before — indexedDB access invisible to the capability model\n" +
+      "async fn getUser(id: string) -> User | null {\n" +
+      "  const req = indexedDB.open('users-db', 1)  // SYN016\n" +
+      "  const db = await new Promise<IDBDatabase>((res) => { req.onsuccess = (e) => res(e.target.result) })\n" +
+      "  return db.transaction('users').objectStore('users').get(id)\n" +
+      "}\n\n" +
+      "// after — database handle passed as parameter; dependency visible in the signature\n" +
+      "async fn getUser(db: IDBDatabase, id: string) -> User | null {\n" +
+      "  return db.transaction('users').objectStore('users').get(id)\n" +
+      "}",
+    example:
+      "// SYN016: indexedDB access invisible to capability model\n" +
+      "async fn loadSettings() -> Settings {\n" +
+      "  const req = indexedDB.open('app-db', 1)  // SYN016\n" +
+      "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+      "}\n\n" +
+      "// fix: pass db as a parameter or wrap in unsafe with a reason\n" +
+      "async fn loadSettings() -> Settings {\n" +
+      "  const req = unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }\n" +
+      "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

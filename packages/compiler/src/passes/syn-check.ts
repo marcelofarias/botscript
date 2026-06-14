@@ -73,6 +73,17 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
+ *   SYN016  An `indexedDB.*` access was detected in a fn body (?bs 0.7+).
+ *           `indexedDB` is same-origin persistent database storage invisible to botscript's
+ *           capability model: `reads {}` / `writes {}` labels cover declared resource
+ *           identifiers, not the Web Storage API globals. Unlike `localStorage`, `indexedDB`
+ *           is asynchronous and has no practical size limit. A fn that accesses `indexedDB`
+ *           has undeclared persistent state dependencies — callers cannot observe or audit
+ *           them from the fn's declared surface.
+ *           Detection: `indexedDB` not preceded by `.`/`?.`, followed by `.` or `?.`.
+ *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -115,6 +126,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn008 = getErrorCode("SYN008")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
+  const syn016 = getErrorCode("SYN016")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -747,6 +759,55 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn011.rule,
             idiom: syn011.idiom,
             rewrite: syn011.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN016: indexedDB.* access ───────────────────────────────────────
+        case "indexedDB": {
+          // Exclude: `obj.indexedDB` — preceded by `.` or `?.`
+          const prevIdx16 = prevSignificant(tokens, i - 1);
+          const prev16 = tokens[prevIdx16];
+          if (prev16 && ((prev16.kind === "punct" && prev16.text === ".") || prev16.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named indexedDB
+          if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
+          if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
+          // Generator: `function* indexedDB` — prev token is `*`, token before that is `function`
+          if (prev16 && prev16.kind === "punct" && prev16.text === "*") {
+            const prevPrevIdx16 = prevSignificant(tokens, prevIdx16 - 1);
+            const prevPrev16 = tokens[prevPrevIdx16];
+            if (prevPrev16 && prevPrev16.kind === "ident" && prevPrev16.text === "function") continue;
+          }
+
+          // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
+          const nextIdx16 = nextSignificant(tokens, i + 1);
+          const next16 = tokens[nextIdx16];
+          const isDot16 = next16 && next16.kind === "punct" && next16.text === ".";
+          const isOptChain16 = next16 && next16.kind === "questionDot";
+          if (!isDot16 && !isOptChain16) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep16 = isOptChain16 ? "?." : ".";
+          const loc16 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN016",
+            severity: "warning",
+            file: null,
+            line: loc16.line,
+            column: loc16.column,
+            start: tok.start,
+            end: next16!.end,
+            message:
+              `fn '${decl.name}' accesses indexedDB${sep16} — ` +
+              `indexedDB is persistent same-origin database storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a database handle as a parameter or wrap in unsafe "accesses indexedDB for <reason>" { indexedDB.open(name) }`,
+            rule: syn016.rule,
+            idiom: syn016.idiom,
+            rewrite: syn016.rewrite,
           });
           break;
         }
