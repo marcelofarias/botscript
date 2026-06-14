@@ -191,6 +191,16 @@ describe("SYN014: BroadcastChannel() construction detection", () => {
     expect(codes.length).toBe(2);
   });
 
+  it("fires on BroadcastChannel?.(name) optional-call form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn openChannel(name: string) -> any {\n" +
+      "  return BroadcastChannel?.(name)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN014")).toBe(true);
+  });
+
   it("does NOT false-fire on BroadcastChannel < x > (y) comparison expression", () => {
     const src =
       "?bs 0.7\n" +
