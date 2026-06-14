@@ -1041,10 +1041,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource identifiers " +
       "(e.g. `reads { db }`, `writes { cache }`). The Web Storage API globals — `localStorage` and " +
       "`sessionStorage` — are not part of the stdlib namespace system. A fn that calls " +
-      "`localStorage.setItem(key, val)` writes persistent same-origin state at runtime but declares " +
+      "`localStorage.setItem(key, val)` writes same-origin state at runtime but declares " +
       "nothing about it in its header. Callers cannot see the dependency, and no audit tool can observe " +
-      "it from the fn signature. The persistent state also outlives the fn invocation: a side effect " +
-      "written in one call is visible in a completely unrelated future call, across any tab on the same origin.\n\n" +
+      "it from the fn signature. The state outlives the fn invocation: a side effect written in one call " +
+      "is visible in a completely unrelated future call. `localStorage` is persistent across browser " +
+      "sessions and shared across all tabs on the same origin; `sessionStorage` is per-tab and cleared " +
+      "when the tab closes, but still invisible to the capability model.\n\n" +
       "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not preceded " +
       "by `.`/`?.` (which would make it a member of another object), followed by `.` or `?.` " +
       "(confirming this is an access on the storage global, not a bare reference or a declaration). " +

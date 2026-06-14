@@ -816,11 +816,12 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN015",
     title: "localStorage / sessionStorage access bypasses the storage capability model",
     rule:
-      "`localStorage.*` and `sessionStorage.*` accesses are persistent same-origin storage operations " +
+      "`localStorage.*` and `sessionStorage.*` accesses are same-origin storage operations " +
       "invisible to botscript's capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, " +
       "not the Web Storage API globals. A fn that reads or writes `localStorage`/`sessionStorage` has " +
-      "undeclared persistent state dependencies — no `reads {}` / `writes {}` declaration in the fn header " +
-      "covers the access, and callers cannot observe or audit the dependency from the fn's declared surface.",
+      "undeclared state dependencies — no `reads {}` / `writes {}` declaration in the fn header " +
+      "covers the access, and callers cannot observe or audit the dependency from the fn's declared surface. " +
+      "(`localStorage` persists across browser sessions; `sessionStorage` is scoped to the current tab and cleared when the tab closes.)",
     idiom:
       "pass a storage abstraction (e.g. a `Storage` interface) as an explicit fn parameter so callers " +
       "control what storage is accessed, the dependency is visible in the fn signature, and tests can inject a mock; " +
