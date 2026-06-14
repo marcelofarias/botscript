@@ -1436,7 +1436,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: tok.start,
             end: callTok19.start + 1,
             message:
-              `fn '${decl.name}' calls crypto${sep19}${methodName19}() — ` +
+              `fn '${decl.name}' calls crypto${sep19}${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} — ` +
               `crypto.getRandomValues and crypto.randomUUID generate cryptographic randomness invisible to the capability model; ` +
               `uses { random } does not cover the crypto global; ` +
               `use random.bytes() or random.uuid() with uses { random } so tests can control the output, ` +

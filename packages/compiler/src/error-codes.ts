@@ -960,7 +960,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "`unsafe \"uses crypto for <reason>\" { crypto.getRandomValues(buf) }`",
     rewrite:
       "// before — crypto call invisible to the capability model\n" +
-      "fn makeToken() uses { } -> string {\n" +
+      "fn makeToken() uses {} -> string {\n" +
       "  const arr = new Uint8Array(16)\n" +
       "  crypto.getRandomValues(arr)  // SYN019\n" +
       "  return Array.from(arr).map(b => b.toString(16)).join('')\n" +
@@ -971,7 +971,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "}",
     example:
       "// SYN019: crypto call bypasses the random capability model\n" +
-      "fn generateId() uses { } -> string {\n" +
+      "fn generateId() uses {} -> string {\n" +
       "  const buf = new Uint8Array(16)\n" +
       "  crypto.getRandomValues(buf)  // SYN019\n" +
       "  return buf.join('-')\n" +
