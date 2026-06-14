@@ -57,6 +57,16 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN017  A `new Notification(title)`, `Notification(title)`, or TypeScript instantiation
+ *           form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
+ *           `Notification` fires a user-visible browser notification at runtime — a UI side
+ *           effect invisible to botscript's capability model: no `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers notification dispatch. Callers cannot observe,
+ *           audit, or suppress the effect from the fn's declared surface.
+ *           Excluded: member calls (`obj.Notification`), `function`/`fn` declarations named
+ *           `Notification`, object/class method shorthands, and TypeScript method signatures.
+ *           The `:` exclusion is guarded against ternary consequents.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -240,6 +250,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn013 = getErrorCode("SYN013")!;
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
+  const syn017 = getErrorCode("SYN017")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
@@ -1324,6 +1335,118 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn016.rule,
             idiom: syn016.idiom,
             rewrite: syn016.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN017: new Notification() / Notification() call ─────────────────
+        case "Notification": {
+          // Exclude: `obj.Notification(...)` — preceded by `.` or `?.`
+          const prevIdx17 = prevSignificant(tokens, i - 1);
+          const prev17 = tokens[prevIdx17];
+          if (prev17 && ((prev17.kind === "punct" && prev17.text === ".") || prev17.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named Notification
+          if (prev17 && prev17.kind === "ident" && prev17.text === "function") continue;
+          if (prev17 && prev17.kind === "keyword" && prev17.text === "fn") continue;
+
+          const hasNew17 = prev17 && prev17.kind === "ident" && prev17.text === "new";
+          // Ternary guard: `cond ? new Notification(title) : other`
+          const prevBeforeNew17 = hasNew17
+            ? tokens[prevSignificant(tokens, prevIdx17 - 1)]
+            : undefined;
+          const isTernaryConsequent17 =
+            (prev17 !== undefined && prev17 !== null && prev17.kind === "question") ||
+            (prevBeforeNew17 !== undefined && prevBeforeNew17 !== null && prevBeforeNew17.kind === "question");
+
+          const nextIdx17 = nextSignificant(tokens, i + 1);
+          const next17 = tokens[nextIdx17];
+
+          let isOpt17 = false;
+          let callIdx17 = nextIdx17;
+
+          if (next17 && next17.kind === "questionDot") {
+            // Notification?.( — optional call
+            isOpt17 = true;
+            callIdx17 = nextSignificant(tokens, nextIdx17 + 1);
+          } else if (hasNew17 && next17 && next17.kind === "operator" && next17.text === "<") {
+            // new Notification<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx17 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx17 = nextSignificant(tokens, j);
+          }
+
+          const callTok17 = tokens[callIdx17];
+          if (!callTok17 || !(callTok17.kind === "open" && callTok17.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures.
+          if (callTok17.matchedAt !== undefined) {
+            const afterCloseIdx17 = nextSignificant(tokens, callTok17.matchedAt + 1);
+            const afterClose17 = tokens[afterCloseIdx17];
+            if (afterClose17 && (
+              (afterClose17.kind === "open" && afterClose17.text === "{") ||
+              afterClose17.kind === "fatArrow" ||
+              (!isTernaryConsequent17 && afterClose17.kind === "punct" && afterClose17.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type or optional params:
+            // `{ Notification(title: string) }` / `{ Notification(title?: string) }`.
+            let hasTypeAnnotation17 = false;
+            let depth17 = 0;
+            let ternaryDepth17 = 0;
+            for (let k17 = callIdx17 + 1; k17 < callTok17.matchedAt; k17++) {
+              const at17 = tokens[k17];
+              if (!at17) continue;
+              if (at17.kind === "open") { depth17++; continue; }
+              if (at17.kind === "close") { depth17--; continue; }
+              if (depth17 !== 0) continue;
+              if (at17.kind === "question") {
+                const nextAfterQ17 = nextSignificant(tokens, k17 + 1);
+                const nextTokQ17 = tokens[nextAfterQ17];
+                if (nextTokQ17 && nextTokQ17.kind === "punct" && nextTokQ17.text === ":") {
+                  hasTypeAnnotation17 = true;
+                  break;
+                }
+                ternaryDepth17++;
+                continue;
+              }
+              if (at17.kind === "punct" && at17.text === ":") {
+                if (ternaryDepth17 > 0) { ternaryDepth17--; continue; }
+                hasTypeAnnotation17 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation17) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep17 = isOpt17 ? "?." : "";
+          const warnStart17 = hasNew17 ? prev17!.start : tok.start;
+          const loc17 = locationOf(src, warnStart17);
+          warnings.push({
+            code: "SYN017",
+            severity: "warning",
+            file: null,
+            line: loc17.line,
+            column: loc17.column,
+            start: warnStart17,
+            end: callTok17.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew17 ? "constructs new " : "calls "}Notification${callSep17}() — ` +
+              `Notification fires a user-visible browser notification invisible to the capability model; ` +
+              `wrap in unsafe "sends notification for <reason>" { ${hasNew17 ? "new " : ""}Notification${callSep17}(title, options) }`,
+            rule: syn017.rule,
+            idiom: syn017.idiom,
+            rewrite: syn017.rewrite,
           });
           break;
         }
