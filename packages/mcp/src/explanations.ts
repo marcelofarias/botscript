@@ -1034,7 +1034,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
     body:
       "SYN013 fires when a fn body constructs a `Worker` or `SharedWorker` via `new Worker(scriptURL)`, " +
-      "bare `Worker(scriptURL)`, optional call `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, or TypeScript instantiation forms.\n\n" +
+      "bare `Worker(scriptURL)`, optional call `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, " +
+      "bare `SharedWorker(scriptURL)`, optional call `SharedWorker?.(scriptURL)`, or TypeScript instantiation forms.\n\n" +
       "**Why it matters:** Worker construction is the most severe capability bypass in the SYN series. " +
       "Unlike the `fetch` global or `WebSocket` which have bounded effects, a Worker spawns an entirely new " +
       "JS execution context. The worker script can make network requests, access storage, spawn its own " +

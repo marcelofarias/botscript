@@ -265,4 +265,24 @@ describe("SYN013: Worker() / SharedWorker() construction detection", () => {
     const codes = result.warnings.filter((w) => w.code === "SYN013");
     expect(codes.length).toBe(2);
   });
+
+  it("fires on bare SharedWorker(url) without new", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn spawn(url: string) -> any {\n" +
+      "  return SharedWorker(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("fires on SharedWorker?.(url) optional call form", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn spawn(url: string) -> any {\n" +
+      "  return SharedWorker?.(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
 });
