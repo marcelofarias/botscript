@@ -947,7 +947,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               `fn '${decl.name}' accesses ${storageName15} — ` +
               `${storageName15} is same-origin storage invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
-              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.getItem(key) }`,
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.method(...) }`,
             rule: syn015.rule,
             idiom: syn015.idiom,
             rewrite: syn015.rewrite,
