@@ -122,6 +122,28 @@ describe("SYN013: Worker() / SharedWorker() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
   });
 
+  it("does NOT fire on JS function Worker(...) declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer(url: string) -> any {\n" +
+      "  function Worker(u: string) { return u }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
+  });
+
+  it("does NOT fire on TS type-literal method signature without return type", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  type T = { Worker(url: string) }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN013")).toBe(false);
+  });
+
   it("fires in ternary consequent — not suppressed by trailing ':'", () => {
     const src =
       "?bs 0.7\n" +

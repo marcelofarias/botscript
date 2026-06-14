@@ -132,6 +132,28 @@ describe("SYN012: EventSource() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN012")).toBe(false);
   });
 
+  it("does NOT fire on JS function EventSource(...) declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer(url: string) -> any {\n" +
+      "  function EventSource(u: string) { return u }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN012")).toBe(false);
+  });
+
+  it("does NOT fire on TS type-literal method signature without return type", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  type T = { EventSource(url: string) }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN012")).toBe(false);
+  });
+
   it("does NOT false-fire on EventSource < x > (y) comparison expression", () => {
     const src =
       "?bs 0.7\n" +

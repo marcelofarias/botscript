@@ -83,8 +83,9 @@
  *           `EventSource`, object/class method shorthands, and TypeScript method signatures.
  *           The `:` exclusion is guarded against ternary consequents.
  *
- *   SYN013  A `new Worker(scriptURL)` or `new SharedWorker(scriptURL)` was detected in a fn
- *           body (?bs 0.7+). Worker construction spawns a new JS execution context whose
+ *   SYN013  A `new Worker(scriptURL)`, `Worker(scriptURL)`, `new SharedWorker(scriptURL)`, or
+ *           `SharedWorker(scriptURL)` was detected in a fn body (?bs 0.7+). Worker construction
+ *           spawns a new JS execution context whose
  *           capability surface is unbounded: the worker script can make network requests,
  *           access storage, and perform any operation — none of it visible in the spawning
  *           fn's `uses {}`, `reads {}`, or `writes {}` declarations.
@@ -936,6 +937,25 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               afterClose12.kind === "fatArrow" ||
               (!isTernaryConsequent12 && afterClose12.kind === "punct" && afterClose12.text === ":")
             )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ EventSource(url: string) }` — a `:` at depth 0 inside the parens.
+            let hasTypeAnnotation12 = false;
+            let depth12 = 0;
+            let ternaryDepth12 = 0;
+            for (let k12 = callIdx12 + 1; k12 < callTok12.matchedAt; k12++) {
+              const at12 = tokens[k12];
+              if (!at12) continue;
+              if (at12.kind === "open") { depth12++; continue; }
+              if (at12.kind === "close") { depth12--; continue; }
+              if (depth12 !== 0) continue;
+              if (at12.kind === "question") { ternaryDepth12++; continue; }
+              if (at12.kind === "punct" && at12.text === ":") {
+                if (ternaryDepth12 > 0) { ternaryDepth12--; continue; }
+                hasTypeAnnotation12 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation12) continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
@@ -1016,6 +1036,25 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               afterClose13.kind === "fatArrow" ||
               (!isTernaryConsequent13 && afterClose13.kind === "punct" && afterClose13.text === ":")
             )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ Worker(url: string) }` — a `:` at depth 0 inside the parens.
+            let hasTypeAnnotation13 = false;
+            let depth13 = 0;
+            let ternaryDepth13 = 0;
+            for (let k13 = callIdx13 + 1; k13 < callTok13.matchedAt; k13++) {
+              const at13 = tokens[k13];
+              if (!at13) continue;
+              if (at13.kind === "open") { depth13++; continue; }
+              if (at13.kind === "close") { depth13--; continue; }
+              if (depth13 !== 0) continue;
+              if (at13.kind === "question") { ternaryDepth13++; continue; }
+              if (at13.kind === "punct" && at13.text === ":") {
+                if (ternaryDepth13 > 0) { ternaryDepth13--; continue; }
+                hasTypeAnnotation13 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation13) continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
