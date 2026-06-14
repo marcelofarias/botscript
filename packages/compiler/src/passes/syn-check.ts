@@ -1350,8 +1350,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: function/fn/function* declarations named Notification
           if (prev17 && prev17.kind === "ident" && prev17.text === "function") continue;
           if (prev17 && prev17.kind === "keyword" && prev17.text === "fn") continue;
-          // Generator: `function* Notification` — prev token is `*`, token before that is `function`
-          if (prev17 && prev17.kind === "punct" && prev17.text === "*") {
+          // Generator: `function* Notification` — prev token is `*` (operator kind), token before that is `function`
+          if (prev17 && prev17.kind === "operator" && prev17.text === "*") {
             const prevPrevIdx17 = prevSignificant(tokens, prevIdx17 - 1);
             const prevPrev17 = tokens[prevPrevIdx17];
             if (prevPrev17 && prevPrev17.kind === "ident" && prevPrev17.text === "function") continue;
