@@ -57,8 +57,8 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
- *   SYN017  A `new Notification(title)`, `Notification(title)`, or TypeScript instantiation
- *           form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
+ *   SYN017  A `new Notification(title)`, `Notification(title)`, `Notification?.(title)`, or
+ *           TypeScript instantiation form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
  *           `Notification` fires a user-visible browser notification at runtime — a UI side
  *           effect invisible to botscript's capability model: no `uses {}`, `reads {}`, or
  *           `writes {}` declaration covers notification dispatch. Callers cannot observe,

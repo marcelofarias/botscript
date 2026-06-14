@@ -918,7 +918,8 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN017",
     title: "Notification() construction bypasses the capability model",
     rule:
-      "`new Notification(title)` and bare `Notification(title)` calls create user-visible browser " +
+      "`new Notification(title)`, bare `Notification(title)`, optional-call `Notification?.(title)`, " +
+      "and TypeScript generic form `new Notification<T>(title)` calls create user-visible browser " +
       "notifications at runtime — a side effect entirely invisible to botscript's capability model. " +
       "No `uses {}`, `reads {}`, or `writes {}` declaration covers notification dispatch: callers " +
       "cannot observe, audit, or suppress the UI effect from the fn's declared surface.",
