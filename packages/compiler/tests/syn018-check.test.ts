@@ -130,7 +130,7 @@ describe("SYN018: Math.random() detection", () => {
     expect(result.warnings.filter((w) => w.code === "SYN018").length).toBe(2);
   });
 
-  it("does NOT fire on Math.random inside a nested fn (separate fn body)", () => {
+  it("attributes SYN018 to the nested fn body (inner), not the outer fn", () => {
     const src =
       "?bs 0.7\n" +
       "fn outer() -> number {\n" +

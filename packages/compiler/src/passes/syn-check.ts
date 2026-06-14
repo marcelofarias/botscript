@@ -95,7 +95,7 @@
  *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
- *   SYN018  A `Math.random()` or `Math?.random()` call was detected in a fn body (?bs 0.7+).
+ *   SYN018  A `Math.random()`, `Math?.random()`, or `Math.random?.()` call was detected in a fn body (?bs 0.7+).
  *           `Math.random` generates a random float at runtime but is invisible to botscript's
  *           capability model: `uses { random }` covers `random.*` stdlib calls, not the
  *           `Math` global. A fn that calls `Math.random()` has an undeclared randomness
