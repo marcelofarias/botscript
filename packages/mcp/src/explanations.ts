@@ -992,6 +992,45 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN014: {
+    code: "SYN014",
+    title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
+    body:
+      "SYN014 fires when a fn body constructs a `BroadcastChannel` via `new BroadcastChannel(name)`, " +
+      "`BroadcastChannel(name)`, or TypeScript instantiation form `new BroadcastChannel<T>(name)`. " +
+      "This is the same class of capability-surface bypass as `new Worker()` (SYN013): a global " +
+      "constructor that opens a cross-context communication channel invisible to the capability model.\n\n" +
+      "**Why it matters:** `BroadcastChannel` creates a named message bus that any tab, window, " +
+      "iframe, or worker on the same origin can subscribe to or post on. A fn that constructs one " +
+      "can receive arbitrary messages from any same-origin context — without any `reads {}` or " +
+      "`uses {}` declaration covering that messaging surface. Callers reading the fn header see " +
+      "no indication that the fn participates in a cross-context pub/sub channel.\n\n" +
+      "**Detection:** the check looks for a `BroadcastChannel` token (kind=ident) not preceded " +
+      "by `.`/`?.` (property access exclusion), followed by `(` or `?.(` — or `<T>(` when " +
+      "preceded by `new` (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives). " +
+      "Object/class method shorthands, TypeScript method signatures, and " +
+      "`fn`/`function` declarations named `BroadcastChannel` are excluded. " +
+      "The `:` check for method signatures is guarded against ternary consequents " +
+      "(`cond ? new BroadcastChannel(a) : ...`).\n\n" +
+      "**Fix:** wrap in `unsafe \"<reason>\" { new BroadcastChannel(name) }` to document " +
+      "the escape hatch in the diff. The reason should describe the channel's purpose and why " +
+      "cross-context messaging is acceptable here (e.g. 'wraps BroadcastChannel for live " +
+      "preview sync across tabs').\n\n" +
+      "SYN014 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn openChannel(name: string) -> BroadcastChannel {\n" +
+        "  return new BroadcastChannel(name)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn openChannel(name: string) -> BroadcastChannel {\n" +
+        "  return unsafe \"wraps BroadcastChannel for tab coordination\" { new BroadcastChannel(name) }\n" +
+        "}\n",
+    },
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",

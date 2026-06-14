@@ -73,6 +73,17 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
+ *   SYN014  A `new BroadcastChannel(name)`, `BroadcastChannel(name)`, or TypeScript
+ *           instantiation form `new BroadcastChannel<T>(name)` was detected in a fn body
+ *           (?bs 0.7+). `BroadcastChannel` opens a cross-context message channel at runtime
+ *           that any tab, window, or worker on the same origin can post to or receive from —
+ *           invisible to botscript's capability model: CAP001 checks for stdlib namespace
+ *           calls, not the `BroadcastChannel` global. A fn that constructs a BroadcastChannel
+ *           has an undeclared cross-context messaging dependency.
+ *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn` declarations
+ *           named `BroadcastChannel`, object/class method shorthands, and TypeScript method
+ *           signatures. The `:` exclusion is guarded against ternary consequents.
+ *
  *   SYN016  An `indexedDB.*` access was detected in a fn body (?bs 0.7+).
  *           `indexedDB` is same-origin persistent database storage invisible to botscript's
  *           capability model: `reads {}` / `writes {}` labels cover declared resource
@@ -126,6 +137,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn008 = getErrorCode("SYN008")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
+  const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
@@ -759,6 +771,127 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn011.rule,
             idiom: syn011.idiom,
             rewrite: syn011.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN014: new BroadcastChannel() / BroadcastChannel() ─────────────
+        case "BroadcastChannel": {
+          const prevIdx14 = prevSignificant(tokens, i - 1);
+          const prev14 = tokens[prevIdx14];
+
+          // Exclude: `obj.BroadcastChannel(...)` — preceded by `.` or `?.`
+          if (prev14 && ((prev14.kind === "punct" && prev14.text === ".") || prev14.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn declarations named BroadcastChannel
+          if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
+          if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
+
+          // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
+          // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
+          const nextIdx14 = nextSignificant(tokens, i + 1);
+          const next14 = tokens[nextIdx14];
+
+          let callIdx14 = nextIdx14;
+          let isOpt14 = false;
+          if (next14 && next14.kind === "questionDot") {
+            isOpt14 = true;
+            callIdx14 = nextSignificant(tokens, nextIdx14 + 1);
+          }
+
+          // TypeScript generic instantiation: `new BroadcastChannel<T>(name)`
+          let afterGenericIdx14 = callIdx14;
+          if (!isOpt14 && next14 && next14.kind === "operator" && next14.text === "<") {
+            const hasNew14 = prev14 && prev14.kind === "ident" && prev14.text === "new";
+            if (hasNew14) {
+              let depth14 = 1;
+              let j14 = nextIdx14 + 1;
+              while (j14 < decl.tokenEnd && depth14 > 0) {
+                const at14 = tokens[j14];
+                if (!at14) { j14++; continue; }
+                if (at14.kind === "operator" && at14.text === "<") depth14++;
+                else if (at14.kind === "operator" && (at14.text === ">" || at14.text === ">>" || at14.text === ">>>"))
+                  depth14 = Math.max(0, depth14 - at14.text.length);
+                j14++;
+              }
+              afterGenericIdx14 = nextSignificant(tokens, j14);
+              callIdx14 = afterGenericIdx14;
+            }
+          }
+
+          const callTok14 = tokens[callIdx14];
+          if (!callTok14 || !(callTok14.kind === "open" && callTok14.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures.
+          // Guard `:` check against ternary consequents.
+          const prevBeforeNew14 = (prev14 && prev14.kind === "ident" && prev14.text === "new")
+            ? tokens[prevSignificant(tokens, prevIdx14 - 1)]
+            : undefined;
+          const isTernaryConsequent14 = (prev14 && prev14.kind === "question") ||
+            (prevBeforeNew14 !== undefined && prevBeforeNew14 !== null && prevBeforeNew14.kind === "question");
+          if (callTok14.matchedAt !== undefined) {
+            const afterCloseIdx14 = nextSignificant(tokens, callTok14.matchedAt + 1);
+            const afterClose14 = tokens[afterCloseIdx14];
+            if (afterClose14 && (
+              (afterClose14.kind === "open" && afterClose14.text === "{") ||
+              afterClose14.kind === "fatArrow" ||
+              (!isTernaryConsequent14 && afterClose14.kind === "punct" && afterClose14.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ BroadcastChannel(name: string) }` — no `{`, `=>`, or `:` after `)`,
+            // but a `:` at depth 0 inside the parens that isn't part of a ternary.
+            // Also handles optional params: `{ BroadcastChannel(name?: string) }`.
+            let hasTypeAnnotation14 = false;
+            let depth14 = 0;
+            let ternaryDepth14 = 0;
+            for (let k14 = callIdx14 + 1; k14 < callTok14.matchedAt; k14++) {
+              const at14 = tokens[k14];
+              if (!at14) continue;
+              if (at14.kind === "open") { depth14++; continue; }
+              if (at14.kind === "close") { depth14--; continue; }
+              if (depth14 !== 0) continue;
+              if (at14.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ14 = nextSignificant(tokens, k14 + 1);
+                const nextTokQ14 = tokens[nextAfterQ14];
+                if (nextTokQ14 && nextTokQ14.kind === "punct" && nextTokQ14.text === ":") {
+                  hasTypeAnnotation14 = true;
+                  break;
+                }
+                ternaryDepth14++;
+                continue;
+              }
+              if (at14.kind === "punct" && at14.text === ":") {
+                if (ternaryDepth14 > 0) { ternaryDepth14--; continue; }
+                hasTypeAnnotation14 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation14) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const hasNew14 = prev14 && prev14.kind === "ident" && prev14.text === "new";
+          const callSep14 = isOpt14 ? "?." : "";
+          const warnStart14 = hasNew14 ? prev14!.start : tok.start;
+          const loc14 = locationOf(src, warnStart14);
+          warnings.push({
+            code: "SYN014",
+            severity: "warning",
+            file: null,
+            line: loc14.line,
+            column: loc14.column,
+            start: warnStart14,
+            end: callTok14.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew14 ? "constructs new " : "calls "}BroadcastChannel${callSep14}() — ` +
+              `BroadcastChannel opens a cross-context message channel any same-origin tab or worker can post to, ` +
+              `invisible to the capability model; wrap in unsafe "<reason>" { ${hasNew14 ? "new " : ""}BroadcastChannel${callSep14}(name) }`,
+            rule: syn014.rule,
+            idiom: syn014.idiom,
+            rewrite: syn014.rewrite,
           });
           break;
         }
