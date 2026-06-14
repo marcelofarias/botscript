@@ -887,9 +887,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev12 && ((prev12.kind === "punct" && prev12.text === ".") || prev12.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named EventSource
+          // Exclude: function/fn/function* declarations named EventSource
           if (prev12 && prev12.kind === "ident" && prev12.text === "function") continue;
           if (prev12 && prev12.kind === "keyword" && prev12.text === "fn") continue;
+          // Generator: `function* EventSource` — prev token is `*`, token before that is `function`
+          if (prev12 && prev12.kind === "punct" && prev12.text === "*") {
+            const prevPrevIdx12 = prevSignificant(tokens, prevIdx12 - 1);
+            const prevPrev12 = tokens[prevPrevIdx12];
+            if (prevPrev12 && prevPrev12.kind === "ident" && prevPrev12.text === "function") continue;
+          }
 
           const hasNew12 = prev12 && prev12.kind === "ident" && prev12.text === "new";
           // Ternary guard: `cond ? EventSource(url) : other` / `cond ? new EventSource(url) : other`
@@ -1002,9 +1008,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev13 && ((prev13.kind === "punct" && prev13.text === ".") || prev13.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named Worker/SharedWorker
+          // Exclude: function/fn/function* declarations named Worker/SharedWorker
           if (prev13 && prev13.kind === "ident" && prev13.text === "function") continue;
           if (prev13 && prev13.kind === "keyword" && prev13.text === "fn") continue;
+          // Generator: `function* Worker` — prev token is `*`, token before that is `function`
+          if (prev13 && prev13.kind === "punct" && prev13.text === "*") {
+            const prevPrevIdx13 = prevSignificant(tokens, prevIdx13 - 1);
+            const prevPrev13 = tokens[prevPrevIdx13];
+            if (prevPrev13 && prevPrev13.kind === "ident" && prevPrev13.text === "function") continue;
+          }
 
           const hasNew13 = prev13 && prev13.kind === "ident" && prev13.text === "new";
           // Ternary guard: `cond ? new Worker(url) : other`
