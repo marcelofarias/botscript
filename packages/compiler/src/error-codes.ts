@@ -826,7 +826,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "pass a storage abstraction (e.g. a `Storage` interface) as an explicit fn parameter so callers " +
       "control what storage is accessed, the dependency is visible in the fn signature, and tests can inject a mock; " +
       "if direct access is genuinely required, wrap in " +
-      "`unsafe \"reads/writes localStorage for <reason>\" { localStorage.getItem(key) }`",
+      "`unsafe \"reads/writes storage for <reason>\" { localStorage.getItem(key) }` " +
+      "(substitute `sessionStorage` and the actual method — e.g. `setItem(key, val)`, `removeItem(key)`, `clear()` — as appropriate)",
     rewrite:
       "// before — localStorage access invisible to the capability model\n" +
       "fn getToken() -> string | null {\n" +

@@ -218,6 +218,17 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
   });
 
+  it("message includes the actual member name for non-getItem accesses", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn save(key: string, val: string) -> void {\n" +
+      "  localStorage.setItem(key, val)\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN015");
+    expect(w?.message).toContain("localStorage.setItem");
+  });
+
   it("does NOT fire when localStorage is a local const binding", () => {
     const src =
       "?bs 0.7\n" +

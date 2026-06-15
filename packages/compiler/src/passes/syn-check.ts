@@ -940,6 +940,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const storageName15 = tok.text;
+          const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
+          const memberTok15 = tokens[memberIdx15];
+          const memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<method>";
+          const rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
           const loc15 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN015",
@@ -948,12 +952,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             line: loc15.line,
             column: loc15.column,
             start: tok.start,
-            end: next15!.end,
+            end: rangeEnd15,
             message:
-              `fn '${decl.name}' accesses ${storageName15} — ` +
+              `fn '${decl.name}' accesses ${storageName15}.${memberName15} — ` +
               `${storageName15} is same-origin storage invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
-              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.getItem(key) }`,
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.${memberName15}(...) }`,
             rule: syn015.rule,
             idiom: syn015.idiom,
             rewrite: syn015.rewrite,
