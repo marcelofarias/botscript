@@ -997,7 +997,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     title: "new EventSource() / EventSource() call bypasses the net capability model",
     body:
       "SYN012 fires when a fn body constructs an `EventSource` via `new EventSource(url)`, " +
-      "bare `EventSource(url)`, or TypeScript instantiation form `new EventSource<T>(url)`. " +
+      "bare `EventSource(url)`, optional-call `EventSource?.(url)`, or TypeScript instantiation " +
+      "form `new EventSource<T>(url)`. " +
       "This is the same bypass class as `new WebSocket(url)`: a persistent connection " +
       "that is real network I/O but invisible to the declared capability surface.\n\n" +
       "**Why it matters:** `EventSource` opens a persistent HTTP GET connection to the server " +

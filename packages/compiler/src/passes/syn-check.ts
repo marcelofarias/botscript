@@ -73,8 +73,8 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
- *   SYN012  A `new EventSource(url)`, `EventSource(url)`, or TypeScript instantiation form
- *           `new EventSource<T>(url)` was detected in a fn body (?bs 0.7+).
+ *   SYN012  A `new EventSource(url)`, `EventSource(url)`, `EventSource?.(url)`, or TypeScript
+ *           instantiation form `new EventSource<T>(url)` was detected in a fn body (?bs 0.7+).
  *           `EventSource` opens a persistent server-sent-events connection at runtime but is
  *           invisible to botscript's capability model: CAP001 checks for `http.*` member
  *           calls, not the `EventSource` global. A fn that constructs an EventSource has an
@@ -83,12 +83,12 @@
  *           `EventSource`, object/class method shorthands, and TypeScript method signatures.
  *           The `:` exclusion is guarded against ternary consequents.
  *
- *   SYN013  A `new Worker(scriptURL)`, `Worker(scriptURL)`, `new SharedWorker(scriptURL)`, or
- *           `SharedWorker(scriptURL)` was detected in a fn body (?bs 0.7+). Worker construction
- *           spawns a new JS execution context whose
- *           capability surface is unbounded: the worker script can make network requests,
- *           access storage, and perform any operation — none of it visible in the spawning
- *           fn's `uses {}`, `reads {}`, or `writes {}` declarations.
+ *   SYN013  A `new Worker(scriptURL)`, `Worker(scriptURL)`, `Worker?.(scriptURL)`,
+ *           `new SharedWorker(scriptURL)`, `SharedWorker(scriptURL)`, or
+ *           `SharedWorker?.(scriptURL)` was detected in a fn body (?bs 0.7+). Worker construction
+ *           spawns a new JS execution context whose capability surface is unbounded: the worker
+ *           script can make network requests, access storage, and perform any operation — none of
+ *           it visible in the spawning fn's `uses {}`, `reads {}`, or `writes {}` declarations.
  *           Excluded: member calls (`obj.Worker`), `function`/`fn` declarations named
  *           `Worker`/`SharedWorker`, object/class method shorthands, and TypeScript method
  *           signatures. The `:` exclusion is guarded against ternary consequents.
