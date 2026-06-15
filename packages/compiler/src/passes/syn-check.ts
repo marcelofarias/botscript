@@ -123,6 +123,21 @@
  *           call), fn/function/function* declarations named `Date`, method shorthands, TS method
  *           signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN021  A `performance.now()` or `performance.timeOrigin` access was detected in a fn body (?bs 0.7+).
+ *           `performance.now()` returns a high-resolution monotonic timestamp (milliseconds since
+ *           the page/process started) and `performance.timeOrigin` exposes the absolute epoch of
+ *           that clock. Both inject ambient timing information at runtime but are invisible to
+ *           botscript's capability model: `uses { time }` covers `time.*` stdlib calls, not the
+ *           `performance` global. A fn that reads these values has an undeclared time dependency —
+ *           callers cannot see it and tests cannot control the clock value observed by the fn.
+ *           Detection:
+ *           1. `performance.now()` / `performance?.now()` / `performance.now?.()` — `performance`
+ *              not preceded by `.`/`?.`, followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
+ *           2. `performance.timeOrigin` / `performance?.timeOrigin` — `performance` not preceded
+ *              by `.`/`?.`, followed by `.`/`?.`, member is `timeOrigin` (property, no call needed).
+ *           Excluded: `obj.performance.*` (member call), fn/function declarations named `performance`,
+ *           TS method signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -169,6 +184,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn020 = getErrorCode("SYN020")!;
+  const syn021 = getErrorCode("SYN021")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1168,6 +1184,97 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             idiom: syn020.idiom,
             rewrite: syn020.rewrite,
           });
+          break;
+        }
+
+        // ── SYN021: performance.now() / performance.timeOrigin ───────────────
+        case "performance": {
+          // Exclude: `obj.performance.*` — performance preceded by `.` or `?.`
+          const prevIdx21 = prevSignificant(tokens, i - 1);
+          const prev21 = tokens[prevIdx21];
+          if (prev21 && ((prev21.kind === "punct" && prev21.text === ".") || prev21.kind === "questionDot"))
+            continue;
+
+          // Exclude function declarations: function performance(...) {} or fn performance(...) -> void {}
+          if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
+          if (prev21 && prev21.kind === "keyword" && prev21.text === "function") continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx21 = nextSignificant(tokens, i + 1);
+          const next21 = tokens[nextIdx21];
+          const isDot21 = next21 && next21.kind === "punct" && next21.text === ".";
+          const isOptChain21 = next21 && next21.kind === "questionDot";
+          if (!isDot21 && !isOptChain21) continue;
+
+          // Member must be `now` or `timeOrigin`
+          const memberIdx21 = nextSignificant(tokens, nextIdx21 + 1);
+          const memberTok21 = tokens[memberIdx21];
+          if (!memberTok21 || memberTok21.kind !== "ident") continue;
+          if (memberTok21.text !== "now" && memberTok21.text !== "timeOrigin") continue;
+
+          if (memberTok21.text === "now") {
+            // `performance.now` must be followed by a call: `(` or `?.(`
+            let afterNowIdx21 = nextSignificant(tokens, memberIdx21 + 1);
+            let afterNow21 = tokens[afterNowIdx21];
+            let isOptCall21 = false;
+            if (afterNow21 && afterNow21.kind === "questionDot") {
+              isOptCall21 = true;
+              afterNowIdx21 = nextSignificant(tokens, afterNowIdx21 + 1);
+              afterNow21 = tokens[afterNowIdx21];
+            }
+            if (!afterNow21 || !(afterNow21.kind === "open" && afterNow21.text === "(")) continue;
+
+            if (isInsideRange(memberTok21.start, unsafeRanges)) continue;
+
+            const sep21 = isOptChain21 ? "?." : ".";
+            const callSep21 = isOptCall21 ? "?." : "";
+            const loc21 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN021",
+              severity: "warning",
+              file: null,
+              line: loc21.line,
+              column: loc21.column,
+              start: tok.start,
+              end: memberTok21.end,
+              message:
+                `fn '${decl.name}' calls performance${sep21}now${callSep21}() — ` +
+                `performance.now() injects monotonic time invisible to the capability model; ` +
+                `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+                `or wrap in unsafe "uses performance.now for <reason>" { performance.now() }`,
+              rule: syn021.rule,
+              idiom: syn021.idiom,
+              rewrite: syn021.rewrite,
+            });
+          } else {
+            // `performance.timeOrigin` — property access, no call required
+            // Exclude TS method signatures: `{ performance: { timeOrigin: number } }`
+            const afterMemberIdx21 = nextSignificant(tokens, memberIdx21 + 1);
+            const afterMember21 = tokens[afterMemberIdx21];
+            if (afterMember21 && afterMember21.kind === "punct" && afterMember21.text === ":") continue;
+
+            if (isInsideRange(memberTok21.start, unsafeRanges)) continue;
+
+            const sep21b = isOptChain21 ? "?." : ".";
+            const loc21b = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN021",
+              severity: "warning",
+              file: null,
+              line: loc21b.line,
+              column: loc21b.column,
+              start: tok.start,
+              end: memberTok21.end,
+              message:
+                `fn '${decl.name}' reads performance${sep21b}timeOrigin — ` +
+                `performance.timeOrigin exposes the epoch of the monotonic clock, invisible to the capability model; ` +
+                `pass the origin as a parameter or use time.now() with uses { time }, ` +
+                `or wrap in unsafe "uses performance.timeOrigin for <reason>" { performance.timeOrigin }`,
+              rule: syn021.rule,
+              idiom: syn021.idiom,
+              rewrite: syn021.rewrite,
+            });
+          }
           break;
         }
 

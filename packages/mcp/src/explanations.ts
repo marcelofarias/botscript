@@ -1660,6 +1660,58 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN021: {
+    code: "SYN021",
+    title: "performance.now() / performance.timeOrigin access bypasses the time capability model",
+    body:
+      "SYN021 fires when a fn body calls `performance.now()`, `performance?.now()`, " +
+      "`performance.now?.()`, or reads `performance.timeOrigin` / `performance?.timeOrigin`.\n\n" +
+      "**Why it matters:** `performance.now()` returns a high-resolution monotonic timestamp " +
+      "(milliseconds since the page/process started) and `performance.timeOrigin` exposes the " +
+      "absolute epoch of that clock. Both inject ambient timing information at runtime but are " +
+      "entirely invisible to botscript's capability model. `uses { time }` declarations cover " +
+      "`time.*` stdlib namespace calls, not the `performance` global. A fn that reads these " +
+      "values has an undeclared time dependency: callers reading the fn header see no indication " +
+      "of time-sensitivity, tests cannot control the clock value the fn observes, and the " +
+      "capability manifest does not record the dependency. In agent / bot contexts this matters: " +
+      "a fn declared idempotent that secretly reads the monotonic clock will produce " +
+      "timing-dependent outputs that callers cannot observe or audit.\n\n" +
+      "**Detected forms:**\n" +
+      "- `performance.now()` / `performance?.now()` / `performance.now?.()` — any call form\n" +
+      "- `performance.timeOrigin` / `performance?.timeOrigin` — property read (no call needed)\n\n" +
+      "**Not detected** (don't inject ambient time):\n" +
+      "- `obj.performance.*` — member access on a local binding\n" +
+      "- `performance.mark()` / `performance.measure()` — write markers, don't read the clock\n\n" +
+      "**Fix (preferred — pass time as a parameter):** make the time dependency explicit:\n\n" +
+      "```\n" +
+      "// SYN021 — before\n" +
+      "fn elapsed(startMs: number) -> number {\n" +
+      "  return performance.now() - startMs\n" +
+      "}\n\n" +
+      "// fix — time passed as a parameter; tests can control it\n" +
+      "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+      "  return nowMs - startMs\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (stdlib):** use `time.now()` with `uses { time }` to make the dependency " +
+      "visible in the fn header.\n\n" +
+      "**Fix (escape hatch):** if direct `performance` access is required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"uses performance.now for <reason>\" { performance.now() }`\n\n" +
+      "SYN021 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn elapsed(startMs: number) -> number {\n" +
+        "  return performance.now() - startMs\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+        "  return nowMs - startMs\n" +
+        "}\n",
+    },
+  },
 };
 
 export const KNOWN_CODES = Object.keys(EXPLANATIONS).sort();
