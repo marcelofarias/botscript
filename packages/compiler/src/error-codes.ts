@@ -881,6 +881,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
   },
+  SYN020: {
+    code: "SYN020",
+    title: "Date.now() / new Date() / Date() call bypasses the time capability model",
+    rule:
+      "`Date.now()`, `new Date()`, and `Date()` inject the current time at runtime but are " +
+      "invisible to botscript's capability model: `uses { time }` declarations cover `time.*` " +
+      "stdlib namespace calls, not the `Date` global. A fn that calls these forms has an " +
+      "undeclared time dependency — no `uses {}` declaration covers it, callers cannot see it, " +
+      "and tests cannot control the time value the fn observes.",
+    idiom:
+      "pass the current time as an explicit parameter so callers and tests can control it; " +
+      "or use `time.now()` from the `time` stdlib namespace with `uses { time }` so the " +
+      "time dependency is declared in the fn header; " +
+      "if the raw `Date` API is genuinely required, wrap in " +
+      "`unsafe \"uses current time for <reason>\" { Date.now() }`",
+    rewrite:
+      "// before — time dependency invisible to the capability model\n" +
+      "fn getAge(birthYear: number) -> number {\n" +
+      "  const now = Date.now()  // SYN020\n" +
+      "  return now / 1000 - birthYear\n" +
+      "}\n\n" +
+      "// after — time passed as a parameter; tests can control it\n" +
+      "fn getAge(birthYear: number, nowMs: number) -> number {\n" +
+      "  return nowMs / 1000 - birthYear\n" +
+      "}",
+    example:
+      "// SYN020: Date.now() bypasses the time capability model\n" +
+      "fn isExpired(expiresAt: number) -> boolean {\n" +
+      "  return Date.now() > expiresAt  // SYN020\n" +
+      "}\n\n" +
+      "// fix: pass nowMs as a parameter\n" +
+      "fn isExpired(expiresAt: number, nowMs: number) -> boolean {\n" +
+      "  return nowMs > expiresAt\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

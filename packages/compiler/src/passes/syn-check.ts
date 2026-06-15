@@ -106,6 +106,23 @@
  *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
  *
+ *   SYN020  A `Date.now()`, `new Date()`, or `Date()` call was detected in a fn body (?bs 0.7+).
+ *           These forms inject the current time at runtime but are invisible to botscript's
+ *           capability model: `uses { time }` covers `time.*` stdlib calls, not the `Date` global.
+ *           A fn that calls these forms has an undeclared time dependency — callers cannot see it
+ *           and tests cannot control the time value observed by the fn.
+ *           Detection paths:
+ *           1. `Date.now()` / `Date?.now()` / `Date.now?.()` — `Date` not preceded by `.`/`?.`,
+ *              followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
+ *           2. `new Date()` / `new Date<T>()` — `Date` preceded by `new`, followed by empty
+ *              parens (arg-count check: first token inside `(…)` must be `)`). Generic scan
+ *              only when `new` precedes to avoid `Date < x > (y)` comparison false-positives.
+ *           3. `Date()` / `Date?.()` — bare call with empty parens.
+ *           Excluded: `new Date(timestamp)` / `new Date("str")` / `new Date(y,m,d,…)` (explicit
+ *           args), `Date.parse(str)` / `Date.UTC(…)` (no ambient time), `obj.Date()` (member
+ *           call), fn/function/function* declarations named `Date`, method shorthands, TS method
+ *           signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -151,6 +168,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
+  const syn020 = getErrorCode("SYN020")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1008,6 +1026,147 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn018.rule,
             idiom: syn018.idiom,
             rewrite: syn018.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN020: Date.now() / new Date() / Date() — ambient time dependency ─
+        case "Date": {
+          // Exclude: `obj.Date` — preceded by `.` or `?.`
+          const prevIdx20 = prevSignificant(tokens, i - 1);
+          const prev20 = tokens[prevIdx20];
+          if (prev20 && ((prev20.kind === "punct" && prev20.text === ".") || prev20.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Date
+          if (prev20 && prev20.kind === "keyword" && prev20.text === "fn") continue;
+          if (prev20 && prev20.kind === "ident" && prev20.text === "function") continue;
+          if (prev20 && prev20.kind === "operator" && prev20.text === "*") {
+            const prevPrevIdx20 = prevSignificant(tokens, prevIdx20 - 1);
+            const prevPrev20 = tokens[prevPrevIdx20];
+            if (prevPrev20 && prevPrev20.kind === "ident" && prevPrev20.text === "function") continue;
+          }
+
+          const hasNew20 = prev20 && prev20.kind === "ident" && prev20.text === "new";
+
+          const nextIdx20 = nextSignificant(tokens, i + 1);
+          const next20 = tokens[nextIdx20];
+
+          // ── Pattern 1: Date.now() / Date?.now() ──────────────────────────
+          // Followed by `.` or `?.`, then `now`, then `(` or `?.(`.
+          const isDotNext20 = next20 && next20.kind === "punct" && next20.text === ".";
+          const isOptChain20 = next20 && next20.kind === "questionDot";
+          if (isDotNext20 || isOptChain20) {
+            const memberIdx20 = nextSignificant(tokens, nextIdx20 + 1);
+            const memberTok20 = tokens[memberIdx20];
+            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") continue;
+
+            // Confirm call: next after `now` is `(` or `?.(`
+            let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
+            let afterNow20 = tokens[afterNowIdx20];
+            let isOptCall20 = false;
+            if (afterNow20 && afterNow20.kind === "questionDot") {
+              isOptCall20 = true;
+              afterNowIdx20 = nextSignificant(tokens, afterNowIdx20 + 1);
+              afterNow20 = tokens[afterNowIdx20];
+            }
+            if (!afterNow20 || !(afterNow20.kind === "open" && afterNow20.text === "(")) continue;
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            const sep20 = isOptChain20 ? "?." : ".";
+            const callSep20 = isOptCall20 ? "?." : "";
+            const loc20 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN020",
+              severity: "warning",
+              file: null,
+              line: loc20.line,
+              column: loc20.column,
+              start: tok.start,
+              end: afterNow20.start + 1,
+              message:
+                `fn '${decl.name}' calls Date${sep20}now${callSep20}() — ` +
+                `Date.now() injects the current time invisible to the capability model; ` +
+                `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+                `or wrap in unsafe "uses current time for <reason>" { Date.now() }`,
+              rule: syn020.rule,
+              idiom: syn020.idiom,
+              rewrite: syn020.rewrite,
+            });
+            break;
+          }
+
+          // ── Pattern 2: new Date() / Date() / new Date<T>() (no args) ─────
+          // Check: followed by `(`, `?.(`, or (when `new`) `<T>(`.
+          // Only fire when the argument list is empty.
+          let callIdx20 = nextIdx20;
+          let isOpt20 = false;
+
+          if (next20 && next20.kind === "questionDot") {
+            // Date?.( — optional bare call
+            isOpt20 = true;
+            callIdx20 = nextSignificant(tokens, nextIdx20 + 1);
+          } else if (hasNew20 && next20 && next20.kind === "operator" && next20.text === "<") {
+            // new Date<T>( — generic scan only when `new` precedes (avoids comparison false-positives)
+            let depth = 1;
+            let j = nextIdx20 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx20 = nextSignificant(tokens, j);
+          }
+
+          const callTok20 = tokens[callIdx20];
+          if (!callTok20 || !(callTok20.kind === "open" && callTok20.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: `{ Date(str): T; }`
+          // Guard against ternary consequents: `cond ? Date(str) : other`
+          const prevBeforeNew20 = hasNew20 ? tokens[prevSignificant(tokens, prevIdx20 - 1)] : undefined;
+          const isTernary20 = (prev20 !== undefined && prev20 !== null && prev20.kind === "question") ||
+            (prevBeforeNew20 !== undefined && prevBeforeNew20 !== null && prevBeforeNew20.kind === "question");
+          if (callTok20.matchedAt !== undefined) {
+            const afterCloseIdx20 = nextSignificant(tokens, callTok20.matchedAt + 1);
+            const afterClose20 = tokens[afterCloseIdx20];
+            if (afterClose20 && (
+              (afterClose20.kind === "open" && afterClose20.text === "{") ||
+              afterClose20.kind === "fatArrow" ||
+              (!isTernary20 && afterClose20.kind === "punct" && afterClose20.text === ":")
+            )) continue;
+          }
+
+          // Only fire when arg list is empty (no args = ambient time; with args = explicit, not ambient).
+          // Check the first significant token inside the parens — if it's `)` we have empty args.
+          const firstInsideIdx20 = nextSignificant(tokens, callIdx20 + 1);
+          if (firstInsideIdx20 !== callTok20.matchedAt) continue; // has args → skip
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart20 = hasNew20 ? prev20!.start : tok.start;
+          const loc20b = locationOf(src, warnStart20);
+          const formDesc20 = hasNew20
+            ? `constructs new Date()`
+            : isOpt20 ? `calls Date?.()` : `calls Date()`;
+          warnings.push({
+            code: "SYN020",
+            severity: "warning",
+            file: null,
+            line: loc20b.line,
+            column: loc20b.column,
+            start: warnStart20,
+            end: callTok20.start + 1,
+            message:
+              `fn '${decl.name}' ${formDesc20} — ` +
+              `${hasNew20 ? "new Date()" : "Date()"} injects the current time invisible to the capability model; ` +
+              `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+              `or wrap in unsafe "uses current time for <reason>" { ${hasNew20 ? "new " : ""}Date() }`,
+            rule: syn020.rule,
+            idiom: syn020.idiom,
+            rewrite: syn020.rewrite,
           });
           break;
         }
