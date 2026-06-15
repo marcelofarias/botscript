@@ -115,7 +115,7 @@ import type { Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
+import { computeNesting, prevSignificant, nextSignificant, collectTopLevelParamNames, collectFnBodyLocalNames } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
@@ -174,6 +174,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const inner = nesting.get(decl) ?? [];
     const open: typeof inner = [];
     let nextInner = 0;
+
+    const localBindings = collectTopLevelParamNames(decl.args);
+    for (const n of collectFnBodyLocalNames(tokens, decl, inner)) localBindings.add(n);
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
 
@@ -921,6 +924,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: `function localStorage(...)` / `fn localStorage(...)` declarations
           if (prev15 && prev15.kind === "ident" && prev15.text === "function") continue;
           if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
+
+          // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`
+          if (localBindings.has(tok.text)) continue;
 
           // Must be followed by `.` or `?.` — confirming this is a property/method access
           // on the storage object (not a bare reference or assignment target).

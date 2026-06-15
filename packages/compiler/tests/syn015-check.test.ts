@@ -197,4 +197,35 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     const w = result.warnings.find((w) => w.code === "SYN015");
     expect(w?.message).toContain("sessionStorage");
   });
+
+  it("does NOT fire when localStorage is a function parameter name", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getToken(localStorage: Storage) -> any {\n" +
+      "  return localStorage.getItem(\"auth\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+
+  it("does NOT fire when sessionStorage is a function parameter name", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getSession(sessionStorage: Storage) -> any {\n" +
+      "  return sessionStorage.getItem(\"key\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+
+  it("does NOT fire when localStorage is a local const binding", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getToken() -> any {\n" +
+      "  const localStorage = window.localStorage\n" +
+      "  return localStorage.getItem(\"auth\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
 });
