@@ -102,6 +102,17 @@ describe("SYN019: crypto.getRandomValues() / crypto.randomUUID() detection", () 
     expect(result.warnings.some((w) => w.code === "SYN019")).toBe(false);
   });
 
+  it("does NOT fire on function* crypto() {} — generator declaration named crypto", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> void {\n" +
+      "  function* crypto(buf: ArrayBuffer) { yield buf }\n" +
+      "  return\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(false);
+  });
+
   it("does NOT fire on crypto.subtle.digest() — non-randomness member", () => {
     const src =
       "?bs 0.7\n" +
