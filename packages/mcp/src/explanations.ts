@@ -1608,7 +1608,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN020: {
     code: "SYN020",
-    title: "Date.now() / new Date() / Date() call bypasses the time capability model",
+    title: "Date.now() / new Date() / Date() / Date?.() call bypasses the time capability model",
     body:
       "SYN020 fires when a fn body calls `Date.now()`, `Date?.now()`, `Date.now?.()`, " +
       "`new Date()` (no args), `new Date<T>()` (TypeScript generic, no args), or `Date()` (no args). " +

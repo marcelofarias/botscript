@@ -883,11 +883,12 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN020: {
     code: "SYN020",
-    title: "Date.now() / new Date() / Date() call bypasses the time capability model",
+    title: "Date.now() / new Date() / Date() / Date?.() call bypasses the time capability model",
     rule:
-      "`Date.now()`, `new Date()`, and `Date()` inject the current time at runtime but are " +
+      "`Date.now()`, `Date?.now()`, `Date.now?.()`, `new Date()`, `new Date<T>()`, `Date()`, " +
+      "and `Date?.()` inject the current time at runtime but are " +
       "invisible to botscript's capability model: `uses { time }` declarations cover `time.*` " +
-      "stdlib namespace calls, not the `Date` global. A fn that calls these forms has an " +
+      "stdlib namespace calls, not the `Date` global. A fn that calls any of these forms has an " +
       "undeclared time dependency — no `uses {}` declaration covers it, callers cannot see it, " +
       "and tests cannot control the time value the fn observes.",
     idiom:

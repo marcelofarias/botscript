@@ -1086,9 +1086,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               end: afterNow20.start + 1,
               message:
                 `fn '${decl.name}' calls Date${sep20}now${callSep20}() — ` +
-                `Date.now() injects the current time invisible to the capability model; ` +
+                `Date${sep20}now${callSep20}() injects the current time invisible to the capability model; ` +
                 `pass nowMs as a parameter or use time.now() with uses { time }, ` +
-                `or wrap in unsafe "uses current time for <reason>" { Date.now() }`,
+                `or wrap in unsafe "uses current time for <reason>" { Date${sep20}now${callSep20}() }`,
               rule: syn020.rule,
               idiom: syn020.idiom,
               rewrite: syn020.rewrite,
