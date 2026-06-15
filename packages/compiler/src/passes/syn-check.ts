@@ -1110,7 +1110,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             // new Date<T>( — generic scan only when `new` precedes (avoids comparison false-positives)
             let depth = 1;
             let j = nextIdx20 + 1;
-            while (j < tokens.length && depth > 0) {
+            while (j < decl.tokenEnd && depth > 0) {
               const t = tokens[j];
               if (!t) break;
               if (t.kind === "operator" && t.text === "<") depth++;

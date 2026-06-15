@@ -898,13 +898,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "`unsafe \"uses current time for <reason>\" { Date.now() }`",
     rewrite:
       "// before — time dependency invisible to the capability model\n" +
-      "fn getAge(birthYear: number) -> number {\n" +
-      "  const now = Date.now()  // SYN020\n" +
-      "  return now / 1000 - birthYear\n" +
+      "fn isExpired(expiresAtMs: number) -> boolean {\n" +
+      "  return Date.now() > expiresAtMs  // SYN020\n" +
       "}\n\n" +
       "// after — time passed as a parameter; tests can control it\n" +
-      "fn getAge(birthYear: number, nowMs: number) -> number {\n" +
-      "  return nowMs / 1000 - birthYear\n" +
+      "fn isExpired(expiresAtMs: number, nowMs: number) -> boolean {\n" +
+      "  return nowMs > expiresAtMs\n" +
       "}",
     example:
       "// SYN020: Date.now() bypasses the time capability model\n" +
