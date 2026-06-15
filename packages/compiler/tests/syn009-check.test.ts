@@ -199,7 +199,7 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     // `cond ? await new XMLHttpRequest() : other` — must NOT be suppressed by the trailing `:`
     const src =
       "?bs 0.7\n" +
-      "fn pick(cond: boolean) -> any {\n" +
+      "async fn pick(cond: boolean) -> any {\n" +
       "  return cond ? await new XMLHttpRequest() : null\n" +
       "}\n";
     const result = compile(src);
@@ -209,7 +209,7 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
   it("fires on await XMLHttpRequest() (bare, no new) inside ternary", () => {
     const src =
       "?bs 0.7\n" +
-      "fn pick(cond: boolean) -> any {\n" +
+      "async fn pick(cond: boolean) -> any {\n" +
       "  return cond ? await XMLHttpRequest() : null\n" +
       "}\n";
     const result = compile(src);
