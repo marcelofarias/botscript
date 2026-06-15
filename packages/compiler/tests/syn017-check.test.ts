@@ -249,4 +249,15 @@ describe("SYN017: Notification() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(true);
   });
+
+  it("does NOT fire on TS type-literal method signature with no annotations: type T = { Notification() }", () => {
+    // Empty parens + `}` after `)`, and the enclosing `{` is preceded by `=` → type literal context
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = { Notification() }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
 });
