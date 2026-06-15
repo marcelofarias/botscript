@@ -906,6 +906,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const isOpt9 = afterXhr && afterXhr.kind === "questionDot";
+          // Bare `new XMLHttpRequest` — no parens in the original source
+          const isNoParens9 = isNewExpr9 && afterXhr && afterXhr.kind !== "open" && !isOpt9 && afterXhr.kind !== "operator";
+          const detectedForm9 = isNewExpr9
+            ? (isNoParens9 ? "new XMLHttpRequest" : "new XMLHttpRequest()")
+            : (isOpt9 ? "XMLHttpRequest?.()" : "XMLHttpRequest()");
           const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
           const loc9 = locationOf(src, warnStart9);
           warnings.push({
@@ -917,9 +922,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: warnStart9,
             end: tok.end,
             message:
-              `fn '${decl.name}' ${isNewExpr9 ? "constructs new " : "calls "}XMLHttpRequest${isOpt9 ? "?." : ""}() — bypasses the net capability model; ` +
+              `fn '${decl.name}' uses ${detectedForm9} — bypasses the net capability model; ` +
               `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
-              `or wrap in unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
+              `or wrap in unsafe "wraps XHR directly" { ${detectedForm9} }`,
             rule: syn009.rule,
             idiom: syn009.idiom,
             rewrite: syn009.rewrite,
