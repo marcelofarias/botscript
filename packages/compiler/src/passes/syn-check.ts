@@ -905,6 +905,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
+          const isOpt9 = afterXhr && afterXhr.kind === "questionDot";
           const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
           const loc9 = locationOf(src, warnStart9);
           warnings.push({
@@ -916,7 +917,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: warnStart9,
             end: tok.end,
             message:
-              `fn '${decl.name}' constructs an XMLHttpRequest — bypasses the net capability model; ` +
+              `fn '${decl.name}' ${isNewExpr9 ? "constructs new " : "calls "}XMLHttpRequest${isOpt9 ? "?." : ""}() — bypasses the net capability model; ` +
               `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
               `or wrap in unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
             rule: syn009.rule,
