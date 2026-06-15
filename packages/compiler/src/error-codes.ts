@@ -925,9 +925,10 @@ const E: Record<string, ErrorCodeEntry> = {
       "these values has an undeclared time dependency — no `uses {}` declaration covers it, " +
       "callers cannot see it, and tests cannot control the clock value the fn observes.",
     idiom:
-      "pass the current time as an explicit parameter so callers and tests can control it; " +
-      "or use `time.now()` from the `time` stdlib namespace with `uses { time }` so the " +
-      "time dependency is declared in the fn header; " +
+      "pass the current time as an explicit parameter so callers and tests can control it (preferred); " +
+      "if only epoch time (not monotonic time) is needed, use `time.now()` from the `time` stdlib " +
+      "with `uses { time }` so the dependency is declared in the fn header — " +
+      "note: `time.now()` is wall-clock epoch time, not a monotonic clock; " +
       "if direct `performance` access is required, wrap in " +
       "`unsafe \"uses performance.now for <reason>\" { performance.now() }`",
     rewrite:

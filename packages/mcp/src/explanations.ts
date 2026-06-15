@@ -1693,8 +1693,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "  return nowMs - startMs\n" +
       "}\n" +
       "```\n\n" +
-      "**Fix (stdlib):** use `time.now()` with `uses { time }` to make the dependency " +
-      "visible in the fn header.\n\n" +
+      "**Fix (stdlib — epoch time only):** if you only need current epoch time (not monotonic " +
+      "time relative to process start), use `time.now()` with `uses { time }` to make the " +
+      "dependency visible in the fn header. Note: `time.now()` is wall-clock epoch time " +
+      "(equivalent to `Date.now()`), not a monotonic clock — it does not replace `performance.now()` " +
+      "when relative elapsed time is what you need.\n\n" +
       "**Fix (escape hatch):** if direct `performance` access is required, wrap in an `unsafe` block:\n" +
       "`unsafe \"uses performance.now for <reason>\" { performance.now() }`\n\n" +
       "SYN021 fires at `?bs 0.7+` as a non-blocking warning. " +

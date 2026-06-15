@@ -1239,8 +1239,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               end: memberTok21.end,
               message:
                 `fn '${decl.name}' calls performance${sep21}now${callSep21}() — ` +
-                `performance.now() injects monotonic time invisible to the capability model; ` +
-                `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+                `performance.now() injects monotonic time (ms since process start) invisible to the capability model; ` +
+                `pass nowMs as a parameter (preferred), or if only epoch time is needed use time.now() with uses { time }, ` +
                 `or wrap in unsafe "uses performance.now for <reason>" { performance.now() }`,
               rule: syn021.rule,
               idiom: syn021.idiom,
@@ -1268,7 +1268,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               message:
                 `fn '${decl.name}' reads performance${sep21b}timeOrigin — ` +
                 `performance.timeOrigin exposes the epoch of the monotonic clock, invisible to the capability model; ` +
-                `pass the origin as a parameter or use time.now() with uses { time }, ` +
+                `pass the origin as a parameter (preferred), ` +
                 `or wrap in unsafe "uses performance.timeOrigin for <reason>" { performance.timeOrigin }`,
               rule: syn021.rule,
               idiom: syn021.idiom,
