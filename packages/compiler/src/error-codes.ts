@@ -967,7 +967,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "}\n\n" +
       "// after — randomness declared in uses {}; tests can control output\n" +
       "fn rollToken() uses { random } -> number {\n" +
-      "  return random.int(0, 255)\n" +
+      "  return random.int(0, 256)  // [0, 256) == [0, 255] inclusive\n" +
       "}",
     example:
       "// SYN019: crypto call bypasses the random capability model\n" +
