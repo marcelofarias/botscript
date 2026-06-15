@@ -922,9 +922,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev15 && ((prev15.kind === "punct" && prev15.text === ".") || prev15.kind === "questionDot"))
             continue;
 
-          // Exclude: `function localStorage(...)` / `fn localStorage(...)` declarations
+          // Exclude: `function localStorage(...)` / `function* localStorage(...)` / `fn localStorage(...)` declarations
           if (prev15 && prev15.kind === "ident" && prev15.text === "function") continue;
           if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
+          // `function* localStorage(...)` — prev is `*` (operator), before that is `function`
+          if (prev15 && prev15.kind === "operator" && prev15.text === "*") {
+            const prevBeforeStar15 = tokens[prevSignificant(tokens, prevIdx15 - 1)];
+            if (prevBeforeStar15 && prevBeforeStar15.kind === "ident" && prevBeforeStar15.text === "function") continue;
+          }
 
           // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`
           if (localBindings.has(tok.text)) continue;
@@ -941,17 +946,25 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const storageName15 = tok.text;
+          const sep15 = (next15 && next15.kind === "questionDot") ? "?." : ".";
           const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
           const memberTok15 = tokens[memberIdx15];
           const memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<member>";
           const rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
-          // Determine if this is a call (followed by `(`) or a property access (e.g. `.length`).
+          // Determine if this is a call: `(` = direct call; `?.(` = optional call; `?.` alone = optional property access.
           const afterMemberIdx15 = nextSignificant(tokens, memberIdx15 + 1);
           const afterMember15 = tokens[afterMemberIdx15];
-          const isCall15 = afterMember15 && ((afterMember15.kind === "open" && afterMember15.text === "(") || afterMember15.kind === "questionDot");
+          let isCall15 = false;
+          if (afterMember15 && afterMember15.kind === "open" && afterMember15.text === "(") {
+            isCall15 = true;
+          } else if (afterMember15 && afterMember15.kind === "questionDot") {
+            // Optional call `?.(` — check next token is `(`
+            const afterQD15 = tokens[nextSignificant(tokens, afterMemberIdx15 + 1)];
+            isCall15 = !!(afterQD15 && afterQD15.kind === "open" && afterQD15.text === "(");
+          }
           const unsafeExample15 = isCall15
-            ? `${storageName15}.${memberName15}(...)`
-            : `${storageName15}.${memberName15}`;
+            ? `${storageName15}${sep15}${memberName15}(...)`
+            : `${storageName15}${sep15}${memberName15}`;
           const loc15 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN015",
@@ -962,7 +975,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: tok.start,
             end: rangeEnd15,
             message:
-              `fn '${decl.name}' accesses ${storageName15}.${memberName15} — ` +
+              `fn '${decl.name}' accesses ${storageName15}${sep15}${memberName15} — ` +
               `${storageName15} is same-origin storage invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
               `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${unsafeExample15} }`,

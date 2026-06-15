@@ -239,4 +239,37 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
   });
+
+  it("does NOT fire on function localStorage(...) JS declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn useStorage() -> void {\n" +
+      "  function localStorage(key: string) { return key }\n" +
+      "  localStorage(\"x\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+
+  it("does NOT fire on function* localStorage(...) generator declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn useStorage() -> void {\n" +
+      "  function* localStorage(key: string) { yield key }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+
+  it("fires on localStorage?.getItem() (optional chaining)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getToken() -> any {\n" +
+      "  return localStorage?.getItem(\"auth\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN015");
+    expect(w?.message).toContain("localStorage?.getItem");
+  });
 });
