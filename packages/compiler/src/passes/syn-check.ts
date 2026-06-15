@@ -65,7 +65,8 @@
  *           tooling. (`localStorage` persists across browser sessions; `sessionStorage` is
  *           per-tab and cleared when the tab closes.)
  *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
- *           `localStorage`/`sessionStorage`, and object method shorthands.
+ *           `localStorage`/`sessionStorage`, local bindings (parameters or `const`/`let`/`var`
+ *           declared within the fn body), and object method shorthands.
  *           The check fires on any member access (`.` or `?.`): both reads and writes.
  *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
@@ -942,8 +943,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const storageName15 = tok.text;
           const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
           const memberTok15 = tokens[memberIdx15];
-          const memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<method>";
+          const memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<member>";
           const rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
+          // Determine if this is a call (followed by `(`) or a property access (e.g. `.length`).
+          const afterMemberIdx15 = nextSignificant(tokens, memberIdx15 + 1);
+          const afterMember15 = tokens[afterMemberIdx15];
+          const isCall15 = afterMember15 && ((afterMember15.kind === "open" && afterMember15.text === "(") || afterMember15.kind === "questionDot");
+          const unsafeExample15 = isCall15
+            ? `${storageName15}.${memberName15}(...)`
+            : `${storageName15}.${memberName15}`;
           const loc15 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN015",
@@ -957,7 +965,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               `fn '${decl.name}' accesses ${storageName15}.${memberName15} — ` +
               `${storageName15} is same-origin storage invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
-              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${storageName15}.${memberName15}(...) }`,
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${unsafeExample15} }`,
             rule: syn015.rule,
             idiom: syn015.idiom,
             rewrite: syn015.rewrite,
@@ -976,8 +984,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: fn/function/function* declarations named indexedDB
           if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
           if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
-          // Generator: `function* indexedDB` — prev token is `*`, token before that is `function`
-          if (prev16 && prev16.kind === "punct" && prev16.text === "*") {
+          // Generator: `function* indexedDB` — prev token is `*` (operator kind), token before that is `function`
+          if (prev16 && prev16.kind === "operator" && prev16.text === "*") {
             const prevPrevIdx16 = prevSignificant(tokens, prevIdx16 - 1);
             const prevPrev16 = tokens[prevPrevIdx16];
             if (prevPrev16 && prevPrev16.kind === "ident" && prevPrev16.text === "function") continue;
