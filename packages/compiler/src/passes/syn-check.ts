@@ -1439,8 +1439,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               `fn '${decl.name}' calls crypto${sep19}${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} — ` +
               `crypto.getRandomValues and crypto.randomUUID generate cryptographic randomness invisible to the capability model; ` +
               `uses { random } does not cover the crypto global; ` +
-              `use random.bytes() or random.uuid() with uses { random } so tests can control the output, ` +
-              `or wrap in unsafe "uses crypto for <reason>" { crypto.${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} }`,
+              `use random.next() or random.int() from the random stdlib with uses { random } so callers see the dependency and tests can control the output; ` +
+              `for crypto-specific needs (cryptographic randomness, UUIDs) wrap in unsafe "uses crypto for <reason>" { crypto.${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} }`,
             rule: syn019.rule,
             idiom: syn019.idiom,
             rewrite: syn019.rewrite,

@@ -148,7 +148,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "CAP003",
     title: "Capability declared inside unsafe fn — asserted, not proven",
     body:
-      "CAP003 is a **warning** (non-blocking) that fires when a `uses { }` declaration " +
+      "CAP003 is a **warning** (non-blocking) that fires when a `uses {}` declaration " +
       "appears on an `unsafe fn`. Compilation still succeeds.\n\n" +
       "The capability inference pass (CAP001/CAP002) still runs on the visible stdlib calls " +
       "inside the body — but an `unsafe fn` can contain `as` casts that alias stdlib " +
@@ -1213,7 +1213,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "(including optional-chain forms like `crypto?.getRandomValues(buf)` and optional-call forms like " +
       "`crypto.getRandomValues?.(buf)`).\n\n" +
       "**Why it matters:** `uses { random }` in botscript covers calls to the `random.*` stdlib namespace " +
-      "(e.g. `random.bytes()`, `random.uuid()`). It does NOT cover the `crypto` Web API global. " +
+      "(`random.next()` for a float in [0,1), `random.int(min, max)` for integers). It does NOT cover the `crypto` Web API global. " +
       "A fn that calls `crypto.getRandomValues()` or `crypto.randomUUID()` generates cryptographic " +
       "randomness at runtime without any entry in its `uses {}` clause — callers cannot see the dependency, " +
       "and tests cannot mock or control the output.\n\n" +
@@ -1222,9 +1222,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "`getRandomValues` or `randomUUID`, followed by `(` or `?.(` (confirming this is a call, not a " +
       "bare reference). Fn/function declarations named `crypto` and non-randomness members " +
       "(e.g. `crypto.subtle.digest(...)`) are excluded.\n\n" +
-      "**Fix (preferred):** use `random.bytes()` or `random.uuid()` from the `random` stdlib namespace " +
-      "and declare `uses { random }` in the fn header. This makes the randomness dependency visible " +
-      "to callers and lets tests inject a deterministic mock.\n\n" +
+      "**Fix (preferred — general randomness):** use `random.next()` or `random.int(min, max)` from " +
+      "the `random` stdlib namespace and declare `uses { random }` in the fn header. This makes the " +
+      "randomness dependency visible to callers and lets tests inject a deterministic mock.\n\n" +
       "**Fix (escape hatch):** if direct crypto access is genuinely required (e.g. for specific " +
       "algorithm reasons), wrap in an `unsafe` block with a justification:\n" +
       "`unsafe \"uses crypto for FIPS-compliant key generation\" { crypto.getRandomValues(buf) }`\n\n" +
@@ -1238,8 +1238,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
       passes:
         "?bs 0.7\n" +
-        "fn makeId() uses { random } -> string {\n" +
-        "  return random.uuid()\n" +
+        "// if you only need a random number, use the random stdlib:\n" +
+        "fn rollDice() uses { random } -> number {\n" +
+        "  return random.int(1, 7)\n" +
+        "}\n" +
+        "// if cryptographic randomness is required, use unsafe:\n" +
+        "fn makeId() -> string {\n" +
+        "  return unsafe \"uses crypto.randomUUID for unique key\" { crypto.randomUUID() }\n" +
         "}\n",
     },
   },

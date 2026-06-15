@@ -954,31 +954,31 @@ const E: Record<string, ErrorCodeEntry> = {
       "not the `crypto` global. A fn that calls these methods has an undeclared randomness dependency — " +
       "tests cannot control the output and callers cannot observe the dependency from the fn header.",
     idiom:
-      "use `random.bytes()` or `random.uuid()` from the `random` stdlib namespace with `uses { random }` " +
+      "use `random.next()` (float [0,1)) or `random.int(min, max)` from the `random` stdlib with `uses { random }` " +
       "so the randomness dependency is visible in the fn header and tests can inject a mock; " +
-      "if direct crypto access is genuinely required, wrap in " +
+      "if cryptographic randomness or UUIDs are genuinely required, wrap in " +
       "`unsafe \"uses crypto for <reason>\" { crypto.getRandomValues(buf) }`",
     rewrite:
       "// before — crypto call invisible to the capability model\n" +
-      "fn makeToken() uses {} -> string {\n" +
-      "  const arr = new Uint8Array(16)\n" +
-      "  crypto.getRandomValues(arr)  // SYN019\n" +
-      "  return Array.from(arr).map(b => b.toString(16)).join('')\n" +
+      "fn rollToken() -> number {\n" +
+      "  const buf = new Uint8Array(4)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return buf[0]\n" +
       "}\n\n" +
       "// after — randomness declared in uses {}; tests can control output\n" +
-      "fn makeToken() uses { random } -> string {\n" +
-      "  return random.bytes(16).map(b => b.toString(16)).join('')\n" +
+      "fn rollToken() uses { random } -> number {\n" +
+      "  return random.int(0, 255)\n" +
       "}",
     example:
       "// SYN019: crypto call bypasses the random capability model\n" +
-      "fn generateId() uses {} -> string {\n" +
-      "  const buf = new Uint8Array(16)\n" +
+      "fn rollDice() -> number {\n" +
+      "  const buf = new Uint8Array(1)\n" +
       "  crypto.getRandomValues(buf)  // SYN019\n" +
-      "  return buf.join('-')\n" +
+      "  return (buf[0] % 6) + 1\n" +
       "}\n\n" +
-      "// fix: use random stdlib or wrap in unsafe\n" +
-      "fn generateId() uses { random } -> string {\n" +
-      "  return random.bytes(16).join('-')\n" +
+      "// fix: use random stdlib\n" +
+      "fn rollDice() uses { random } -> number {\n" +
+      "  return random.int(1, 7)\n" +
       "}",
   },
   SYN022: {
