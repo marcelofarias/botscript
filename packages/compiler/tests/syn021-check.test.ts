@@ -185,4 +185,15 @@ describe("SYN021: performance.now() / performance.timeOrigin detection", () => {
     const result = compile(src);
     expect(result.warnings.filter((w) => w.code === "SYN021").length).toBe(2);
   });
+
+  it("fires on performance.timeOrigin in ternary consequent", () => {
+    // The `:` here is the ternary separator, not a TS type annotation — must not suppress
+    const src =
+      "?bs 0.7\n" +
+      "fn origin(usePerf: boolean) -> number {\n" +
+      "  return usePerf ? performance.timeOrigin : 0\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN021")).toBe(true);
+  });
 });

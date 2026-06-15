@@ -1249,9 +1249,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           } else {
             // `performance.timeOrigin` — property access, no call required
             // Exclude TS method signatures: `{ performance: { timeOrigin: number } }`
+            // Guard against ternary consequents: `cond ? performance.timeOrigin : other`
+            // (the `:` there belongs to the ternary, not a type annotation)
             const afterMemberIdx21 = nextSignificant(tokens, memberIdx21 + 1);
             const afterMember21 = tokens[afterMemberIdx21];
-            if (afterMember21 && afterMember21.kind === "punct" && afterMember21.text === ":") continue;
+            const isTernaryConsequent21 = prev21 && prev21.kind === "question";
+            if (!isTernaryConsequent21 && afterMember21 && afterMember21.kind === "punct" && afterMember21.text === ":") continue;
 
             if (isInsideRange(memberTok21.start, unsafeRanges)) continue;
 
