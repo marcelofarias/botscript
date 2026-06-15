@@ -825,16 +825,28 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
             continue;
 
+          // Exclude: `function XMLHttpRequest(...)` / `fn XMLHttpRequest(...)` declarations
+          if (prev9 && prev9.kind === "ident" && prev9.text === "function") continue;
+          if (prev9 && prev9.kind === "keyword" && prev9.text === "fn") continue;
+
           // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
           const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
 
           // Ternary guard: `cond ? XMLHttpRequest(url) : other` / `cond ? new XMLHttpRequest(url) : other`.
-          const prevBeforeNew9 = isNewExpr9
+          // Also guard `cond ? await XMLHttpRequest() : other` / `cond ? await new XMLHttpRequest() : other`.
+          const isAwaitBefore9 = !isNewExpr9 && prev9 && prev9.kind === "ident" && prev9.text === "await";
+          const prevBeforeNew9Idx = isNewExpr9 ? prevSignificant(tokens, prevIdx9 - 1) : -1;
+          const prevBeforeNew9 = prevBeforeNew9Idx >= 0 ? tokens[prevBeforeNew9Idx] : undefined;
+          const isAwaitBeforeNew9 = isNewExpr9 && prevBeforeNew9 && prevBeforeNew9.kind === "ident" && prevBeforeNew9.text === "await";
+          const prevBeforeAwait9 = isAwaitBefore9
             ? tokens[prevSignificant(tokens, prevIdx9 - 1)]
+            : isAwaitBeforeNew9
+            ? tokens[prevSignificant(tokens, prevBeforeNew9Idx - 1)]
             : undefined;
           const isTernaryConsequent9 =
             (prev9 !== undefined && prev9 !== null && prev9.kind === "question") ||
-            (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question");
+            (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question") ||
+            (prevBeforeAwait9 !== undefined && prevBeforeAwait9 !== null && prevBeforeAwait9.kind === "question");
 
           // Must be followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`).
           const afterXhrFirstIdx = nextSignificant(tokens, i + 1);
@@ -893,14 +905,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
-          const loc9 = locationOf(src, tok.start);
+          const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
+          const loc9 = locationOf(src, warnStart9);
           warnings.push({
             code: syn009.code,
             severity: "warning",
             file: null,
             line: loc9.line,
             column: loc9.column,
-            start: tok.start,
+            start: warnStart9,
             end: tok.end,
             message:
               `fn '${decl.name}' constructs an XMLHttpRequest — bypasses the net capability model; ` +

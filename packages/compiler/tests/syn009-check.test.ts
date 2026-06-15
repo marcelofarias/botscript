@@ -194,4 +194,60 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     const result = compile(src);
     expect(result.warnings.filter((w) => w.code === "SYN009").length).toBe(2);
   });
+
+  it("fires on await new XMLHttpRequest() inside ternary (ternary guard must walk past await)", () => {
+    // `cond ? await new XMLHttpRequest() : other` — must NOT be suppressed by the trailing `:`
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean) -> any {\n" +
+      "  return cond ? await new XMLHttpRequest() : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("fires on await XMLHttpRequest() (bare, no new) inside ternary", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn pick(cond: boolean) -> any {\n" +
+      "  return cond ? await XMLHttpRequest() : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("anchors diagnostic start at new token for new XMLHttpRequest()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn send() -> void {\n" +
+      "  new XMLHttpRequest()\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN009");
+    expect(w).toBeDefined();
+    // 'new' appears before 'XMLHttpRequest' — start should be at 'new', not at 'XMLHttpRequest'.
+    // Positions are reported in the pragma-stripped source (`?bs 0.7` is removed; `\n` kept),
+    // so subtract the pragma length (= index of first `\n`) from the raw indexOf result.
+    const pragmaLen = src.indexOf("\n"); // length of "?bs 0.7" = 7, the stripped portion
+    const newIdx = src.indexOf("new XMLHttpRequest") - pragmaLen;
+    expect(w!.start).toBe(newIdx);
+  });
+
+  it("does NOT fire on fn XMLHttpRequest(...) botscript declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn XMLHttpRequest(url: string) -> void {\n" +
+      "  return\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
+  it("does NOT fire on function XMLHttpRequest(...) declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "function XMLHttpRequest(url: string) {}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
 });
