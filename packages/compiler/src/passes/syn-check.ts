@@ -95,6 +95,17 @@
  *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN018  A `Math.random()`, `Math?.random()`, or `Math.random?.()` call was detected in a fn body (?bs 0.7+).
+ *           `Math.random` generates a random float at runtime but is invisible to botscript's
+ *           capability model: `uses { random }` covers `random.*` stdlib calls, not the
+ *           `Math` global. A fn that calls `Math.random()` has an undeclared randomness
+ *           dependency — callers cannot see it, and tests cannot deterministically mock or
+ *           suppress it the way they can the `random` stdlib namespace.
+ *           Detection: `Math` not preceded by `.`/`?.`, followed by `.` or `?.`, member is
+ *           `random`, followed by `(` or `?.(` (call confirmation). Bare `Math.random`
+ *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -139,6 +150,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn011 = getErrorCode("SYN011")!;
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
+  const syn018 = getErrorCode("SYN018")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -941,6 +953,61 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn016.rule,
             idiom: syn016.idiom,
             rewrite: syn016.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN018: Math.random() ────────────────────────────────────────────
+        case "Math": {
+          // Exclude: `obj.Math.random(...)` — Math preceded by `.` or `?.`
+          const prevIdx18 = prevSignificant(tokens, i - 1);
+          const prev18 = tokens[prevIdx18];
+          if (prev18 && ((prev18.kind === "punct" && prev18.text === ".") || prev18.kind === "questionDot"))
+            continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx18 = nextSignificant(tokens, i + 1);
+          const next18 = tokens[nextIdx18];
+          const isDot18 = next18 && next18.kind === "punct" && next18.text === ".";
+          const isOptChain18 = next18 && next18.kind === "questionDot";
+          if (!isDot18 && !isOptChain18) continue;
+
+          // Member must be `random`
+          const memberIdx18 = nextSignificant(tokens, nextIdx18 + 1);
+          const memberTok18 = tokens[memberIdx18];
+          if (!memberTok18 || memberTok18.kind !== "ident" || memberTok18.text !== "random") continue;
+
+          // Must be a call: next after `random` is `(` or `?.(`
+          let afterRandomIdx18 = nextSignificant(tokens, memberIdx18 + 1);
+          let afterRandom18 = tokens[afterRandomIdx18];
+          let isOptCall18 = false;
+          if (afterRandom18 && afterRandom18.kind === "questionDot") {
+            isOptCall18 = true;
+            afterRandomIdx18 = nextSignificant(tokens, afterRandomIdx18 + 1);
+            afterRandom18 = tokens[afterRandomIdx18];
+          }
+          if (!afterRandom18 || !(afterRandom18.kind === "open" && afterRandom18.text === "(")) continue;
+
+          if (isInsideRange(memberTok18.start, unsafeRanges)) continue;
+
+          const sep18 = isOptChain18 ? "?." : ".";
+          const callSep18 = isOptCall18 ? "?." : "";
+          const loc18 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN018",
+            severity: "warning",
+            file: null,
+            line: loc18.line,
+            column: loc18.column,
+            start: tok.start,
+            end: memberTok18.end,
+            message:
+              `fn '${decl.name}' calls Math${sep18}random${callSep18}() — ` +
+              `Math.random is invisible to the capability model; use random.next() with uses { random } ` +
+              `so tests can control the output, or wrap in unsafe "uses Math.random for <reason>" { Math.random() }`,
+            rule: syn018.rule,
+            idiom: syn018.idiom,
+            rewrite: syn018.rewrite,
           });
           break;
         }

@@ -1079,6 +1079,56 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN018: {
+    code: "SYN018",
+    title: "Math.random() call bypasses the random capability model",
+    body:
+      "SYN018 fires when a fn body calls `Math.random()`, `Math?.random()`, or `Math.random?.()` " +
+      "— any call form on the `Math.random` global.\n\n" +
+      "**Why it matters:** `Math.random` generates a random float at runtime but is entirely " +
+      "invisible to botscript's capability model. `uses { random }` declarations cover " +
+      "`random.*` stdlib namespace calls, not the `Math` global. A fn that calls `Math.random()` " +
+      "has an undeclared randomness dependency: callers reading the fn header see no indication " +
+      "of non-determinism, tests cannot deterministically mock or suppress the random source, " +
+      "and the capability manifest does not record the dependency. In agent / bot contexts this " +
+      "is especially hazardous: a fn declared pure or idempotent that secretly calls " +
+      "`Math.random()` will produce different outputs across retries in a way callers cannot " +
+      "observe or audit.\n\n" +
+      "**Detection:** the check looks for a `Math` ident token not preceded by `.`/`?.` " +
+      "(member-call exclusion), followed by `.` or `?.`, then `random`, then `(` or `?.(` " +
+      "(call confirmation). Bare `Math.random` references (without a trailing `(`) are " +
+      "excluded — only actual calls are flagged.\n\n" +
+      "**Fix (preferred):** replace `Math.random()` with `random.next()` from the botscript " +
+      "stdlib and add `uses { random }` to the fn header. This makes the non-determinism " +
+      "visible in the signature and allows tests to inject a deterministic `random` mock:\n\n" +
+      "```\n" +
+      "// SYN018 — before\n" +
+      "fn roll(sides: number) -> number {\n" +
+      "  return Math.floor(Math.random() * sides) + 1\n" +
+      "}\n\n" +
+      "// fix — random capability declared; tests control the output\n" +
+      "fn roll(sides: number) uses { random } -> number {\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if `Math.random` is required (e.g. for compatibility with a " +
+      "specific distribution), wrap in an `unsafe` block with a justification:\n" +
+      "`unsafe \"uses Math.random for <reason>\" { Math.random() }`\n\n" +
+      "SYN018 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn roll(sides: number) -> number {\n" +
+        "  return Math.floor(Math.random() * sides) + 1\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn roll(sides: number) uses { random } -> number {\n" +
+        "  return Math.floor(random.next() * sides) + 1\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

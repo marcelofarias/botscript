@@ -850,6 +850,37 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
       "}",
   },
+  SYN018: {
+    code: "SYN018",
+    title: "Math.random() call bypasses the random capability model",
+    rule:
+      "`Math.random()` generates a random float at runtime but is invisible to botscript's " +
+      "capability model: `uses { random }` declarations cover `random.*` stdlib namespace calls, " +
+      "not the `Math.random` global. A fn that calls `Math.random()` has an undeclared " +
+      "randomness dependency — no `uses {}` declaration covers it, callers cannot see it, " +
+      "and tests cannot deterministically mock or suppress it the way they can the `random` stdlib.",
+    idiom:
+      "replace `Math.random()` with `random.next()` and add `uses { random }` to the fn header; " +
+      "if the raw `Math.random` API is required, wrap in `unsafe \"uses Math.random for <reason>\" { Math.random() }`",
+    rewrite:
+      "// before — Math.random() invisible to the capability model\n" +
+      "fn jitter(base: number) uses { } -> number {\n" +
+      "  return base + Math.random() * 10  // SYN018\n" +
+      "}\n\n" +
+      "// after — random capability declared; tests can control the output\n" +
+      "fn jitter(base: number) uses { random } -> number {\n" +
+      "  return base + random.next() * 10\n" +
+      "}",
+    example:
+      "// SYN018: Math.random() bypasses the random capability model\n" +
+      "fn roll(sides: number) -> number {\n" +
+      "  return Math.floor(Math.random() * sides) + 1  // SYN018\n" +
+      "}\n\n" +
+      "// fix: use random.next() and declare uses { random }\n" +
+      "fn roll(sides: number) uses { random } -> number {\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
