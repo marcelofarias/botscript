@@ -140,6 +140,19 @@ describe("SYN022: process.* ambient state access detection", () => {
     expect(transform(src).warnings.some((w) => w.code === "SYN022")).toBe(true);
   });
 
+  it("optional-call form process.cwd?.() shows ?.() in message, not ()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getDir() -> string {\n" +
+      "  return process.cwd?.()\n" +
+      "}\n";
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "SYN022")!;
+    expect(w).toBeDefined();
+    expect(w.message).toContain("process.cwd?.()");
+    expect(w.message).not.toContain("process.cwd()");
+  });
+
   it("produces a warning-severity diagnostic (non-blocking)", () => {
     const src =
       "?bs 0.7\n" +

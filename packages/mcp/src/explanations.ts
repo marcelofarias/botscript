@@ -1145,7 +1145,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "captures them. A fn that reads them has an undeclared environmental dependency — callers " +
       "cannot see it in the header, and tests cannot inject a controlled value.\n\n" +
       "`process.hrtime()` deserves special mention: it is the Node.js equivalent of " +
-      "`performance.now()` (covered by SYN021 in the browser context). Both provide a " +
+      "`performance.now()` (covered by SYN021). Both provide a " +
       "high-resolution monotonic clock that bypasses `uses { time }`.\n\n" +
       "**Detected forms:** any `process.<member>` or `process?.<member>` access where " +
       "`<member>` is one of the ambient-state set listed above. " +

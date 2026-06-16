@@ -107,8 +107,9 @@
  *           bodies are suppressed.
  *
  *   SYN022  A `process.argv`, `process.cwd()`, `process.platform`, `process.arch`,
- *           `process.pid`, `process.version`, `process.hrtime()`, `process.uptime()`,
- *           `process.memoryUsage()`, or `process.cpuUsage()` access was detected in a fn body
+ *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
+ *           `process.hrtime()`, `process.uptime()`, `process.memoryUsage()`,
+ *           `process.cpuUsage()`, or `process.resourceUsage()` access was detected in a fn body
  *           (?bs 0.7+). These read ambient Node.js runtime or deployment state at runtime but
  *           are invisible to botscript's capability model — no `uses {}`, `reads {}`, or
  *           `writes {}` declaration covers them. A fn that reads these values has an undeclared
@@ -588,16 +589,22 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
             const loc22 = locationOf(src, tok.start);
             // Distinguish calls (cwd(), hrtime(), etc.) from property reads (argv, pid, etc.)
+            // Also distinguish optional-call form (process.cwd?.()) to preserve semantics in message.
             const afterMemberIdx22 = nextSignificant(tokens, memberIdx + 1);
             const afterMember22 = tokens[afterMemberIdx22];
             let isCall22 = false;
+            let isOptCall22 = false;
             if (afterMember22 && afterMember22.kind === "open" && afterMember22.text === "(") {
               isCall22 = true;
             } else if (afterMember22 && afterMember22.kind === "questionDot") {
               const afterQD22 = tokens[nextSignificant(tokens, afterMemberIdx22 + 1)];
-              isCall22 = !!(afterQD22 && afterQD22.kind === "open" && afterQD22.text === "(");
+              if (afterQD22 && afterQD22.kind === "open" && afterQD22.text === "(") {
+                isCall22 = true;
+                isOptCall22 = true;
+              }
             }
-            const form22 = `process${sep5}${memberTok.text}${isCall22 ? "()" : ""}`;
+            const callSuffix22 = isCall22 ? (isOptCall22 ? "?.()" : "()") : "";
+            const form22 = `process${sep5}${memberTok.text}${callSuffix22}`;
             warnings.push({
               code: "SYN022",
               severity: "warning",
