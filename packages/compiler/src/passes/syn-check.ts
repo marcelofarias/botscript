@@ -1121,9 +1121,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           }
           }
 
-          // ── Pattern 2: new Date() / Date() / new Date<T>() (no args) ─────
+          // ── Pattern 2: new Date() / Date(...) / new Date<T>() ────────────
           // Check: followed by `(`, `?.(`, or (when `new`) `<T>(`.
-          // Only fire when the argument list is empty.
+          // `new Date(arg)` with explicit args is excluded (constructs a specific date, not ambient time).
+          // `Date(arg)` without `new` ignores args and always returns the current date string — always fires.
           let callIdx20 = nextIdx20;
           let isOpt20 = false;
 
@@ -1173,9 +1174,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           const warnStart20 = hasNew20 ? prev20!.start : tok.start;
           const loc20b = locationOf(src, warnStart20);
-          const formDesc20 = hasNew20
-            ? `constructs new Date()`
-            : isOpt20 ? `calls Date?.()` : `calls Date()`;
+          // Bare `Date(arg)` ignores args and always returns current date string — show `Date(...)` when args present.
+          const hasDateArgs20 = !hasNew20 && firstInsideIdx20 !== callTok20.matchedAt;
+          const callForm20 = hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : hasDateArgs20 ? "Date(...)" : "Date()";
+          const formDesc20 = hasNew20 ? `constructs new Date()` : isOpt20 ? `calls Date?.()` : hasDateArgs20 ? `calls Date(...)` : `calls Date()`;
           warnings.push({
             code: "SYN020",
             severity: "warning",
@@ -1186,9 +1188,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: callTok20.start + 1,
             message:
               `fn '${decl.name}' ${formDesc20} — ` +
-              `${hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : "Date()"} injects the current time invisible to the capability model; ` +
+              `${callForm20} injects the current time invisible to the capability model; ` +
               `pass nowMs as a parameter or use time.now() with uses { time }, ` +
-              `or wrap in unsafe "uses current time for <reason>" { ${hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : "Date()"} }`,
+              `or wrap in unsafe "uses current time for <reason>" { ${callForm20} }`,
             rule: syn020.rule,
             idiom: syn020.idiom,
             rewrite: syn020.rewrite,
