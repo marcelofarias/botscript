@@ -72,11 +72,11 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
   });
 
-  it("fires on localStorage?.getItem(...) optional chaining", () => {
+  it("fires on sessionStorage?.getItem(...) optional chaining", () => {
     const src =
       "?bs 0.7\n" +
-      "fn getToken() -> any {\n" +
-      "  return localStorage?.getItem(\"auth\")\n" +
+      "fn getToken(key: string) -> any {\n" +
+      "  return sessionStorage?.getItem(key)\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);

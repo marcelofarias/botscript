@@ -1050,7 +1050,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not preceded " +
       "by `.`/`?.` (which would make it a member of another object), followed by `.` or `?.` " +
       "(confirming this is an access on the storage global, not a bare reference or a declaration). " +
-      "Fn/function declarations named `localStorage`/`sessionStorage` are excluded.\n\n" +
+      "Fn/function/function* declarations named `localStorage`/`sessionStorage` are excluded. " +
+      "Parameters and `const`/`let`/`var` locals within the fn body that shadow the global name are also " +
+      "excluded — e.g. `fn f(localStorage: Storage)` or `const localStorage = mock` will not warn.\n\n" +
       "**Fix (preferred):** pass a `Storage`-compatible object as an explicit fn parameter. This makes " +
       "the dependency visible in the fn signature and tests can inject a mock:\n\n" +
       "```\n" +

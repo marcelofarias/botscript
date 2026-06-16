@@ -176,8 +176,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const open: typeof inner = [];
     let nextInner = 0;
 
-    const localBindings = collectTopLevelParamNames(decl.args);
-    for (const n of collectFnBodyLocalNames(tokens, decl, inner)) localBindings.add(n);
+    // Lazily computed on first localStorage/sessionStorage hit to avoid scanning
+    // every fn body unconditionally — see case "localStorage"/"sessionStorage" below.
+    let localBindings: Set<string> | null = null;
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
 
@@ -931,7 +932,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (prevBeforeStar15 && prevBeforeStar15.kind === "ident" && prevBeforeStar15.text === "function") continue;
           }
 
-          // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`
+          // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`.
+          // Computed lazily: only scan the body when we actually encounter a candidate.
+          if (localBindings === null) {
+            localBindings = collectTopLevelParamNames(decl.args);
+            for (const n of collectFnBodyLocalNames(tokens, decl, inner)) localBindings.add(n);
+          }
           if (localBindings.has(tok.text)) continue;
 
           // Must be followed by `.` or `?.` — confirming this is a property/method access
