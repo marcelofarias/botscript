@@ -777,6 +777,70 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return m.default\n" +
       "}",
   },
+  SYN012: {
+    code: "SYN012",
+    title: "new EventSource() / EventSource() call bypasses the net capability model",
+    rule:
+      "`new EventSource(url)`, `EventSource(url)`, `EventSource?.(url)`, and TypeScript instantiation forms like " +
+      "`new EventSource<T>(url)` open persistent server-sent-events connections at runtime but are " +
+      "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
+      "not the `EventSource` global. A fn that constructs an EventSource has an undeclared network " +
+      "dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `EventSource` constructor in `unsafe \"wraps EventSource directly\" { new EventSource(url) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — EventSource is invisible to the capability model\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+    example:
+      "// SYN012: EventSource bypasses the net capability model\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+  },
+  SYN013: {
+    code: "SYN013",
+    title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
+    rule:
+      "`new Worker(scriptURL)`, bare `Worker(scriptURL)`, `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, " +
+      "bare `SharedWorker(scriptURL)`, `SharedWorker?.(scriptURL)`, and TypeScript instantiation forms like " +
+      "`new Worker<T>(scriptURL)` spawn a new JS execution context that is invisible to botscript's " +
+      "capability model: the worker script runs with its own global scope, can make network requests, " +
+      "access storage, and perform any operation — none of which is visible in the spawning fn's " +
+      "`uses {}`, `reads {}`, or `writes {}` declarations. CAP001 cannot infer any capability " +
+      "from worker construction; the capability surface of the spawned context is unbounded.",
+    idiom:
+      "wrap the constructor in `unsafe \"<reason>\" { new Worker(scriptURL) }` to make the escape " +
+      "hatch visible in the diff; document what capabilities the worker script is expected to use in the reason string",
+    rewrite:
+      "// before — Worker is invisible to the capability model\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no external I/O" { new Worker(url) }\n' +
+      "}",
+    example:
+      "// SYN013: Worker spawns unbounded execution context\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no net access" { new Worker(url) }\n' +
+      "}",
+  },
   SYN014: {
     code: "SYN014",
     title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
