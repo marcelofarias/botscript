@@ -1389,7 +1389,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             // new Notification<T>( — generic scan only when `new` precedes
             let depth = 1;
             let j = nextIdx17 + 1;
-            while (j < tokens.length && depth > 0) {
+            while (j < decl.tokenEnd && depth > 0) {
               const t = tokens[j];
               if (!t) break;
               if (t.kind === "operator" && t.text === "<") depth++;
