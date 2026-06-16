@@ -881,6 +881,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
   },
+  SYN022: {
+    code: "SYN022",
+    title: "process.* ambient state access bypasses the capability model",
+    rule:
+      "`process.argv`, `process.cwd()`, `process.platform`, `process.arch`, `process.pid`, " +
+      "`process.version`, `process.hrtime()`, `process.uptime()`, `process.memoryUsage()`, and " +
+      "`process.cpuUsage()` read ambient Node.js runtime or deployment state at runtime but are " +
+      "invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` " +
+      "declaration covers them. A fn that reads these values has an undeclared dependency — " +
+      "callers cannot see it, and tests cannot control the observed value. " +
+      "Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.",
+    idiom:
+      "pass the value as an explicit parameter so callers and tests can control it (preferred); " +
+      "if the ambient read is intentional, wrap in " +
+      "`unsafe \"reads process.<member> for <reason>\" { process.<member> }`",
+    rewrite:
+      "// before — ambient process state invisible to the capability model\n" +
+      "fn buildPath() -> string {\n" +
+      "  return process.cwd() + '/output'  // SYN022\n" +
+      "}\n\n" +
+      "// after — working directory passed as a parameter; tests can control it\n" +
+      "fn buildPath(cwd: string) -> string {\n" +
+      "  return cwd + '/output'\n" +
+      "}",
+    example:
+      "// SYN022: process.argv bypasses the capability model\n" +
+      "fn getFlag() -> string {\n" +
+      "  return process.argv[2]  // SYN022\n" +
+      "}\n\n" +
+      "// fix: accept argv as a parameter\n" +
+      "fn getFlag(argv: string[]) -> string {\n" +
+      "  return argv[2]\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

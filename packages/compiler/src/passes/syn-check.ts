@@ -106,6 +106,17 @@
  *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
  *
+ *   SYN022  A `process.argv`, `process.cwd()`, `process.platform`, `process.arch`,
+ *           `process.pid`, `process.version`, `process.hrtime()`, `process.uptime()`,
+ *           `process.memoryUsage()`, or `process.cpuUsage()` access was detected in a fn body
+ *           (?bs 0.7+). These read ambient Node.js runtime or deployment state at runtime but
+ *           are invisible to botscript's capability model — no `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers them. A fn that reads these values has an undeclared
+ *           dependency: callers cannot see it and tests cannot control the observed value.
+ *           Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.
+ *           Excluded: member calls on a local binding (`obj.process.*`), fn/function declarations
+ *           named `process`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -131,6 +142,11 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+// process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
+const SYN022_PROCESS_MEMBERS = new Set([
+  "argv", "cwd", "platform", "arch", "pid", "ppid",
+  "version", "versions", "hrtime", "uptime", "memoryUsage", "cpuUsage", "resourceUsage",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -151,6 +167,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
+  const syn022 = getErrorCode("SYN022")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -564,6 +581,39 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn006.rule,
               idiom: syn006.idiom,
               rewrite: syn006.rewrite,
+            });
+          } else if (SYN022_PROCESS_MEMBERS.has(memberTok.text)) {
+            // SYN022: ambient process state access (argv, cwd, platform, arch, pid, etc.)
+            if (isInsideRange(memberTok.start, unsafeRanges)) continue;
+
+            const loc22 = locationOf(src, tok.start);
+            // Distinguish calls (cwd(), hrtime(), etc.) from property reads (argv, pid, etc.)
+            const afterMemberIdx22 = nextSignificant(tokens, memberIdx + 1);
+            const afterMember22 = tokens[afterMemberIdx22];
+            let isCall22 = false;
+            if (afterMember22 && afterMember22.kind === "open" && afterMember22.text === "(") {
+              isCall22 = true;
+            } else if (afterMember22 && afterMember22.kind === "questionDot") {
+              const afterQD22 = tokens[nextSignificant(tokens, afterMemberIdx22 + 1)];
+              isCall22 = !!(afterQD22 && afterQD22.kind === "open" && afterQD22.text === "(");
+            }
+            const form22 = `process${sep5}${memberTok.text}${isCall22 ? "()" : ""}`;
+            warnings.push({
+              code: "SYN022",
+              severity: "warning",
+              file: null,
+              line: loc22.line,
+              column: loc22.column,
+              start: tok.start,
+              end: memberTok.end,
+              message:
+                `fn '${decl.name}' reads ${form22} — ` +
+                `ambient Node.js process state invisible to the capability model; ` +
+                `pass the value as an explicit parameter (preferred) or wrap in ` +
+                `unsafe "reads process.${memberTok.text} for <reason>" { ${form22} }`,
+              rule: syn022.rule,
+              idiom: syn022.idiom,
+              rewrite: syn022.rewrite,
             });
           }
           break;
