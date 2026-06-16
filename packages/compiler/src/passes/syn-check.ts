@@ -1177,9 +1177,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: callTok20.start + 1,
             message:
               `fn '${decl.name}' ${formDesc20} — ` +
-              `${hasNew20 ? "new Date()" : "Date()"} injects the current time invisible to the capability model; ` +
+              `${hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : "Date()"} injects the current time invisible to the capability model; ` +
               `pass nowMs as a parameter or use time.now() with uses { time }, ` +
-              `or wrap in unsafe "uses current time for <reason>" { ${hasNew20 ? "new " : ""}Date() }`,
+              `or wrap in unsafe "uses current time for <reason>" { ${hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : "Date()"} }`,
             rule: syn020.rule,
             idiom: syn020.idiom,
             rewrite: syn020.rewrite,
@@ -1240,7 +1240,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               message:
                 `fn '${decl.name}' calls performance${sep21}now${callSep21}() — ` +
                 `performance.now() injects monotonic time (ms since process start) invisible to the capability model; ` +
-                `pass nowMs as a parameter (preferred), or if only epoch time is needed use time.now() with uses { time }, ` +
+                `pass nowMs as a parameter (preferred); ` +
+                `note: time.now() is wall-clock epoch time and does NOT replace performance.now() for elapsed-time measurement; ` +
                 `or wrap in unsafe "uses performance.now for <reason>" { performance.now() }`,
               rule: syn021.rule,
               idiom: syn021.idiom,
