@@ -40,7 +40,7 @@
  *           `fetch` makes HTTP requests at runtime but is invisible to botscript's
  *           capability model: CAP001 checks for `http.*` member calls, not the `fetch`
  *           global. A fn that calls `fetch` has an undeclared network dependency.
- *           Excluded: member calls (`obj.fetch`), function/fn declarations named
+ *           Excluded: member calls (`obj.fetch`), function/fn/function* declarations named
  *           `fetch`, object/class method shorthands, and TypeScript method
  *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? fetch(url) : other`).
@@ -50,7 +50,7 @@
  *           invisible to botscript's capability model: CAP001 checks for `http.*` member
  *           calls, not the `WebSocket` global. A fn that constructs a WebSocket has an
  *           undeclared network dependency that no capability declaration can see.
- *           Excluded: member calls (`obj.WebSocket`), `function`/`fn` declarations named
+ *           Excluded: member calls (`obj.WebSocket`), `function`/`fn`/`function*` declarations named
  *           `WebSocket`, object/class method shorthands, and TypeScript method
  *           signatures (`{ WebSocket(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? WebSocket(url) : other`, including
@@ -62,7 +62,7 @@
  *           callbacks to run after the current fn returns — any effects inside
  *           those callbacks are invisible to callers: no capability declaration,
  *           no `writes {}` label, and no `throws {}` entry covers them.
- *           Excluded: member calls (`obj.setTimeout`), function declarations
+ *           Excluded: member calls (`obj.setTimeout`), function/fn/function* declarations
  *           named `setTimeout`, and object/class method shorthands.
  *
  *   SYN011  A dynamic `import(specifier)` call was detected in a fn body (?bs 0.7+).
@@ -80,7 +80,7 @@
  *           invisible to botscript's capability model: CAP001 checks for stdlib namespace
  *           calls, not the `BroadcastChannel` global. A fn that constructs a BroadcastChannel
  *           has an undeclared cross-context messaging dependency.
- *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn` declarations
+ *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn`/`function*` declarations
  *           named `BroadcastChannel`, object/class method shorthands, and TypeScript method
  *           signatures. The `:` exclusion is guarded against ternary consequents.
  *
@@ -578,9 +578,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named fetch
+          // Exclude: function/fn/function* declarations named fetch
           if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
           if (prev7 && prev7.kind === "keyword" && prev7.text === "fn") continue;
+          if (prev7 && prev7.kind === "operator" && prev7.text === "*") {
+            const prevPrevIdx7 = prevSignificant(tokens, prevIdx7 - 1);
+            const prevPrev7 = tokens[prevPrevIdx7];
+            if (prevPrev7 && prevPrev7.kind === "ident" && prevPrev7.text === "function") continue;
+          }
 
           // Must be followed by `(` or `?.(` — confirming this is a call.
           const nextIdx7 = nextSignificant(tokens, i + 1);
@@ -646,9 +651,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named WebSocket
+          // Exclude: function/fn/function* declarations named WebSocket
           if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
           if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
+          if (prev8 && prev8.kind === "operator" && prev8.text === "*") {
+            const prevPrevIdx8 = prevSignificant(tokens, prevIdx8 - 1);
+            const prevPrev8 = tokens[prevPrevIdx8];
+            if (prevPrev8 && prevPrev8.kind === "ident" && prevPrev8.text === "function") continue;
+          }
 
           const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
           // For ternary guard: check if token before WebSocket (or before `new`) is `?`
@@ -796,9 +806,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev14 && ((prev14.kind === "punct" && prev14.text === ".") || prev14.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named BroadcastChannel
+          // Exclude: function/fn/function* declarations named BroadcastChannel
           if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
           if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
+          if (prev14 && prev14.kind === "operator" && prev14.text === "*") {
+            const prevPrevIdx14 = prevSignificant(tokens, prevIdx14 - 1);
+            const prevPrev14 = tokens[prevPrevIdx14];
+            if (prevPrev14 && prevPrev14.kind === "ident" && prevPrev14.text === "function") continue;
+          }
 
           // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
           // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
@@ -1022,9 +1037,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
             continue;
 
-          // Exclude function declarations: function setTimeout(fn, ms) {} or fn setTimeout(...) -> void {}
+          // Exclude function/fn/function* declarations named setTimeout/setInterval/queueMicrotask
           if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
           if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
+          if (prev10 && prev10.kind === "operator" && prev10.text === "*") {
+            const prevPrevIdx10 = prevSignificant(tokens, prevIdx10 - 1);
+            const prevPrev10 = tokens[prevPrevIdx10];
+            if (prevPrev10 && prevPrev10.kind === "ident" && prevPrev10.text === "function") continue;
+          }
 
           // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
           let afterIdx10 = nextSignificant(tokens, i + 1);
