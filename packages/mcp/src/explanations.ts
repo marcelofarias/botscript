@@ -1129,6 +1129,56 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN022: {
+    code: "SYN022",
+    title: "process.* ambient state access bypasses the capability model",
+    body:
+      "SYN022 fires when a fn body accesses `process.argv`, `process.cwd`, `process.platform`, " +
+      "`process.arch`, `process.pid`, `process.ppid`, `process.version`, `process.versions`, " +
+      "`process.hrtime`, `process.uptime`, `process.memoryUsage`, `process.cpuUsage`, " +
+      "or `process.resourceUsage` in `?bs 0.7+`. " +
+      "(Note: `process.env` fires SYN005; `process.exit` fires SYN006.)\n\n" +
+      "**Why it matters:** These properties and methods read ambient Node.js runtime or " +
+      "deployment state at call time — the working directory, command-line arguments, OS platform, " +
+      "process ID, Node.js version, memory usage, or a high-resolution clock. None of these are " +
+      "covered by botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` declaration " +
+      "captures them. A fn that reads them has an undeclared environmental dependency — callers " +
+      "cannot see it in the header, and tests cannot inject a controlled value.\n\n" +
+      "`process.hrtime()` deserves special mention: it is the Node.js equivalent of " +
+      "`performance.now()`. Both provide a " +
+      "high-resolution monotonic clock that bypasses `uses { time }`.\n\n" +
+      "**Detected forms:** any `process.<member>` or `process?.<member>` access where " +
+      "`<member>` is one of the ambient-state set listed above. " +
+      "Member calls on local bindings (`obj.process.*`) and `fn process(...)` / " +
+      "`function process(...)` declarations are excluded.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN022 — before\n" +
+      "fn buildPath() -> string {\n" +
+      "  return process.cwd() + '/output'\n" +
+      "}\n\n" +
+      "// fix — cwd passed as a parameter; tests can control it\n" +
+      "fn buildPath(cwd: string) -> string {\n" +
+      "  return cwd + '/output'\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses process.argv for CLI entrypoint\" { process.argv }`\n\n" +
+      "SYN022 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getFlag() -> string {\n" +
+        "  return process.argv[2]\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getFlag(argv: string[]) -> string {\n" +
+        "  return argv[2]\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
