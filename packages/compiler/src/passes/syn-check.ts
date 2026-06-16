@@ -114,10 +114,21 @@
 import type { Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
+import type { Token } from "../parser/lex.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
+
+// Returns true when the token at `starIdx` is a `*` operator preceded by `function`,
+// i.e. this ident is the name in a `function* name(...)` generator declaration.
+function isFunctionStarDecl(tokens: Token[], starIdx: number): boolean {
+  const star = tokens[starIdx];
+  if (!star || star.kind !== "operator" || star.text !== "*") return false;
+  const prevIdx = prevSignificant(tokens, starIdx - 1);
+  const prev = tokens[prevIdx];
+  return !!(prev && prev.kind === "ident" && prev.text === "function");
+}
 
 export interface SynCheckResult {
   code: string;
@@ -581,11 +592,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: function/fn/function* declarations named fetch
           if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
           if (prev7 && prev7.kind === "keyword" && prev7.text === "fn") continue;
-          if (prev7 && prev7.kind === "operator" && prev7.text === "*") {
-            const prevPrevIdx7 = prevSignificant(tokens, prevIdx7 - 1);
-            const prevPrev7 = tokens[prevPrevIdx7];
-            if (prevPrev7 && prevPrev7.kind === "ident" && prevPrev7.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx7)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call.
           const nextIdx7 = nextSignificant(tokens, i + 1);
@@ -654,11 +661,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: function/fn/function* declarations named WebSocket
           if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
           if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
-          if (prev8 && prev8.kind === "operator" && prev8.text === "*") {
-            const prevPrevIdx8 = prevSignificant(tokens, prevIdx8 - 1);
-            const prevPrev8 = tokens[prevPrevIdx8];
-            if (prevPrev8 && prevPrev8.kind === "ident" && prevPrev8.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx8)) continue;
 
           const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
           // For ternary guard: check if token before WebSocket (or before `new`) is `?`
@@ -809,11 +812,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: function/fn/function* declarations named BroadcastChannel
           if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
           if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
-          if (prev14 && prev14.kind === "operator" && prev14.text === "*") {
-            const prevPrevIdx14 = prevSignificant(tokens, prevIdx14 - 1);
-            const prevPrev14 = tokens[prevPrevIdx14];
-            if (prevPrev14 && prevPrev14.kind === "ident" && prevPrev14.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx14)) continue;
 
           // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
           // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
@@ -934,12 +933,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: fn/function/function* declarations named indexedDB
           if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
           if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
-          // Generator: `function* indexedDB` — prev token is `*`, token before that is `function`
-          if (prev16 && prev16.kind === "punct" && prev16.text === "*") {
-            const prevPrevIdx16 = prevSignificant(tokens, prevIdx16 - 1);
-            const prevPrev16 = tokens[prevPrevIdx16];
-            if (prevPrev16 && prevPrev16.kind === "ident" && prevPrev16.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx16)) continue;
 
           // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
           const nextIdx16 = nextSignificant(tokens, i + 1);
@@ -1040,11 +1034,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude function/fn/function* declarations named setTimeout/setInterval/queueMicrotask
           if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
           if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
-          if (prev10 && prev10.kind === "operator" && prev10.text === "*") {
-            const prevPrevIdx10 = prevSignificant(tokens, prevIdx10 - 1);
-            const prevPrev10 = tokens[prevPrevIdx10];
-            if (prevPrev10 && prevPrev10.kind === "ident" && prevPrev10.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx10)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
           let afterIdx10 = nextSignificant(tokens, i + 1);
