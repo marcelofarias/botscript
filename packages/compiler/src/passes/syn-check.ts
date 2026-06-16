@@ -1442,22 +1442,32 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (hasTypeAnnotation17) continue;
 
             // Exclude TS type-literal method signatures with no annotations at all:
-            // `{ Notification() }` — empty parens, `}` immediately after `)`.
+            // `{ Notification() }`, `{ Notification(); }`, `{ Notification(), }` — empty parens.
+            // The token after `)` may be `}` directly, or a separator (`;` / `,`) then `}`.
             // Conditions: (a) enclosing `{` is in a type context (preceded by `=` or `:`),
             //             (b) `Notification` is the first significant token inside that `{`.
             // Condition (b) guards against `const o = { x: Notification() }` where the
             // outer `{` is also preceded by `=` but `Notification` is not the first token.
-            if (afterClose17 && afterClose17.kind === "close" && afterClose17.text === "}" &&
-                afterClose17.matchedAt !== undefined) {
-              const openBraceIdx17 = afterClose17.matchedAt;
-              const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
-              const prevOpen17 = tokens[prevOpenIdx17];
-              const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
-              const isNotificationFirst17 = firstInsideBraceIdx17 === i;
-              if (isNotificationFirst17 && prevOpen17 && (
-                prevOpen17.kind === "eq" ||                                       // type T = { ... }
-                (prevOpen17.kind === "punct" && prevOpen17.text === ":")          // x: { ... }
-              )) continue;
+            {
+              let closeBrace17 = afterClose17;
+              if (closeBrace17 &&
+                  closeBrace17.kind === "punct" &&
+                  (closeBrace17.text === ";" || closeBrace17.text === ",")) {
+                const nextAfterSepIdx17 = nextSignificant(tokens, afterCloseIdx17 + 1);
+                closeBrace17 = tokens[nextAfterSepIdx17];
+              }
+              if (closeBrace17 && closeBrace17.kind === "close" && closeBrace17.text === "}" &&
+                  closeBrace17.matchedAt !== undefined) {
+                const openBraceIdx17 = closeBrace17.matchedAt;
+                const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
+                const prevOpen17 = tokens[prevOpenIdx17];
+                const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
+                const isNotificationFirst17 = firstInsideBraceIdx17 === i;
+                if (isNotificationFirst17 && prevOpen17 && (
+                  prevOpen17.kind === "eq" ||                                       // type T = { ... }
+                  (prevOpen17.kind === "punct" && prevOpen17.text === ":")          // x: { ... }
+                )) continue;
+              }
             }
           }
 

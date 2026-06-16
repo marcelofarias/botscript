@@ -261,6 +261,26 @@ describe("SYN017: Notification() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
   });
 
+  it("does NOT fire on TS type-literal method signature with semicolon separator: type T = { Notification(); }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = { Notification(); }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
+
+  it("does NOT fire on TS type-literal method signature with comma separator: type T = { Notification(), }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = { Notification(), }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
+
   it("DOES fire on Notification() as last expression in an object literal", () => {
     // `const o = { x: Notification() }` — the outer `{` is preceded by `=` but
     // Notification is NOT the first token inside it, so this is not a type literal.
