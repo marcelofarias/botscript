@@ -895,8 +895,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.",
     idiom:
       "pass the value as an explicit parameter so callers and tests can control it (preferred); " +
-      "if the ambient read is intentional, wrap in " +
-      "`unsafe \"reads process.<member> for <reason>\" { process.<member> }`",
+      "if the ambient access is intentional, wrap in " +
+      "`unsafe \"accesses process.<member> for <reason>\" { process.<member> }`",
     rewrite:
       "// before — ambient process state invisible to the capability model\n" +
       "fn buildPath() -> string {\n" +

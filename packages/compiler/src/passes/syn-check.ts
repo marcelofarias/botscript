@@ -614,10 +614,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: memberTok.end,
               message:
-                `fn '${decl.name}' reads ${form22} — ` +
+                `fn '${decl.name}' accesses ${form22} — ` +
                 `ambient Node.js process state invisible to the capability model; ` +
                 `pass the value as an explicit parameter (preferred) or wrap in ` +
-                `unsafe "reads process.${memberTok.text} for <reason>" { ${form22} }`,
+                `unsafe "accesses process.${memberTok.text} for <reason>" { ${form22} }`,
               rule: syn022.rule,
               idiom: syn022.idiom,
               rewrite: syn022.rewrite,

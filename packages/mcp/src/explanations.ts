@@ -1145,7 +1145,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "captures them. A fn that reads them has an undeclared environmental dependency — callers " +
       "cannot see it in the header, and tests cannot inject a controlled value.\n\n" +
       "`process.hrtime()` deserves special mention: it is the Node.js equivalent of " +
-      "`performance.now()` (covered by SYN021). Both provide a " +
+      "`performance.now()`. Both provide a " +
       "high-resolution monotonic clock that bypasses `uses { time }`.\n\n" +
       "**Detected forms:** any `process.<member>` or `process?.<member>` access where " +
       "`<member>` is one of the ambient-state set listed above. " +
@@ -1162,8 +1162,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "  return cwd + '/output'\n" +
       "}\n" +
       "```\n\n" +
-      "**Fix (escape hatch):** if the ambient read is intentional:\n" +
-      "`unsafe \"reads process.argv for CLI entrypoint\" { process.argv }`\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses process.argv for CLI entrypoint\" { process.argv }`\n\n" +
       "SYN022 fires at `?bs 0.7+` as a non-blocking warning. " +
       "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {
