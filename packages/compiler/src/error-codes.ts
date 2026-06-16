@@ -885,10 +885,10 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
     rule:
-      "`process.argv`, `process.cwd()`, `process.platform`, `process.arch`, `process.pid`, " +
-      "`process.ppid`, `process.version`, `process.versions`, `process.hrtime()`, " +
-      "`process.uptime()`, `process.memoryUsage()`, `process.cpuUsage()`, and " +
-      "`process.resourceUsage()` read ambient Node.js runtime or deployment state at runtime but are " +
+      "`process.argv`, `process.cwd`, `process.platform`, `process.arch`, `process.pid`, " +
+      "`process.ppid`, `process.version`, `process.versions`, `process.hrtime`, " +
+      "`process.uptime`, `process.memoryUsage`, `process.cpuUsage`, and " +
+      "`process.resourceUsage` read ambient Node.js runtime or deployment state at runtime but are " +
       "invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` " +
       "declaration covers them. A fn that reads these values has an undeclared dependency — " +
       "callers cannot see it, and tests cannot control the observed value. " +

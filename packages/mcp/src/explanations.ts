@@ -1133,10 +1133,10 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
     body:
-      "SYN022 fires when a fn body accesses `process.argv`, `process.cwd()`, `process.platform`, " +
+      "SYN022 fires when a fn body accesses `process.argv`, `process.cwd`, `process.platform`, " +
       "`process.arch`, `process.pid`, `process.ppid`, `process.version`, `process.versions`, " +
-      "`process.hrtime()`, `process.uptime()`, `process.memoryUsage()`, `process.cpuUsage()`, " +
-      "or `process.resourceUsage()` in `?bs 0.7+`. " +
+      "`process.hrtime`, `process.uptime`, `process.memoryUsage`, `process.cpuUsage`, " +
+      "or `process.resourceUsage` in `?bs 0.7+`. " +
       "(Note: `process.env` fires SYN005; `process.exit` fires SYN006.)\n\n" +
       "**Why it matters:** These properties and methods read ambient Node.js runtime or " +
       "deployment state at call time — the working directory, command-line arguments, OS platform, " +
