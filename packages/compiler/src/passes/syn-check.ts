@@ -1198,6 +1198,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude function declarations: function performance(...) {} or fn performance(...) -> void {}
           if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
           if (prev21 && prev21.kind === "keyword" && prev21.text === "function") continue;
+          if (prev21 && prev21.kind === "keyword" && prev21.text === "fn") continue;
 
           // Must be followed by `.` or `?.`
           const nextIdx21 = nextSignificant(tokens, i + 1);
