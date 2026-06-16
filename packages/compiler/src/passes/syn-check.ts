@@ -1059,7 +1059,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isDotNext20 || isOptChain20) {
             const memberIdx20 = nextSignificant(tokens, nextIdx20 + 1);
             const memberTok20 = tokens[memberIdx20];
-            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") continue;
+            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") {
+              // `Date.otherMember()` — not a time call; skip entirely.
+              // `Date?.()` — `?.` is next but member is `(`, so this is Pattern 2 (optional bare call).
+              // For the `?.` case don't `continue` — fall through to Pattern 2 below.
+              if (isDotNext20) continue;
+              // isOptChain20 and member is not `now` → fall through to Pattern 2
+            } else {
 
             // Confirm call: next after `now` is `(` or `?.(`
             let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
@@ -1094,7 +1100,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rewrite: syn020.rewrite,
             });
             break;
-          }
+            } // closes else (member is now)
+          } // closes if (isDotNext20 || isOptChain20)
 
           // ── Pattern 2: new Date() / Date() / new Date<T>() (no args) ─────
           // Check: followed by `(`, `?.(`, or (when `new`) `<T>(`.

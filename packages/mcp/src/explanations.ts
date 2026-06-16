@@ -1611,7 +1611,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     title: "Date.now() / new Date() / Date() / Date?.() call bypasses the time capability model",
     body:
       "SYN020 fires when a fn body calls `Date.now()`, `Date?.now()`, `Date.now?.()`, " +
-      "`new Date()` (no args), `new Date<T>()` (TypeScript generic, no args), or `Date()` (no args). " +
+      "`new Date()` (no args), `new Date<T>()` (TypeScript generic, no args), `Date()` (no args), " +
+      "or `Date?.()` (optional bare call, no args). " +
       "These forms inject the current wall-clock time at runtime.\n\n" +
       "**Why it matters:** `Date.now()` and `new Date()` read the current time at runtime but are " +
       "entirely invisible to botscript's capability model. `uses { time }` declarations cover " +
