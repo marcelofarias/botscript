@@ -117,7 +117,7 @@
  *           2. `new Date()` / `new Date<T>()` — `Date` preceded by `new`, followed by empty
  *              parens (arg-count check: first token inside `(…)` must be `)`). Generic scan
  *              only when `new` precedes to avoid `Date < x > (y)` comparison false-positives.
- *           3. `Date()` / `Date?.()` — bare call with empty parens.
+ *           3. `Date(...)` / `Date?.()` — bare call (any args; JS ignores them and returns current date string).
  *           Excluded: `new Date(timestamp)` / `new Date("str")` / `new Date(y,m,d,…)` (explicit
  *           args), `Date.parse(str)` / `Date.UTC(…)` (no ambient time), `obj.Date()` (member
  *           call), fn/function/function* declarations named `Date`, method shorthands, TS method
@@ -1164,10 +1164,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             )) continue;
           }
 
-          // Only fire when arg list is empty (no args = ambient time; with args = explicit, not ambient).
-          // Check the first significant token inside the parens — if it's `)` we have empty args.
+          // `new Date(arg)` with arguments constructs a specific date — not ambient time; skip.
+          // `Date(arg)` (without `new`) always returns the current date string regardless of args; fire.
           const firstInsideIdx20 = nextSignificant(tokens, callIdx20 + 1);
-          if (firstInsideIdx20 !== callTok20.matchedAt) continue; // has args → skip
+          if (hasNew20 && firstInsideIdx20 !== callTok20.matchedAt) continue; // new Date(arg) → skip
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
@@ -1206,7 +1206,6 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           // Exclude function declarations: function performance(…), fn performance(…), function* performance(…)
           if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
-          if (prev21 && prev21.kind === "keyword" && prev21.text === "function") continue;
           if (prev21 && prev21.kind === "keyword" && prev21.text === "fn") continue;
           if (prev21 && prev21.kind === "operator" && prev21.text === "*") {
             const prevPrevIdx21 = prevSignificant(tokens, prevIdx21 - 1);
