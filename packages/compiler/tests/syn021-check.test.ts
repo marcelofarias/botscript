@@ -138,6 +138,17 @@ describe("SYN021: performance.now() / performance.timeOrigin detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN021")).toBe(false);
   });
 
+  it("does NOT fire on function* performance(...) generator declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper() -> any {\n" +
+      "  function* performance(x: number) { yield x }\n" +
+      "  return performance(1)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN021")).toBe(false);
+  });
+
   // ── attribution and message ────────────────────────────────────────────────
 
   it("warning severity is 'warning' (non-blocking)", () => {

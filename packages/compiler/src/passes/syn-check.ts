@@ -135,7 +135,7 @@
  *              not preceded by `.`/`?.`, followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
  *           2. `performance.timeOrigin` / `performance?.timeOrigin` — `performance` not preceded
  *              by `.`/`?.`, followed by `.`/`?.`, member is `timeOrigin` (property, no call needed).
- *           Excluded: `obj.performance.*` (member call), fn/function declarations named `performance`,
+ *           Excluded: `obj.performance.*` (member call), fn/function/function* declarations named `performance`,
  *           TS method signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
@@ -1075,7 +1075,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isDotNext20 || isOptChain20) {
             const memberIdx20 = nextSignificant(tokens, nextIdx20 + 1);
             const memberTok20 = tokens[memberIdx20];
-            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") continue;
+            // Only enter Pattern 1 when the member is `now`.
+            // `Date?.()` has `?.` followed directly by `(` — fall through to Pattern 2.
+            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") {
+              // `.xxx` that isn't `.now` is not an ambient-time call (e.g. Date.parse).
+              // `?.xxx` that isn't `?.now` — still not ambient time, except `Date?.()` where
+              // the `(` appears as member. That is handled below in Pattern 2 (next20 === `?.`).
+              if (isDotNext20) continue;
+              // isOptChain20 && member isn't `now`: fall through to Pattern 2.
+            } else {
 
             // Confirm call: next after `now` is `(` or `?.(`
             let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
@@ -1110,6 +1118,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rewrite: syn020.rewrite,
             });
             break;
+          }
           }
 
           // ── Pattern 2: new Date() / Date() / new Date<T>() (no args) ─────
@@ -1195,10 +1204,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev21 && ((prev21.kind === "punct" && prev21.text === ".") || prev21.kind === "questionDot"))
             continue;
 
-          // Exclude function declarations: function performance(...) {} or fn performance(...) -> void {}
+          // Exclude function declarations: function performance(…), fn performance(…), function* performance(…)
           if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
           if (prev21 && prev21.kind === "keyword" && prev21.text === "function") continue;
           if (prev21 && prev21.kind === "keyword" && prev21.text === "fn") continue;
+          if (prev21 && prev21.kind === "operator" && prev21.text === "*") {
+            const prevPrevIdx21 = prevSignificant(tokens, prevIdx21 - 1);
+            const prevPrev21 = tokens[prevPrevIdx21];
+            if (prevPrev21 && prevPrev21.kind === "ident" && prevPrev21.text === "function") continue;
+          }
 
           // Must be followed by `.` or `?.`
           const nextIdx21 = nextSignificant(tokens, i + 1);
