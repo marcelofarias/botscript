@@ -40,7 +40,7 @@
  *           `fetch` makes HTTP requests at runtime but is invisible to botscript's
  *           capability model: CAP001 checks for `http.*` member calls, not the `fetch`
  *           global. A fn that calls `fetch` has an undeclared network dependency.
- *           Excluded: member calls (`obj.fetch`), function/fn declarations named
+ *           Excluded: member calls (`obj.fetch`), function/fn/function* declarations named
  *           `fetch`, object/class method shorthands, and TypeScript method
  *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? fetch(url) : other`).
@@ -50,7 +50,7 @@
  *           invisible to botscript's capability model: CAP001 checks for `http.*` member
  *           calls, not the `WebSocket` global. A fn that constructs a WebSocket has an
  *           undeclared network dependency that no capability declaration can see.
- *           Excluded: member calls (`obj.WebSocket`), `function`/`fn` declarations named
+ *           Excluded: member calls (`obj.WebSocket`), `function`/`fn`/`function*` declarations named
  *           `WebSocket`, object/class method shorthands, and TypeScript method
  *           signatures (`{ WebSocket(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? WebSocket(url) : other`, including
@@ -62,7 +62,7 @@
  *           callbacks to run after the current fn returns — any effects inside
  *           those callbacks are invisible to callers: no capability declaration,
  *           no `writes {}` label, and no `throws {}` entry covers them.
- *           Excluded: member calls (`obj.setTimeout`), function declarations
+ *           Excluded: member calls (`obj.setTimeout`), function/fn/function* declarations
  *           named `setTimeout`, and object/class method shorthands.
  *
  *   SYN011  A dynamic `import(specifier)` call was detected in a fn body (?bs 0.7+).
@@ -80,7 +80,7 @@
  *           invisible to botscript's capability model: CAP001 checks for stdlib namespace
  *           calls, not the `BroadcastChannel` global. A fn that constructs a BroadcastChannel
  *           has an undeclared cross-context messaging dependency.
- *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn` declarations
+ *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn`/`function*` declarations
  *           named `BroadcastChannel`, object/class method shorthands, and TypeScript method
  *           signatures. The `:` exclusion is guarded against ternary consequents.
  *
@@ -114,10 +114,21 @@
 import type { Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
+import type { Token } from "../parser/lex.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
+
+// Returns true when the token at `starIdx` is a `*` operator preceded by `function`,
+// i.e. this ident is the name in a `function* name(...)` generator declaration.
+function isFunctionStarDecl(tokens: Token[], starIdx: number): boolean {
+  const star = tokens[starIdx];
+  if (!star || star.kind !== "operator" || star.text !== "*") return false;
+  const prevIdx = prevSignificant(tokens, starIdx - 1);
+  const prev = tokens[prevIdx];
+  return !!(prev && prev.kind === "ident" && prev.text === "function");
+}
 
 export interface SynCheckResult {
   code: string;
@@ -578,9 +589,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named fetch
+          // Exclude: function/fn/function* declarations named fetch
           if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
           if (prev7 && prev7.kind === "keyword" && prev7.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx7)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call.
           const nextIdx7 = nextSignificant(tokens, i + 1);
@@ -646,9 +658,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named WebSocket
+          // Exclude: function/fn/function* declarations named WebSocket
           if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
           if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx8)) continue;
 
           const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
           // For ternary guard: check if token before WebSocket (or before `new`) is `?`
@@ -796,9 +809,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev14 && ((prev14.kind === "punct" && prev14.text === ".") || prev14.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named BroadcastChannel
+          // Exclude: function/fn/function* declarations named BroadcastChannel
           if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
           if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx14)) continue;
 
           // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
           // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
@@ -919,12 +933,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: fn/function/function* declarations named indexedDB
           if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
           if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
-          // Generator: `function* indexedDB` — prev token is `*`, token before that is `function`
-          if (prev16 && prev16.kind === "punct" && prev16.text === "*") {
-            const prevPrevIdx16 = prevSignificant(tokens, prevIdx16 - 1);
-            const prevPrev16 = tokens[prevPrevIdx16];
-            if (prevPrev16 && prevPrev16.kind === "ident" && prevPrev16.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx16)) continue;
 
           // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
           const nextIdx16 = nextSignificant(tokens, i + 1);
@@ -1022,9 +1031,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
             continue;
 
-          // Exclude function declarations: function setTimeout(fn, ms) {} or fn setTimeout(...) -> void {}
+          // Exclude function/fn/function* declarations named setTimeout/setInterval/queueMicrotask
           if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
           if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx10)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
           let afterIdx10 = nextSignificant(tokens, i + 1);
