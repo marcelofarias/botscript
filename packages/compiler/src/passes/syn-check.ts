@@ -1443,14 +1443,18 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
             // Exclude TS type-literal method signatures with no annotations at all:
             // `{ Notification() }` — empty parens, `}` immediately after `)`.
-            // Find the `{` matched by that `}` and check if it was opened in a type context
-            // (preceded by `=` or `:`). This is the only case not caught by the type annotation scan.
+            // Conditions: (a) enclosing `{` is in a type context (preceded by `=` or `:`),
+            //             (b) `Notification` is the first significant token inside that `{`.
+            // Condition (b) guards against `const o = { x: Notification() }` where the
+            // outer `{` is also preceded by `=` but `Notification` is not the first token.
             if (afterClose17 && afterClose17.kind === "close" && afterClose17.text === "}" &&
                 afterClose17.matchedAt !== undefined) {
               const openBraceIdx17 = afterClose17.matchedAt;
               const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
               const prevOpen17 = tokens[prevOpenIdx17];
-              if (prevOpen17 && (
+              const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
+              const isNotificationFirst17 = firstInsideBraceIdx17 === i;
+              if (isNotificationFirst17 && prevOpen17 && (
                 prevOpen17.kind === "eq" ||                                       // type T = { ... }
                 (prevOpen17.kind === "punct" && prevOpen17.text === ":")          // x: { ... }
               )) continue;

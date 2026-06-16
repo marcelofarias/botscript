@@ -260,4 +260,16 @@ describe("SYN017: Notification() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
   });
+
+  it("DOES fire on Notification() as last expression in an object literal", () => {
+    // `const o = { x: Notification() }` — the outer `{` is preceded by `=` but
+    // Notification is NOT the first token inside it, so this is not a type literal.
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  const o = { x: Notification('title') }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
 });
