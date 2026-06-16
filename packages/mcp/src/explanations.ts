@@ -1170,7 +1170,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "In agent / bot contexts this is especially hazardous: an autonomously-running bot that " +
       "calls `new Notification()` creates user-visible interruptions with no observable " +
       "capability surface for callers to audit or gate.\n\n" +
-      "**Detection:** the check looks for a `Notification` ident token not preceded by " +
+      "**Detection:** the check looks for an identifier token `Notification` not preceded by " +
       "`.`/`?.` (member-call exclusion), followed by `(` or `?.(` — or `<T>(` when preceded " +
       "by `new` (generic scan gated on `new` to avoid `<`/`>` comparison false-positives). " +
       "Object/class method shorthands, TypeScript method signatures (including optional-param " +
