@@ -310,4 +310,16 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     const w = result.warnings.find((w) => w.code === "SYN015");
     expect(w?.message).toContain("sessionStorage[");
   });
+
+  it("DOES fire when localStorage is shadowed only in an inner block — outer-scope access is real", () => {
+    // A block-scoped shadow inside `if` should not suppress SYN015 for outer-scope access.
+    const src =
+      "?bs 0.7\n" +
+      "fn mixed(cond: boolean) -> string {\n" +
+      "  if (cond) { const localStorage = 'mock' }\n" +
+      "  return localStorage.getItem('key') ?? ''\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
+  });
 });

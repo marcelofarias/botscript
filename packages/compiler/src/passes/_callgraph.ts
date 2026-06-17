@@ -329,11 +329,17 @@ export function collectFnBodyLocalNames(
   tokens: Token[],
   fn: FnDecl,
   inner: FnDecl[],
+  opts?: { topLevelOnly?: boolean },
 ): Set<string> {
   const names = new Set<string>();
   const open: FnDecl[] = [];
   let nextInner = 0;
   const start = fn.bodyTokenStart ?? fn.tokenStart;
+  const topLevelOnly = opts?.topLevelOnly ?? false;
+  // blockDepth tracks brace nesting for non-function blocks.
+  // bodyTokenStart points to the function body's opening `{`, so the first `{`
+  // increments depth to 1; top-level bindings are at depth === 1.
+  let blockDepth = 0;
 
   for (let i = start; i < fn.tokenEnd; i++) {
     while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
@@ -344,8 +350,17 @@ export function collectFnBodyLocalNames(
     if (open.length > 0) continue;
 
     const tok = tokens[i];
-    if (!tok || tok.kind !== "ident") continue;
+    if (!tok) continue;
+
+    // Track brace depth for non-function blocks (inner function bodies are already skipped above).
+    if (tok.kind === "open" && tok.text === "{") { blockDepth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { blockDepth--; continue; }
+
+    if (tok.kind !== "ident") continue;
     if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
+    // When topLevelOnly, skip bindings inside nested blocks (if, for, etc.).
+    // Depth 1 = directly inside the function body; depth > 1 = nested block.
+    if (topLevelOnly && blockDepth > 1) continue;
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];

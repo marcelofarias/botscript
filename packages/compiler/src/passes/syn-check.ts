@@ -1276,17 +1276,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
           if (prev15 && prev15.kind === "operator" && prev15.text === "*" && isFunctionStarDecl(tokens, prevIdx15)) continue;
 
-          // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`.
-          // Computed lazily: only scan the body when we actually encounter a candidate.
-          if (localBindings === null) {
-            localBindings = collectTopLevelParamNames(decl.args);
-            for (const n of collectFnBodyLocalNames(tokens, decl, inner)) localBindings.add(n);
-          }
-          if (localBindings.has(tok.text)) continue;
-
           // Must be followed by `.`, `?.`, or `[` — confirming this is a property/method
           // access on the storage object (not a bare reference or assignment target).
           // `[` covers computed access: localStorage[key] / sessionStorage[key].
+          // Check before localBindings to avoid an unnecessary body scan for bare references.
           const nextIdx15 = nextSignificant(tokens, i + 1);
           const next15 = tokens[nextIdx15];
           if (!next15 || !(
@@ -1294,6 +1287,16 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             next15.kind === "questionDot" ||
             (next15.kind === "open" && next15.text === "[")
           )) continue;
+
+          // Exclude: local bindings — parameters or top-level `const/let/var` named
+          // `localStorage`/`sessionStorage`. Only top-level bindings are collected to avoid
+          // suppressing the entire function when a block-scoped shadow exists in an inner block
+          // (e.g. `if (x) { const localStorage = mock }` should not suppress outer-scope reads).
+          if (localBindings === null) {
+            localBindings = collectTopLevelParamNames(decl.args);
+            for (const n of collectFnBodyLocalNames(tokens, decl, inner, { topLevelOnly: true })) localBindings.add(n);
+          }
+          if (localBindings.has(tok.text)) continue;
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
