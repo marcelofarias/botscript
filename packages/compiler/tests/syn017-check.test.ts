@@ -155,6 +155,17 @@ describe("SYN017: Notification() construction detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
   });
 
+  it("does NOT fire on TS type-literal method signature with empty parens — { Notification() }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn outer() -> any {\n" +
+      "  type T = { Notification() }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
+
   it("fires in ternary consequent — not suppressed by trailing ':'", () => {
     const src =
       "?bs 0.7\n" +

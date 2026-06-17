@@ -1185,13 +1185,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn warnUser(title: string, body: string) -> void {\n" +
-        "  new Notification(title, { body })\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  new Notification(title)\n" +
         "}\n",
       passes:
         "?bs 0.7\n" +
-        "fn warnUser(title: string, body: string) -> void {\n" +
-        "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title, { body }) }\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title) }\n" +
         "}\n",
     },
   },
