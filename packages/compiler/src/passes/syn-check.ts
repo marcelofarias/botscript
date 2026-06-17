@@ -138,6 +138,29 @@
  *           Excluded: member calls on a local binding (`obj.process.*`), fn/function declarations
  *           named `process`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN023  A `navigator.<member>` access was detected in a fn body (?bs 0.7+), where the
+ *           member is one of the ambient browser capability surfaces:
+ *             geolocation     — requests user location; a real capability concern
+ *             clipboard       — clipboard read/write (sensitive data access)
+ *             mediaDevices    — camera/microphone access
+ *             serviceWorker   — background worker registration
+ *             permissions     — browser permission queries
+ *             onLine          — ambient network connectivity state
+ *             userAgent       — ambient browser fingerprint
+ *             language / languages — ambient locale
+ *             platform        — ambient device/OS type
+ *             hardwareConcurrency — CPU core count
+ *             deviceMemory    — RAM available
+ *             connection      — NetworkInformation API (ambient connectivity detail)
+ *             wakeLock        — screen wake lock requests
+ *           These are invisible to botscript's capability model: `uses {}`, `reads {}`, and
+ *           `writes {}` declarations cover declared stdlib namespaces and resource labels, not
+ *           the `navigator` global. A fn that accesses these members has undeclared browser
+ *           capability dependencies — callers cannot see them and tests cannot control or mock them.
+ *           Excluded: `obj.navigator.*` (member on a local binding), fn/function declarations
+ *           named `navigator`, member accesses not in the high-concern list above.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -179,6 +202,12 @@ const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
   "version", "versions", "hrtime", "uptime", "memoryUsage", "cpuUsage", "resourceUsage",
 ]);
+// navigator.* members covered by SYN023 (high-concern ambient browser capability surfaces)
+const SYN023_NAVIGATOR_MEMBERS = new Set([
+  "geolocation", "clipboard", "mediaDevices", "serviceWorker", "permissions",
+  "onLine", "userAgent", "language", "languages", "platform",
+  "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -202,6 +231,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn022 = getErrorCode("SYN022")!;
+  const syn023 = getErrorCode("SYN023")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1337,6 +1367,58 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn018.rule,
             idiom: syn018.idiom,
             rewrite: syn018.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN023: navigator.* ambient browser capability ───────────────────
+        case "navigator": {
+          // Exclude: `obj.navigator.*` — navigator preceded by `.` or `?.`
+          const prevIdx23 = prevSignificant(tokens, i - 1);
+          const prev23 = tokens[prevIdx23];
+          if (prev23 && ((prev23.kind === "punct" && prev23.text === ".") || prev23.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named navigator
+          if (prev23 && prev23.kind === "keyword" && prev23.text === "fn") continue;
+          if (prev23 && prev23.kind === "ident" && prev23.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx23)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx23 = nextSignificant(tokens, i + 1);
+          const next23 = tokens[nextIdx23];
+          const isDot23 = next23 && next23.kind === "punct" && next23.text === ".";
+          const isOptChain23 = next23 && next23.kind === "questionDot";
+          if (!isDot23 && !isOptChain23) continue;
+
+          // Member must be in the high-concern navigator capability set
+          const memberIdx23 = nextSignificant(tokens, nextIdx23 + 1);
+          const memberTok23 = tokens[memberIdx23];
+          if (!memberTok23 || memberTok23.kind !== "ident") continue;
+          if (!SYN023_NAVIGATOR_MEMBERS.has(memberTok23.text)) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep23 = isOptChain23 ? "?." : ".";
+          const memberName23 = memberTok23.text;
+          const loc23 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN023",
+            severity: "warning",
+            file: null,
+            line: loc23.line,
+            column: loc23.column,
+            start: tok.start,
+            end: memberTok23.end,
+            message:
+              `fn '${decl.name}' accesses navigator${sep23}${memberName23} — ` +
+              `navigator.${memberName23} reads ambient browser capability state invisible to the capability model; ` +
+              `no uses {} / reads {} / writes {} declaration covers navigator; ` +
+              `pass the required value as a parameter so callers can see the dependency and tests can inject a mock, ` +
+              `or wrap in unsafe "accesses navigator.${memberName23} for <reason>" { navigator${sep23}${memberName23} }`,
+            rule: syn023.rule,
+            idiom: syn023.idiom,
+            rewrite: syn023.rewrite,
           });
           break;
         }
