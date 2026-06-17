@@ -1411,41 +1411,40 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               if (isDotNext20) continue;
               // isOptChain20 && member isn't `now`: fall through to Pattern 2.
             } else {
+              // Confirm call: next after `now` is `(` or `?.(`
+              let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
+              let afterNow20 = tokens[afterNowIdx20];
+              let isOptCall20 = false;
+              if (afterNow20 && afterNow20.kind === "questionDot") {
+                isOptCall20 = true;
+                afterNowIdx20 = nextSignificant(tokens, afterNowIdx20 + 1);
+                afterNow20 = tokens[afterNowIdx20];
+              }
+              if (!afterNow20 || !(afterNow20.kind === "open" && afterNow20.text === "(")) continue;
+              if (isInsideRange(tok.start, unsafeRanges)) continue;
 
-            // Confirm call: next after `now` is `(` or `?.(`
-            let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
-            let afterNow20 = tokens[afterNowIdx20];
-            let isOptCall20 = false;
-            if (afterNow20 && afterNow20.kind === "questionDot") {
-              isOptCall20 = true;
-              afterNowIdx20 = nextSignificant(tokens, afterNowIdx20 + 1);
-              afterNow20 = tokens[afterNowIdx20];
+              const sep20 = isOptChain20 ? "?." : ".";
+              const callSep20 = isOptCall20 ? "?." : "";
+              const loc20 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN020",
+                severity: "warning",
+                file: null,
+                line: loc20.line,
+                column: loc20.column,
+                start: tok.start,
+                end: afterNow20.start + 1,
+                message:
+                  `fn '${decl.name}' calls Date${sep20}now${callSep20}() — ` +
+                  `Date.now() injects the current time invisible to the capability model; ` +
+                  `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+                  `or wrap in unsafe "uses current time for <reason>" { Date.now() }`,
+                rule: syn020.rule,
+                idiom: syn020.idiom,
+                rewrite: syn020.rewrite,
+              });
+              break;
             }
-            if (!afterNow20 || !(afterNow20.kind === "open" && afterNow20.text === "(")) continue;
-            if (isInsideRange(tok.start, unsafeRanges)) continue;
-
-            const sep20 = isOptChain20 ? "?." : ".";
-            const callSep20 = isOptCall20 ? "?." : "";
-            const loc20 = locationOf(src, tok.start);
-            warnings.push({
-              code: "SYN020",
-              severity: "warning",
-              file: null,
-              line: loc20.line,
-              column: loc20.column,
-              start: tok.start,
-              end: afterNow20.start + 1,
-              message:
-                `fn '${decl.name}' calls Date${sep20}now${callSep20}() — ` +
-                `Date.now() injects the current time invisible to the capability model; ` +
-                `pass nowMs as a parameter or use time.now() with uses { time }, ` +
-                `or wrap in unsafe "uses current time for <reason>" { Date.now() }`,
-              rule: syn020.rule,
-              idiom: syn020.idiom,
-              rewrite: syn020.rewrite,
-            });
-            break;
-          }
           }
 
           // ── Pattern 3: new Date (no parentheses) ─────────────────────────
