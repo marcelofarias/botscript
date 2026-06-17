@@ -210,4 +210,15 @@ describe("SYN014: BroadcastChannel() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN014")).toBe(false);
   });
+
+  it("does NOT fire on function* BroadcastChannel() generator declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper(name: string) -> any {\n" +
+      "  function* BroadcastChannel(n: string) { yield n }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN014")).toBe(false);
+  });
 });
