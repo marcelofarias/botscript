@@ -270,4 +270,38 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
+
+  it("does NOT fire on TS type-literal method signature with empty parens — type X = { XMLHttpRequest() }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  type XhrLike = { XMLHttpRequest() };\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
+  it("does NOT fire on XMLHttpRequest < x > (y) comparison expression (false-positive guard)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn compare(XMLHttpRequest: number, x: number, y: number) -> boolean {\n" +
+      "  return XMLHttpRequest < x > (y)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
+  it("fires on new XMLHttpRequest<T> without parens — generic no-parens construction", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeXhr<T>() -> any {\n" +
+      "  const x = new XMLHttpRequest<T>\n" +
+      "  return x\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN009");
+    expect(w?.message).toContain("new XMLHttpRequest");
+    expect(w?.message).not.toContain("new XMLHttpRequest()");
+  });
 });

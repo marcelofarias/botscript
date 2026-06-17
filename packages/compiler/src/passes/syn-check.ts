@@ -1442,9 +1442,15 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Must be followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`).
           const afterXhrFirstIdx = nextSignificant(tokens, i + 1);
           const afterXhr = tokens[afterXhrFirstIdx];
+          // Tracks `new XMLHttpRequest<T>` with no parens after the generic — set in the generic branch.
+          let isGenericNoParens9 = false;
+          let genericCloseTokEnd9 = tok.end; // end of `>` for warnEnd in that form
 
           if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
-            // TypeScript instantiation form: `XMLHttpRequest<T>(...)` or `new XMLHttpRequest<T>`
+            // TypeScript instantiation form: `XMLHttpRequest<T>(...)` or `new XMLHttpRequest<T>`.
+            // Gate on `new` to avoid false-positives on `XMLHttpRequest < x > (y)` comparison
+            // expressions (same guard as SYN008 WebSocket).
+            if (!isNewExpr9) continue;
             let anglDepth = 1;
             let j = afterXhrFirstIdx + 1;
             while (j < decl.tokenEnd && anglDepth > 0) {
@@ -1455,6 +1461,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 anglDepth = Math.max(0, anglDepth - at.text.length);
               j++;
             }
+            const closingAngleTok9 = tokens[j - 1]; // the `>` that closed the generic scan
             const afterAngleIdx = nextSignificant(tokens, j);
             const afterAngle9 = tokens[afterAngleIdx];
             if (afterAngle9 && afterAngle9.kind === "open" && afterAngle9.text === "(") {
@@ -1492,8 +1499,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 }
                 if (hasTypeAnnotation9g) continue;
               }
-            } else if (!isNewExpr9) {
-              continue; // bare `XMLHttpRequest<T>` without new and without parens — not a construction
+            } else {
+              // new XMLHttpRequest<T> — no parens after generic; fire as a no-parens construction.
+              isGenericNoParens9 = true;
+              genericCloseTokEnd9 = closingAngleTok9?.end ?? tok.end;
             }
           } else if (afterXhr && afterXhr.kind === "questionDot") {
             // `XMLHttpRequest?.(...)` — optional call
@@ -1534,6 +1543,27 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 }
               }
               if (hasTypeAnnotation9) continue;
+              // Exclude TS type-literal method signatures with empty parens:
+              // `type X = { XMLHttpRequest() }` / `{ XMLHttpRequest(); }` — empty parens, no return type.
+              {
+                let closeBrace9 = afterClose9;
+                if (closeBrace9 && closeBrace9.kind === "punct" &&
+                    (closeBrace9.text === ";" || closeBrace9.text === ",")) {
+                  const nextAfterSepIdx9 = nextSignificant(tokens, afterCloseIdx9 + 1);
+                  closeBrace9 = tokens[nextAfterSepIdx9];
+                }
+                if (closeBrace9 && closeBrace9.kind === "close" && closeBrace9.text === "}" &&
+                    closeBrace9.matchedAt !== undefined) {
+                  const openBraceIdx9 = closeBrace9.matchedAt;
+                  const prevOpenIdx9 = prevSignificant(tokens, openBraceIdx9 - 1);
+                  const prevOpen9 = tokens[prevOpenIdx9];
+                  const firstInsideIdx9 = nextSignificant(tokens, openBraceIdx9 + 1);
+                  if (firstInsideIdx9 === i && prevOpen9 && (
+                    prevOpen9.kind === "eq" ||
+                    (prevOpen9.kind === "punct" && prevOpen9.text === ":")
+                  )) continue;
+                }
+              }
             }
           } else {
             // Member access on the constructor itself — not a construction
@@ -1545,15 +1575,17 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const isOpt9 = afterXhr && afterXhr.kind === "questionDot";
-          // Bare `new XMLHttpRequest` — no parens in the original source
-          const isNoParens9 = isNewExpr9 && afterXhr && afterXhr.kind !== "open" && !isOpt9 && afterXhr.kind !== "operator";
+          // `new XMLHttpRequest` without parens: bare construction OR generic with no parens after `>`.
+          const isNoParens9 = isGenericNoParens9 ||
+            (isNewExpr9 && afterXhr && afterXhr.kind !== "open" && !isOpt9 && afterXhr.kind !== "operator");
           const detectedForm9 = isNewExpr9
             ? (isNoParens9 ? "new XMLHttpRequest" : "new XMLHttpRequest()")
             : (isOpt9 ? "XMLHttpRequest?.()" : "XMLHttpRequest()");
           const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
-          // end: cover through the opening `(` (matching SYN007/SYN008/SYN011 convention)
+          // end: cover through the opening `(` (matching SYN007/SYN008/SYN011 convention).
           // For bare `new XMLHttpRequest` (no parens), fall back to tok.end.
-          let warnEnd9 = tok.end;
+          // For `new XMLHttpRequest<T>` (generic, no parens), end at the closing `>`.
+          let warnEnd9 = isGenericNoParens9 ? genericCloseTokEnd9 : tok.end;
           if (!isNoParens9) {
             if (isOpt9) {
               const afterQD9end = nextSignificant(tokens, afterXhrFirstIdx + 1);
@@ -1563,7 +1595,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
               warnEnd9 = afterXhr.start + 1;
             } else if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
-              // generic form: find the `(` after the `>`
+              // generic form with parens: find the `(` after the `>` for warnEnd
               let anglDepth2 = 1;
               let j2 = afterXhrFirstIdx + 1;
               while (j2 < decl.tokenEnd && anglDepth2 > 0) {
