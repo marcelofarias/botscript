@@ -876,6 +876,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return bc\n" +
       "}",
   },
+  SYN015: {
+    code: "SYN015",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    rule:
+      "`localStorage.*` and `sessionStorage.*` accesses are same-origin storage operations " +
+      "invisible to botscript's capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, " +
+      "not the Web Storage API globals. A fn that reads or writes `localStorage`/`sessionStorage` has " +
+      "undeclared state dependencies — no `reads {}` / `writes {}` declaration in the fn header " +
+      "covers the access, and callers cannot observe or audit the dependency from the fn's declared surface. " +
+      "(`localStorage` persists across browser sessions; `sessionStorage` is scoped to the current tab and cleared when the tab closes.)",
+    idiom:
+      "pass a storage abstraction (e.g. a `Storage` interface) as an explicit fn parameter so callers " +
+      "control what storage is accessed, the dependency is visible in the fn signature, and tests can inject a mock; " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes storage for <reason>\" { localStorage.getItem(key) }` " +
+      "(substitute `sessionStorage` and the actual method — e.g. `setItem(key, val)`, `removeItem(key)`, `clear()` — as appropriate)",
+    rewrite:
+      "// before — localStorage access invisible to the capability model\n" +
+      "fn getToken() -> string | null {\n" +
+      "  return localStorage.getItem(\"auth_token\")  // SYN015\n" +
+      "}\n\n" +
+      "// after — storage passed as a parameter; dependency visible in the signature\n" +
+      "fn getToken(storage: Storage) -> string | null {\n" +
+      "  return storage.getItem(\"auth_token\")\n" +
+      "}",
+    example:
+      "// SYN015: localStorage access bypasses the storage capability model\n" +
+      "fn saveUser(user: User) -> void {\n" +
+      "  localStorage.setItem(\"user\", JSON.stringify(user))  // SYN015\n" +
+      "}\n\n" +
+      "// fix: pass storage as a parameter\n" +
+      "fn saveUser(storage: Storage, user: User) -> void {\n" +
+      "  storage.setItem(\"user\", JSON.stringify(user))\n" +
+      "}",
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",

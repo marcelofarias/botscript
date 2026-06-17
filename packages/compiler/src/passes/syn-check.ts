@@ -57,6 +57,20 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN015  A `localStorage.*` / `localStorage[key]` or `sessionStorage.*` / `sessionStorage[key]`
+ *           access was detected in a fn body (?bs 0.7+). Both globals are same-origin storage
+ *           whose reads and writes are invisible to botscript's capability model: `reads {}` /
+ *           `writes {}` labels cover declared resource identifiers, not the Web Storage API globals.
+ *           A fn that accesses `localStorage` or `sessionStorage` has undeclared state dependencies
+ *           invisible to callers and audit tooling. (`localStorage` persists across browser sessions;
+ *           `sessionStorage` is per-tab and cleared when the tab closes.)
+ *           Detected forms: `localStorage.key`, `localStorage?.key`, `localStorage[key]`,
+ *           `localStorage?.[key]` (and equivalents for `sessionStorage`).
+ *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
+ *           `localStorage`/`sessionStorage`, local bindings (parameters or `const`/`let`/`var`
+ *           declared within the fn body), and object method shorthands.
+ *           The check fires on any member access (`.` or `?.`): both reads and writes.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -148,7 +162,7 @@ import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { Token } from "../parser/lex.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
+import { computeNesting, prevSignificant, nextSignificant, collectTopLevelParamNames, collectFnBodyLocalNames } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
@@ -199,6 +213,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn012 = getErrorCode("SYN012")!;
   const syn013 = getErrorCode("SYN013")!;
   const syn014 = getErrorCode("SYN014")!;
+  const syn015 = getErrorCode("SYN015")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn022 = getErrorCode("SYN022")!;
@@ -225,6 +240,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const inner = nesting.get(decl) ?? [];
     const open: typeof inner = [];
     let nextInner = 0;
+
+    // Lazily computed on first localStorage/sessionStorage hit to avoid scanning
+    // every fn body unconditionally — see case "localStorage"/"sessionStorage" below.
+    let localBindings: Set<string> | null = null;
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
 
@@ -1238,6 +1257,111 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn014.rule,
             idiom: syn014.idiom,
             rewrite: syn014.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN015: localStorage / sessionStorage access ─────────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          const prevIdx15 = prevSignificant(tokens, i - 1);
+          const prev15 = tokens[prevIdx15];
+
+          // Exclude: `obj.localStorage.*` — preceded by `.` or `?.`
+          if (prev15 && ((prev15.kind === "punct" && prev15.text === ".") || prev15.kind === "questionDot"))
+            continue;
+
+          // Exclude: `function localStorage(...)` / `function* localStorage(...)` / `fn localStorage(...)` declarations
+          if (prev15 && prev15.kind === "ident" && prev15.text === "function") continue;
+          if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
+          if (prev15 && prev15.kind === "operator" && prev15.text === "*" && isFunctionStarDecl(tokens, prevIdx15)) continue;
+
+          // Exclude: local bindings — parameters or `const/let/var` named `localStorage`/`sessionStorage`.
+          // Computed lazily: only scan the body when we actually encounter a candidate.
+          if (localBindings === null) {
+            localBindings = collectTopLevelParamNames(decl.args);
+            for (const n of collectFnBodyLocalNames(tokens, decl, inner)) localBindings.add(n);
+          }
+          if (localBindings.has(tok.text)) continue;
+
+          // Must be followed by `.`, `?.`, or `[` — confirming this is a property/method
+          // access on the storage object (not a bare reference or assignment target).
+          // `[` covers computed access: localStorage[key] / sessionStorage[key].
+          const nextIdx15 = nextSignificant(tokens, i + 1);
+          const next15 = tokens[nextIdx15];
+          if (!next15 || !(
+            (next15.kind === "punct" && next15.text === ".") ||
+            next15.kind === "questionDot" ||
+            (next15.kind === "open" && next15.text === "[")
+          )) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const storageName15 = tok.text;
+          const isDirect15 = next15.kind === "open" && next15.text === "[";
+          const sep15 = next15.kind === "questionDot" ? "?." : isDirect15 ? "" : ".";
+          const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
+          const memberTok15 = tokens[memberIdx15];
+
+          // Computed member access: localStorage[key], localStorage?.[key], sessionStorage[key]
+          const isComputedViaOptChain15 = !!(memberTok15 && memberTok15.kind === "open" && memberTok15.text === "[");
+          const isComputed15 = isDirect15 || isComputedViaOptChain15;
+          let memberName15: string;
+          let rangeEnd15: number;
+          let afterMemberScanIdx15: number;
+          if (isComputed15) {
+            memberName15 = "[…]";
+            // Start scanning from the `[` — which is at nextIdx15 for direct access
+            // (localStorage[key]) or at memberIdx15 for optional-chain (localStorage?.[key]).
+            const bracketIdx15 = isDirect15 ? nextIdx15 : memberIdx15;
+            let depth15 = 1;
+            let j15 = bracketIdx15 + 1;
+            while (j15 < decl.tokenEnd && depth15 > 0) {
+              const t15 = tokens[j15];
+              if (!t15) break;
+              if (t15.kind === "open" && t15.text === "[") depth15++;
+              else if (t15.kind === "close" && t15.text === "]") depth15--;
+              j15++;
+            }
+            const closeBracket15 = tokens[j15 - 1];
+            rangeEnd15 = closeBracket15 ? closeBracket15.end : next15!.end;
+            afterMemberScanIdx15 = nextSignificant(tokens, j15);
+          } else {
+            memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<member>";
+            rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
+            afterMemberScanIdx15 = nextSignificant(tokens, memberIdx15 + 1);
+          }
+
+          // Determine if this is a call: `(` = direct call; `?.(` = optional call; `?.` alone = optional property access.
+          const afterMember15 = tokens[afterMemberScanIdx15];
+          let isCall15 = false;
+          if (afterMember15 && afterMember15.kind === "open" && afterMember15.text === "(") {
+            isCall15 = true;
+          } else if (afterMember15 && afterMember15.kind === "questionDot") {
+            // Optional call `?.(` — check next token is `(`
+            const afterQD15 = tokens[nextSignificant(tokens, afterMemberScanIdx15 + 1)];
+            isCall15 = !!(afterQD15 && afterQD15.kind === "open" && afterQD15.text === "(");
+          }
+          const unsafeExample15 = isCall15
+            ? `${storageName15}${sep15}${memberName15}(...)`
+            : `${storageName15}${sep15}${memberName15}`;
+          const loc15 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN015",
+            severity: "warning",
+            file: null,
+            line: loc15.line,
+            column: loc15.column,
+            start: tok.start,
+            end: rangeEnd15,
+            message:
+              `fn '${decl.name}' accesses ${storageName15}${sep15}${memberName15} — ` +
+              `${storageName15} is same-origin storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${storageName15} for <reason>" { ${unsafeExample15} }`,
+            rule: syn015.rule,
+            idiom: syn015.idiom,
+            rewrite: syn015.rewrite,
           });
           break;
         }
