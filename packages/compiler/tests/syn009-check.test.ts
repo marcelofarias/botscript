@@ -183,6 +183,26 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
 
+  it("does NOT fire on TypeScript method signature with omitted return type", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  type XhrLike = { XMLHttpRequest(url: string) };\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
+  it("does NOT fire on TypeScript method signature with optional param and omitted return type", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test() -> void {\n" +
+      "  type XhrLike = { XMLHttpRequest(url?: string) };\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
   it("fires on XMLHttpRequest() inside a ternary expression (regression: `:` must not suppress)", () => {
     // `cond ? XMLHttpRequest() : other` — the `:` after the closing `)` must not trigger
     // the method-signature exclusion and hide SYN009.

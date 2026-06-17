@@ -1467,6 +1467,30 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                   afterClose9.kind === "fatArrow" ||
                   (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
                 )) continue;
+                // Exclude TS method signatures with omitted return type: `{ XMLHttpRequest<T>(url: string) }`
+                let hasTypeAnnotation9g = false;
+                let depth9g = 0;
+                let ternaryDepth9g = 0;
+                for (let k9 = afterXhrFirstIdx + 1; k9 < afterAngle9.matchedAt; k9++) {
+                  const at9 = tokens[k9];
+                  if (!at9) continue;
+                  if (at9.kind === "open") { depth9g++; continue; }
+                  if (at9.kind === "close") { depth9g--; continue; }
+                  if (depth9g !== 0) continue;
+                  if (at9.kind === "question") {
+                    const nextAfterQ9 = nextSignificant(tokens, k9 + 1);
+                    const nextTokQ9 = tokens[nextAfterQ9];
+                    if (nextTokQ9 && nextTokQ9.kind === "punct" && nextTokQ9.text === ":") {
+                      hasTypeAnnotation9g = true; break;
+                    }
+                    ternaryDepth9g++; continue;
+                  }
+                  if (at9.kind === "punct" && at9.text === ":") {
+                    if (ternaryDepth9g > 0) { ternaryDepth9g--; continue; }
+                    hasTypeAnnotation9g = true; break;
+                  }
+                }
+                if (hasTypeAnnotation9g) continue;
               }
             } else if (!isNewExpr9) {
               continue; // bare `XMLHttpRequest<T>` without new and without parens — not a construction
@@ -1486,6 +1510,30 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 afterClose9.kind === "fatArrow" ||
                 (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
               )) continue;
+              // Exclude TS method signatures with omitted return type: `{ XMLHttpRequest(url: string) }`
+              let hasTypeAnnotation9 = false;
+              let depth9 = 0;
+              let ternaryDepth9 = 0;
+              for (let k9 = afterXhrFirstIdx + 1; k9 < afterXhr.matchedAt; k9++) {
+                const at9 = tokens[k9];
+                if (!at9) continue;
+                if (at9.kind === "open") { depth9++; continue; }
+                if (at9.kind === "close") { depth9--; continue; }
+                if (depth9 !== 0) continue;
+                if (at9.kind === "question") {
+                  const nextAfterQ9 = nextSignificant(tokens, k9 + 1);
+                  const nextTokQ9 = tokens[nextAfterQ9];
+                  if (nextTokQ9 && nextTokQ9.kind === "punct" && nextTokQ9.text === ":") {
+                    hasTypeAnnotation9 = true; break;
+                  }
+                  ternaryDepth9++; continue;
+                }
+                if (at9.kind === "punct" && at9.text === ":") {
+                  if (ternaryDepth9 > 0) { ternaryDepth9--; continue; }
+                  hasTypeAnnotation9 = true; break;
+                }
+              }
+              if (hasTypeAnnotation9) continue;
             }
           } else {
             // Member access on the constructor itself — not a construction
