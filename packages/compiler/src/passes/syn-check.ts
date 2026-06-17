@@ -57,16 +57,6 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
- *   SYN017  A `new Notification(title)`, `Notification(title)`, `Notification?.(title)`, or
- *           TypeScript instantiation form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
- *           `Notification` fires a user-visible browser notification at runtime — a UI side
- *           effect invisible to botscript's capability model: no `uses {}`, `reads {}`, or
- *           `writes {}` declaration covers notification dispatch. Callers cannot observe,
- *           audit, or suppress the effect from the fn's declared surface.
- *           Excluded: member calls (`obj.Notification`), `function`/`fn` declarations named
- *           `Notification`, object/class method shorthands, and TypeScript method signatures.
- *           The `:` exclusion is guarded against ternary consequents.
- *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -124,6 +114,16 @@
  *           Detection: `indexedDB` not preceded by `.`/`?.`, followed by `.` or `?.`.
  *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN017  A `new Notification(title)`, `Notification(title)`, `Notification?.(title)`, or
+ *           TypeScript instantiation form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
+ *           `Notification` fires a user-visible browser notification at runtime — a UI side
+ *           effect invisible to botscript's capability model: no `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers notification dispatch. Callers cannot observe,
+ *           audit, or suppress the effect from the fn's declared surface.
+ *           Excluded: member calls (`obj.Notification`), `function`/`fn` declarations named
+ *           `Notification`, object/class method shorthands, and TypeScript method signatures.
+ *           The `:` exclusion is guarded against ternary consequents.
  *
  *   SYN018  A `Math.random()`, `Math?.random()`, or `Math.random?.()` call was detected in a fn body (?bs 0.7+).
  *           `Math.random` generates a random float at runtime but is invisible to botscript's

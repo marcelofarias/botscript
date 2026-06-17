@@ -916,7 +916,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN017: {
     code: "SYN017",
-    title: "Notification() construction bypasses the capability model",
+    title: "new Notification() / Notification() call bypasses the capability model",
     rule:
       "`new Notification(title)`, bare `Notification(title)`, optional-call `Notification?.(title)`, " +
       "and TypeScript generic form `new Notification<T>(title)` calls create user-visible browser " +
