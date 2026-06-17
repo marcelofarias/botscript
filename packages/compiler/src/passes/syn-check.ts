@@ -912,6 +912,34 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             ? (isNoParens9 ? "new XMLHttpRequest" : "new XMLHttpRequest()")
             : (isOpt9 ? "XMLHttpRequest?.()" : "XMLHttpRequest()");
           const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
+          // end: cover through the opening `(` (matching SYN007/SYN008/SYN011 convention)
+          // For bare `new XMLHttpRequest` (no parens), fall back to tok.end.
+          let warnEnd9 = tok.end;
+          if (!isNoParens9) {
+            if (isOpt9) {
+              const afterQD9end = nextSignificant(tokens, afterXhrFirstIdx + 1);
+              const afterQDTokEnd9 = tokens[afterQD9end];
+              if (afterQDTokEnd9 && afterQDTokEnd9.kind === "open" && afterQDTokEnd9.text === "(")
+                warnEnd9 = afterQDTokEnd9.start + 1;
+            } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
+              warnEnd9 = afterXhr.start + 1;
+            } else if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
+              // generic form: find the `(` after the `>`
+              let anglDepth2 = 1;
+              let j2 = afterXhrFirstIdx + 1;
+              while (j2 < decl.tokenEnd && anglDepth2 > 0) {
+                const at = tokens[j2];
+                if (!at) { j2++; continue; }
+                if (at.kind === "operator" && at.text === "<") anglDepth2++;
+                else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+                  anglDepth2 = Math.max(0, anglDepth2 - at.text.length);
+                j2++;
+              }
+              const afterAngle9end = tokens[nextSignificant(tokens, j2)];
+              if (afterAngle9end && afterAngle9end.kind === "open" && afterAngle9end.text === "(")
+                warnEnd9 = afterAngle9end.start + 1;
+            }
+          }
           const loc9 = locationOf(src, warnStart9);
           warnings.push({
             code: syn009.code,
@@ -920,7 +948,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             line: loc9.line,
             column: loc9.column,
             start: warnStart9,
-            end: tok.end,
+            end: warnEnd9,
             message:
               `fn '${decl.name}' uses ${detectedForm9} — bypasses the net capability model; ` +
               `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
