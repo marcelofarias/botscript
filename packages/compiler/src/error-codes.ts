@@ -945,6 +945,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
   },
+  SYN019: {
+    code: "SYN019",
+    title: "crypto.getRandomValues() / crypto.randomUUID() call bypasses the random capability model",
+    rule:
+      "`crypto.getRandomValues()` and `crypto.randomUUID()` generate cryptographic randomness at runtime " +
+      "but are invisible to botscript's capability model: `uses { random }` covers `random.*` stdlib calls, " +
+      "not the `crypto` global. A fn that calls these methods has an undeclared randomness dependency — " +
+      "tests cannot control the output and callers cannot observe the dependency from the fn header.",
+    idiom:
+      "use `random.next()` (float [0,1)) or `random.int(min, max)` from the `random` stdlib with `uses { random }` " +
+      "so the randomness dependency is visible in the fn header and tests can inject a mock; " +
+      "if cryptographic randomness or UUIDs are genuinely required, wrap in " +
+      "`unsafe \"uses crypto for <reason>\" { crypto.getRandomValues(buf) }`",
+    rewrite:
+      "// before — crypto call invisible to the capability model\n" +
+      "fn rollToken() -> number {\n" +
+      "  const buf = new Uint8Array(4)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return buf[0]\n" +
+      "}\n\n" +
+      "// after — randomness declared in uses {}; tests can control output\n" +
+      "fn rollToken() uses { random } -> number {\n" +
+      "  return random.int(0, 256)  // [0, 256) == [0, 255] inclusive\n" +
+      "}",
+    example:
+      "// SYN019: crypto call bypasses the random capability model\n" +
+      "fn rollDice() -> number {\n" +
+      "  const buf = new Uint8Array(1)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return (buf[0] % 6) + 1\n" +
+      "}\n\n" +
+      "// fix: use random stdlib\n" +
+      "fn rollDice() uses { random } -> number {\n" +
+      "  return random.int(1, 7)\n" +
+      "}",
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",

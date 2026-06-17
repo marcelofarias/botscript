@@ -126,6 +126,17 @@
  *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
  *
+ *   SYN019  A `crypto.getRandomValues(...)` or `crypto.randomUUID()` call was detected in a
+ *           fn body (?bs 0.7+). These calls generate cryptographic randomness at runtime but
+ *           are invisible to botscript's capability model: `uses { random }` covers `random.*`
+ *           stdlib calls, not the `crypto` global. A fn that calls `crypto.getRandomValues()`
+ *           or `crypto.randomUUID()` has an undeclared randomness dependency — tests cannot
+ *           control the output and callers cannot see the dependency in the fn header.
+ *           Detection: `crypto` ident not preceded by `.`/`?.`, followed by `.` or `?.`,
+ *           followed by `getRandomValues` or `randomUUID`, followed by `(` or `?.(`.
+ *           `fn`/`function` declarations named `crypto` and non-randomness members are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
  *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
  *           `process.hrtime`, `process.uptime`, `process.memoryUsage`,
@@ -230,6 +241,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
+  const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
 
@@ -1367,6 +1379,72 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn018.rule,
             idiom: syn018.idiom,
             rewrite: syn018.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN019: crypto.getRandomValues() / crypto.randomUUID() ───────────
+        case "crypto": {
+          // Exclude: `obj.crypto` — preceded by `.` or `?.`
+          const prevIdx19 = prevSignificant(tokens, i - 1);
+          const prev19 = tokens[prevIdx19];
+          if (prev19 && ((prev19.kind === "punct" && prev19.text === ".") || prev19.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named crypto
+          if (prev19 && prev19.kind === "keyword" && prev19.text === "fn") continue;
+          if (prev19 && prev19.kind === "ident" && prev19.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx19)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx19 = nextSignificant(tokens, i + 1);
+          const next19 = tokens[nextIdx19];
+          const isDot19 = next19 && next19.kind === "punct" && next19.text === ".";
+          const isOptChain19 = next19 && next19.kind === "questionDot";
+          if (!isDot19 && !isOptChain19) continue;
+
+          // Next token after the dot must be `getRandomValues` or `randomUUID`
+          const methodIdx19 = nextSignificant(tokens, nextIdx19 + 1);
+          const method19 = tokens[methodIdx19];
+          if (!method19 || method19.kind !== "ident") continue;
+          if (method19.text !== "getRandomValues" && method19.text !== "randomUUID") continue;
+
+          // Confirm it's a call: next token is `(` or `?.(`
+          let callIdx19 = nextSignificant(tokens, methodIdx19 + 1);
+          let callTok19 = tokens[callIdx19];
+          let isOptCall19 = false;
+          if (callTok19 && callTok19.kind === "questionDot") {
+            isOptCall19 = true;
+            callIdx19 = nextSignificant(tokens, callIdx19 + 1);
+            callTok19 = tokens[callIdx19];
+          }
+          if (!callTok19 || !(callTok19.kind === "open" && callTok19.text === "(")) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep19 = isOptChain19 ? "?." : ".";
+          const callSep19 = isOptCall19 ? "?." : "";
+          const methodName19 = method19.text;
+          const argSuffix19 = methodName19 === "getRandomValues" ? "(buf)" : "()";
+          const callForm19 = `crypto${sep19}${methodName19}${callSep19}${argSuffix19}`;
+          const loc19 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN019",
+            severity: "warning",
+            file: null,
+            line: loc19.line,
+            column: loc19.column,
+            start: tok.start,
+            end: callTok19.start + 1,
+            message:
+              `fn '${decl.name}' calls ${callForm19} — ` +
+              `crypto.getRandomValues and crypto.randomUUID generate cryptographic randomness invisible to the capability model; ` +
+              `uses { random } does not cover the crypto global; ` +
+              `use random.next() or random.int() from the random stdlib with uses { random } so callers see the dependency and tests can control the output; ` +
+              `for crypto-specific needs (cryptographic randomness, UUIDs) wrap in unsafe "uses crypto for <reason>" { ${callForm19} }`,
+            rule: syn019.rule,
+            idiom: syn019.idiom,
+            rewrite: syn019.rewrite,
           });
           break;
         }
