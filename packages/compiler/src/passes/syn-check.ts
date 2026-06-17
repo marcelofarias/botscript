@@ -58,7 +58,8 @@
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
  *   SYN009  A `new XMLHttpRequest()`, `XMLHttpRequest()`, `new XMLHttpRequest<T>()`,
- *           or no-parens `new XMLHttpRequest` was detected in a fn body (?bs 0.7+).
+ *           `new XMLHttpRequest<T>` (no-parens generic), or bare `new XMLHttpRequest`
+ *           was detected in a fn body (?bs 0.7+).
  *           XMLHttpRequest constructs an XHR object that can open HTTP connections, invisible to CAP001 (which checks
  *           `http.*` member calls). A fn that constructs an XHR has an undeclared `net`
  *           dependency. Excluded: member calls (`obj.XMLHttpRequest`), object/class method
@@ -1461,6 +1462,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 anglDepth = Math.max(0, anglDepth - at.text.length);
               j++;
             }
+            // If the angle-bracket scan never found the closing `>`, the source is malformed;
+            // bail out to avoid false-positives on unterminated generics (matches SYN008 behavior).
+            if (anglDepth > 0) continue;
             const closingAngleTok9 = tokens[j - 1]; // the `>` that closed the generic scan
             const afterAngleIdx = nextSignificant(tokens, j);
             const afterAngle9 = tokens[afterAngleIdx];
