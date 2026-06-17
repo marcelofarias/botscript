@@ -1482,7 +1482,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             message:
               `fn '${decl.name}' ${hasNew17 ? "constructs new " : "calls "}Notification${callSep17}() — ` +
               `Notification fires a user-visible browser notification invisible to the capability model; ` +
-              `wrap in unsafe "sends notification for <reason>" { ${hasNew17 ? "new " : ""}Notification${callSep17}(title, options) }`,
+              `wrap in unsafe "sends notification for <reason>" { ${hasNew17 ? "new " : ""}Notification${callSep17}(...) }`,
             rule: syn017.rule,
             idiom: syn017.idiom,
             rewrite: syn017.rewrite,
