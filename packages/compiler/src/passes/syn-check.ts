@@ -1437,31 +1437,40 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (hasTypeAnnotation17) continue;
 
             // Exclude TS type-literal method signatures with no annotations at all:
-            // `{ Notification() }`, `{ Notification(); }`, `{ Notification(), }` — empty parens.
-            // The token after `)` may be `}` directly, or a separator (`;` / `,`) then `}`.
-            // Conditions: (a) enclosing `{` is in a type context (preceded by `=` or `:`),
-            //             (b) `Notification` is the first significant token inside that `{`.
-            // Condition (b) guards against `const o = { x: Notification() }` where the
-            // outer `{` is also preceded by `=` but `Notification` is not the first token.
+            // `{ Notification() }`, `{ x: string; Notification() }`, `{ Notification(); }` etc.
+            // Only applies to empty-parens forms — annotated params are handled by hasTypeAnnotation17
+            // above. The token after `)` may be `}` directly, or a separator then `}`.
+            // Conditions: (a) parens are empty (no significant tokens between `(` and `)`),
+            //             (b) enclosing `{` is in a type context (preceded by `=` or `:`),
+            //             (c) `Notification` is at a method-signature position: either the first
+            //                 significant token inside the `{`, or preceded by `;` / `,`
+            //                 (subsequent type member, e.g. `{ x: string; Notification() }`).
             {
-              let closeBrace17 = afterClose17;
-              if (closeBrace17 &&
-                  closeBrace17.kind === "punct" &&
-                  (closeBrace17.text === ";" || closeBrace17.text === ",")) {
-                const nextAfterSepIdx17 = nextSignificant(tokens, afterCloseIdx17 + 1);
-                closeBrace17 = tokens[nextAfterSepIdx17];
-              }
-              if (closeBrace17 && closeBrace17.kind === "close" && closeBrace17.text === "}" &&
-                  closeBrace17.matchedAt !== undefined) {
-                const openBraceIdx17 = closeBrace17.matchedAt;
-                const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
-                const prevOpen17 = tokens[prevOpenIdx17];
-                const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
-                const isNotificationFirst17 = firstInsideBraceIdx17 === i;
-                if (isNotificationFirst17 && prevOpen17 && (
-                  prevOpen17.kind === "eq" ||                                       // type T = { ... }
-                  (prevOpen17.kind === "punct" && prevOpen17.text === ":")          // x: { ... }
-                )) continue;
+              const isEmptyParens17 = nextSignificant(tokens, callIdx17 + 1) >= (callTok17.matchedAt as number);
+              if (isEmptyParens17) {
+                let closeBrace17 = afterClose17;
+                if (closeBrace17 &&
+                    closeBrace17.kind === "punct" &&
+                    (closeBrace17.text === ";" || closeBrace17.text === ",")) {
+                  const nextAfterSepIdx17 = nextSignificant(tokens, afterCloseIdx17 + 1);
+                  closeBrace17 = tokens[nextAfterSepIdx17];
+                }
+                if (closeBrace17 && closeBrace17.kind === "close" && closeBrace17.text === "}" &&
+                    closeBrace17.matchedAt !== undefined) {
+                  const openBraceIdx17 = closeBrace17.matchedAt;
+                  const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
+                  const prevOpen17 = tokens[prevOpenIdx17];
+                  const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
+                  // Method-signature position: first token in the type literal, or preceded by
+                  // a member separator (handles `{ x: string; Notification() }` etc.)
+                  const isAtMemberPos17 =
+                    firstInsideBraceIdx17 === i ||
+                    (prev17 && prev17.kind === "punct" && (prev17.text === ";" || prev17.text === ","));
+                  if (isAtMemberPos17 && prevOpen17 && (
+                    prevOpen17.kind === "eq" ||                                       // type T = { ... }
+                    (prevOpen17.kind === "punct" && prevOpen17.text === ":")          // x: { ... }
+                  )) continue;
+                }
               }
             }
           }
