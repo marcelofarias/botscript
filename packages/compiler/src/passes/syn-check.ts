@@ -1394,11 +1394,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: fn/function/function* declarations named crypto
           if (prev19 && prev19.kind === "keyword" && prev19.text === "fn") continue;
           if (prev19 && prev19.kind === "ident" && prev19.text === "function") continue;
-          if (prev19 && prev19.kind === "operator" && prev19.text === "*") {
-            const prevPrevIdx19 = prevSignificant(tokens, prevIdx19 - 1);
-            const prevPrev19 = tokens[prevPrevIdx19];
-            if (prevPrev19 && prevPrev19.kind === "ident" && prevPrev19.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx19)) continue;
 
           // Must be followed by `.` or `?.`
           const nextIdx19 = nextSignificant(tokens, i + 1);

@@ -49,6 +49,26 @@ describe("SYN019: crypto.getRandomValues() / crypto.randomUUID() detection", () 
     expect(result.warnings.some((w) => w.code === "SYN019")).toBe(true);
   });
 
+  it("fires on crypto?.randomUUID() — optional chain on crypto for randomUUID", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeId() -> string {\n" +
+      "  return crypto?.randomUUID()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+
+  it("fires on crypto.randomUUID?.() — optional call on randomUUID", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeId() -> string {\n" +
+      "  return crypto.randomUUID?.()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+
   it("does NOT fire below ?bs 0.7", () => {
     const src =
       "?bs 0.6\n" +
