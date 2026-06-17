@@ -40,7 +40,7 @@
  *           `fetch` makes HTTP requests at runtime but is invisible to botscript's
  *           capability model: CAP001 checks for `http.*` member calls, not the `fetch`
  *           global. A fn that calls `fetch` has an undeclared network dependency.
- *           Excluded: member calls (`obj.fetch`), function/fn declarations named
+ *           Excluded: member calls (`obj.fetch`), function/fn/function* declarations named
  *           `fetch`, object/class method shorthands, and TypeScript method
  *           signatures (`{ fetch(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? fetch(url) : other`).
@@ -50,7 +50,7 @@
  *           invisible to botscript's capability model: CAP001 checks for `http.*` member
  *           calls, not the `WebSocket` global. A fn that constructs a WebSocket has an
  *           undeclared network dependency that no capability declaration can see.
- *           Excluded: member calls (`obj.WebSocket`), `function`/`fn` declarations named
+ *           Excluded: member calls (`obj.WebSocket`), `function`/`fn`/`function*` declarations named
  *           `WebSocket`, object/class method shorthands, and TypeScript method
  *           signatures (`{ WebSocket(url): T; }`). The `:` exclusion is guarded
  *           against ternary consequents (`cond ? WebSocket(url) : other`, including
@@ -69,7 +69,7 @@
  *           callbacks to run after the current fn returns — any effects inside
  *           those callbacks are invisible to callers: no capability declaration,
  *           no `writes {}` label, and no `throws {}` entry covers them.
- *           Excluded: member calls (`obj.setTimeout`), function declarations
+ *           Excluded: member calls (`obj.setTimeout`), function/fn/function* declarations
  *           named `setTimeout`, and object/class method shorthands.
  *
  *   SYN011  A dynamic `import(specifier)` call was detected in a fn body (?bs 0.7+).
@@ -80,6 +80,71 @@
  *           `import.meta` (followed by `.`) is excluded — it's a property, not a call.
  *           Excluded: member calls, `fn import(...)` declarations, object method shorthands.
  *
+ *   SYN012  A `new EventSource(url)`, `EventSource(url)`, `EventSource?.(url)`, or TypeScript
+ *           instantiation form `new EventSource<T>(url)` was detected in a fn body (?bs 0.7+).
+ *           `EventSource` opens a persistent server-sent-events connection at runtime but is
+ *           invisible to botscript's capability model: CAP001 checks for `http.*` member
+ *           calls, not the `EventSource` global. A fn that constructs an EventSource has an
+ *           undeclared network dependency.
+ *           Excluded: member calls (`obj.EventSource`), `function`/`fn` declarations named
+ *           `EventSource`, object/class method shorthands, and TypeScript method signatures.
+ *           The `:` exclusion is guarded against ternary consequents.
+ *
+ *   SYN013  A `new Worker(scriptURL)`, `Worker(scriptURL)`, `Worker?.(scriptURL)`,
+ *           `new SharedWorker(scriptURL)`, `SharedWorker(scriptURL)`, or
+ *           `SharedWorker?.(scriptURL)` was detected in a fn body (?bs 0.7+). Worker construction
+ *           spawns a new JS execution context whose capability surface is unbounded: the worker
+ *           script can make network requests, access storage, and perform any operation — none of
+ *           it visible in the spawning fn's `uses {}`, `reads {}`, or `writes {}` declarations.
+ *           Excluded: member calls (`obj.Worker`), `function`/`fn` declarations named
+ *           `Worker`/`SharedWorker`, object/class method shorthands, and TypeScript method
+ *           signatures. The `:` exclusion is guarded against ternary consequents.
+ *
+ *   SYN014  A `new BroadcastChannel(name)`, `BroadcastChannel(name)`, or TypeScript
+ *           instantiation form `new BroadcastChannel<T>(name)` was detected in a fn body
+ *           (?bs 0.7+). `BroadcastChannel` opens a cross-context message channel at runtime
+ *           that any tab, window, or worker on the same origin can post to or receive from —
+ *           invisible to botscript's capability model: CAP001 checks for stdlib namespace
+ *           calls, not the `BroadcastChannel` global. A fn that constructs a BroadcastChannel
+ *           has an undeclared cross-context messaging dependency.
+ *           Excluded: member calls (`obj.BroadcastChannel`), `function`/`fn`/`function*` declarations
+ *           named `BroadcastChannel`, object/class method shorthands, and TypeScript method
+ *           signatures. The `:` exclusion is guarded against ternary consequents.
+ *
+ *   SYN016  An `indexedDB.*` access was detected in a fn body (?bs 0.7+).
+ *           `indexedDB` is same-origin persistent database storage invisible to botscript's
+ *           capability model: `reads {}` / `writes {}` labels cover declared resource
+ *           identifiers, not the Web Storage API globals. Unlike `localStorage`, `indexedDB`
+ *           is asynchronous and has no practical size limit. A fn that accesses `indexedDB`
+ *           has undeclared persistent state dependencies — callers cannot observe or audit
+ *           them from the fn's declared surface.
+ *           Detection: `indexedDB` not preceded by `.`/`?.`, followed by `.` or `?.`.
+ *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN018  A `Math.random()`, `Math?.random()`, or `Math.random?.()` call was detected in a fn body (?bs 0.7+).
+ *           `Math.random` generates a random float at runtime but is invisible to botscript's
+ *           capability model: `uses { random }` covers `random.*` stdlib calls, not the
+ *           `Math` global. A fn that calls `Math.random()` has an undeclared randomness
+ *           dependency — callers cannot see it, and tests cannot deterministically mock or
+ *           suppress it the way they can the `random` stdlib namespace.
+ *           Detection: `Math` not preceded by `.`/`?.`, followed by `.` or `?.`, member is
+ *           `random`, followed by `(` or `?.(` (call confirmation). Bare `Math.random`
+ *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           bodies are suppressed.
+ *
+ *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
+ *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
+ *           `process.hrtime`, `process.uptime`, `process.memoryUsage`,
+ *           `process.cpuUsage`, or `process.resourceUsage` access was detected in a fn body
+ *           (?bs 0.7+). These read ambient Node.js runtime or deployment state at runtime but
+ *           are invisible to botscript's capability model — no `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers them. A fn that reads these values has an undeclared
+ *           dependency: callers cannot see it and tests cannot control the observed value.
+ *           Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.
+ *           Excluded: member calls on a local binding (`obj.process.*`), fn/function declarations
+ *           named `process`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -88,10 +153,21 @@
 import type { Diagnostic } from "../diagnostics.js";
 import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
+import type { Token } from "../parser/lex.js";
 import { locationOf } from "./_location.js";
 import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
+
+// Returns true when the token at `starIdx` is a `*` operator preceded by `function`,
+// i.e. this ident is the name in a `function* name(...)` generator declaration.
+function isFunctionStarDecl(tokens: Token[], starIdx: number): boolean {
+  const star = tokens[starIdx];
+  if (!star || star.kind !== "operator" || star.text !== "*") return false;
+  const prevIdx = prevSignificant(tokens, starIdx - 1);
+  const prev = tokens[prevIdx];
+  return !!(prev && prev.kind === "ident" && prev.text === "function");
+}
 
 export interface SynCheckResult {
   code: string;
@@ -105,6 +181,11 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+// process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
+const SYN022_PROCESS_MEMBERS = new Set([
+  "argv", "cwd", "platform", "arch", "pid", "ppid",
+  "version", "versions", "hrtime", "uptime", "memoryUsage", "cpuUsage", "resourceUsage",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -123,6 +204,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn009 = getErrorCode("SYN009")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
+  const syn012 = getErrorCode("SYN012")!;
+  const syn013 = getErrorCode("SYN013")!;
+  const syn014 = getErrorCode("SYN014")!;
+  const syn016 = getErrorCode("SYN016")!;
+  const syn018 = getErrorCode("SYN018")!;
+  const syn022 = getErrorCode("SYN022")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -537,6 +624,45 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               idiom: syn006.idiom,
               rewrite: syn006.rewrite,
             });
+          } else if (SYN022_PROCESS_MEMBERS.has(memberTok.text)) {
+            // SYN022: ambient process state access (argv, cwd, platform, arch, pid, etc.)
+            if (isInsideRange(memberTok.start, unsafeRanges)) continue;
+
+            const loc22 = locationOf(src, tok.start);
+            // Distinguish calls (cwd(), hrtime(), etc.) from property reads (argv, pid, etc.)
+            // Also distinguish optional-call form (process.cwd?.()) to preserve semantics in message.
+            const afterMemberIdx22 = nextSignificant(tokens, memberIdx + 1);
+            const afterMember22 = tokens[afterMemberIdx22];
+            let isCall22 = false;
+            let isOptCall22 = false;
+            if (afterMember22 && afterMember22.kind === "open" && afterMember22.text === "(") {
+              isCall22 = true;
+            } else if (afterMember22 && afterMember22.kind === "questionDot") {
+              const afterQD22 = tokens[nextSignificant(tokens, afterMemberIdx22 + 1)];
+              if (afterQD22 && afterQD22.kind === "open" && afterQD22.text === "(") {
+                isCall22 = true;
+                isOptCall22 = true;
+              }
+            }
+            const callSuffix22 = isCall22 ? (isOptCall22 ? "?.()" : "()") : "";
+            const form22 = `process${sep5}${memberTok.text}${callSuffix22}`;
+            warnings.push({
+              code: "SYN022",
+              severity: "warning",
+              file: null,
+              line: loc22.line,
+              column: loc22.column,
+              start: tok.start,
+              end: memberTok.end,
+              message:
+                `fn '${decl.name}' accesses ${form22} — ` +
+                `ambient Node.js process state invisible to the capability model; ` +
+                `pass the value as an explicit parameter (preferred) or wrap in ` +
+                `unsafe "accesses process.${memberTok.text} for <reason>" { ${form22} }`,
+              rule: syn022.rule,
+              idiom: syn022.idiom,
+              rewrite: syn022.rewrite,
+            });
           }
           break;
         }
@@ -550,9 +676,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named fetch
+          // Exclude: function/fn/function* declarations named fetch
           if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
           if (prev7 && prev7.kind === "keyword" && prev7.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx7)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call.
           const nextIdx7 = nextSignificant(tokens, i + 1);
@@ -618,9 +745,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
             continue;
 
-          // Exclude: function/fn declarations named WebSocket
+          // Exclude: function/fn/function* declarations named WebSocket
           if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
           if (prev8 && prev8.kind === "keyword" && prev8.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx8)) continue;
 
           const hasNew8 = prev8 && prev8.kind === "ident" && prev8.text === "new";
           // For ternary guard: check if token before WebSocket (or before `new`) is `?`
@@ -759,6 +887,468 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
+        // ── SYN012: new EventSource() / EventSource() call ──────────────────
+        case "EventSource": {
+          // Exclude: `obj.EventSource(...)` — preceded by `.` or `?.`
+          const prevIdx12 = prevSignificant(tokens, i - 1);
+          const prev12 = tokens[prevIdx12];
+          if (prev12 && ((prev12.kind === "punct" && prev12.text === ".") || prev12.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named EventSource
+          if (prev12 && prev12.kind === "ident" && prev12.text === "function") continue;
+          if (prev12 && prev12.kind === "keyword" && prev12.text === "fn") continue;
+          // Generator: `function* EventSource` — prev token is `*` (operator kind), token before that is `function`
+          if (prev12 && prev12.kind === "operator" && prev12.text === "*") {
+            const prevPrevIdx12 = prevSignificant(tokens, prevIdx12 - 1);
+            const prevPrev12 = tokens[prevPrevIdx12];
+            if (prevPrev12 && prevPrev12.kind === "ident" && prevPrev12.text === "function") continue;
+          }
+
+          const hasNew12 = prev12 && prev12.kind === "ident" && prev12.text === "new";
+          // Ternary guard: `cond ? EventSource(url) : other` / `cond ? new EventSource(url) : other`
+          const prevBeforeNew12 = hasNew12
+            ? tokens[prevSignificant(tokens, prevIdx12 - 1)]
+            : undefined;
+          const isTernaryConsequent12 =
+            (prev12 !== undefined && prev12 !== null && prev12.kind === "question") ||
+            (prevBeforeNew12 !== undefined && prevBeforeNew12 !== null && prevBeforeNew12.kind === "question");
+
+          const nextIdx12 = nextSignificant(tokens, i + 1);
+          const next12 = tokens[nextIdx12];
+
+          let isOpt12 = false;
+          let callIdx12 = nextIdx12;
+
+          if (next12 && next12.kind === "questionDot") {
+            // EventSource?.( — optional call (no generic scan to avoid false-positives)
+            isOpt12 = true;
+            callIdx12 = nextSignificant(tokens, nextIdx12 + 1);
+          } else if (hasNew12 && next12 && next12.kind === "operator" && next12.text === "<") {
+            // new EventSource<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx12 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx12 = nextSignificant(tokens, j);
+          }
+
+          const callTok12 = tokens[callIdx12];
+          if (!callTok12 || !(callTok12.kind === "open" && callTok12.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { EventSource(url) { } } / { EventSource(url): T; }
+          if (callTok12.matchedAt !== undefined) {
+            const afterCloseIdx12 = nextSignificant(tokens, callTok12.matchedAt + 1);
+            const afterClose12 = tokens[afterCloseIdx12];
+            if (afterClose12 && (
+              (afterClose12.kind === "open" && afterClose12.text === "{") ||
+              afterClose12.kind === "fatArrow" ||
+              (!isTernaryConsequent12 && afterClose12.kind === "punct" && afterClose12.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ EventSource(url: string) }` — a `:` at depth 0 inside the parens.
+            // Also handles optional params: `{ EventSource(url?: string) }`.
+            let hasTypeAnnotation12 = false;
+            let depth12 = 0;
+            let ternaryDepth12 = 0;
+            for (let k12 = callIdx12 + 1; k12 < callTok12.matchedAt; k12++) {
+              const at12 = tokens[k12];
+              if (!at12) continue;
+              if (at12.kind === "open") { depth12++; continue; }
+              if (at12.kind === "close") { depth12--; continue; }
+              if (depth12 !== 0) continue;
+              if (at12.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ12 = nextSignificant(tokens, k12 + 1);
+                const nextTokQ12 = tokens[nextAfterQ12];
+                if (nextTokQ12 && nextTokQ12.kind === "punct" && nextTokQ12.text === ":") {
+                  hasTypeAnnotation12 = true;
+                  break;
+                }
+                ternaryDepth12++;
+                continue;
+              }
+              if (at12.kind === "punct" && at12.text === ":") {
+                if (ternaryDepth12 > 0) { ternaryDepth12--; continue; }
+                hasTypeAnnotation12 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation12) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep12 = isOpt12 ? "?." : "";
+          const warnStart12 = hasNew12 ? prev12!.start : tok.start;
+          const loc12 = locationOf(src, warnStart12);
+          warnings.push({
+            code: "SYN012",
+            severity: "warning",
+            file: null,
+            line: loc12.line,
+            column: loc12.column,
+            start: warnStart12,
+            end: callTok12.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew12 ? "constructs new " : "calls "}EventSource${callSep12}() — ` +
+              `EventSource opens a server-sent-events connection invisible to the capability model; ` +
+              `wrap in unsafe "wraps EventSource for <reason>" { ${hasNew12 ? "new " : ""}EventSource${isOpt12 ? "?." : ""}(url) }`,
+            rule: syn012.rule,
+            idiom: syn012.idiom,
+            rewrite: syn012.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN013: new Worker() / new SharedWorker() ───────────────────────
+        case "Worker":
+        case "SharedWorker": {
+          // Exclude: `obj.Worker(...)` — preceded by `.` or `?.`
+          const prevIdx13 = prevSignificant(tokens, i - 1);
+          const prev13 = tokens[prevIdx13];
+          if (prev13 && ((prev13.kind === "punct" && prev13.text === ".") || prev13.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named Worker/SharedWorker
+          if (prev13 && prev13.kind === "ident" && prev13.text === "function") continue;
+          if (prev13 && prev13.kind === "keyword" && prev13.text === "fn") continue;
+          // Generator: `function* Worker` — prev token is `*` (operator kind), token before that is `function`
+          if (prev13 && prev13.kind === "operator" && prev13.text === "*") {
+            const prevPrevIdx13 = prevSignificant(tokens, prevIdx13 - 1);
+            const prevPrev13 = tokens[prevPrevIdx13];
+            if (prevPrev13 && prevPrev13.kind === "ident" && prevPrev13.text === "function") continue;
+          }
+
+          const hasNew13 = prev13 && prev13.kind === "ident" && prev13.text === "new";
+          // Ternary guard: `cond ? new Worker(url) : other`
+          const prevBeforeNew13 = hasNew13
+            ? tokens[prevSignificant(tokens, prevIdx13 - 1)]
+            : undefined;
+          const isTernaryConsequent13 =
+            (prev13 !== undefined && prev13 !== null && prev13.kind === "question") ||
+            (prevBeforeNew13 !== undefined && prevBeforeNew13 !== null && prevBeforeNew13.kind === "question");
+
+          const nextIdx13 = nextSignificant(tokens, i + 1);
+          const next13 = tokens[nextIdx13];
+
+          let isOpt13 = false;
+          let callIdx13 = nextIdx13;
+
+          if (next13 && next13.kind === "questionDot") {
+            // Worker?.( — optional call
+            isOpt13 = true;
+            callIdx13 = nextSignificant(tokens, nextIdx13 + 1);
+          } else if (hasNew13 && next13 && next13.kind === "operator" && next13.text === "<") {
+            // new Worker<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx13 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx13 = nextSignificant(tokens, j);
+          }
+
+          const callTok13 = tokens[callIdx13];
+          if (!callTok13 || !(callTok13.kind === "open" && callTok13.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { Worker(url) { } } / { Worker(url): T; }
+          if (callTok13.matchedAt !== undefined) {
+            const afterCloseIdx13 = nextSignificant(tokens, callTok13.matchedAt + 1);
+            const afterClose13 = tokens[afterCloseIdx13];
+            if (afterClose13 && (
+              (afterClose13.kind === "open" && afterClose13.text === "{") ||
+              afterClose13.kind === "fatArrow" ||
+              (!isTernaryConsequent13 && afterClose13.kind === "punct" && afterClose13.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ Worker(url: string) }` — a `:` at depth 0 inside the parens.
+            // Also handles optional params: `{ Worker(url?: string) }`.
+            let hasTypeAnnotation13 = false;
+            let depth13 = 0;
+            let ternaryDepth13 = 0;
+            for (let k13 = callIdx13 + 1; k13 < callTok13.matchedAt; k13++) {
+              const at13 = tokens[k13];
+              if (!at13) continue;
+              if (at13.kind === "open") { depth13++; continue; }
+              if (at13.kind === "close") { depth13--; continue; }
+              if (depth13 !== 0) continue;
+              if (at13.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ13 = nextSignificant(tokens, k13 + 1);
+                const nextTokQ13 = tokens[nextAfterQ13];
+                if (nextTokQ13 && nextTokQ13.kind === "punct" && nextTokQ13.text === ":") {
+                  hasTypeAnnotation13 = true;
+                  break;
+                }
+                ternaryDepth13++;
+                continue;
+              }
+              if (at13.kind === "punct" && at13.text === ":") {
+                if (ternaryDepth13 > 0) { ternaryDepth13--; continue; }
+                hasTypeAnnotation13 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation13) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const workerName13 = tok.text;
+          const warnStart13 = hasNew13 ? prev13!.start : tok.start;
+          const loc13 = locationOf(src, warnStart13);
+          warnings.push({
+            code: "SYN013",
+            severity: "warning",
+            file: null,
+            line: loc13.line,
+            column: loc13.column,
+            start: warnStart13,
+            end: callTok13.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew13 ? "constructs new " : "calls "}${workerName13}${isOpt13 ? "?." : ""}() — ` +
+              `${workerName13} spawns a new execution context with an unbounded capability surface invisible to the capability model; ` +
+              `wrap in unsafe "<reason>" { ${hasNew13 ? "new " : ""}${workerName13}${isOpt13 ? "?." : ""}(scriptURL) }`,
+            rule: syn013.rule,
+            idiom: syn013.idiom,
+            rewrite: syn013.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN014: new BroadcastChannel() / BroadcastChannel() ─────────────
+        case "BroadcastChannel": {
+          const prevIdx14 = prevSignificant(tokens, i - 1);
+          const prev14 = tokens[prevIdx14];
+
+          // Exclude: `obj.BroadcastChannel(...)` — preceded by `.` or `?.`
+          if (prev14 && ((prev14.kind === "punct" && prev14.text === ".") || prev14.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named BroadcastChannel
+          if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
+          if (prev14 && prev14.kind === "keyword" && prev14.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx14)) continue;
+
+          // Must be followed by `(` or `?.(` — or `<T>(` when preceded by `new`
+          // (generic scan is gated on `new` to avoid `<`/`>` comparison false-positives).
+          const nextIdx14 = nextSignificant(tokens, i + 1);
+          const next14 = tokens[nextIdx14];
+
+          let callIdx14 = nextIdx14;
+          let isOpt14 = false;
+          if (next14 && next14.kind === "questionDot") {
+            isOpt14 = true;
+            callIdx14 = nextSignificant(tokens, nextIdx14 + 1);
+          }
+
+          // TypeScript generic instantiation: `new BroadcastChannel<T>(name)`
+          let afterGenericIdx14 = callIdx14;
+          if (!isOpt14 && next14 && next14.kind === "operator" && next14.text === "<") {
+            const hasNew14 = prev14 && prev14.kind === "ident" && prev14.text === "new";
+            if (hasNew14) {
+              let depth14 = 1;
+              let j14 = nextIdx14 + 1;
+              while (j14 < decl.tokenEnd && depth14 > 0) {
+                const at14 = tokens[j14];
+                if (!at14) { j14++; continue; }
+                if (at14.kind === "operator" && at14.text === "<") depth14++;
+                else if (at14.kind === "operator" && (at14.text === ">" || at14.text === ">>" || at14.text === ">>>"))
+                  depth14 = Math.max(0, depth14 - at14.text.length);
+                j14++;
+              }
+              afterGenericIdx14 = nextSignificant(tokens, j14);
+              callIdx14 = afterGenericIdx14;
+            }
+          }
+
+          const callTok14 = tokens[callIdx14];
+          if (!callTok14 || !(callTok14.kind === "open" && callTok14.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures.
+          // Guard `:` check against ternary consequents.
+          const prevBeforeNew14 = (prev14 && prev14.kind === "ident" && prev14.text === "new")
+            ? tokens[prevSignificant(tokens, prevIdx14 - 1)]
+            : undefined;
+          const isTernaryConsequent14 = (prev14 && prev14.kind === "question") ||
+            (prevBeforeNew14 !== undefined && prevBeforeNew14 !== null && prevBeforeNew14.kind === "question");
+          if (callTok14.matchedAt !== undefined) {
+            const afterCloseIdx14 = nextSignificant(tokens, callTok14.matchedAt + 1);
+            const afterClose14 = tokens[afterCloseIdx14];
+            if (afterClose14 && (
+              (afterClose14.kind === "open" && afterClose14.text === "{") ||
+              afterClose14.kind === "fatArrow" ||
+              (!isTernaryConsequent14 && afterClose14.kind === "punct" && afterClose14.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type:
+            // `{ BroadcastChannel(name: string) }` — no `{`, `=>`, or `:` after `)`,
+            // but a `:` at depth 0 inside the parens that isn't part of a ternary.
+            // Also handles optional params: `{ BroadcastChannel(name?: string) }`.
+            let hasTypeAnnotation14 = false;
+            let depth14 = 0;
+            let ternaryDepth14 = 0;
+            for (let k14 = callIdx14 + 1; k14 < callTok14.matchedAt; k14++) {
+              const at14 = tokens[k14];
+              if (!at14) continue;
+              if (at14.kind === "open") { depth14++; continue; }
+              if (at14.kind === "close") { depth14--; continue; }
+              if (depth14 !== 0) continue;
+              if (at14.kind === "question") {
+                // `?:` is an optional-parameter marker, not a ternary — peek ahead
+                const nextAfterQ14 = nextSignificant(tokens, k14 + 1);
+                const nextTokQ14 = tokens[nextAfterQ14];
+                if (nextTokQ14 && nextTokQ14.kind === "punct" && nextTokQ14.text === ":") {
+                  hasTypeAnnotation14 = true;
+                  break;
+                }
+                ternaryDepth14++;
+                continue;
+              }
+              if (at14.kind === "punct" && at14.text === ":") {
+                if (ternaryDepth14 > 0) { ternaryDepth14--; continue; }
+                hasTypeAnnotation14 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation14) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const hasNew14 = prev14 && prev14.kind === "ident" && prev14.text === "new";
+          const callSep14 = isOpt14 ? "?." : "";
+          const warnStart14 = hasNew14 ? prev14!.start : tok.start;
+          const loc14 = locationOf(src, warnStart14);
+          warnings.push({
+            code: "SYN014",
+            severity: "warning",
+            file: null,
+            line: loc14.line,
+            column: loc14.column,
+            start: warnStart14,
+            end: callTok14.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew14 ? "constructs new " : "calls "}BroadcastChannel${callSep14}() — ` +
+              `BroadcastChannel opens a cross-context message channel any same-origin tab or worker can post to, ` +
+              `invisible to the capability model; wrap in unsafe "<reason>" { ${hasNew14 ? "new " : ""}BroadcastChannel${callSep14}(name) }`,
+            rule: syn014.rule,
+            idiom: syn014.idiom,
+            rewrite: syn014.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN016: indexedDB.* access ───────────────────────────────────────
+        case "indexedDB": {
+          // Exclude: `obj.indexedDB` — preceded by `.` or `?.`
+          const prevIdx16 = prevSignificant(tokens, i - 1);
+          const prev16 = tokens[prevIdx16];
+          if (prev16 && ((prev16.kind === "punct" && prev16.text === ".") || prev16.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named indexedDB
+          if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
+          if (prev16 && prev16.kind === "ident" && prev16.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx16)) continue;
+
+          // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
+          const nextIdx16 = nextSignificant(tokens, i + 1);
+          const next16 = tokens[nextIdx16];
+          const isDot16 = next16 && next16.kind === "punct" && next16.text === ".";
+          const isOptChain16 = next16 && next16.kind === "questionDot";
+          if (!isDot16 && !isOptChain16) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep16 = isOptChain16 ? "?." : ".";
+          const loc16 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN016",
+            severity: "warning",
+            file: null,
+            line: loc16.line,
+            column: loc16.column,
+            start: tok.start,
+            end: next16!.end,
+            message:
+              `fn '${decl.name}' accesses indexedDB${sep16} — ` +
+              `indexedDB is persistent same-origin database storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a database handle as a parameter or wrap in unsafe "accesses indexedDB for <reason>" { indexedDB.open(name) }`,
+            rule: syn016.rule,
+            idiom: syn016.idiom,
+            rewrite: syn016.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN018: Math.random() ────────────────────────────────────────────
+        case "Math": {
+          // Exclude: `obj.Math.random(...)` — Math preceded by `.` or `?.`
+          const prevIdx18 = prevSignificant(tokens, i - 1);
+          const prev18 = tokens[prevIdx18];
+          if (prev18 && ((prev18.kind === "punct" && prev18.text === ".") || prev18.kind === "questionDot"))
+            continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx18 = nextSignificant(tokens, i + 1);
+          const next18 = tokens[nextIdx18];
+          const isDot18 = next18 && next18.kind === "punct" && next18.text === ".";
+          const isOptChain18 = next18 && next18.kind === "questionDot";
+          if (!isDot18 && !isOptChain18) continue;
+
+          // Member must be `random`
+          const memberIdx18 = nextSignificant(tokens, nextIdx18 + 1);
+          const memberTok18 = tokens[memberIdx18];
+          if (!memberTok18 || memberTok18.kind !== "ident" || memberTok18.text !== "random") continue;
+
+          // Must be a call: next after `random` is `(` or `?.(`
+          let afterRandomIdx18 = nextSignificant(tokens, memberIdx18 + 1);
+          let afterRandom18 = tokens[afterRandomIdx18];
+          let isOptCall18 = false;
+          if (afterRandom18 && afterRandom18.kind === "questionDot") {
+            isOptCall18 = true;
+            afterRandomIdx18 = nextSignificant(tokens, afterRandomIdx18 + 1);
+            afterRandom18 = tokens[afterRandomIdx18];
+          }
+          if (!afterRandom18 || !(afterRandom18.kind === "open" && afterRandom18.text === "(")) continue;
+
+          if (isInsideRange(memberTok18.start, unsafeRanges)) continue;
+
+          const sep18 = isOptChain18 ? "?." : ".";
+          const callSep18 = isOptCall18 ? "?." : "";
+          const loc18 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN018",
+            severity: "warning",
+            file: null,
+            line: loc18.line,
+            column: loc18.column,
+            start: tok.start,
+            end: memberTok18.end,
+            message:
+              `fn '${decl.name}' calls Math${sep18}random${callSep18}() — ` +
+              `Math.random is invisible to the capability model; use random.next() with uses { random } ` +
+              `so tests can control the output, or wrap in unsafe "uses Math.random for <reason>" { Math.random() }`,
+            rule: syn018.rule,
+            idiom: syn018.idiom,
+            rewrite: syn018.rewrite,
+          });
+          break;
+        }
+
         // ── SYN010: setTimeout / setInterval / queueMicrotask ────────────────
         default: {
           if (!TIMER_GLOBALS.has(tok.text)) continue;
@@ -769,9 +1359,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
             continue;
 
-          // Exclude function declarations: function setTimeout(fn, ms) {} or fn setTimeout(...) -> void {}
+          // Exclude function/fn/function* declarations named setTimeout/setInterval/queueMicrotask
           if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
           if (prev10 && prev10.kind === "keyword" && prev10.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx10)) continue;
 
           // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
           let afterIdx10 = nextSignificant(tokens, i + 1);

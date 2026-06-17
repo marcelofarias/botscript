@@ -165,4 +165,15 @@ describe("SYN010: timer / microtask global call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN010")).toBe(false);
   });
+
+  it("does NOT fire on function* setTimeout() generator declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper() -> any {\n" +
+      "  function* setTimeout(cb: any, ms: number) { yield ms }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN010")).toBe(false);
+  });
 });

@@ -178,4 +178,15 @@ describe("SYN008: WebSocket() call detection", () => {
     const result = compile(src);
     expect(result.warnings.filter((w) => w.code === "SYN008").length).toBe(2);
   });
+
+  it("does NOT fire on function* WebSocket() generator declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper(url: string) -> any {\n" +
+      "  function* WebSocket(u: string) { yield u }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN008")).toBe(false);
+  });
 });

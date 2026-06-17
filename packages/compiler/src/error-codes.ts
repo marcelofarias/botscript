@@ -824,6 +824,209 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return m.default\n" +
       "}",
   },
+  SYN012: {
+    code: "SYN012",
+    title: "new EventSource() / EventSource() call bypasses the net capability model",
+    rule:
+      "`new EventSource(url)`, `EventSource(url)`, `EventSource?.(url)`, and TypeScript instantiation forms like " +
+      "`new EventSource<T>(url)` open persistent server-sent-events connections at runtime but are " +
+      "invisible to botscript's capability model: CAP001 checks for `http.*` member calls, " +
+      "not the `EventSource` global. A fn that constructs an EventSource has an undeclared network " +
+      "dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `EventSource` constructor in `unsafe \"wraps EventSource directly\" { new EventSource(url) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — EventSource is invisible to the capability model\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openFeed(url: string) -> EventSource {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+    example:
+      "// SYN012: EventSource bypasses the net capability model\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      "  return new EventSource(url)  // SYN012\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn openFeed(url: string) -> any {\n" +
+      '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+      "}",
+  },
+  SYN013: {
+    code: "SYN013",
+    title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
+    rule:
+      "`new Worker(scriptURL)`, bare `Worker(scriptURL)`, `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, " +
+      "bare `SharedWorker(scriptURL)`, `SharedWorker?.(scriptURL)`, and TypeScript instantiation forms like " +
+      "`new Worker<T>(scriptURL)` spawn a new JS execution context that is invisible to botscript's " +
+      "capability model: the worker script runs with its own global scope, can make network requests, " +
+      "access storage, and perform any operation — none of which is visible in the spawning fn's " +
+      "`uses {}`, `reads {}`, or `writes {}` declarations. CAP001 cannot infer any capability " +
+      "from worker construction; the capability surface of the spawned context is unbounded.",
+    idiom:
+      "wrap the constructor in `unsafe \"<reason>\" { new Worker(scriptURL) }` to make the escape " +
+      "hatch visible in the diff; document what capabilities the worker script is expected to use in the reason string",
+    rewrite:
+      "// before — Worker is invisible to the capability model\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn startWorker(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no external I/O" { new Worker(url) }\n' +
+      "}",
+    example:
+      "// SYN013: Worker spawns unbounded execution context\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      "  return new Worker(url)  // SYN013\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn compute(url: string) -> Worker {\n" +
+      '  return unsafe "spawns computation worker with no net access" { new Worker(url) }\n' +
+      "}",
+  },
+  SYN014: {
+    code: "SYN014",
+    title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
+    rule:
+      "`new BroadcastChannel(name)` and `BroadcastChannel(name)` open a cross-context message channel " +
+      "at runtime — any tab, window, or worker on the same origin can post to or receive from this channel. " +
+      "This is invisible to botscript's capability model: CAP001 checks for stdlib namespace calls, not " +
+      "the `BroadcastChannel` global. A fn that constructs a BroadcastChannel has an undeclared cross-context " +
+      "messaging dependency — no `uses {}` declaration covers it, and no audit tool can observe it from the fn header.",
+    idiom:
+      "wrap the `BroadcastChannel` constructor in `unsafe \"<reason>\" { new BroadcastChannel(name) }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — BroadcastChannel is invisible to the capability model\n" +
+      "fn openChannel(name: string) -> BroadcastChannel {\n" +
+      "  return new BroadcastChannel(name)  // SYN014\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openChannel(name: string) -> BroadcastChannel {\n" +
+      "  return unsafe \"wraps BroadcastChannel for tab coordination\" { new BroadcastChannel(name) }\n" +
+      "}",
+    example:
+      "// SYN014: BroadcastChannel bypasses the messaging capability model\n" +
+      "fn subscribe(channel: string) -> BroadcastChannel {\n" +
+      "  const bc = new BroadcastChannel(channel)  // SYN014\n" +
+      "  bc.onmessage = (e) => handle(e.data)\n" +
+      "  return bc\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn subscribe(channel: string) -> BroadcastChannel {\n" +
+      "  const bc = unsafe \"wraps BroadcastChannel for live updates\" { new BroadcastChannel(channel) }\n" +
+      "  bc.onmessage = (e) => handle(e.data)\n" +
+      "  return bc\n" +
+      "}",
+  },
+  SYN016: {
+    code: "SYN016",
+    title: "indexedDB access bypasses the storage capability model",
+    rule:
+      "`indexedDB.*` accesses are same-origin persistent database operations invisible to botscript's " +
+      "capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
+      "Web Storage API globals. A fn that accesses `indexedDB` has undeclared persistent state dependencies " +
+      "— no `reads {}` / `writes {}` declaration in the fn header covers the access, and callers cannot " +
+      "observe or audit the dependency from the fn's declared surface. Unlike `localStorage`, `indexedDB` " +
+      "is asynchronous and has no practical size limit, making invisible access higher-impact.",
+    idiom:
+      "pass an `IDBDatabase` or an explicit storage abstraction as a fn parameter so callers control " +
+      "what database is accessed, the dependency is visible in the fn signature, and tests can inject a mock; " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes indexedDB for <reason>\" { indexedDB.open(name) }`",
+    rewrite:
+      "// before — indexedDB access invisible to the capability model\n" +
+      "async fn getUser(id: string) -> User | null {\n" +
+      "  const req = indexedDB.open('users-db', 1)  // SYN016\n" +
+      "  const db = await new Promise<IDBDatabase>((res) => { req.onsuccess = (e) => res(e.target.result) })\n" +
+      "  return db.transaction('users').objectStore('users').get(id)\n" +
+      "}\n\n" +
+      "// after — database handle passed as parameter; dependency visible in the signature\n" +
+      "async fn getUser(db: IDBDatabase, id: string) -> User | null {\n" +
+      "  return db.transaction('users').objectStore('users').get(id)\n" +
+      "}",
+    example:
+      "// SYN016: indexedDB access invisible to capability model\n" +
+      "async fn loadSettings() -> Settings {\n" +
+      "  const req = indexedDB.open('app-db', 1)  // SYN016\n" +
+      "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+      "}\n\n" +
+      "// fix: pass db as a parameter or wrap in unsafe with a reason\n" +
+      "async fn loadSettings() -> Settings {\n" +
+      "  const req = unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }\n" +
+      "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+      "}",
+  },
+  SYN018: {
+    code: "SYN018",
+    title: "Math.random() call bypasses the random capability model",
+    rule:
+      "`Math.random()` generates a random float at runtime but is invisible to botscript's " +
+      "capability model: `uses { random }` declarations cover `random.*` stdlib namespace calls, " +
+      "not the `Math.random` global. A fn that calls `Math.random()` has an undeclared " +
+      "randomness dependency — no `uses {}` declaration covers it, callers cannot see it, " +
+      "and tests cannot deterministically mock or suppress it the way they can the `random` stdlib.",
+    idiom:
+      "replace `Math.random()` with `random.next()` and add `uses { random }` to the fn header; " +
+      "if the raw `Math.random` API is required, wrap in `unsafe \"uses Math.random for <reason>\" { Math.random() }`",
+    rewrite:
+      "// before — Math.random() invisible to the capability model\n" +
+      "fn jitter(base: number) uses { } -> number {\n" +
+      "  return base + Math.random() * 10  // SYN018\n" +
+      "}\n\n" +
+      "// after — random capability declared; tests can control the output\n" +
+      "fn jitter(base: number) uses { random } -> number {\n" +
+      "  return base + random.next() * 10\n" +
+      "}",
+    example:
+      "// SYN018: Math.random() bypasses the random capability model\n" +
+      "fn roll(sides: number) -> number {\n" +
+      "  return Math.floor(Math.random() * sides) + 1  // SYN018\n" +
+      "}\n\n" +
+      "// fix: use random.next() and declare uses { random }\n" +
+      "fn roll(sides: number) uses { random } -> number {\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
+      "}",
+  },
+  SYN022: {
+    code: "SYN022",
+    title: "process.* ambient state access bypasses the capability model",
+    rule:
+      "`process.argv`, `process.cwd`, `process.platform`, `process.arch`, `process.pid`, " +
+      "`process.ppid`, `process.version`, `process.versions`, `process.hrtime`, " +
+      "`process.uptime`, `process.memoryUsage`, `process.cpuUsage`, and " +
+      "`process.resourceUsage` read ambient Node.js runtime or deployment state at runtime but are " +
+      "invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` " +
+      "declaration covers them. A fn that reads these values has an undeclared dependency — " +
+      "callers cannot see it, and tests cannot control the observed value. " +
+      "Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.",
+    idiom:
+      "pass the value as an explicit parameter so callers and tests can control it (preferred); " +
+      "if the ambient access is intentional, wrap in " +
+      "`unsafe \"accesses process.<member> for <reason>\" { process.<member> }`",
+    rewrite:
+      "// before — ambient process state invisible to the capability model\n" +
+      "fn buildPath() -> string {\n" +
+      "  return process.cwd() + '/output'  // SYN022\n" +
+      "}\n\n" +
+      "// after — working directory passed as a parameter; tests can control it\n" +
+      "fn buildPath(cwd: string) -> string {\n" +
+      "  return cwd + '/output'\n" +
+      "}",
+    example:
+      "// SYN022: process.argv bypasses the capability model\n" +
+      "fn getFlag() -> string {\n" +
+      "  return process.argv[2]  // SYN022\n" +
+      "}\n\n" +
+      "// fix: accept argv as a parameter\n" +
+      "fn getFlag(argv: string[]) -> string {\n" +
+      "  return argv[2]\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
