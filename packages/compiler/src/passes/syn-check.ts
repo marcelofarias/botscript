@@ -1416,7 +1416,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Confirm it's a call: next token is `(` or `?.(`
           let callIdx19 = nextSignificant(tokens, methodIdx19 + 1);
           let callTok19 = tokens[callIdx19];
+          let isOptCall19 = false;
           if (callTok19 && callTok19.kind === "questionDot") {
+            isOptCall19 = true;
             callIdx19 = nextSignificant(tokens, callIdx19 + 1);
             callTok19 = tokens[callIdx19];
           }
@@ -1425,7 +1427,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const sep19 = isOptChain19 ? "?." : ".";
+          const callSep19 = isOptCall19 ? "?." : "";
           const methodName19 = method19.text;
+          const argSuffix19 = methodName19 === "getRandomValues" ? "(buf)" : "()";
+          const callForm19 = `crypto${sep19}${methodName19}${callSep19}${argSuffix19}`;
           const loc19 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN019",
@@ -1436,11 +1441,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: tok.start,
             end: callTok19.start + 1,
             message:
-              `fn '${decl.name}' calls crypto${sep19}${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} — ` +
+              `fn '${decl.name}' calls ${callForm19} — ` +
               `crypto.getRandomValues and crypto.randomUUID generate cryptographic randomness invisible to the capability model; ` +
               `uses { random } does not cover the crypto global; ` +
               `use random.next() or random.int() from the random stdlib with uses { random } so callers see the dependency and tests can control the output; ` +
-              `for crypto-specific needs (cryptographic randomness, UUIDs) wrap in unsafe "uses crypto for <reason>" { crypto.${methodName19}${methodName19 === 'getRandomValues' ? '(buf)' : '()'} }`,
+              `for crypto-specific needs (cryptographic randomness, UUIDs) wrap in unsafe "uses crypto for <reason>" { ${callForm19} }`,
             rule: syn019.rule,
             idiom: syn019.idiom,
             rewrite: syn019.rewrite,
