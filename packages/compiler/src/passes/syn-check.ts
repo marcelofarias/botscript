@@ -59,7 +59,7 @@
  *
  *   SYN009  A `new XMLHttpRequest()`, `XMLHttpRequest()`, `new XMLHttpRequest<T>()`,
  *           or no-parens `new XMLHttpRequest` was detected in a fn body (?bs 0.7+).
- *           XMLHttpRequest opens an HTTP connection invisible to CAP001 (which checks
+ *           XMLHttpRequest constructs an XHR object that can open HTTP connections, invisible to CAP001 (which checks
  *           `http.*` member calls). A fn that constructs an XHR has an undeclared `net`
  *           dependency. Excluded: member calls (`obj.XMLHttpRequest`), object/class method
  *           shorthands, and TypeScript method signatures.
