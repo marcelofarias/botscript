@@ -207,4 +207,15 @@ describe("SYN021: performance.now() / performance.timeOrigin detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN021")).toBe(true);
   });
+
+  it("fires on performance.timeOrigin as ternary consequent after await", () => {
+    // `cond ? await performance.timeOrigin : 0` — `:` is ternary, not a TS type annotation
+    const src =
+      "?bs 0.7\n" +
+      "fn origin(usePerf: boolean) -> number {\n" +
+      "  return usePerf ? await performance.timeOrigin : 0\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN021")).toBe(true);
+  });
 });

@@ -1152,9 +1152,18 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           // Exclude method shorthands and TS method signatures: `{ Date(str): T; }`
           // Guard against ternary consequents: `cond ? Date(str) : other`
-          const prevBeforeNew20 = hasNew20 ? tokens[prevSignificant(tokens, prevIdx20 - 1)] : undefined;
-          const isTernary20 = (prev20 !== undefined && prev20 !== null && prev20.kind === "question") ||
-            (prevBeforeNew20 !== undefined && prevBeforeNew20 !== null && prevBeforeNew20.kind === "question");
+          // Also handles `await`-wrapped forms: `cond ? await Date() : other`
+          const prevBeforeNewIdx20 = hasNew20 ? prevSignificant(tokens, prevIdx20 - 1) : -1;
+          const prevBeforeNew20 = prevBeforeNewIdx20 >= 0 ? tokens[prevBeforeNewIdx20] : undefined;
+          // Look through `await` one level to detect ternary position
+          const awaitSkipPrev20 = (prev20 && prev20.kind === "ident" && prev20.text === "await")
+            ? tokens[prevSignificant(tokens, prevIdx20 - 1)] : undefined;
+          const awaitSkipPrevBeforeNew20 = (prevBeforeNew20 && prevBeforeNew20.kind === "ident" && prevBeforeNew20.text === "await")
+            ? tokens[prevSignificant(tokens, prevBeforeNewIdx20 - 1)] : undefined;
+          const isTernary20 = prev20?.kind === "question" ||
+            prevBeforeNew20?.kind === "question" ||
+            awaitSkipPrev20?.kind === "question" ||
+            awaitSkipPrevBeforeNew20?.kind === "question";
           if (callTok20.matchedAt !== undefined) {
             const afterCloseIdx20 = nextSignificant(tokens, callTok20.matchedAt + 1);
             const afterClose20 = tokens[afterCloseIdx20];
@@ -1268,9 +1277,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             // Exclude TS method signatures: `{ performance: { timeOrigin: number } }`
             // Guard against ternary consequents: `cond ? performance.timeOrigin : other`
             // (the `:` there belongs to the ternary, not a type annotation)
+            // Also handles `await`-wrapped: `cond ? await performance.timeOrigin : other`
             const afterMemberIdx21 = nextSignificant(tokens, memberIdx21 + 1);
             const afterMember21 = tokens[afterMemberIdx21];
-            const isTernaryConsequent21 = prev21 && prev21.kind === "question";
+            const prevPrevIdx21 = prevSignificant(tokens, prevIdx21 - 1);
+            const prevPrev21 = tokens[prevPrevIdx21];
+            const isTernaryConsequent21 = (prev21 && prev21.kind === "question") ||
+              (prev21 && prev21.kind === "ident" && prev21.text === "await" && prevPrev21?.kind === "question");
             if (!isTernaryConsequent21 && afterMember21 && afterMember21.kind === "punct" && afterMember21.text === ":") continue;
 
             if (isInsideRange(memberTok21.start, unsafeRanges)) continue;

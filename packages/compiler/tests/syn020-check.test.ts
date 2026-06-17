@@ -279,4 +279,26 @@ describe("SYN020: Date.now() / new Date() / Date() detection", () => {
     const w = result.warnings.find((w) => w.code === "SYN020");
     expect(w?.message).toContain("inner");
   });
+
+  it("fires on Date.now() as ternary consequent after await", () => {
+    // `cond ? await Date.now() : 0` — the `:` is ternary, not a TS type annotation; must not suppress
+    const src =
+      "?bs 0.7\n" +
+      "fn ts(cond: boolean) -> number {\n" +
+      "  return cond ? await Date.now() : 0\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
+  });
+
+  it("fires on new Date() as ternary consequent after await", () => {
+    // `cond ? await new Date() : null` — must not be suppressed by `:` guard
+    const src =
+      "?bs 0.7\n" +
+      "fn ts(cond: boolean) -> string {\n" +
+      "  return cond ? await new Date() : \"\"\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
+  });
 });
