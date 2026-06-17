@@ -955,17 +955,41 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const sep15 = (next15 && next15.kind === "questionDot") ? "?." : ".";
           const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
           const memberTok15 = tokens[memberIdx15];
-          const memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<member>";
-          const rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
+
+          // Computed member access: localStorage[key] or localStorage?.[key]
+          const isComputed15 = !!(memberTok15 && memberTok15.kind === "open" && memberTok15.text === "[");
+          let memberName15: string;
+          let rangeEnd15: number;
+          let afterMemberScanIdx15: number;
+          if (isComputed15) {
+            memberName15 = "[…]";
+            // Scan past the closing `]` to find what follows the computed member access.
+            let depth15 = 1;
+            let j15 = memberIdx15 + 1;
+            while (j15 < decl.tokenEnd && depth15 > 0) {
+              const t15 = tokens[j15];
+              if (!t15) break;
+              if (t15.kind === "open" && t15.text === "[") depth15++;
+              else if (t15.kind === "close" && t15.text === "]") depth15--;
+              j15++;
+            }
+            const closeBracket15 = tokens[j15 - 1];
+            rangeEnd15 = closeBracket15 ? closeBracket15.end : next15!.end;
+            afterMemberScanIdx15 = nextSignificant(tokens, j15);
+          } else {
+            memberName15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.text : "<member>";
+            rangeEnd15 = (memberTok15 && memberTok15.kind === "ident") ? memberTok15.end : next15!.end;
+            afterMemberScanIdx15 = nextSignificant(tokens, memberIdx15 + 1);
+          }
+
           // Determine if this is a call: `(` = direct call; `?.(` = optional call; `?.` alone = optional property access.
-          const afterMemberIdx15 = nextSignificant(tokens, memberIdx15 + 1);
-          const afterMember15 = tokens[afterMemberIdx15];
+          const afterMember15 = tokens[afterMemberScanIdx15];
           let isCall15 = false;
           if (afterMember15 && afterMember15.kind === "open" && afterMember15.text === "(") {
             isCall15 = true;
           } else if (afterMember15 && afterMember15.kind === "questionDot") {
             // Optional call `?.(` — check next token is `(`
-            const afterQD15 = tokens[nextSignificant(tokens, afterMemberIdx15 + 1)];
+            const afterQD15 = tokens[nextSignificant(tokens, afterMemberScanIdx15 + 1)];
             isCall15 = !!(afterQD15 && afterQD15.kind === "open" && afterQD15.text === "(");
           }
           const unsafeExample15 = isCall15

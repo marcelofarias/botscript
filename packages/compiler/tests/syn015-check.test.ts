@@ -261,15 +261,29 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
   });
 
-  it("fires on localStorage?.getItem() (optional chaining)", () => {
+  it("fires on localStorage?.[key] (optional computed member) without <member> placeholder", () => {
     const src =
       "?bs 0.7\n" +
-      "fn getToken() -> any {\n" +
-      "  return localStorage?.getItem(\"auth\")\n" +
+      "fn getByKey(key: string) -> any {\n" +
+      "  return localStorage?.[key]\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
     const w = result.warnings.find((w) => w.code === "SYN015");
-    expect(w?.message).toContain("localStorage?.getItem");
+    expect(w?.message).not.toContain("<member>");
+    expect(w?.message).toContain("localStorage?.[");
+  });
+
+  it("fires on sessionStorage?.[key] (optional computed member) without <member> placeholder", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getByKey(key: string) -> any {\n" +
+      "  return sessionStorage?.[key]\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN015");
+    expect(w?.message).not.toContain("<member>");
+    expect(w?.message).toContain("sessionStorage?.[");
   });
 });
