@@ -992,6 +992,82 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN012: {
+    code: "SYN012",
+    title: "new EventSource() / EventSource() call bypasses the net capability model",
+    body:
+      "SYN012 fires when a fn body constructs an `EventSource` via `new EventSource(url)`, " +
+      "bare `EventSource(url)`, optional-call `EventSource?.(url)`, or TypeScript instantiation " +
+      "form `new EventSource<T>(url)`. " +
+      "This is the same bypass class as `new WebSocket(url)`: a persistent connection " +
+      "that is real network I/O but invisible to the declared capability surface.\n\n" +
+      "**Why it matters:** `EventSource` opens a persistent HTTP GET connection to the server " +
+      "and streams server-sent events. CAP001 checks for `http.*` member calls, not the " +
+      "`EventSource` global. A fn that constructs an EventSource has an undeclared `net` " +
+      "dependency — the capability manifest hash proves the fn body unchanged; the actual " +
+      "network effect is invisible to callers and to audit tooling.\n\n" +
+      "**Detection:** the check looks for an `EventSource` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member call on a local), followed by `(` or `?.(` (with optional " +
+      "`new` preceding for the constructor form). TypeScript generic instantiation " +
+      "`new EventSource<T>(url)` is also detected — the generic scan is gated on `new` to " +
+      "prevent `EventSource < x > (y)` comparison expressions from false-firing. " +
+      "Object method shorthands and TypeScript method signatures named `EventSource` are " +
+      "excluded via the trailing-`:` check (guarded against ternary consequents).\n\n" +
+      "**Fix:** wrap the construction in an `unsafe` block with a justification:\n" +
+      "`unsafe \"wraps EventSource for live feed\" { new EventSource(url) }`\n\n" +
+      "SYN012 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn openFeed(url: string) -> any {\n" +
+        "  return new EventSource(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn openFeed(url: string) -> any {\n" +
+        '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
+        "}\n",
+    },
+  },
+  SYN013: {
+    code: "SYN013",
+    title: "Worker() / SharedWorker() construction (with or without new) spawns an unbounded execution context",
+    body:
+      "SYN013 fires when a fn body constructs a `Worker` or `SharedWorker` via `new Worker(scriptURL)`, " +
+      "bare `Worker(scriptURL)`, optional call `Worker?.(scriptURL)`, `new SharedWorker(scriptURL)`, " +
+      "bare `SharedWorker(scriptURL)`, optional call `SharedWorker?.(scriptURL)`, or TypeScript instantiation forms.\n\n" +
+      "**Why it matters:** Worker construction is the most severe capability bypass in the SYN series. " +
+      "Unlike the `fetch` global or `WebSocket` which have bounded effects, a Worker spawns an entirely new " +
+      "JS execution context. The worker script can make network requests, access storage, spawn its own " +
+      "workers, and perform any operation — none of which is visible in the spawning fn's " +
+      "`uses {}`, `reads {}`, or `writes {}` declarations. CAP001 checks for stdlib namespace calls; " +
+      "it cannot infer anything from a Worker constructor. The capability surface of the spawned " +
+      "context is unbounded and invisible to callers and audit tooling.\n\n" +
+      "**Detection:** the check looks for a `Worker` or `SharedWorker` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member call on a local), followed by `(` (with optional `new` preceding for " +
+      "the constructor form or `?.` for optional calls). TypeScript generic instantiation `new Worker<T>(url)` is also detected — " +
+      "the generic scan is gated on `new` to prevent comparison expressions from false-firing. " +
+      "Object method shorthands and TypeScript method signatures named `Worker` or `SharedWorker` are " +
+      "excluded via the trailing-`:` check (guarded against ternary consequents).\n\n" +
+      "**Fix:** wrap the construction in an `unsafe` block with a justification that describes " +
+      "what capabilities the worker script is expected to use:\n" +
+      "`unsafe \"spawns computation worker with no external I/O\" { new Worker(scriptURL) }`\n\n" +
+      "SYN013 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn startWorker(url: string) -> any {\n" +
+        "  return new Worker(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn startWorker(url: string) -> any {\n" +
+        '  return unsafe "spawns computation worker with no net access" { new Worker(url) }\n' +
+        "}\n",
+    },
+  },
   SYN014: {
     code: "SYN014",
     title: "new BroadcastChannel() / BroadcastChannel() call bypasses the messaging capability model",
@@ -1127,6 +1203,106 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "async fn loadSettings() -> Settings {\n" +
         "  const req = unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }\n" +
         "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
+        "}\n",
+    },
+  },
+  SYN018: {
+    code: "SYN018",
+    title: "Math.random() call bypasses the random capability model",
+    body:
+      "SYN018 fires when a fn body calls `Math.random()`, `Math?.random()`, or `Math.random?.()` " +
+      "— any call form on the `Math.random` global.\n\n" +
+      "**Why it matters:** `Math.random` generates a random float at runtime but is entirely " +
+      "invisible to botscript's capability model. `uses { random }` declarations cover " +
+      "`random.*` stdlib namespace calls, not the `Math` global. A fn that calls `Math.random()` " +
+      "has an undeclared randomness dependency: callers reading the fn header see no indication " +
+      "of non-determinism, tests cannot deterministically mock or suppress the random source, " +
+      "and the capability manifest does not record the dependency. In agent / bot contexts this " +
+      "is especially hazardous: a fn declared pure or idempotent that secretly calls " +
+      "`Math.random()` will produce different outputs across retries in a way callers cannot " +
+      "observe or audit.\n\n" +
+      "**Detection:** the check looks for a `Math` ident token not preceded by `.`/`?.` " +
+      "(member-call exclusion), followed by `.` or `?.`, then `random`, then `(` or `?.(` " +
+      "(call confirmation). Bare `Math.random` references (without a trailing `(`) are " +
+      "excluded — only actual calls are flagged.\n\n" +
+      "**Fix (preferred):** replace `Math.random()` with `random.next()` from the botscript " +
+      "stdlib and add `uses { random }` to the fn header. This makes the non-determinism " +
+      "visible in the signature and allows tests to inject a deterministic `random` mock:\n\n" +
+      "```\n" +
+      "// SYN018 — before\n" +
+      "fn roll(sides: number) -> number {\n" +
+      "  return Math.floor(Math.random() * sides) + 1\n" +
+      "}\n\n" +
+      "// fix — random capability declared; tests control the output\n" +
+      "fn roll(sides: number) uses { random } -> number {\n" +
+      "  return Math.floor(random.next() * sides) + 1\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if `Math.random` is required (e.g. for compatibility with a " +
+      "specific distribution), wrap in an `unsafe` block with a justification:\n" +
+      "`unsafe \"uses Math.random for <reason>\" { Math.random() }`\n\n" +
+      "SYN018 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn roll(sides: number) -> number {\n" +
+        "  return Math.floor(Math.random() * sides) + 1\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn roll(sides: number) uses { random } -> number {\n" +
+        "  return Math.floor(random.next() * sides) + 1\n" +
+        "}\n",
+    },
+  },
+  SYN022: {
+    code: "SYN022",
+    title: "process.* ambient state access bypasses the capability model",
+    body:
+      "SYN022 fires when a fn body accesses `process.argv`, `process.cwd`, `process.platform`, " +
+      "`process.arch`, `process.pid`, `process.ppid`, `process.version`, `process.versions`, " +
+      "`process.hrtime`, `process.uptime`, `process.memoryUsage`, `process.cpuUsage`, " +
+      "or `process.resourceUsage` in `?bs 0.7+`. " +
+      "(Note: `process.env` fires SYN005; `process.exit` fires SYN006.)\n\n" +
+      "**Why it matters:** These properties and methods read ambient Node.js runtime or " +
+      "deployment state at call time — the working directory, command-line arguments, OS platform, " +
+      "process ID, Node.js version, memory usage, or a high-resolution clock. None of these are " +
+      "covered by botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` declaration " +
+      "captures them. A fn that reads them has an undeclared environmental dependency — callers " +
+      "cannot see it in the header, and tests cannot inject a controlled value.\n\n" +
+      "`process.hrtime()` deserves special mention: it is the Node.js equivalent of " +
+      "`performance.now()`. Both provide a " +
+      "high-resolution monotonic clock that bypasses `uses { time }`.\n\n" +
+      "**Detected forms:** any `process.<member>` or `process?.<member>` access where " +
+      "`<member>` is one of the ambient-state set listed above. " +
+      "Member calls on local bindings (`obj.process.*`) and `fn process(...)` / " +
+      "`function process(...)` declarations are excluded.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN022 — before\n" +
+      "fn buildPath() -> string {\n" +
+      "  return process.cwd() + '/output'\n" +
+      "}\n\n" +
+      "// fix — cwd passed as a parameter; tests can control it\n" +
+      "fn buildPath(cwd: string) -> string {\n" +
+      "  return cwd + '/output'\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses process.argv for CLI entrypoint\" { process.argv }`\n\n" +
+      "SYN022 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getFlag() -> string {\n" +
+        "  return process.argv[2]\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getFlag(argv: string[]) -> string {\n" +
+        "  return argv[2]\n" +
         "}\n",
     },
   },

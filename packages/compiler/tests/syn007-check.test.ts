@@ -169,4 +169,15 @@ describe("SYN007: fetch() call detection", () => {
     const result = compile(src);
     expect(result.warnings.filter((w) => w.code === "SYN007").length).toBe(2);
   });
+
+  it("does NOT fire on function* fetch() generator declaration inside a fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper() -> any {\n" +
+      "  function* fetch(url: string) { yield url }\n" +
+      "  return null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
 });
