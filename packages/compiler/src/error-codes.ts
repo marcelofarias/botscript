@@ -947,7 +947,7 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN020: {
     code: "SYN020",
-    title: "Date.now() / new Date() / Date() call bypasses the time capability model",
+    title: "Date.now() / new Date() / new Date (no parens) / Date() / Date?.() construction bypasses the time capability model",
     rule:
       "`Date.now()`, `new Date()`, and `Date()` inject the current time at runtime but are " +
       "invisible to botscript's capability model: `uses { time }` declarations cover `time.*` " +
