@@ -880,7 +880,7 @@ const E: Record<string, ErrorCodeEntry> = {
     code: "SYN015",
     title: "localStorage / sessionStorage access bypasses the storage capability model",
     rule:
-      "`localStorage.*` and `sessionStorage.*` accesses are same-origin storage operations " +
+      "`localStorage.*`, `localStorage[key]`, `sessionStorage.*`, and `sessionStorage[key]` accesses are same-origin storage operations " +
       "invisible to botscript's capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, " +
       "not the Web Storage API globals. A fn that reads or writes `localStorage`/`sessionStorage` has " +
       "undeclared state dependencies — no `reads {}` / `writes {}` declaration in the fn header " +

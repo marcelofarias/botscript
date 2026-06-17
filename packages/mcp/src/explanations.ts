@@ -1124,8 +1124,8 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "sessions and shared across all tabs on the same origin; `sessionStorage` is per-tab and cleared " +
       "when the tab closes, but still invisible to the capability model.\n\n" +
       "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not preceded " +
-      "by `.`/`?.` (which would make it a member of another object), followed by `.` or `?.` " +
-      "(confirming this is an access on the storage global, not a bare reference or a declaration). " +
+      "by `.`/`?.` (which would make it a member of another object), followed by `.`, `?.`, or `[` " +
+      "(confirming this is a member or computed access on the storage global, not a bare reference or a declaration). " +
       "Fn/function/function* declarations named `localStorage`/`sessionStorage` are excluded. " +
       "Parameters and `const`/`let`/`var` locals within the fn body that shadow the global name are also " +
       "excluded — e.g. `fn f(localStorage: Storage)` or `const localStorage = mock` will not warn.\n\n" +
