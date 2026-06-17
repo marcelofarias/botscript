@@ -126,18 +126,20 @@
  *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
  *
- *   SYN020  A `Date.now()`, `new Date()`, or `Date()` call was detected in a fn body (?bs 0.7+).
- *           These forms inject the current time at runtime but are invisible to botscript's
- *           capability model: `uses { time }` covers `time.*` stdlib calls, not the `Date` global.
- *           A fn that calls these forms has an undeclared time dependency — callers cannot see it
- *           and tests cannot control the time value observed by the fn.
+ *   SYN020  A `Date.now()`, `new Date()`, `new Date` (no parens), or `Date()` call was detected
+ *           in a fn body (?bs 0.7+). These forms inject the current time at runtime but are invisible
+ *           to botscript's capability model: `uses { time }` covers `time.*` stdlib calls, not the
+ *           `Date` global. A fn that calls these forms has an undeclared time dependency — callers
+ *           cannot see it and tests cannot control the time value observed by the fn.
  *           Detection paths:
  *           1. `Date.now()` / `Date?.now()` / `Date.now?.()` — `Date` not preceded by `.`/`?.`,
  *              followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
  *           2. `new Date()` / `new Date<T>()` — `Date` preceded by `new`, followed by empty
  *              parens (arg-count check: first token inside `(…)` must be `)`). Generic scan
  *              only when `new` precedes to avoid `Date < x > (y)` comparison false-positives.
- *           3. `Date(...)` / `Date?.()` — bare call (any args; JS ignores them and returns current date string).
+ *           3. `new Date` (no parentheses) — `Date` preceded by `new`, not followed by `(`, `<`, `?.`, or `.`
+ *              (equivalent to `new Date()` in JS/TS — creates a Date object for current time).
+ *           4. `Date(...)` / `Date?.()` — bare call (any args; JS ignores them and returns current date string).
  *           Excluded: `new Date(timestamp)` / `new Date("str")` / `new Date(y,m,d,…)` (explicit
  *           args), `Date.parse(str)` / `Date.UTC(…)` (no ambient time), `obj.Date()` (member
  *           call), fn/function/function* declarations named `Date`, method shorthands, TS method
@@ -1386,11 +1388,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: fn/function/function* declarations named Date
           if (prev20 && prev20.kind === "keyword" && prev20.text === "fn") continue;
           if (prev20 && prev20.kind === "ident" && prev20.text === "function") continue;
-          if (prev20 && prev20.kind === "operator" && prev20.text === "*") {
-            const prevPrevIdx20 = prevSignificant(tokens, prevIdx20 - 1);
-            const prevPrev20 = tokens[prevPrevIdx20];
-            if (prevPrev20 && prevPrev20.kind === "ident" && prevPrev20.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx20)) continue;
 
           const hasNew20 = prev20 && prev20.kind === "ident" && prev20.text === "new";
 
@@ -1448,6 +1446,37 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             });
             break;
           }
+          }
+
+          // ── Pattern 3: new Date (no parentheses) ─────────────────────────
+          // In JS/TS `new Date` without parens is equivalent to `new Date()` — ambient time injection.
+          if (hasNew20 && (
+            !next20 ||
+            (next20.kind !== "open" &&
+             next20.kind !== "questionDot" &&
+             !(next20.kind === "operator" && next20.text === "<") &&
+             !(next20.kind === "punct" && next20.text === "."))
+          )) {
+            if (isInsideRange(tok.start, unsafeRanges)) { break; }
+            const loc20c = locationOf(src, prev20!.start);
+            warnings.push({
+              code: "SYN020",
+              severity: "warning",
+              file: null,
+              line: loc20c.line,
+              column: loc20c.column,
+              start: prev20!.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' constructs new Date (no-paren form) — ` +
+                `new Date without parentheses is equivalent to new Date() and injects the current time invisible to the capability model; ` +
+                `pass nowMs as a parameter (time.now() with uses { time } gives epoch ms, not a Date object), ` +
+                `or wrap in unsafe "uses current time for <reason>" { new Date }`,
+              rule: syn020.rule,
+              idiom: syn020.idiom,
+              rewrite: syn020.rewrite,
+            });
+            break;
           }
 
           // ── Pattern 2: new Date() / Date(...) / new Date<T>() ────────────
@@ -1547,11 +1576,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude function declarations: function performance(…), fn performance(…), function* performance(…)
           if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
           if (prev21 && prev21.kind === "keyword" && prev21.text === "fn") continue;
-          if (prev21 && prev21.kind === "operator" && prev21.text === "*") {
-            const prevPrevIdx21 = prevSignificant(tokens, prevIdx21 - 1);
-            const prevPrev21 = tokens[prevPrevIdx21];
-            if (prevPrev21 && prevPrev21.kind === "ident" && prevPrev21.text === "function") continue;
-          }
+          if (isFunctionStarDecl(tokens, prevIdx21)) continue;
 
           // Must be followed by `.` or `?.`
           const nextIdx21 = nextSignificant(tokens, i + 1);

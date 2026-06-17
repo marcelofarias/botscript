@@ -1734,10 +1734,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN020: {
     code: "SYN020",
-    title: "Date.now() / new Date() / Date() call bypasses the time capability model",
+    title: "Date.now() / new Date() / new Date (no parens) / Date() call bypasses the time capability model",
     body:
       "SYN020 fires when a fn body calls `Date.now()`, `Date?.now()`, `Date.now?.()`, " +
-      "`new Date()` (no args), `new Date<T>()` (TypeScript generic, no args), or `Date(...)` / `Date?.()` " +
+      "`new Date()` (no args), `new Date` (no parentheses — equivalent to `new Date()` in JS/TS), " +
+      "`new Date<T>()` (TypeScript generic, no args), or `Date(...)` / `Date?.()` " +
       "(bare call — JS ignores arguments and always returns the current date string). " +
       "These forms inject the current wall-clock time at runtime.\n\n" +
       "**Why it matters:** `Date.now()` and `new Date()` read the current time at runtime but are " +
@@ -1751,6 +1752,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Detected forms:**\n" +
       "- `Date.now()` / `Date?.now()` / `Date.now?.()` — any call form on `Date.now`\n" +
       "- `new Date()` / `new Date<T>()` — no-arg constructor (with optional TypeScript generic)\n" +
+      "- `new Date` (no parentheses) — equivalent to `new Date()` in JS/TS\n" +
       "- `Date(...)` / `Date?.()` — bare call (JS ignores arguments; always returns current date string)\n\n" +
       "**Not detected** (these don't inject ambient time):\n" +
       "- `new Date(timestamp)` / `new Date('2024-01-01')` / `new Date(y, m, d)` — explicit args\n" +

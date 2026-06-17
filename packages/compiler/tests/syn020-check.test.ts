@@ -60,6 +60,27 @@ describe("SYN020: Date.now() / new Date() / Date() detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
   });
 
+  it("fires on new Date (no parentheses) — equivalent to new Date() in JS/TS", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn now() -> any {\n" +
+      "  const d = new Date\n" +
+      "  return d\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
+  });
+
+  it("does NOT fire on new Date (no parens) inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn now() -> any {\n" +
+      "  return unsafe \"uses current time\" { new Date }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(false);
+  });
+
   // ── fires: bare Date() ─────────────────────────────────────────────────────
 
   it("fires on Date() — bare call with no args", () => {
