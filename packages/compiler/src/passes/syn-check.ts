@@ -1198,7 +1198,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             message:
               `fn '${decl.name}' ${formDesc20} — ` +
               `${callForm20} injects the current time invisible to the capability model; ` +
-              `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+              `pass nowMs as a parameter (time.now() with uses { time } gives epoch ms, not a Date object), ` +
               `or wrap in unsafe "uses current time for <reason>" { ${callForm20} }`,
             rule: syn020.rule,
             idiom: syn020.idiom,
