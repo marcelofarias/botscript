@@ -11,4 +11,9 @@ export const STDLIB_TO_CAP: Readonly<Record<string, string>> = {
   fs: "fs",
   stdout: "stdout",
   stderr: "stderr",
+  // clock is a free namespace — no capability declaration required.
+  // clock.sequence() returns a MonotonicTimestamp: a process-local monotonic counter
+  // that provides ordering guarantees without wallclock access. CAP001 skips namespaces
+  // mapped to "" (falsy), so `uses { clock }` is never required.
+  clock: "",
 };

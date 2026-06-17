@@ -336,3 +336,34 @@ describe("cap-check: no false positive for stdlib namespace in parameter type", 
     expect(() => t(src)).toThrow(/CAP001/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// clock.sequence() — free namespace, no capability declaration required
+// ---------------------------------------------------------------------------
+
+describe("cap-check: clock.sequence() does not require uses { clock }", () => {
+  it("does NOT fire CAP001 for clock.sequence() — clock is a free namespace", () => {
+    // clock.sequence() provides process-local monotonic ordering without
+    // wallclock access. No capability declaration should be needed.
+    const src =
+      "?bs 0.7\n" +
+      "fn tagEvent(name: string) -> string {\n" +
+      "  const seq = clock.sequence()\n" +
+      "  return `${name}#${seq}`\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire CAP002 for clock.sequence() — not a declarable capability", () => {
+    // Even with an explicit `uses { time }` declaration, clock.sequence() in
+    // the body should not cause issues (it's not a capability overshoot).
+    const src =
+      "?bs 0.7\n" +
+      "fn tagWithTime(name: string) uses { time } -> string {\n" +
+      "  const seq = clock.sequence()\n" +
+      "  const ts = time.now()\n" +
+      "  return `${name}#${seq}@${ts}`\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+});
