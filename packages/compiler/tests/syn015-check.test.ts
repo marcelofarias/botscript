@@ -286,4 +286,28 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     expect(w?.message).not.toContain("<member>");
     expect(w?.message).toContain("sessionStorage?.[");
   });
+
+  it("fires on localStorage[key] — non-optional computed member access", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getByKey(key: string) -> any {\n" +
+      "  return localStorage[key]\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN015");
+    expect(w?.message).toContain("localStorage[");
+  });
+
+  it("fires on sessionStorage[key] — non-optional computed member access", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getByKey(key: string) -> any {\n" +
+      "  return sessionStorage[key]\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN015");
+    expect(w?.message).toContain("sessionStorage[");
+  });
 });

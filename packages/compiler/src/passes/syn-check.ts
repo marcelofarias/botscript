@@ -57,13 +57,15 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
- *   SYN015  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
- *           Both globals are same-origin storage whose reads and writes are invisible to
- *           botscript's capability model: `reads {}` / `writes {}` labels cover declared resource
- *           identifiers, not the Web Storage API globals. A fn that accesses `localStorage` or
- *           `sessionStorage` has undeclared state dependencies invisible to callers and audit
- *           tooling. (`localStorage` persists across browser sessions; `sessionStorage` is
- *           per-tab and cleared when the tab closes.)
+ *   SYN015  A `localStorage.*` / `localStorage[key]` or `sessionStorage.*` / `sessionStorage[key]`
+ *           access was detected in a fn body (?bs 0.7+). Both globals are same-origin storage
+ *           whose reads and writes are invisible to botscript's capability model: `reads {}` /
+ *           `writes {}` labels cover declared resource identifiers, not the Web Storage API globals.
+ *           A fn that accesses `localStorage` or `sessionStorage` has undeclared state dependencies
+ *           invisible to callers and audit tooling. (`localStorage` persists across browser sessions;
+ *           `sessionStorage` is per-tab and cleared when the tab closes.)
+ *           Detected forms: `localStorage.key`, `localStorage?.key`, `localStorage[key]`,
+ *           `localStorage?.[key]` (and equivalents for `sessionStorage`).
  *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
  *           `localStorage`/`sessionStorage`, local bindings (parameters or `const`/`let`/`var`
  *           declared within the fn body), and object method shorthands.
@@ -1282,32 +1284,38 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           }
           if (localBindings.has(tok.text)) continue;
 
-          // Must be followed by `.` or `?.` — confirming this is a property/method access
-          // on the storage object (not a bare reference or assignment target).
+          // Must be followed by `.`, `?.`, or `[` — confirming this is a property/method
+          // access on the storage object (not a bare reference or assignment target).
+          // `[` covers computed access: localStorage[key] / sessionStorage[key].
           const nextIdx15 = nextSignificant(tokens, i + 1);
           const next15 = tokens[nextIdx15];
           if (!next15 || !(
             (next15.kind === "punct" && next15.text === ".") ||
-            next15.kind === "questionDot"
+            next15.kind === "questionDot" ||
+            (next15.kind === "open" && next15.text === "[")
           )) continue;
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const storageName15 = tok.text;
-          const sep15 = (next15 && next15.kind === "questionDot") ? "?." : ".";
+          const isDirect15 = next15.kind === "open" && next15.text === "[";
+          const sep15 = next15.kind === "questionDot" ? "?." : isDirect15 ? "" : ".";
           const memberIdx15 = nextSignificant(tokens, nextIdx15 + 1);
           const memberTok15 = tokens[memberIdx15];
 
-          // Computed member access: localStorage[key] or localStorage?.[key]
-          const isComputed15 = !!(memberTok15 && memberTok15.kind === "open" && memberTok15.text === "[");
+          // Computed member access: localStorage[key], localStorage?.[key], sessionStorage[key]
+          const isComputedViaOptChain15 = !!(memberTok15 && memberTok15.kind === "open" && memberTok15.text === "[");
+          const isComputed15 = isDirect15 || isComputedViaOptChain15;
           let memberName15: string;
           let rangeEnd15: number;
           let afterMemberScanIdx15: number;
           if (isComputed15) {
             memberName15 = "[…]";
-            // Scan past the closing `]` to find what follows the computed member access.
+            // Start scanning from the `[` — which is at nextIdx15 for direct access
+            // (localStorage[key]) or at memberIdx15 for optional-chain (localStorage?.[key]).
+            const bracketIdx15 = isDirect15 ? nextIdx15 : memberIdx15;
             let depth15 = 1;
-            let j15 = memberIdx15 + 1;
+            let j15 = bracketIdx15 + 1;
             while (j15 < decl.tokenEnd && depth15 > 0) {
               const t15 = tokens[j15];
               if (!t15) break;
