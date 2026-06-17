@@ -1529,6 +1529,35 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               afterClose20.kind === "fatArrow" ||
               (!isTernary20 && afterClose20.kind === "punct" && afterClose20.text === ":")
             )) continue;
+            // Exclude TS method signatures with omitted return type: `{ Date(x: string) }`.
+            // A `:` at depth 0 inside the parens is a type annotation — not an ambient-time call.
+            // Also handles optional params: `{ Date(x?: string) }`.
+            let hasTypeAnnotation20 = false;
+            let depth20 = 0;
+            let ternaryDepth20 = 0;
+            for (let k20 = callIdx20 + 1; k20 < callTok20.matchedAt; k20++) {
+              const at20 = tokens[k20];
+              if (!at20) continue;
+              if (at20.kind === "open") { depth20++; continue; }
+              if (at20.kind === "close") { depth20--; continue; }
+              if (depth20 !== 0) continue;
+              if (at20.kind === "question") {
+                const nextAfterQ20 = nextSignificant(tokens, k20 + 1);
+                const nextTokQ20 = tokens[nextAfterQ20];
+                if (nextTokQ20 && nextTokQ20.kind === "punct" && nextTokQ20.text === ":") {
+                  hasTypeAnnotation20 = true;
+                  break;
+                }
+                ternaryDepth20++;
+                continue;
+              }
+              if (at20.kind === "punct" && at20.text === ":") {
+                if (ternaryDepth20 > 0) { ternaryDepth20--; continue; }
+                hasTypeAnnotation20 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation20) continue;
           }
 
           // `new Date(arg)` with arguments constructs a specific date — not ambient time; skip.

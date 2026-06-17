@@ -1281,9 +1281,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Detected forms:**\n" +
       "- `performance.now()` / `performance?.now()` / `performance.now?.()` — any call form\n" +
       "- `performance.timeOrigin` / `performance?.timeOrigin` — property read (no call needed)\n\n" +
-      "**Not detected** (don't inject ambient time):\n" +
+      "**Not detected** (excluded by this check):\n" +
       "- `obj.performance.*` — member access on a local binding\n" +
-      "- `performance.mark()` / `performance.measure()` — write markers, don't read the clock\n\n" +
+      "- `performance.mark()` / `performance.measure()` — excluded by this check (these methods can timestamp internally, but are not surfaced as ambient reads by SYN021)\n\n" +
       "**Fix (preferred — pass time as a parameter):** make the time dependency explicit:\n\n" +
       "```\n" +
       "// SYN021 — before\n" +

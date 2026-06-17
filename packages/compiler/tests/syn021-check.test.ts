@@ -106,7 +106,7 @@ describe("SYN021: performance.now() / performance.timeOrigin detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN021")).toBe(false);
   });
 
-  it("does NOT fire on performance.mark() — write-only, no ambient time read", () => {
+  it("does NOT fire on performance.mark() — excluded by SYN021 check", () => {
     const src =
       "?bs 0.7\n" +
       "fn markEvent() -> void {\n" +
@@ -117,7 +117,7 @@ describe("SYN021: performance.now() / performance.timeOrigin detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN021")).toBe(false);
   });
 
-  it("does NOT fire on performance.measure() — mark measurement, no ambient time read", () => {
+  it("does NOT fire on performance.measure() — excluded by SYN021 check", () => {
     const src =
       "?bs 0.7\n" +
       "fn measure() -> void {\n" +

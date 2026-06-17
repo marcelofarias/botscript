@@ -322,4 +322,24 @@ describe("SYN020: Date.now() / new Date() / Date() detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
   });
+
+  it("does NOT fire on TS type-literal method signature with omitted return type: type T = { Date(x: string) }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = { Date(x: string) }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(false);
+  });
+
+  it("does NOT fire on TS type-literal method signature with optional param: type T = { Date(x?: string) }", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = { Date(x?: string) }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN020")).toBe(false);
+  });
 });
