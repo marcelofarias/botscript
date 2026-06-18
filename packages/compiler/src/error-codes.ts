@@ -876,6 +876,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return bc\n" +
       "}",
   },
+  SYN015: {
+    code: "SYN015",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    rule:
+      "`localStorage.*` and `sessionStorage.*` accesses are synchronous same-origin Web Storage " +
+      "operations invisible to botscript's capability model: `reads {}` / `writes {}` labels cover " +
+      "declared resource identifiers, not the Web Storage API globals. A fn that accesses either " +
+      "store has undeclared persistent (`localStorage`) or session-scoped (`sessionStorage`) state " +
+      "dependencies — no header declaration covers the access, and callers cannot observe or audit " +
+      "the dependency from the fn's declared surface.",
+    idiom:
+      "pass the storage value as an explicit fn parameter so callers control what is read and tests " +
+      "can inject a mock; if direct Web Storage access is genuinely required, wrap in " +
+      "`unsafe \"accesses localStorage for <reason>\" { localStorage.getItem(key) }`",
+    rewrite:
+      "// before — localStorage access invisible to the capability model\n" +
+      "fn getTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'  // SYN015\n" +
+      "}\n\n" +
+      "// after — value passed as parameter; dependency visible in the signature\n" +
+      "fn getTheme(storedTheme: string | null) -> string {\n" +
+      "  return storedTheme ?? 'light'\n" +
+      "}",
+    example:
+      "// SYN015: localStorage access invisible to capability model\n" +
+      "fn saveUser(user: User) -> void {\n" +
+      "  localStorage.setItem('user', JSON.stringify(user))  // SYN015\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn saveUser(user: User) -> void {\n" +
+      "  unsafe \"persists user to localStorage\" { localStorage.setItem('user', JSON.stringify(user)) }\n" +
+      "}",
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",

@@ -104,6 +104,17 @@
  *           named `BroadcastChannel`, object/class method shorthands, and TypeScript method
  *           signatures. The `:` exclusion is guarded against ternary consequents.
  *
+ *   SYN015  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
+ *           Both are same-origin synchronous key/value stores invisible to botscript's
+ *           capability model: `reads {}` / `writes {}` labels cover declared resource
+ *           identifiers, not the Web Storage API globals. A fn that reads or writes either
+ *           store has undeclared persistent (`localStorage`) or session-scoped (`sessionStorage`)
+ *           state dependencies that callers cannot observe or audit from the fn's declared surface.
+ *           Detection: `localStorage` or `sessionStorage` ident not preceded by `.`/`?.`,
+ *           followed by `.` or `?.`. `fn`/`function`/`function*` declarations named
+ *           `localStorage`/`sessionStorage` and bare references are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN016  An `indexedDB.*` access was detected in a fn body (?bs 0.7+).
  *           `indexedDB` is same-origin persistent database storage invisible to botscript's
  *           capability model: `reads {}` / `writes {}` labels cover declared resource
@@ -239,6 +250,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn012 = getErrorCode("SYN012")!;
   const syn013 = getErrorCode("SYN013")!;
   const syn014 = getErrorCode("SYN014")!;
+  const syn015 = getErrorCode("SYN015")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn019 = getErrorCode("SYN019")!;
@@ -1280,6 +1292,52 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn014.rule,
             idiom: syn014.idiom,
             rewrite: syn014.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN015: localStorage.* / sessionStorage.* access ─────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          // Exclude: `obj.localStorage` — preceded by `.` or `?.`
+          const prevIdx15 = prevSignificant(tokens, i - 1);
+          const prev15 = tokens[prevIdx15];
+          if (prev15 && ((prev15.kind === "punct" && prev15.text === ".") || prev15.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named localStorage or sessionStorage
+          if (prev15 && prev15.kind === "keyword" && prev15.text === "fn") continue;
+          if (prev15 && prev15.kind === "ident" && prev15.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx15)) continue;
+
+          // Must be followed by `.` or `?.` — bare references (e.g. passing `localStorage` as a value) are not flagged
+          const nextIdx15 = nextSignificant(tokens, i + 1);
+          const next15 = tokens[nextIdx15];
+          const isDot15 = next15 && next15.kind === "punct" && next15.text === ".";
+          const isOptChain15 = next15 && next15.kind === "questionDot";
+          if (!isDot15 && !isOptChain15) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep15 = isOptChain15 ? "?." : ".";
+          const loc15 = locationOf(src, tok.start);
+          const ns15 = tok.text;
+          warnings.push({
+            code: "SYN015",
+            severity: "warning",
+            file: null,
+            line: loc15.line,
+            column: loc15.column,
+            start: tok.start,
+            end: next15!.end,
+            message:
+              `fn '${decl.name}' accesses ${ns15}${sep15} — ` +
+              `${ns15} is synchronous same-origin Web Storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass the storage value as a parameter or wrap in unsafe "accesses ${ns15} for <reason>" { ${ns15}${sep15}getItem(key) }`,
+            rule: syn015.rule,
+            idiom: syn015.idiom,
+            rewrite: syn015.rewrite,
           });
           break;
         }

@@ -1107,6 +1107,52 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN015: {
+    code: "SYN015",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    body:
+      "SYN015 fires when a fn body accesses `localStorage.*` or `sessionStorage.*` — any member " +
+      "access (`.getItem`, `.setItem`, `.removeItem`, `.clear`, `.length`, `.key`, etc.) on either " +
+      "Web Storage global.\n\n" +
+      "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource " +
+      "identifiers (e.g. `reads { cache }`, `writes { prefs }`). Neither `localStorage` nor " +
+      "`sessionStorage` is part of the stdlib namespace system. A fn that calls " +
+      "`localStorage.setItem('key', val)` mutates persistent browser storage at runtime but declares " +
+      "nothing about it in its header. Callers cannot see the dependency, and no audit tool can " +
+      "observe it from the fn signature.\n\n" +
+      "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not " +
+      "preceded by `.`/`?.` (which would make it a member of another object), followed by `.` or " +
+      "`?.` (confirming this is an access on the global, not a bare reference or a declaration). " +
+      "Fn/function declarations named `localStorage`/`sessionStorage` are excluded.\n\n" +
+      "**Fix (preferred):** read the value at the call site and pass it as an explicit fn parameter. " +
+      "This makes the dependency visible in the signature and tests can inject a mock:\n\n" +
+      "```\n" +
+      "// SYN015\n" +
+      "fn getTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'\n" +
+      "}\n\n" +
+      "// fix — stored value is now an explicit parameter\n" +
+      "fn getTheme(storedTheme: string | null) -> string {\n" +
+      "  return storedTheme ?? 'light'\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct access is genuinely required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"reads theme from localStorage\" { localStorage.getItem('theme') }`\n\n" +
+      "SYN015 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getTheme() -> string {\n" +
+        "  return localStorage.getItem('theme') ?? 'light'\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getTheme(storedTheme: string | null) -> string {\n" +
+        "  return storedTheme ?? 'light'\n" +
+        "}\n",
+    },
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",
