@@ -355,6 +355,11 @@ describe("INT002 — pure intent vs clock.sequence() (stateful-free namespace)",
     const src = `?bs 0.7\nfn getRef() intent: "pure" -> any = clock.sequence\n`;
     expect(() => t(src)).not.toThrow(/INT002/);
   });
+
+  it("does NOT fire INT002 for clock.sequence?.length (optional-chain property, not a call)", () => {
+    const src = `?bs 0.7\nfn getLen() intent: "pure" -> any = clock.sequence?.length\n`;
+    expect(() => t(src)).not.toThrow(/INT002/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -555,6 +560,11 @@ describe("INT004 — idempotent intent vs clock.sequence() (stateful-free namesp
 
   it("does NOT fire INT004 for clock.sequence member read without invocation", () => {
     const src = `?bs 0.7\nfn getRef() intent: "idempotent" -> any = clock.sequence\n`;
+    expect(() => t(src)).not.toThrow(/INT004/);
+  });
+
+  it("does NOT fire INT004 for clock.sequence?.length (optional-chain property, not a call)", () => {
+    const src = `?bs 0.7\nfn getLen() intent: "idempotent" -> any = clock.sequence?.length\n`;
     expect(() => t(src)).not.toThrow(/INT004/);
   });
 });

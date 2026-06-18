@@ -431,9 +431,13 @@ function findFirstStatefulFreeUse(
     // Only flag actual invocations (clock.sequence()), not bare member reads (clock.sequence).
     const afterMemberIdx = nextSignificant(tokens, memberIdx + 1);
     const afterMember = tokens[afterMemberIdx];
+    // questionDot alone is not enough — clock.sequence?.length uses questionDot for property access.
+    // Require the token after questionDot to be `(` to confirm it's an optional call.
     const isCall =
       (afterMember?.kind === "open" && afterMember.text === "(") ||
-      afterMember?.kind === "questionDot"; // clock.sequence?.()
+      (afterMember?.kind === "questionDot" &&
+        tokens[nextSignificant(tokens, afterMemberIdx + 1)]?.kind === "open" &&
+        tokens[nextSignificant(tokens, afterMemberIdx + 1)]?.text === "("); // clock.sequence?.()
     if (!isCall) continue;
     return { namespace: canonical, member, accessOp: isDot ? "." : "?." };
   }
