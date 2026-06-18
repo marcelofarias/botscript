@@ -322,4 +322,17 @@ describe("SYN015: localStorage / sessionStorage access detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN015")).toBe(true);
   });
+
+  it("does NOT fire when var localStorage is declared inside a nested block — var is fn-scoped", () => {
+    // `var` is function-scoped: `var localStorage` inside an `if` block shadows the global
+    // for the entire function body. SYN015 must treat it as a local and suppress.
+    const src =
+      "?bs 0.7\n" +
+      "fn test(cond: boolean) -> string {\n" +
+      "  if (cond) { var localStorage = 'mock' }\n" +
+      "  return localStorage.getItem('key') ?? ''\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
 });

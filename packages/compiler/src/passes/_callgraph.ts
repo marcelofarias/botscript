@@ -358,9 +358,10 @@ export function collectFnBodyLocalNames(
 
     if (tok.kind !== "ident") continue;
     if (tok.text !== "const" && tok.text !== "let" && tok.text !== "var") continue;
-    // When topLevelOnly, skip bindings inside nested blocks (if, for, etc.).
-    // Depth 1 = directly inside the function body; depth > 1 = nested block.
-    if (topLevelOnly && blockDepth > 1) continue;
+    // When topLevelOnly, skip const/let bindings inside nested blocks (if, for, etc.),
+    // but keep var — var is function-scoped in JS/TS and shadows the global name for the
+    // entire function body regardless of where the declaration appears.
+    if (topLevelOnly && blockDepth > 1 && tok.text !== "var") continue;
 
     const nameIdx = nextSignificant(tokens, i + 1);
     const nameTok = tokens[nameIdx];
