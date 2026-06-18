@@ -244,7 +244,7 @@ describe("SYN017: Notification() construction detection", () => {
   it("fires on Notification() in ternary consequent with await (not a method signature)", () => {
     const src =
       "?bs 0.7\n" +
-      "fn check(cond: boolean, title: string) -> void {\n" +
+      "async fn check(cond: boolean, title: string) -> Promise<void> {\n" +
       "  cond ? await Notification(title) : null\n" +
       "}\n";
     const result = compile(src);
@@ -254,7 +254,7 @@ describe("SYN017: Notification() construction detection", () => {
   it("fires on new Notification() in ternary consequent with await (not a method signature)", () => {
     const src =
       "?bs 0.7\n" +
-      "fn check(cond: boolean, title: string) -> void {\n" +
+      "async fn check(cond: boolean, title: string) -> Promise<void> {\n" +
       "  cond ? await new Notification(title) : null\n" +
       "}\n";
     const result = compile(src);
