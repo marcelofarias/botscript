@@ -1248,6 +1248,118 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN020: {
+    code: "SYN020",
+    title: "Date.now() / new Date() / new Date (no parens) / Date() call bypasses the time capability model",
+    body:
+      "SYN020 fires when a fn body calls `Date.now()`, `Date?.now()`, `Date.now?.()`, " +
+      "`new Date()` (no args), `new Date` (no parentheses — equivalent to `new Date()` in JS/TS), " +
+      "`new Date<T>()` (TypeScript generic, no args), or `Date(...)` / `Date?.()` " +
+      "(bare call — JS ignores arguments and always returns the current date string). " +
+      "These forms inject the current wall-clock time at runtime.\n\n" +
+      "**Why it matters:** `Date.now()` and `new Date()` read the current time at runtime but are " +
+      "entirely invisible to botscript's capability model. `uses { time }` declarations cover " +
+      "`time.*` stdlib namespace calls, not the `Date` global. A fn that calls these forms has an " +
+      "undeclared time dependency: callers reading the fn header see no indication of time-sensitivity, " +
+      "tests cannot control the time value the fn observes, and the capability manifest does not " +
+      "record the dependency. In agent / bot contexts this is especially hazardous: a fn declared " +
+      "idempotent that secretly depends on the current time will produce different outputs across " +
+      "retries in a way callers cannot observe or audit.\n\n" +
+      "**Detected forms:**\n" +
+      "- `Date.now()` / `Date?.now()` / `Date.now?.()` — any call form on `Date.now`\n" +
+      "- `new Date()` / `new Date<T>()` — no-arg constructor (with optional TypeScript generic)\n" +
+      "- `new Date` (no parentheses) — equivalent to `new Date()` in JS/TS\n" +
+      "- `Date(...)` / `Date?.()` — bare call (JS ignores arguments; always returns current date string)\n\n" +
+      "**Not detected** (these don't inject ambient time):\n" +
+      "- `new Date(timestamp)` / `new Date('2024-01-01')` / `new Date(y, m, d)` — explicit args\n" +
+      "- `Date.parse(str)` / `Date.UTC(...)` — work with explicit values, no ambient time\n" +
+      "- `obj.Date()` — member call on a local binding\n\n" +
+      "**Fix (preferred — pass time as a parameter):** make the time dependency explicit and " +
+      "testable by accepting `nowMs` as a parameter:\n\n" +
+      "```\n" +
+      "// SYN020 — before\n" +
+      "fn isExpired(expiresAt: number) -> boolean {\n" +
+      "  return Date.now() > expiresAt\n" +
+      "}\n\n" +
+      "// fix — time passed as a parameter; tests can control it\n" +
+      "fn isExpired(expiresAt: number, nowMs: number) -> boolean {\n" +
+      "  return nowMs > expiresAt\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (stdlib):** use `time.now()` with `uses { time }` to make the time dependency " +
+      "visible in the fn header.\n\n" +
+      "**Fix (escape hatch):** if direct `Date` access is required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"uses current time for <reason>\" { Date.now() }`\n\n" +
+      "SYN020 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn isExpired(expiresAt: number) -> boolean {\n" +
+        "  return Date.now() > expiresAt\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn isExpired(expiresAt: number, nowMs: number) -> boolean {\n" +
+        "  return nowMs > expiresAt\n" +
+        "}\n",
+    },
+  },
+  SYN021: {
+    code: "SYN021",
+    title: "performance.now() / performance.timeOrigin access bypasses the time capability model",
+    body:
+      "SYN021 fires when a fn body calls `performance.now()`, `performance?.now()`, " +
+      "`performance.now?.()`, or reads `performance.timeOrigin` / `performance?.timeOrigin`.\n\n" +
+      "**Why it matters:** `performance.now()` returns a high-resolution monotonic timestamp " +
+      "(milliseconds since the page/process started) and `performance.timeOrigin` exposes the " +
+      "absolute epoch of that clock. Both inject ambient timing information at runtime but are " +
+      "entirely invisible to botscript's capability model. `uses { time }` declarations cover " +
+      "`time.*` stdlib namespace calls, not the `performance` global. A fn that reads these " +
+      "values has an undeclared time dependency: callers reading the fn header see no indication " +
+      "of time-sensitivity, tests cannot control the clock value the fn observes, and the " +
+      "capability manifest does not record the dependency. In agent / bot contexts this matters: " +
+      "a fn declared idempotent that secretly reads the monotonic clock will produce " +
+      "timing-dependent outputs that callers cannot observe or audit.\n\n" +
+      "**Detected forms:**\n" +
+      "- `performance.now()` / `performance?.now()` / `performance.now?.()` — any call form\n" +
+      "- `performance.timeOrigin` / `performance?.timeOrigin` — property read (no call needed)\n\n" +
+      "**Not detected** (excluded by this check):\n" +
+      "- `obj.performance.*` — member access on a local binding\n" +
+      "- `performance.mark()` / `performance.measure()` — excluded by this check (these methods can timestamp internally, but are not surfaced as ambient reads by SYN021)\n\n" +
+      "**Fix (preferred — pass time as a parameter):** make the time dependency explicit:\n\n" +
+      "```\n" +
+      "// SYN021 — before\n" +
+      "fn elapsed(startMs: number) -> number {\n" +
+      "  return performance.now() - startMs\n" +
+      "}\n\n" +
+      "// fix — time passed as a parameter; tests can control it\n" +
+      "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+      "  return nowMs - startMs\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (stdlib — epoch time only):** if you only need current epoch time (not monotonic " +
+      "time relative to process start), use `time.now()` with `uses { time }` to make the " +
+      "dependency visible in the fn header. Note: `time.now()` is wall-clock epoch time " +
+      "(equivalent to `Date.now()`), not a monotonic clock — it does not replace `performance.now()` " +
+      "when relative elapsed time is what you need.\n\n" +
+      "**Fix (escape hatch):** if direct `performance` access is required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"uses performance.now for <reason>\" { performance.now() }`\n\n" +
+      "SYN021 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn elapsed(startMs: number) -> number {\n" +
+        "  return performance.now() - startMs\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+        "  return nowMs - startMs\n" +
+        "}\n",
+    },
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
