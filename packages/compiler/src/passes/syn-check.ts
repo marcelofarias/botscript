@@ -1770,7 +1770,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               line: loc21.line,
               column: loc21.column,
               start: tok.start,
-              end: memberTok21.end,
+              end: afterNow21.start + 1,
               message:
                 `fn '${decl.name}' calls performance${sep21}now${callSep21}() — ` +
                 `performance.now() injects monotonic time (ms since process start) invisible to the capability model; ` +

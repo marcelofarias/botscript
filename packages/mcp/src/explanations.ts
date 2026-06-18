@@ -1464,7 +1464,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     body:
       "SYN024 fires when a fn body reads or writes `document.cookie` in `?bs 0.7+`. " +
       "`document.cookie` is a persistent storage mechanism that is also transmitted with every " +
-      "matching HTTP request — unlike `localStorage` (SYN015) or `indexedDB` (SYN016), cookies " +
+      "matching HTTP request — unlike `localStorage` or `indexedDB` (SYN016), cookies " +
       "have implicit network-side effects. Neither `reads {}` / `writes {}` labels nor `uses { net }` " +
       "cover `document.cookie`; it is entirely outside the botscript capability model.\n\n" +
       "**Why it matters:** A fn that reads `document.cookie` has an undeclared persistent-state " +
