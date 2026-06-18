@@ -41,7 +41,9 @@ import { computeNesting, nextSignificant } from "./_callgraph.js";
 import { collectUnsafeBlockRanges, isInsideRange, type CharRange } from "./_unsafe-ranges.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases } from "./_alias.js";
 
-const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP));
+// Only namespaces with a truthy capability string trigger UNS005.
+// Free namespaces (clock: "") have no external capability and must not fire.
+const STDLIB_CAPS = new Set(Object.keys(STDLIB_TO_CAP).filter((k) => STDLIB_TO_CAP[k]));
 
 export function passUnsCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.9")) return src;

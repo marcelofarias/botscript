@@ -201,7 +201,7 @@ function checkPureClaim(
   // INT002: stateful-free namespace variant — clock.sequence() and similar are
   // capability-free (no `uses {}` required) but non-deterministic. A pure fn
   // must be deterministic, so calling these still violates the claim.
-  const statefulFreeUse = findFirstStatefulFreeUse(tokens, decl, allDecls);
+  const statefulFreeUse = findFirstStatefulFreeUse(tokens, decl, allDecls, declAliases, declBlockShadows);
   if (statefulFreeUse) {
     const entry = getErrorCode("INT002")!;
     const intentStart = decl.intentStart!;
@@ -362,7 +362,7 @@ function checkIdempotentClaim(
   // INT004: stateful-free namespace variant — clock.sequence() is capability-free
   // but non-deterministic (returns a new value each call). An idempotent fn must
   // produce the same observable result on retries; calling clock.sequence() breaks that.
-  const statefulFreeUse4 = findFirstStatefulFreeUse(tokens, decl, allDecls);
+  const statefulFreeUse4 = findFirstStatefulFreeUse(tokens, decl, allDecls, declAliases4, declBlockShadows4);
   if (statefulFreeUse4) {
     const entry = getErrorCode("INT004")!;
     const intentStart = decl.intentStart!;
@@ -394,11 +394,15 @@ function checkIdempotentClaim(
  * Scan the fn body for a stateful-free namespace call (e.g. clock.sequence()).
  * These namespaces require no capability declaration but are non-deterministic,
  * so they still violate `intent: "pure"` and `intent: "idempotent"` claims.
+ * Mirrors findFirstCapabilityUse: resolves module-level aliases and suppresses
+ * block-shadowed identifiers so `const clock = {...}` doesn't false-positive.
  */
 function findFirstStatefulFreeUse(
   tokens: Token[],
   fn: FnDecl,
   allDecls: FnDecl[],
+  aliases: Map<string, string> = new Map(),
+  blockShadows: BlockShadowRange[] = [],
 ): { namespace: string; member: string; accessOp: "." | "?." } | null {
   const inner = allDecls.filter(
     (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
@@ -407,14 +411,21 @@ function findFirstStatefulFreeUse(
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
-    if (!STATEFUL_FREE_NAMESPACES.has(tok.text)) continue;
+    // Resolve module-level alias before checking the namespace set.
+    const aliasCanonical = !isInBlockShadow(tok.text, i, blockShadows)
+      ? aliases.get(tok.text)
+      : undefined;
+    const canonical = aliasCanonical ?? tok.text;
+    if (!STATEFUL_FREE_NAMESPACES.has(canonical)) continue;
+    // Suppress if the identifier is block-shadowed by a local binding.
+    if (isInBlockShadow(tok.text, i, blockShadows)) continue;
     const j = nextSignificant(tokens, i + 1);
     const next = tokens[j];
     const isDot = next?.kind === "punct" && next.text === ".";
     const isOptChain = next?.kind === "questionDot";
     if (!isDot && !isOptChain) continue;
     const member = nextIdent(tokens, j) ?? "…";
-    return { namespace: tok.text, member, accessOp: isDot ? "." : "?." };
+    return { namespace: canonical, member, accessOp: isDot ? "." : "?." };
   }
   return null;
 }

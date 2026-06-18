@@ -92,7 +92,12 @@ export const clock = {
    * Each call returns a value strictly greater than the previous call's value.
    * Suitable for ordering events in structured logs without declaring `uses { time }`.
    */
-  sequence: (): MonotonicTimestamp => _clockSeq++ as MonotonicTimestamp,
+  sequence: (): MonotonicTimestamp => {
+    if (_clockSeq >= Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("clock.sequence: monotonic counter overflow — MAX_SAFE_INTEGER reached");
+    }
+    return _clockSeq++ as MonotonicTimestamp;
+  },
 };
 
 // Mockable sources. `with mocks { time, random }` swaps these in tests; in
