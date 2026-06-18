@@ -1417,9 +1417,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
             continue;
 
-          // Exclude: `function XMLHttpRequest(...)` / `fn XMLHttpRequest(...)` declarations
+          // Exclude: `function XMLHttpRequest(...)` / `fn XMLHttpRequest(...)` / `function* XMLHttpRequest(...)` declarations
           if (prev9 && prev9.kind === "ident" && prev9.text === "function") continue;
           if (prev9 && prev9.kind === "keyword" && prev9.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx9)) continue;
 
           // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
           const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";

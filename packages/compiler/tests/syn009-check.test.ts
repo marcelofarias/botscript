@@ -271,6 +271,14 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
 
+  it("does NOT fire on function* XMLHttpRequest(...) generator declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "function* XMLHttpRequest(url: string) { yield url }\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+
   it("does NOT fire on TS type-literal method signature with empty parens — type X = { XMLHttpRequest() }", () => {
     const src =
       "?bs 0.7\n" +
