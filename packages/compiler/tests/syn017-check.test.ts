@@ -323,4 +323,15 @@ describe("SYN017: Notification() construction detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN017")).toBe(true);
   });
+
+  it("does NOT fire on TS type-literal as non-first generic type arg: Foo<Bar, { Notification() }>", () => {
+    // `{` is preceded by `,` (comma between generic type args) — should be treated as type-literal.
+    const src =
+      "?bs 0.7\n" +
+      "fn setup() -> void {\n" +
+      "  type T = Foo<string, { Notification() }>\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
 });

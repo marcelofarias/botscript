@@ -1472,9 +1472,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                     (prevOpen17.kind === "operator" && (                              // intersection / union / generic
                       prevOpen17.text === "&" ||                                     //   Foo & { ... }
                       prevOpen17.text === "|" ||                                     //   Foo | { ... }
-                      prevOpen17.text === "<" ||                                     //   Foo<{ ... }>
-                      prevOpen17.text === ">"                                        //   closing generic: Foo<Bar, { ... }>
+                      prevOpen17.text === "<"                                        //   Foo<{ ... }>
                     )) ||
+                    (prevOpen17.kind === "punct" && prevOpen17.text === ",") ||      //   Foo<Bar, { ... }> — non-first type arg
                     (prevOpen17.kind === "ident" && (                                // keyword-led type positions
                       prevOpen17.text === "as" ||                                    //   x as { ... }
                       prevOpen17.text === "extends" ||                               //   T extends { ... }
