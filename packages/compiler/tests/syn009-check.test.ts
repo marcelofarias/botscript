@@ -305,16 +305,27 @@ describe("SYN009: XMLHttpRequest() call detection", () => {
     expect(w?.message).not.toContain("new XMLHttpRequest()");
   });
 
-  it("does NOT fire on malformed/unterminated generic new XMLHttpRequest< — bail out safely", () => {
-    // An unterminated `<...` scan should not produce a false-positive.
-    // The angle-bracket scan exits when it reaches tokenEnd with depth > 0; the check bails out.
+  it("fires on XMLHttpRequest?.( optional-call form", () => {
     const src =
       "?bs 0.7\n" +
-      "fn bad() -> any {\n" +
-      "  const x = 1\n" +
-      "  return x\n" +
+      "fn sendRequest(url: string) -> void {\n" +
+      "  const xhr = XMLHttpRequest?.()\n" +
+      "  xhr?.open('GET', url)\n" +
+      "  xhr?.send()\n" +
       "}\n";
-    // No unterminated generic in this minimal fn — just verify the check doesn't throw.
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN009")).toBe(true);
+    const w = result.warnings.find((w) => w.code === "SYN009");
+    expect(w?.message).toContain("XMLHttpRequest?.()");
+  });
+
+  it("does NOT fire on malformed/unterminated generic new XMLHttpRequest< — bail out safely", () => {
+    // The angle-bracket scan should bail out (anglDepth > 0) without producing a false-positive.
+    const src =
+      "?bs 0.7\n" +
+      "fn bad() -> void {\n" +
+      "  const x = new XMLHttpRequest<string\n" +
+      "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN009")).toBe(false);
   });
