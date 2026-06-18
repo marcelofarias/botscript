@@ -1127,7 +1127,7 @@ const E: Record<string, ErrorCodeEntry> = {
     rule:
       "`document.cookie` is a persistent read/write storage mechanism invisible to botscript's " +
       "capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
-      "`document` global. Unlike `localStorage` (SYN015), cookies are also transmitted with every " +
+      "`document` global. Unlike `localStorage`, cookies are also transmitted with every " +
       "matching HTTP request — so `document.cookie` access has implicit network-side effects as well. " +
       "A fn that reads or writes `document.cookie` has undeclared storage and indirect network " +
       "dependencies that callers cannot see and tests cannot intercept without global mocking.",

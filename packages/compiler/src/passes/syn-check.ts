@@ -211,7 +211,7 @@
  *           cookies for the current document origin as a single concatenated string on read, and
  *           appends a cookie on assignment (`document.cookie = "key=value;..."`). It is invisible
  *           to botscript's capability model: `reads {}` / `writes {}` labels cover declared
- *           resource identifiers, not the `document` global. Unlike `localStorage` (SYN015),
+ *           resource identifiers, not the `document` global. Unlike `localStorage`,
  *           cookies are also transmitted with every matching HTTP request, meaning they have an
  *           implicit network-side effect as well. A fn that reads or writes `document.cookie`
  *           has undeclared storage (and indirect network) dependencies that callers cannot observe
