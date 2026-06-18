@@ -1157,7 +1157,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   SYN017: {
     code: "SYN017",
-    title: "Notification() / new Notification() call bypasses the capability model",
+    title: "new Notification() / Notification() call bypasses the capability model",
     body:
       "SYN017 fires when a fn body constructs a `Notification` via `new Notification(title)`, " +
       "bare `Notification(title)`, `Notification?.(title)`, or TypeScript instantiation " +
