@@ -981,6 +981,75 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return random.int(1, 7)\n" +
       "}",
   },
+  SYN020: {
+    code: "SYN020",
+    title: "Date.now() / new Date() / new Date (no parens) / Date() / Date?.() construction bypasses the time capability model",
+    rule:
+      "`Date.now()`, `new Date()`, and `Date()` inject the current time at runtime but are " +
+      "invisible to botscript's capability model: `uses { time }` declarations cover `time.*` " +
+      "stdlib namespace calls, not the `Date` global. A fn that calls these forms has an " +
+      "undeclared time dependency — no `uses {}` declaration covers it, callers cannot see it, " +
+      "and tests cannot control the time value the fn observes.",
+    idiom:
+      "pass the current time as an explicit parameter so callers and tests can control it; " +
+      "or use `time.now()` from the `time` stdlib namespace with `uses { time }` so the " +
+      "time dependency is declared in the fn header (note: `time.now()` returns epoch ms, not a Date object); " +
+      "if the raw `Date` API is genuinely required, wrap in " +
+      "`unsafe \"uses current time for <reason>\" { Date.now() }`",
+    rewrite:
+      "// before — time dependency invisible to the capability model\n" +
+      "fn isExpired(expiresAtMs: number) -> boolean {\n" +
+      "  return Date.now() > expiresAtMs  // SYN020\n" +
+      "}\n\n" +
+      "// after — time passed as a parameter; tests can control it\n" +
+      "fn isExpired(expiresAtMs: number, nowMs: number) -> boolean {\n" +
+      "  return nowMs > expiresAtMs\n" +
+      "}",
+    example:
+      "// SYN020: Date.now() bypasses the time capability model\n" +
+      "fn isExpired(expiresAt: number) -> boolean {\n" +
+      "  return Date.now() > expiresAt  // SYN020\n" +
+      "}\n\n" +
+      "// fix: pass nowMs as a parameter\n" +
+      "fn isExpired(expiresAt: number, nowMs: number) -> boolean {\n" +
+      "  return nowMs > expiresAt\n" +
+      "}",
+  },
+  SYN021: {
+    code: "SYN021",
+    title: "performance.now() / performance.timeOrigin access bypasses the time capability model",
+    rule:
+      "`performance.now()` and `performance.timeOrigin` inject ambient timing information at " +
+      "runtime but are invisible to botscript's capability model: `uses { time }` declarations " +
+      "cover `time.*` stdlib namespace calls, not the `performance` global. A fn that reads " +
+      "these values has an undeclared time dependency — no `uses {}` declaration covers it, " +
+      "callers cannot see it, and tests cannot control the clock value the fn observes.",
+    idiom:
+      "pass the current time as an explicit parameter so callers and tests can control it (preferred); " +
+      "if only epoch time (not monotonic time) is needed, use `time.now()` from the `time` stdlib " +
+      "with `uses { time }` so the dependency is declared in the fn header — " +
+      "note: `time.now()` is wall-clock epoch time, not a monotonic clock; " +
+      "if direct `performance` access is required, wrap in " +
+      "`unsafe \"uses performance.now for <reason>\" { performance.now() }`",
+    rewrite:
+      "// before — time dependency invisible to the capability model\n" +
+      "fn elapsed(startMs: number) -> number {\n" +
+      "  return performance.now() - startMs  // SYN021\n" +
+      "}\n\n" +
+      "// after — time passed as a parameter; tests can control it\n" +
+      "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+      "  return nowMs - startMs\n" +
+      "}",
+    example:
+      "// SYN021: performance.now() bypasses the time capability model\n" +
+      "fn elapsed(startMs: number) -> number {\n" +
+      "  return performance.now() - startMs  // SYN021\n" +
+      "}\n\n" +
+      "// fix: pass nowMs as a parameter\n" +
+      "fn elapsed(startMs: number, nowMs: number) -> number {\n" +
+      "  return nowMs - startMs\n" +
+      "}",
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
@@ -1050,6 +1119,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: accept userAgent as a parameter\n" +
       "fn getBrowser(userAgent: string) -> string {\n" +
       "  return userAgent\n" +
+      "}",
+  },
+  SYN024: {
+    code: "SYN024",
+    title: "document.cookie access bypasses the storage capability model",
+    rule:
+      "`document.cookie` is a persistent read/write storage mechanism invisible to botscript's " +
+      "capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
+      "`document` global. Unlike `localStorage`, cookies are also transmitted with every " +
+      "matching HTTP request — so `document.cookie` access has implicit network-side effects as well. " +
+      "A fn that reads or writes `document.cookie` has undeclared storage and indirect network " +
+      "dependencies that callers cannot see and tests cannot intercept without global mocking.",
+    idiom:
+      "pass cookies as an explicit parameter so callers and tests can control the value; " +
+      "or accept a cookie-jar abstraction so the dependency is visible at the call site; " +
+      "if direct `document.cookie` access is genuinely required (e.g. a thin cookie adapter), " +
+      "wrap in `unsafe \"accesses document.cookie for <reason>\" { document.cookie }`",
+    rewrite:
+      "// before — cookie access invisible to the capability model\n" +
+      "fn getSession() -> string {\n" +
+      "  return document.cookie  // SYN024\n" +
+      "}\n\n" +
+      "// after — cookie value passed as a parameter; tests can control it\n" +
+      "fn getSession(cookieHeader: string) -> string {\n" +
+      "  return cookieHeader\n" +
+      "}",
+    example:
+      "// SYN024: document.cookie bypasses the storage capability model\n" +
+      "fn isLoggedIn() -> boolean {\n" +
+      "  return document.cookie.includes('session=')  // SYN024\n" +
+      "}\n\n" +
+      "// fix: pass the cookie header as a parameter\n" +
+      "fn isLoggedIn(cookieHeader: string) -> boolean {\n" +
+      "  return cookieHeader.includes('session=')\n" +
       "}",
   },
   DEP001: {

@@ -137,6 +137,40 @@
  *           `fn`/`function` declarations named `crypto` and non-randomness members are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN020  A `Date.now()`, `new Date()`, `new Date` (no parens), or `Date()` call was detected
+ *           in a fn body (?bs 0.7+). These forms inject the current time at runtime but are invisible
+ *           to botscript's capability model: `uses { time }` covers `time.*` stdlib calls, not the
+ *           `Date` global. A fn that calls these forms has an undeclared time dependency — callers
+ *           cannot see it and tests cannot control the time value observed by the fn.
+ *           Detection paths:
+ *           1. `Date.now()` / `Date?.now()` / `Date.now?.()` — `Date` not preceded by `.`/`?.`,
+ *              followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
+ *           2. `new Date()` / `new Date<T>()` — `Date` preceded by `new`, followed by empty
+ *              parens (arg-count check: first token inside `(…)` must be `)`). Generic scan
+ *              only when `new` precedes to avoid `Date < x > (y)` comparison false-positives.
+ *           3. `new Date` (no parentheses) — `Date` preceded by `new`, not followed by `(`, `<`, `?.`, or `.`
+ *              (equivalent to `new Date()` in JS/TS — creates a Date object for current time).
+ *           4. `Date(...)` / `Date?.()` — bare call (any args; JS ignores them and returns current date string).
+ *           Excluded: `new Date(timestamp)` / `new Date("str")` / `new Date(y,m,d,…)` (explicit
+ *           args), `Date.parse(str)` / `Date.UTC(…)` (no ambient time), `obj.Date()` (member
+ *           call), fn/function/function* declarations named `Date`, method shorthands, TS method
+ *           signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN021  A `performance.now()` or `performance.timeOrigin` access was detected in a fn body (?bs 0.7+).
+ *           `performance.now()` returns a high-resolution monotonic timestamp (milliseconds since
+ *           the page/process started) and `performance.timeOrigin` exposes the absolute epoch of
+ *           that clock. Both inject ambient timing information at runtime but are invisible to
+ *           botscript's capability model: `uses { time }` covers `time.*` stdlib calls, not the
+ *           `performance` global. A fn that reads these values has an undeclared time dependency —
+ *           callers cannot see it and tests cannot control the clock value observed by the fn.
+ *           Detection:
+ *           1. `performance.now()` / `performance?.now()` / `performance.now?.()` — `performance`
+ *              not preceded by `.`/`?.`, followed by `.`/`?.`, member is `now`, followed by `(`/`?.(`.
+ *           2. `performance.timeOrigin` / `performance?.timeOrigin` — `performance` not preceded
+ *              by `.`/`?.`, followed by `.`/`?.`, member is `timeOrigin` (property, no call needed).
+ *           Excluded: `obj.performance.*` (member call), fn/function/function* declarations named `performance`,
+ *           TS method signatures. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
  *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
  *           `process.hrtime`, `process.uptime`, `process.memoryUsage`,
@@ -170,6 +204,24 @@
  *           capability dependencies — callers cannot see them and tests cannot control or mock them.
  *           Excluded: `obj.navigator.*` (member on a local binding), fn/function declarations
  *           named `navigator`, member accesses not in the high-concern list above.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN024  A `document.cookie` access was detected in a fn body (?bs 0.7+).
+ *           `document.cookie` is a read/write persistent storage mechanism — it serialises all
+ *           cookies for the current document origin as a single concatenated string on read, and
+ *           appends a cookie on assignment (`document.cookie = "key=value;..."`). It is invisible
+ *           to botscript's capability model: `reads {}` / `writes {}` labels cover declared
+ *           resource identifiers, not the `document` global. Unlike `localStorage`,
+ *           cookies are also transmitted with every matching HTTP request, meaning they have an
+ *           implicit network-side effect as well. A fn that reads or writes `document.cookie`
+ *           has undeclared storage (and indirect network) dependencies that callers cannot observe
+ *           and tests cannot intercept without global mocking.
+ *           Detection: `document` not preceded by `.`/`?.`, followed by `.`/`?.`, member is
+ *           `cookie`. Both read access (`const c = document.cookie`) and assignment
+ *           (`document.cookie = "k=v"`) are detected — including ternary positions such as
+ *           `cond ? document.cookie : other`.
+ *           Excluded: `obj.document.cookie` (member on a local binding), fn/function/function*
+ *           declarations named `document`.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
@@ -242,8 +294,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn016 = getErrorCode("SYN016")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn019 = getErrorCode("SYN019")!;
+  const syn020 = getErrorCode("SYN020")!;
+  const syn021 = getErrorCode("SYN021")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn024 = getErrorCode("SYN024")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1449,6 +1504,322 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
+        // ── SYN020: Date.now() / new Date() / Date() — ambient time dependency ─
+        case "Date": {
+          // Exclude: `obj.Date` — preceded by `.` or `?.`
+          const prevIdx20 = prevSignificant(tokens, i - 1);
+          const prev20 = tokens[prevIdx20];
+          if (prev20 && ((prev20.kind === "punct" && prev20.text === ".") || prev20.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Date
+          if (prev20 && prev20.kind === "keyword" && prev20.text === "fn") continue;
+          if (prev20 && prev20.kind === "ident" && prev20.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx20)) continue;
+
+          const hasNew20 = prev20 && prev20.kind === "ident" && prev20.text === "new";
+
+          const nextIdx20 = nextSignificant(tokens, i + 1);
+          const next20 = tokens[nextIdx20];
+
+          // ── Pattern 1: Date.now() / Date?.now() ──────────────────────────
+          // Followed by `.` or `?.`, then `now`, then `(` or `?.(`.
+          const isDotNext20 = next20 && next20.kind === "punct" && next20.text === ".";
+          const isOptChain20 = next20 && next20.kind === "questionDot";
+          if (isDotNext20 || isOptChain20) {
+            const memberIdx20 = nextSignificant(tokens, nextIdx20 + 1);
+            const memberTok20 = tokens[memberIdx20];
+            // Only enter Pattern 1 when the member is `now`.
+            // `Date?.()` has `?.` followed directly by `(` — fall through to Pattern 2.
+            if (!memberTok20 || memberTok20.kind !== "ident" || memberTok20.text !== "now") {
+              // `.xxx` that isn't `.now` is not an ambient-time call (e.g. Date.parse).
+              // `?.xxx` that isn't `?.now` — still not ambient time, except `Date?.()` where
+              // the `(` appears as member. That is handled below in Pattern 2 (next20 === `?.`).
+              if (isDotNext20) continue;
+              // isOptChain20 && member isn't `now`: fall through to Pattern 2.
+            } else {
+              // Confirm call: next after `now` is `(` or `?.(`
+              let afterNowIdx20 = nextSignificant(tokens, memberIdx20 + 1);
+              let afterNow20 = tokens[afterNowIdx20];
+              let isOptCall20 = false;
+              if (afterNow20 && afterNow20.kind === "questionDot") {
+                isOptCall20 = true;
+                afterNowIdx20 = nextSignificant(tokens, afterNowIdx20 + 1);
+                afterNow20 = tokens[afterNowIdx20];
+              }
+              if (!afterNow20 || !(afterNow20.kind === "open" && afterNow20.text === "(")) continue;
+              if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+              const sep20 = isOptChain20 ? "?." : ".";
+              const callSep20 = isOptCall20 ? "?." : "";
+              const loc20 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN020",
+                severity: "warning",
+                file: null,
+                line: loc20.line,
+                column: loc20.column,
+                start: tok.start,
+                end: afterNow20.start + 1,
+                message:
+                  `fn '${decl.name}' calls Date${sep20}now${callSep20}() — ` +
+                  `Date.now() injects the current time invisible to the capability model; ` +
+                  `pass nowMs as a parameter or use time.now() with uses { time }, ` +
+                  `or wrap in unsafe "uses current time for <reason>" { Date.now() }`,
+                rule: syn020.rule,
+                idiom: syn020.idiom,
+                rewrite: syn020.rewrite,
+              });
+              break;
+            }
+          }
+
+          // ── Pattern 3: new Date (no parentheses) ─────────────────────────
+          // In JS/TS `new Date` without parens is equivalent to `new Date()` — ambient time injection.
+          if (hasNew20 && (
+            !next20 ||
+            (next20.kind !== "open" &&
+             next20.kind !== "questionDot" &&
+             !(next20.kind === "operator" && next20.text === "<") &&
+             !(next20.kind === "punct" && next20.text === "."))
+          )) {
+            if (isInsideRange(tok.start, unsafeRanges)) { break; }
+            const loc20c = locationOf(src, prev20!.start);
+            warnings.push({
+              code: "SYN020",
+              severity: "warning",
+              file: null,
+              line: loc20c.line,
+              column: loc20c.column,
+              start: prev20!.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' constructs new Date (no-paren form) — ` +
+                `new Date without parentheses is equivalent to new Date() and injects the current time invisible to the capability model; ` +
+                `pass nowMs as a parameter (time.now() with uses { time } gives epoch ms, not a Date object), ` +
+                `or wrap in unsafe "uses current time for <reason>" { new Date }`,
+              rule: syn020.rule,
+              idiom: syn020.idiom,
+              rewrite: syn020.rewrite,
+            });
+            break;
+          }
+
+          // ── Pattern 2: new Date() / Date(...) / new Date<T>() ────────────
+          // Check: followed by `(`, `?.(`, or (when `new`) `<T>(`.
+          // `new Date(arg)` with explicit args is excluded (constructs a specific date, not ambient time).
+          // `Date(arg)` without `new` ignores args and always returns the current date string — always fires.
+          let callIdx20 = nextIdx20;
+          let isOpt20 = false;
+
+          if (next20 && next20.kind === "questionDot") {
+            // Date?.( — optional bare call
+            isOpt20 = true;
+            callIdx20 = nextSignificant(tokens, nextIdx20 + 1);
+          } else if (hasNew20 && next20 && next20.kind === "operator" && next20.text === "<") {
+            // new Date<T>( — generic scan only when `new` precedes (avoids comparison false-positives)
+            let depth = 1;
+            let j = nextIdx20 + 1;
+            while (j < decl.tokenEnd && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx20 = nextSignificant(tokens, j);
+          }
+
+          const callTok20 = tokens[callIdx20];
+          if (!callTok20 || !(callTok20.kind === "open" && callTok20.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: `{ Date(str): T; }`
+          // Guard against ternary consequents: `cond ? Date(str) : other`
+          // Also handles `await`-wrapped forms: `cond ? await Date() : other`
+          const prevBeforeNewIdx20 = hasNew20 ? prevSignificant(tokens, prevIdx20 - 1) : -1;
+          const prevBeforeNew20 = prevBeforeNewIdx20 >= 0 ? tokens[prevBeforeNewIdx20] : undefined;
+          // Look through `await` one level to detect ternary position
+          const awaitSkipPrev20 = (prev20 && prev20.kind === "ident" && prev20.text === "await")
+            ? tokens[prevSignificant(tokens, prevIdx20 - 1)] : undefined;
+          const awaitSkipPrevBeforeNew20 = (prevBeforeNew20 && prevBeforeNew20.kind === "ident" && prevBeforeNew20.text === "await")
+            ? tokens[prevSignificant(tokens, prevBeforeNewIdx20 - 1)] : undefined;
+          const isTernary20 = prev20?.kind === "question" ||
+            prevBeforeNew20?.kind === "question" ||
+            awaitSkipPrev20?.kind === "question" ||
+            awaitSkipPrevBeforeNew20?.kind === "question";
+          if (callTok20.matchedAt !== undefined) {
+            const afterCloseIdx20 = nextSignificant(tokens, callTok20.matchedAt + 1);
+            const afterClose20 = tokens[afterCloseIdx20];
+            if (afterClose20 && (
+              (afterClose20.kind === "open" && afterClose20.text === "{") ||
+              afterClose20.kind === "fatArrow" ||
+              (!isTernary20 && afterClose20.kind === "punct" && afterClose20.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type: `{ Date(x: string) }`.
+            // A `:` at depth 0 inside the parens is a type annotation — not an ambient-time call.
+            // Also handles optional params: `{ Date(x?: string) }`.
+            let hasTypeAnnotation20 = false;
+            let depth20 = 0;
+            let ternaryDepth20 = 0;
+            for (let k20 = callIdx20 + 1; k20 < callTok20.matchedAt; k20++) {
+              const at20 = tokens[k20];
+              if (!at20) continue;
+              if (at20.kind === "open") { depth20++; continue; }
+              if (at20.kind === "close") { depth20--; continue; }
+              if (depth20 !== 0) continue;
+              if (at20.kind === "question") {
+                const nextAfterQ20 = nextSignificant(tokens, k20 + 1);
+                const nextTokQ20 = tokens[nextAfterQ20];
+                if (nextTokQ20 && nextTokQ20.kind === "punct" && nextTokQ20.text === ":") {
+                  hasTypeAnnotation20 = true;
+                  break;
+                }
+                ternaryDepth20++;
+                continue;
+              }
+              if (at20.kind === "punct" && at20.text === ":") {
+                if (ternaryDepth20 > 0) { ternaryDepth20--; continue; }
+                hasTypeAnnotation20 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation20) continue;
+          }
+
+          // `new Date(arg)` with arguments constructs a specific date — not ambient time; skip.
+          // `Date(arg)` (without `new`) always returns the current date string regardless of args; fire.
+          const firstInsideIdx20 = nextSignificant(tokens, callIdx20 + 1);
+          if (hasNew20 && firstInsideIdx20 !== callTok20.matchedAt) continue; // new Date(arg) → skip
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart20 = hasNew20 ? prev20!.start : tok.start;
+          const loc20b = locationOf(src, warnStart20);
+          // Bare `Date(arg)` ignores args and always returns current date string — show `Date(...)` when args present.
+          const hasDateArgs20 = !hasNew20 && firstInsideIdx20 !== callTok20.matchedAt;
+          const callForm20 = hasNew20 ? "new Date()" : isOpt20 ? "Date?.()" : hasDateArgs20 ? "Date(...)" : "Date()";
+          const formDesc20 = hasNew20 ? `constructs new Date()` : isOpt20 ? `calls Date?.()` : hasDateArgs20 ? `calls Date(...)` : `calls Date()`;
+          warnings.push({
+            code: "SYN020",
+            severity: "warning",
+            file: null,
+            line: loc20b.line,
+            column: loc20b.column,
+            start: warnStart20,
+            end: callTok20.start + 1,
+            message:
+              `fn '${decl.name}' ${formDesc20} — ` +
+              `${callForm20} injects the current time invisible to the capability model; ` +
+              `pass nowMs as a parameter (time.now() with uses { time } gives epoch ms, not a Date object), ` +
+              `or wrap in unsafe "uses current time for <reason>" { ${callForm20} }`,
+            rule: syn020.rule,
+            idiom: syn020.idiom,
+            rewrite: syn020.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN021: performance.now() / performance.timeOrigin ───────────────
+        case "performance": {
+          // Exclude: `obj.performance.*` — performance preceded by `.` or `?.`
+          const prevIdx21 = prevSignificant(tokens, i - 1);
+          const prev21 = tokens[prevIdx21];
+          if (prev21 && ((prev21.kind === "punct" && prev21.text === ".") || prev21.kind === "questionDot"))
+            continue;
+
+          // Exclude function declarations: function performance(…), fn performance(…), function* performance(…)
+          if (prev21 && prev21.kind === "ident" && prev21.text === "function") continue;
+          if (prev21 && prev21.kind === "keyword" && prev21.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx21)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx21 = nextSignificant(tokens, i + 1);
+          const next21 = tokens[nextIdx21];
+          const isDot21 = next21 && next21.kind === "punct" && next21.text === ".";
+          const isOptChain21 = next21 && next21.kind === "questionDot";
+          if (!isDot21 && !isOptChain21) continue;
+
+          // Member must be `now` or `timeOrigin`
+          const memberIdx21 = nextSignificant(tokens, nextIdx21 + 1);
+          const memberTok21 = tokens[memberIdx21];
+          if (!memberTok21 || memberTok21.kind !== "ident") continue;
+          if (memberTok21.text !== "now" && memberTok21.text !== "timeOrigin") continue;
+
+          if (memberTok21.text === "now") {
+            // `performance.now` must be followed by a call: `(` or `?.(`
+            let afterNowIdx21 = nextSignificant(tokens, memberIdx21 + 1);
+            let afterNow21 = tokens[afterNowIdx21];
+            let isOptCall21 = false;
+            if (afterNow21 && afterNow21.kind === "questionDot") {
+              isOptCall21 = true;
+              afterNowIdx21 = nextSignificant(tokens, afterNowIdx21 + 1);
+              afterNow21 = tokens[afterNowIdx21];
+            }
+            if (!afterNow21 || !(afterNow21.kind === "open" && afterNow21.text === "(")) continue;
+
+            if (isInsideRange(memberTok21.start, unsafeRanges)) continue;
+
+            const sep21 = isOptChain21 ? "?." : ".";
+            const callSep21 = isOptCall21 ? "?." : "";
+            const loc21 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN021",
+              severity: "warning",
+              file: null,
+              line: loc21.line,
+              column: loc21.column,
+              start: tok.start,
+              end: memberTok21.end,
+              message:
+                `fn '${decl.name}' calls performance${sep21}now${callSep21}() — ` +
+                `performance.now() injects monotonic time (ms since process start) invisible to the capability model; ` +
+                `pass nowMs as a parameter (preferred); ` +
+                `note: time.now() is wall-clock epoch time and does NOT replace performance.now() for elapsed-time measurement; ` +
+                `or wrap in unsafe "uses performance.now for <reason>" { performance.now() }`,
+              rule: syn021.rule,
+              idiom: syn021.idiom,
+              rewrite: syn021.rewrite,
+            });
+          } else {
+            // `performance.timeOrigin` — property access, no call required
+            // Exclude TS method signatures: `{ performance: { timeOrigin: number } }`
+            // Guard against ternary consequents: `cond ? performance.timeOrigin : other`
+            // (the `:` there belongs to the ternary, not a type annotation)
+            // Also handles `await`-wrapped: `cond ? await performance.timeOrigin : other`
+            const afterMemberIdx21 = nextSignificant(tokens, memberIdx21 + 1);
+            const afterMember21 = tokens[afterMemberIdx21];
+            const prevPrevIdx21 = prevSignificant(tokens, prevIdx21 - 1);
+            const prevPrev21 = tokens[prevPrevIdx21];
+            const isTernaryConsequent21 = (prev21 && prev21.kind === "question") ||
+              (prev21 && prev21.kind === "ident" && prev21.text === "await" && prevPrev21?.kind === "question");
+            if (!isTernaryConsequent21 && afterMember21 && afterMember21.kind === "punct" && afterMember21.text === ":") continue;
+
+            if (isInsideRange(memberTok21.start, unsafeRanges)) continue;
+
+            const sep21b = isOptChain21 ? "?." : ".";
+            const loc21b = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN021",
+              severity: "warning",
+              file: null,
+              line: loc21b.line,
+              column: loc21b.column,
+              start: tok.start,
+              end: memberTok21.end,
+              message:
+                `fn '${decl.name}' reads performance${sep21b}timeOrigin — ` +
+                `performance.timeOrigin exposes the epoch of the monotonic clock, invisible to the capability model; ` +
+                `pass the origin as a parameter (preferred), ` +
+                `or wrap in unsafe "uses performance.timeOrigin for <reason>" { performance.timeOrigin }`,
+              rule: syn021.rule,
+              idiom: syn021.idiom,
+              rewrite: syn021.rewrite,
+            });
+          }
+          break;
+        }
+
         // ── SYN023: navigator.* ambient browser capability ───────────────────
         case "navigator": {
           // Exclude: `obj.navigator.*` — navigator preceded by `.` or `?.`
@@ -1497,6 +1868,55 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN024: document.cookie ──────────────────────────────────────────
+        case "document": {
+          // Exclude: `obj.document.cookie` — document preceded by `.` or `?.`
+          const prevIdx24 = prevSignificant(tokens, i - 1);
+          const prev24 = tokens[prevIdx24];
+          if (prev24 && ((prev24.kind === "punct" && prev24.text === ".") || prev24.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named document
+          if (prev24 && prev24.kind === "keyword" && prev24.text === "fn") continue;
+          if (prev24 && prev24.kind === "ident" && prev24.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx24)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx24 = nextSignificant(tokens, i + 1);
+          const next24 = tokens[nextIdx24];
+          const isDot24 = next24 && next24.kind === "punct" && next24.text === ".";
+          const isOptChain24 = next24 && next24.kind === "questionDot";
+          if (!isDot24 && !isOptChain24) continue;
+
+          // Member must be `cookie`
+          const memberIdx24 = nextSignificant(tokens, nextIdx24 + 1);
+          const memberTok24 = tokens[memberIdx24];
+          if (!memberTok24 || memberTok24.kind !== "ident" || memberTok24.text !== "cookie") continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep24 = isOptChain24 ? "?." : ".";
+          const loc24 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN024",
+            severity: "warning",
+            file: null,
+            line: loc24.line,
+            column: loc24.column,
+            start: tok.start,
+            end: memberTok24.end,
+            message:
+              `fn '${decl.name}' accesses document${sep24}cookie — ` +
+              `document.cookie is persistent storage that is also transmitted with every matching HTTP request, ` +
+              `invisible to the capability model; no reads {} / writes {} label covers it; ` +
+              `pass cookies as a parameter or wrap in unsafe "accesses document.cookie for <reason>" { document${sep24}cookie }`,
+            rule: syn024.rule,
+            idiom: syn024.idiom,
+            rewrite: syn024.rewrite,
           });
           break;
         }
