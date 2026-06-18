@@ -182,6 +182,22 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN025  A `requestAnimationFrame(cb)` call was detected in a fn body (?bs 0.7+).
+ *           `requestAnimationFrame` schedules `cb` to run before the next browser repaint —
+ *           after the current fn has returned. Any effects inside the callback are invisible to
+ *           callers: no capability declaration, no `writes {}` label, no `throws {}` entry covers them.
+ *           Excluded: member calls (`obj.requestAnimationFrame`), `fn`/`function`/`function*`
+ *           declarations named `requestAnimationFrame`, and object/class method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN026  A `requestIdleCallback(cb)` call was detected in a fn body (?bs 0.7+).
+ *           `requestIdleCallback` schedules `cb` to run during a browser idle period —
+ *           after the current fn has returned. Any effects inside the callback are invisible to
+ *           callers: no capability declaration, no `writes {}` label, no `throws {}` entry covers them.
+ *           Excluded: member calls (`obj.requestIdleCallback`), `fn`/`function`/`function*`
+ *           declarations named `requestIdleCallback`, and object/class method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -218,6 +234,7 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+const SCHEDULING_GLOBALS = new Set(["requestAnimationFrame", "requestIdleCallback"]);
 // process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
 const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
@@ -255,6 +272,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn025 = getErrorCode("SYN025")!;
+  const syn026 = getErrorCode("SYN026")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1698,66 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN025/SYN026: requestAnimationFrame / requestIdleCallback ──────────
+        case "requestAnimationFrame":
+        case "requestIdleCallback": {
+          const isRAF = tok.text === "requestAnimationFrame";
+          const synRaf = isRAF ? syn025 : syn026;
+
+          // Exclude property accesses: obj.requestAnimationFrame(...)
+          const prevIdxRaf = prevSignificant(tokens, i - 1);
+          const prevRaf = tokens[prevIdxRaf];
+          if (prevRaf && ((prevRaf.kind === "punct" && prevRaf.text === ".") || prevRaf.kind === "questionDot"))
+            continue;
+
+          // Exclude function/fn/function* declarations
+          if (prevRaf && prevRaf.kind === "ident" && prevRaf.text === "function") continue;
+          if (prevRaf && prevRaf.kind === "keyword" && prevRaf.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdxRaf)) continue;
+
+          // Must be followed by `(` or `?.(`
+          let afterIdxRaf = nextSignificant(tokens, i + 1);
+          let afterTokRaf = tokens[afterIdxRaf];
+          if (afterTokRaf && afterTokRaf.kind === "questionDot") {
+            afterIdxRaf = nextSignificant(tokens, afterIdxRaf + 1);
+            afterTokRaf = tokens[afterIdxRaf];
+          }
+          if (!afterTokRaf || !(afterTokRaf.kind === "open" && afterTokRaf.text === "(")) continue;
+
+          // Exclude method shorthands and class methods
+          const closeParenIdxRaf = afterTokRaf.matchedAt;
+          if (closeParenIdxRaf !== undefined) {
+            const afterParenRaf = tokens[nextSignificant(tokens, closeParenIdxRaf + 1)];
+            if (
+              afterParenRaf &&
+              ((afterParenRaf.kind === "open" && afterParenRaf.text === "{") ||
+                (afterParenRaf.kind === "punct" && afterParenRaf.text === ":"))
+            ) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const locRaf = locationOf(src, tok.start);
+          warnings.push({
+            code: isRAF ? "SYN025" : "SYN026",
+            severity: "warning",
+            file: null,
+            line: locRaf.line,
+            column: locRaf.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' calls ${tok.text}() — ` +
+              `${tok.text} schedules a callback that runs after the fn returns (${isRAF ? "before the next repaint" : "during a browser idle period"}); ` +
+              `any effects inside that callback are invisible to callers and cannot be declared in the fn header; ` +
+              `wrap in unsafe "${isRAF ? "schedules animation frame callback" : "schedules idle callback"}" { ${tok.text}(cb) }`,
+            rule: synRaf.rule,
+            idiom: synRaf.idiom,
+            rewrite: synRaf.rewrite,
           });
           break;
         }

@@ -1,0 +1,18 @@
+?bs 0.7
+
+// SYN025/SYN026 — safe scheduling pattern
+// requestAnimationFrame and requestIdleCallback schedule callbacks outside
+// the capability surface. The fix: extract the side-effectful work into
+// a separately declared fn, then let the caller decide when to schedule it.
+
+// Safe: the work fn is declared separately, no implicit scheduling
+fn applyFrame(el: any, opacity: number) -> void {
+  el.style.opacity = opacity
+}
+
+// Safe: cleanup work extracted and callable directly or via requestIdleCallback
+fn clearStaleCache(cache: Map<string, any>) -> void {
+  cache.clear()
+}
+
+export { applyFrame, clearStaleCache };
