@@ -1,0 +1,15 @@
+?bs 0.1
+
+import { clock, stdout } from "@mbfarias/botscript-runtime";
+
+// clock.sequence() provides monotonic ordering without the `time` capability.
+// Unlike time.now(), it carries no wallclock information — just a strictly
+// increasing counter that lets you verify A-before-B ordering in logs and
+// event sequences.
+
+fn logEvent(label: string) uses { stdout } -> void {
+  const seq = clock.sequence();
+  stdout.println(`[${seq}] ${label}`);
+}
+
+export { logEvent };
