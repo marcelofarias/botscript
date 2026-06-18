@@ -218,8 +218,8 @@
  *           and tests cannot intercept without global mocking.
  *           Detection: `document` not preceded by `.`/`?.`, followed by `.`/`?.`, member is
  *           `cookie`. Both read access (`const c = document.cookie`) and assignment
- *           (`document.cookie = "k=v"`) are detected. The ternary-consequent `:` guard is applied
- *           before the member check to avoid false-positives from ternary expressions.
+ *           (`document.cookie = "k=v"`) are detected — including ternary positions such as
+ *           `cond ? document.cookie : other`.
  *           Excluded: `obj.document.cookie` (member on a local binding), fn/function/function*
  *           declarations named `document`.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
