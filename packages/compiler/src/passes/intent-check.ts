@@ -58,7 +58,7 @@ import { parseProgram } from "../parser/parse.js";
 import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
-import { STDLIB_TO_CAP } from "./_stdlib.js";
+import { STDLIB_TO_CAP, STATEFUL_FREE_NAMESPACES } from "./_stdlib.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
@@ -195,6 +195,37 @@ function checkPureClaim(
         `// option B — declare the capability and remove the pure claim:\n` +
         `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
     });
+    return;
+  }
+
+  // INT002: stateful-free namespace variant — clock.sequence() and similar are
+  // capability-free (no `uses {}` required) but non-deterministic. A pure fn
+  // must be deterministic, so calling these still violates the claim.
+  const statefulFreeUse = findFirstStatefulFreeUse(tokens, decl, allDecls);
+  if (statefulFreeUse) {
+    const entry = getErrorCode("INT002")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    diagnostics.push({
+      code: "INT002",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' declares intent: "pure" but body calls ` +
+        `'${statefulFreeUse.namespace}${statefulFreeUse.accessOp}${statefulFreeUse.member}' which is stateful (non-deterministic) — ` +
+        `pure functions must be deterministic`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the stateful call from the body:\n` +
+        `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
+        `// option B — remove the pure intent claim:\n` +
+        `fn ${decl.name}(...) -> ...`,
+    });
   }
 }
 
@@ -325,7 +356,67 @@ function checkIdempotentClaim(
         `// option B — declare the capability and remove the idempotent claim:\n` +
         `fn ${decl.name}(...) uses { ${proposedCaps} } -> ...`,
     });
+    return;
   }
+
+  // INT004: stateful-free namespace variant — clock.sequence() is capability-free
+  // but non-deterministic (returns a new value each call). An idempotent fn must
+  // produce the same observable result on retries; calling clock.sequence() breaks that.
+  const statefulFreeUse4 = findFirstStatefulFreeUse(tokens, decl, allDecls);
+  if (statefulFreeUse4) {
+    const entry = getErrorCode("INT004")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    diagnostics.push({
+      code: "INT004",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' declares intent: "idempotent" but body calls ` +
+        `'${statefulFreeUse4.namespace}${statefulFreeUse4.accessOp}${statefulFreeUse4.member}' which returns a different value on each call — ` +
+        `idempotent functions must be safe to retry with the same result`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove the stateful call from the body:\n` +
+        `fn ${decl.name}(...) intent: "idempotent" -> ...\n\n` +
+        `// option B — remove the idempotent intent claim:\n` +
+        `fn ${decl.name}(...) -> ...`,
+    });
+  }
+}
+
+/**
+ * Scan the fn body for a stateful-free namespace call (e.g. clock.sequence()).
+ * These namespaces require no capability declaration but are non-deterministic,
+ * so they still violate `intent: "pure"` and `intent: "idempotent"` claims.
+ */
+function findFirstStatefulFreeUse(
+  tokens: Token[],
+  fn: FnDecl,
+  allDecls: FnDecl[],
+): { namespace: string; member: string; accessOp: "." | "?." } | null {
+  const inner = allDecls.filter(
+    (g) => g !== fn && g.tokenStart >= fn.tokenStart && g.tokenEnd <= fn.tokenEnd,
+  );
+  for (let i = fn.bodyTokenStart ?? fn.tokenStart; i < fn.tokenEnd; i++) {
+    if (insideAny(i, inner)) continue;
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident") continue;
+    if (!STATEFUL_FREE_NAMESPACES.has(tok.text)) continue;
+    const j = nextSignificant(tokens, i + 1);
+    const next = tokens[j];
+    const isDot = next?.kind === "punct" && next.text === ".";
+    const isOptChain = next?.kind === "questionDot";
+    if (!isDot && !isOptChain) continue;
+    const member = nextIdent(tokens, j) ?? "…";
+    return { namespace: tok.text, member, accessOp: isDot ? "." : "?." };
+  }
+  return null;
 }
 
 /**
