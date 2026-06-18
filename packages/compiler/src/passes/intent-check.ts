@@ -424,7 +424,17 @@ function findFirstStatefulFreeUse(
     const isDot = next?.kind === "punct" && next.text === ".";
     const isOptChain = next?.kind === "questionDot";
     if (!isDot && !isOptChain) continue;
-    const member = nextIdent(tokens, j) ?? "…";
+    const memberIdx = nextSignificant(tokens, j + 1);
+    const memberTok = tokens[memberIdx];
+    if (!memberTok || memberTok.kind !== "ident") continue;
+    const member = memberTok.text;
+    // Only flag actual invocations (clock.sequence()), not bare member reads (clock.sequence).
+    const afterMemberIdx = nextSignificant(tokens, memberIdx + 1);
+    const afterMember = tokens[afterMemberIdx];
+    const isCall =
+      (afterMember?.kind === "open" && afterMember.text === "(") ||
+      afterMember?.kind === "questionDot"; // clock.sequence?.()
+    if (!isCall) continue;
     return { namespace: canonical, member, accessOp: isDot ? "." : "?." };
   }
   return null;
