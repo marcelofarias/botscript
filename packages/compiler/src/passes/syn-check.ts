@@ -67,8 +67,9 @@
  *           Detected forms: `localStorage.key`, `localStorage?.key`, `localStorage[key]`,
  *           `localStorage?.[key]` (and equivalents for `sessionStorage`).
  *           Excluded: member calls (`obj.localStorage.*`), `fn`/`function` declarations named
- *           `localStorage`/`sessionStorage`, local bindings (parameters or `const`/`let`/`var`
- *           declared within the fn body), and object method shorthands.
+ *           `localStorage`/`sessionStorage`, fn parameters shadowing the global name, and object
+ *           method shorthands. Body-local `const`/`let`/`var` bindings that shadow the name are
+ *           NOT excluded — only parameter-name shadows are suppressed.
  *           The check fires on any member access (`.` or `?.`): both reads and writes.
  *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
@@ -1292,7 +1293,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Body-local binding shadowing is intentionally NOT tracked here — block-scope
           // awareness would require a full scope walk, and the parameter case (a fn that
           // accepts a Storage-compatible mock) is the only practically occurring one.
-          // This mirrors SYN016 / SYN024 which also do not track local shadows.
+          // This mirrors SYN016 which also does not track body-local shadows.
           if (localBindings === null) {
             localBindings = collectTopLevelParamNames(decl.args);
           }

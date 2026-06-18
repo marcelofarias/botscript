@@ -1127,8 +1127,9 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "by `.`/`?.` (which would make it a member of another object), followed by `.`, `?.`, or `[` " +
       "(confirming this is a member or computed access on the storage global, not a bare reference or a declaration). " +
       "Fn/function/function* declarations named `localStorage`/`sessionStorage` are excluded. " +
-      "Parameters and `const`/`let`/`var` locals within the fn body that shadow the global name are also " +
-      "excluded — e.g. `fn f(localStorage: Storage)` or `const localStorage = mock` will not warn.\n\n" +
+      "Fn parameters that shadow the global name are excluded — e.g. `fn f(localStorage: Storage)` " +
+      "will not warn. Body-local `const`/`let`/`var` bindings are NOT excluded; only parameter shadows " +
+      "are suppressed.\n\n" +
       "**Fix (preferred):** pass a `Storage`-compatible object as an explicit fn parameter. This makes " +
       "the dependency visible in the fn signature and tests can inject a mock:\n\n" +
       "```\n" +
