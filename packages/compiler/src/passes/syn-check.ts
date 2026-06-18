@@ -162,7 +162,7 @@ import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import type { Token } from "../parser/lex.js";
 import { locationOf } from "./_location.js";
-import { computeNesting, prevSignificant, nextSignificant, collectTopLevelParamNames, collectFnBodyLocalNames } from "./_callgraph.js";
+import { computeNesting, prevSignificant, nextSignificant, collectTopLevelParamNames } from "./_callgraph.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
@@ -1288,13 +1288,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             (next15.kind === "open" && next15.text === "[")
           )) continue;
 
-          // Exclude: local bindings — parameters or top-level `const/let/var` named
-          // `localStorage`/`sessionStorage`. Only top-level bindings are collected to avoid
-          // suppressing the entire function when a block-scoped shadow exists in an inner block
-          // (e.g. `if (x) { const localStorage = mock }` should not suppress outer-scope reads).
+          // Exclude: fn parameters named localStorage / sessionStorage.
+          // Body-local binding shadowing is intentionally NOT tracked here — block-scope
+          // awareness would require a full scope walk, and the parameter case (a fn that
+          // accepts a Storage-compatible mock) is the only practically occurring one.
+          // This mirrors SYN016 / SYN024 which also do not track local shadows.
           if (localBindings === null) {
             localBindings = collectTopLevelParamNames(decl.args);
-            for (const n of collectFnBodyLocalNames(tokens, decl, inner, { topLevelOnly: true })) localBindings.add(n);
           }
           if (localBindings.has(tok.text)) continue;
 
