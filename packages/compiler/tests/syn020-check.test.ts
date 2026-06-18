@@ -103,6 +103,19 @@ describe("SYN020: Date.now() / new Date() / Date() detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN020")).toBe(true);
   });
 
+  it("SYN020 message uses Date?.(...) when Date?.(x) has arguments", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn ts(x: number) -> string {\n" +
+      "  return Date?.(x)\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN020");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("Date?.(...)");
+    expect(w!.message).not.toContain("Date?.()");
+  });
+
   it("fires on Date(arg) — JS ignores args to Date() called without new, still returns current time", () => {
     const src =
       "?bs 0.7\n" +
