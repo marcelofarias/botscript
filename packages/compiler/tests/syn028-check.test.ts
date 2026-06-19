@@ -29,14 +29,16 @@ describe("SYN028 — location.href assignment", () => {
     expect(result.warnings.some((w) => w.code === "SYN028")).toBe(true);
   });
 
-  it("fires on location?.href = url (optional-chain receiver)", () => {
+  it("does NOT fire on location?.href = url (invalid LHS — optional chaining cannot be an assignment target)", () => {
+    // `location?.href = url` is syntactically invalid JS/TS: optional chaining is not
+    // allowed on the left-hand side of an assignment. SYN028 must not fire on this form.
     const src =
       "?bs 0.7\n" +
       "fn redirectTo(url: string) -> void {\n" +
       "  location?.href = url\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN028")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN028")).toBe(false);
   });
 
   it("warning message includes fn name and location.href", () => {
@@ -158,6 +160,20 @@ describe("SYN028 — location method calls", () => {
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN028")).toBe(true);
+  });
+
+  it("reload message unsafe suggestion uses () not (url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn refresh() -> void {\n" +
+      "  location.reload()\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN028");
+    expect(w).toBeDefined();
+    // location.reload() takes no URL argument — the safe-wrap suggestion must not say (url)
+    expect(w!.message).toContain("reload()");
+    expect(w!.message).not.toContain("reload(url)");
   });
 
   it("fires on location?.assign(url) — optional-chain receiver", () => {
@@ -289,6 +305,19 @@ describe("SYN028 — window.open() and ambient-global variants", () => {
     expect(w!.message).toContain("window");
     expect(w!.message).toContain("open");
     expect(w!.severity).toBe("warning");
+  });
+
+  it("warning message for globalThis.open uses globalThis (not window)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn openTab(url: string) -> void {\n" +
+      "  globalThis.open(url, '_blank')\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN028");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("globalThis");
+    expect(w!.message).not.toContain("window.open()");
   });
 
   it("does NOT fire on obj.window.open(url) (non-ambient receiver)", () => {

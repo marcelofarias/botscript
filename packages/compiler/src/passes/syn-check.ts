@@ -1733,6 +1733,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const sep28loc = isOptChain28loc ? "?." : ".";
 
           if (memberName28loc === "href") {
+            // Optional chaining on the LHS of an assignment (`location?.href = url`) is
+            // invalid JS/TS syntax — only `location.href = url` is a valid assignment target.
+            if (isOptChain28loc) continue;
+
             // Must be followed by `=` (assignment). The lexer emits `=` as kind "eq",
             // while `==` and `===` are kind "operator" — so checking for "eq" is precise.
             const afterHrefIdx = nextSignificant(tokens, memberIdx28loc + 1);
@@ -1751,11 +1755,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: afterHref.end,
               message:
-                `fn '${decl.name}' assigns location${sep28loc}href — ` +
+                `fn '${decl.name}' assigns location.href — ` +
                 `location.href = url triggers a full-page navigation, invisible to the capability model; ` +
                 `no uses { net } declaration covers this network-equivalent operation; ` +
                 `pass a navigation callback as a parameter so callers can see the dependency, ` +
-                `or wrap in unsafe "navigates to <reason>" { location${sep28loc}href = url }`,
+                `or wrap in unsafe "navigates to <reason>" { location.href = url }`,
               rule: syn028.rule,
               idiom: syn028.idiom,
               rewrite: syn028.rewrite,
@@ -1792,7 +1796,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 `location.${memberName28loc} triggers navigation, invisible to the capability model; ` +
                 `no uses { net } declaration covers this network-equivalent operation; ` +
                 `pass a navigation callback as a parameter so callers can see the dependency, ` +
-                `or wrap in unsafe "navigates for <reason>" { location${sep28loc}${memberName28loc}${callSep28loc}(url) }`,
+                `or wrap in unsafe "navigates for <reason>" { location${sep28loc}${memberName28loc}${callSep28loc}(${memberName28loc === "reload" ? "" : "url"}) }`,
               rule: syn028.rule,
               idiom: syn028.idiom,
               rewrite: syn028.rewrite,
@@ -1863,7 +1867,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: afterTok28open.start + 1,
             message:
               `fn '${decl.name}' calls ${receiverName28}${dotSep28open}open${callSep28open}() — ` +
-              `window.open() opens a new browsing context and issues an HTTP request, invisible to the capability model; ` +
+              `${receiverName28}.open() opens a new browsing context and issues an HTTP request, invisible to the capability model; ` +
               `no uses { net } declaration covers this network-equivalent operation; ` +
               `pass a navigation callback as a parameter so callers can see the dependency, ` +
               `or wrap in unsafe "opens window for <reason>" { ${receiverName28}${dotSep28open}open${callSep28open}(url) }`,
