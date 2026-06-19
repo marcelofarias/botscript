@@ -359,6 +359,12 @@ describe("imports", () => {
     expect(valuePos).toBeLessThan(typePos);
   });
 
+  it("auto-imports MonotonicTimestamp (as type) at ?bs 0.6 when used as a return type annotation", () => {
+    const out = t(`?bs 0.6\nfn stamp() -> MonotonicTimestamp = clock.sequence()\n`);
+    expect(out).toMatch(/import type \{[^}]*\bMonotonicTimestamp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+    expect(out).not.toMatch(/import \{[^}]*\bMonotonicTimestamp\b[^}]*\} from "@mbfarias\/botscript-runtime"/);
+  });
+
   it("does not double-import stdlib symbols when user already has a runtime import at 0.6", () => {
     const src =
       `?bs 0.6\n` +

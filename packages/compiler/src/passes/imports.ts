@@ -100,6 +100,8 @@ const STDLIB_TYPE_SYMBOLS = [
   "None",
   "Option",
   "Some",
+  // clock.sequence() return type — free namespace, no capability required
+  "MonotonicTimestamp",
 ] as const;
 
 /**
