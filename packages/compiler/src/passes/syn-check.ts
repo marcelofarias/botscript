@@ -1757,8 +1757,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               end: afterHref.end,
               message:
                 `fn '${decl.name}' assigns location.href — ` +
-                `location.href = url triggers a full-page navigation, invisible to the capability model; ` +
-                `no uses { net } declaration covers this network-equivalent operation; ` +
+                `location.href = url triggers a full-page navigation invisible to the capability model; ` +
+                `uses { net } does not cover navigation APIs even when declared; ` +
                 `pass a navigation callback as a parameter so callers can see the dependency, ` +
                 `or wrap in unsafe "navigates to <reason>" { location.href = url }`,
               rule: syn028.rule,
@@ -1794,8 +1794,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               end: afterMember28loc.start + 1,
               message:
                 `fn '${decl.name}' calls location${sep28loc}${memberName28loc}${callSep28loc}() — ` +
-                `location.${memberName28loc} triggers navigation, invisible to the capability model; ` +
-                `no uses { net } declaration covers this network-equivalent operation; ` +
+                `location.${memberName28loc} triggers navigation invisible to the capability model; ` +
+                `uses { net } does not cover navigation APIs even when declared; ` +
                 `pass a navigation callback as a parameter so callers can see the dependency, ` +
                 `or wrap in unsafe "navigates for <reason>" { location${sep28loc}${memberName28loc}${callSep28loc}(${memberName28loc === "reload" ? "" : "url"}) }`,
               rule: syn028.rule,
@@ -1868,10 +1868,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: afterTok28open.start + 1,
             message:
               `fn '${decl.name}' calls ${receiverName28}${dotSep28open}open${callSep28open}() — ` +
-              `${receiverName28}.open() opens a new browsing context and issues an HTTP request, invisible to the capability model; ` +
-              `no uses { net } declaration covers this network-equivalent operation; ` +
+              `${receiverName28}.open() opens a new browsing context and issues an HTTP request invisible to the capability model; ` +
+              `uses { net } does not cover navigation APIs even when declared; ` +
               `pass a navigation callback as a parameter so callers can see the dependency, ` +
-              `or wrap in unsafe "opens window for <reason>" { ${receiverName28}${dotSep28open}open${callSep28open}(url) }`,
+              `or wrap in unsafe "opens window for <reason>" { ${receiverName28}${dotSep28open}open${callSep28open}(url, ...) }`,
             rule: syn028.rule,
             idiom: syn028.idiom,
             rewrite: syn028.rewrite,

@@ -1425,7 +1425,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "  navigate(url)\n" +
         "}\n\n" +
         "// or use unsafe when navigation is genuinely required at an entry point\n" +
-        "fn redirectTo(url: string) -> void {\n" +
+        "fn navigateToLogin(url: string) -> void {\n" +
         "  unsafe \"redirects to login page\" { location.href = url }\n" +
         "}\n",
     },
