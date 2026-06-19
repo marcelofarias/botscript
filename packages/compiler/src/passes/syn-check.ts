@@ -244,6 +244,7 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
 ]);
+const AMBIENT_GLOBALS_27 = new Set(["window", "globalThis", "self"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -1710,7 +1711,6 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           let ambientReceiver27: string | null = null;
           let ambientDot27: string | null = null;
           if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot")) {
-            const AMBIENT_GLOBALS_27 = new Set(["window", "globalThis", "self"]);
             const prevPrevIdx27 = prevSignificant(tokens, prevIdx27 - 1);
             const prevPrev27 = tokens[prevPrevIdx27];
             // Must be a bare ambient global (not itself a member access like `obj.window.postMessage`)
@@ -1744,15 +1744,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           }
           if (!afterTok27 || !(afterTok27.kind === "open" && afterTok27.text === "(")) continue;
 
-          // Exclude method shorthands and TS method signatures:
-          // `{ postMessage(data) { ... } }` / `{ postMessage(data): void; }`
+          // Exclude object method shorthands: `{ postMessage(data) { ... } }`
+          // Do NOT exclude on `:` — that would create false negatives for ternary consequents
+          // like `cond ? postMessage(data, origin) : other` where `:` is the ternary separator.
           if (afterTok27.matchedAt !== undefined) {
             const afterParen27 = tokens[nextSignificant(tokens, afterTok27.matchedAt + 1)];
-            if (
-              afterParen27 &&
-              ((afterParen27.kind === "open" && afterParen27.text === "{") ||
-                (afterParen27.kind === "punct" && afterParen27.text === ":"))
-            ) continue;
+            if (afterParen27 && afterParen27.kind === "open" && afterParen27.text === "{") continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;

@@ -206,4 +206,24 @@ describe("SYN027: bare postMessage() cross-origin messaging detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
   });
+
+  it("does NOT fire on function* postMessage(...) generator declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn wrapper() -> any {\n" +
+      "  function* postMessage(data: object) { yield data }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(false);
+  });
+
+  it("fires on postMessage() in ternary consequent — not suppressed by ternary colon", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn maybeNotify(send: boolean, data: object) -> void {\n" +
+      "  send ? postMessage(data, \"https://parent.example.com\") : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
 });
