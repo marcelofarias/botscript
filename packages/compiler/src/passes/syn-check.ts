@@ -1770,9 +1770,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             end: afterTok27.start + 1,
             message:
               `fn '${decl.name}' calls ${callDesc27} — ` +
-              `${callDesc27} sends data cross-origin, invisible to the capability model; ` +
+              `${callDesc27} sends data to another browsing context, invisible to the capability model; ` +
               `pass the messaging function as a parameter so the dependency is declared in the fn header, ` +
-              `or wrap in unsafe "posts cross-origin message for <reason>" { postMessage${callSep27}(data, origin) }`,
+              `or wrap in unsafe "posts message for <reason>" { ${callDesc27.replace(/\(\)$/, "(data, origin)")} }`,
             rule: syn027.rule,
             idiom: syn027.idiom,
             rewrite: syn027.rewrite,
