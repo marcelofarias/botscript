@@ -185,7 +185,8 @@
  *   SYN028  A navigation API call was detected in a fn body (?bs 0.7+):
  *           - `window.open(url, ...)`, `globalThis.open(url, ...)`, `self.open(url, ...)` —
  *             opens a new browsing context and issues a real HTTP request; the URL is sent to
- *             the network without any `uses { net }` declaration in the fn header.
+ *             the network and is invisible to the capability model even when `uses { net }` is
+ *             declared, because `uses { net }` covers stdlib calls, not navigation APIs.
  *           - `location.href = url` — full-page navigation; equivalent to a GET request.
  *           - `location.assign(url)`, `location.replace(url)` — navigation without/with history.
  *           - `location.reload()` — reissues the current request.
