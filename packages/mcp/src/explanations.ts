@@ -1338,6 +1338,54 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN023: {
+    code: "SYN023",
+    title: "navigator.* ambient browser capability access bypasses the capability model",
+    body:
+      "SYN023 fires when a fn body accesses a high-concern `navigator.*` member in `?bs 0.7+`. " +
+      "The covered members are: `geolocation`, `clipboard`, `mediaDevices`, `serviceWorker`, " +
+      "`permissions`, `onLine`, `userAgent`, `language`, `languages`, `platform`, " +
+      "`hardwareConcurrency`, `deviceMemory`, `connection`, and `wakeLock`.\n\n" +
+      "**Why it matters:** These properties expose ambient browser capability state — the " +
+      "device's physical location, the clipboard contents, media input devices, background " +
+      "service workers, network connectivity, browser identity, hardware specs, and display " +
+      "wake locks. None of these are covered by botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration captures a `navigator.*` access. A fn that " +
+      "reads them has an undeclared browser-environment dependency — callers cannot see it " +
+      "in the header, and tests cannot inject a controlled value without monkey-patching the " +
+      "global `navigator` object.\n\n" +
+      "**Detected forms:** `navigator.<member>` or `navigator?.<member>` where `<member>` " +
+      "is in the high-concern set above. Member calls on local bindings (`obj.navigator.*`) " +
+      "and `fn navigator(...)` / `function navigator(...)` / `function* navigator(...)` " +
+      "declarations are excluded. Members not in the listed set do not fire.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN023 — before\n" +
+      "fn isConnected() -> boolean {\n" +
+      "  return navigator.onLine\n" +
+      "}\n\n" +
+      "// fix — onLine passed as a parameter; tests can control it\n" +
+      "fn isConnected(onLine: boolean) -> boolean {\n" +
+      "  return onLine\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses navigator.geolocation for location services\" { navigator.geolocation }`\n\n" +
+      "SYN023 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getBrowser() -> string {\n" +
+        "  return navigator.userAgent\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getBrowser(userAgent: string) -> string {\n" +
+        "  return userAgent\n" +
+        "}\n",
+    },
+  },
   SYN027: {
     code: "SYN027",
     title: "postMessage() cross-origin call (bare or via window/globalThis/self) bypasses the capability model",
@@ -1399,54 +1447,6 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "  userId: string,\n" +
         ") -> void {\n" +
         "  post({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
-        "}\n",
-    },
-  },
-  SYN023: {
-    code: "SYN023",
-    title: "navigator.* ambient browser capability access bypasses the capability model",
-    body:
-      "SYN023 fires when a fn body accesses a high-concern `navigator.*` member in `?bs 0.7+`. " +
-      "The covered members are: `geolocation`, `clipboard`, `mediaDevices`, `serviceWorker`, " +
-      "`permissions`, `onLine`, `userAgent`, `language`, `languages`, `platform`, " +
-      "`hardwareConcurrency`, `deviceMemory`, `connection`, and `wakeLock`.\n\n" +
-      "**Why it matters:** These properties expose ambient browser capability state — the " +
-      "device's physical location, the clipboard contents, media input devices, background " +
-      "service workers, network connectivity, browser identity, hardware specs, and display " +
-      "wake locks. None of these are covered by botscript's capability model: no `uses {}`, " +
-      "`reads {}`, or `writes {}` declaration captures a `navigator.*` access. A fn that " +
-      "reads them has an undeclared browser-environment dependency — callers cannot see it " +
-      "in the header, and tests cannot inject a controlled value without monkey-patching the " +
-      "global `navigator` object.\n\n" +
-      "**Detected forms:** `navigator.<member>` or `navigator?.<member>` where `<member>` " +
-      "is in the high-concern set above. Member calls on local bindings (`obj.navigator.*`) " +
-      "and `fn navigator(...)` / `function navigator(...)` / `function* navigator(...)` " +
-      "declarations are excluded. Members not in the listed set do not fire.\n\n" +
-      "**Fix (preferred — pass as a parameter):**\n\n" +
-      "```\n" +
-      "// SYN023 — before\n" +
-      "fn isConnected() -> boolean {\n" +
-      "  return navigator.onLine\n" +
-      "}\n\n" +
-      "// fix — onLine passed as a parameter; tests can control it\n" +
-      "fn isConnected(onLine: boolean) -> boolean {\n" +
-      "  return onLine\n" +
-      "}\n" +
-      "```\n\n" +
-      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
-      "`unsafe \"accesses navigator.geolocation for location services\" { navigator.geolocation }`\n\n" +
-      "SYN023 fires at `?bs 0.7+` as a non-blocking warning. " +
-      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
-    example: {
-      fails:
-        "?bs 0.7\n" +
-        "fn getBrowser() -> string {\n" +
-        "  return navigator.userAgent\n" +
-        "}\n",
-      passes:
-        "?bs 0.7\n" +
-        "fn getBrowser(userAgent: string) -> string {\n" +
-        "  return userAgent\n" +
         "}\n",
     },
   },

@@ -1049,6 +1049,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return argv[2]\n" +
       "}",
   },
+  SYN023: {
+    code: "SYN023",
+    title: "navigator.* ambient browser capability access bypasses the capability model",
+    rule:
+      "`navigator.geolocation`, `navigator.clipboard`, `navigator.mediaDevices`, " +
+      "`navigator.serviceWorker`, `navigator.permissions`, `navigator.onLine`, " +
+      "`navigator.userAgent`, `navigator.language`, `navigator.languages`, " +
+      "`navigator.platform`, `navigator.hardwareConcurrency`, `navigator.deviceMemory`, " +
+      "`navigator.connection`, and `navigator.wakeLock` read ambient browser capability " +
+      "state at runtime but are invisible to botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration covers them. A fn that reads these values " +
+      "has an undeclared browser-environment dependency — callers cannot see it in the " +
+      "header, and tests cannot inject a controlled value.",
+    idiom:
+      "pass the required value as an explicit parameter so callers and tests can control it (preferred); " +
+      "if the ambient access is intentional, wrap in " +
+      "`unsafe \"accesses navigator.<member> for <reason>\" { navigator.<member> }`",
+    rewrite:
+      "// before — ambient navigator state invisible to the capability model\n" +
+      "fn isConnected() -> boolean {\n" +
+      "  return navigator.onLine  // SYN023\n" +
+      "}\n\n" +
+      "// after — online status passed as a parameter; tests can control it\n" +
+      "fn isConnected(onLine: boolean) -> boolean {\n" +
+      "  return onLine\n" +
+      "}",
+    example:
+      "// SYN023: navigator.userAgent bypasses the capability model\n" +
+      "fn getBrowser() -> string {\n" +
+      "  return navigator.userAgent  // SYN023\n" +
+      "}\n\n" +
+      "// fix: accept userAgent as a parameter\n" +
+      "fn getBrowser(userAgent: string) -> string {\n" +
+      "  return userAgent\n" +
+      "}",
+  },
   SYN027: {
     code: "SYN027",
     title: "postMessage() cross-origin call (bare or via window/globalThis/self) bypasses the capability model",
@@ -1095,42 +1131,6 @@ const E: Record<string, ErrorCodeEntry> = {
       "  unsafe \"posts user-ready event to parent frame\" {\n" +
       "    postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
       "  }\n" +
-      "}",
-  },
-  SYN023: {
-    code: "SYN023",
-    title: "navigator.* ambient browser capability access bypasses the capability model",
-    rule:
-      "`navigator.geolocation`, `navigator.clipboard`, `navigator.mediaDevices`, " +
-      "`navigator.serviceWorker`, `navigator.permissions`, `navigator.onLine`, " +
-      "`navigator.userAgent`, `navigator.language`, `navigator.languages`, " +
-      "`navigator.platform`, `navigator.hardwareConcurrency`, `navigator.deviceMemory`, " +
-      "`navigator.connection`, and `navigator.wakeLock` read ambient browser capability " +
-      "state at runtime but are invisible to botscript's capability model: no `uses {}`, " +
-      "`reads {}`, or `writes {}` declaration covers them. A fn that reads these values " +
-      "has an undeclared browser-environment dependency — callers cannot see it in the " +
-      "header, and tests cannot inject a controlled value.",
-    idiom:
-      "pass the required value as an explicit parameter so callers and tests can control it (preferred); " +
-      "if the ambient access is intentional, wrap in " +
-      "`unsafe \"accesses navigator.<member> for <reason>\" { navigator.<member> }`",
-    rewrite:
-      "// before — ambient navigator state invisible to the capability model\n" +
-      "fn isConnected() -> boolean {\n" +
-      "  return navigator.onLine  // SYN023\n" +
-      "}\n\n" +
-      "// after — online status passed as a parameter; tests can control it\n" +
-      "fn isConnected(onLine: boolean) -> boolean {\n" +
-      "  return onLine\n" +
-      "}",
-    example:
-      "// SYN023: navigator.userAgent bypasses the capability model\n" +
-      "fn getBrowser() -> string {\n" +
-      "  return navigator.userAgent  // SYN023\n" +
-      "}\n\n" +
-      "// fix: accept userAgent as a parameter\n" +
-      "fn getBrowser(userAgent: string) -> string {\n" +
-      "  return userAgent\n" +
       "}",
   },
   DEP001: {

@@ -1707,6 +1707,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude non-ambient member calls: `worker.postMessage(...)`, `iframe.contentWindow.postMessage(...)`.
           // But include ambient-global spellings: `window.postMessage(...)`, `globalThis.postMessage(...)`,
           // `self.postMessage(...)` — these are still ambient globals, just written explicitly.
+          let ambientReceiver27: string | null = null;
+          let ambientDot27: string | null = null;
           if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot")) {
             const AMBIENT_GLOBALS_27 = new Set(["window", "globalThis", "self"]);
             const prevPrevIdx27 = prevSignificant(tokens, prevIdx27 - 1);
@@ -1721,7 +1723,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 return !(ppp && ((ppp.kind === "punct" && ppp.text === ".") || ppp.kind === "questionDot"));
               })();
             if (!isAmbient) continue;
-            // Fall through: `window.postMessage(...)` — treat as ambient, warn below
+            // Fall through: `window.postMessage(...)` — treat as ambient, track receiver for message
+            ambientReceiver27 = prevPrev27!.text;
+            ambientDot27 = prev27.kind === "questionDot" ? "?." : ".";
           }
 
           // Exclude: fn/function/function* declarations named postMessage
@@ -1754,6 +1758,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
           const callSep27 = isOpt27 ? "?." : "";
+          // Build call site description: `window.postMessage()` or `postMessage()`
+          const callDesc27 = ambientReceiver27
+            ? `${ambientReceiver27}${ambientDot27}postMessage${callSep27}()`
+            : `postMessage${callSep27}()`;
           const loc27 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN027",
@@ -1764,8 +1772,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             start: tok.start,
             end: afterTok27.start + 1,
             message:
-              `fn '${decl.name}' calls postMessage${callSep27}() — ` +
-              `bare postMessage sends data cross-origin, invisible to the capability model; ` +
+              `fn '${decl.name}' calls ${callDesc27} — ` +
+              `${callDesc27} sends data cross-origin, invisible to the capability model; ` +
               `pass the messaging function as a parameter so the dependency is declared in the fn header, ` +
               `or wrap in unsafe "posts cross-origin message for <reason>" { postMessage${callSep27}(data, origin) }`,
             rule: syn027.rule,

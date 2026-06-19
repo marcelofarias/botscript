@@ -155,6 +155,18 @@ describe("SYN027: bare postMessage() cross-origin messaging detection", () => {
     expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
   });
 
+  it("window.postMessage message names the receiver (not 'bare postMessage')", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  window.postMessage({ type: \"ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    const w = result.warnings.find((w) => w.code === "SYN027");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("window.postMessage");
+  });
+
   it("fires on globalThis.postMessage(data, origin) — ambient global spelling", () => {
     const src =
       "?bs 0.7\n" +
