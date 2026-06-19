@@ -69,6 +69,16 @@ describe("SYN025 — requestAnimationFrame scheduling bypass (?bs 0.7+)", () => 
     expect(result.warnings.some((w) => w.code === "SYN025")).toBe(false);
   });
 
+  it("does NOT fire SYN025 inside an unsafe fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "unsafe \"schedules animation frame\" fn scheduleRender(cb: () -> void) -> void {\n" +
+      "  requestAnimationFrame(cb)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN025")).toBe(false);
+  });
+
   it("does NOT fire SYN025 on obj.requestAnimationFrame(cb)", () => {
     const src =
       "?bs 0.7\n" +
@@ -183,6 +193,16 @@ describe("SYN026 — requestIdleCallback scheduling bypass (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
   });
 
+  it("does NOT fire SYN026 inside an unsafe fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "unsafe \"schedules idle callback\" fn deferWork(cb: () -> void) -> void {\n" +
+      "  requestIdleCallback(cb)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+
   it("does NOT fire SYN026 on obj.requestIdleCallback(cb)", () => {
     const src =
       "?bs 0.7\n" +
@@ -193,10 +213,36 @@ describe("SYN026 — requestIdleCallback scheduling bypass (?bs 0.7+)", () => {
     expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
   });
 
+  it("does NOT fire SYN026 on fn requestIdleCallback() declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn requestIdleCallback(cb: any) -> number = 0\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+
+  it("does NOT fire SYN026 on function requestIdleCallback() declaration", () => {
+    const src =
+      "?bs 0.7\n" +
+      "function requestIdleCallback(cb: any) { return 0 }\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+
   it("does NOT fire SYN026 on function* requestIdleCallback() generator declaration", () => {
     const src =
       "?bs 0.7\n" +
       "function* requestIdleCallback(cb: any) { yield 0 }\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+
+  it("does NOT fire SYN026 on object method shorthand named requestIdleCallback", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test(cb: () -> void) -> any {\n" +
+      "  return { requestIdleCallback(cb: any) { cb() } }\n" +
+      "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
   });
