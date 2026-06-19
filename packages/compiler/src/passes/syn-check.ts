@@ -182,6 +182,19 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN027  A bare `postMessage(data, origin)` or `postMessage?.(data, origin)` call was
+ *           detected in a fn body (?bs 0.7+). Bare `postMessage` (not preceded by `.`/`?.`)
+ *           sends structured data to another browsing context at a different origin — a
+ *           cross-origin communication dependency invisible to botscript's capability model:
+ *           no `uses { net }`, `writes {}`, or `reads {}` declaration covers it.
+ *           In bot/agent contexts this is a known prompt-injection exfiltration vector:
+ *           injected content can call bare `postMessage` to leak data to an attacker-controlled
+ *           origin without any declared capability.
+ *           Excluded: member calls (`worker.postMessage`, `iframe.contentWindow.postMessage`) —
+ *           these operate on an already-declared handle. `fn`/`function`/`function*` declarations
+ *           named `postMessage` and method shorthands are also excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +268,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn027 = getErrorCode("SYN027")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1693,66 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN027: bare postMessage() call (cross-origin messaging bypass) ──
+        case "postMessage": {
+          const prevIdx27 = prevSignificant(tokens, i - 1);
+          const prev27 = tokens[prevIdx27];
+
+          // Exclude: member calls — `worker.postMessage(...)`, `window.postMessage(...)`
+          if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named postMessage
+          if (prev27 && prev27.kind === "ident" && prev27.text === "function") continue;
+          if (prev27 && prev27.kind === "keyword" && prev27.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx27)) continue;
+
+          // Must be followed by `(` or `?.(` — confirming this is a call.
+          let afterIdx27 = nextSignificant(tokens, i + 1);
+          let afterTok27 = tokens[afterIdx27];
+          let isOpt27 = false;
+          if (afterTok27 && afterTok27.kind === "questionDot") {
+            isOpt27 = true;
+            afterIdx27 = nextSignificant(tokens, afterIdx27 + 1);
+            afterTok27 = tokens[afterIdx27];
+          }
+          if (!afterTok27 || !(afterTok27.kind === "open" && afterTok27.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures:
+          // `{ postMessage(data) { ... } }` / `{ postMessage(data): void; }`
+          if (afterTok27.matchedAt !== undefined) {
+            const afterParen27 = tokens[nextSignificant(tokens, afterTok27.matchedAt + 1)];
+            if (
+              afterParen27 &&
+              ((afterParen27.kind === "open" && afterParen27.text === "{") ||
+                (afterParen27.kind === "punct" && afterParen27.text === ":"))
+            ) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep27 = isOpt27 ? "?." : "";
+          const loc27 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN027",
+            severity: "warning",
+            file: null,
+            line: loc27.line,
+            column: loc27.column,
+            start: tok.start,
+            end: afterTok27.start + 1,
+            message:
+              `fn '${decl.name}' calls postMessage${callSep27}() — ` +
+              `bare postMessage sends data cross-origin, invisible to the capability model; ` +
+              `pass the messaging function as a parameter so the dependency is declared in the fn header, ` +
+              `or wrap in unsafe "posts cross-origin message for <reason>" { postMessage${callSep27}(data, origin) }`,
+            rule: syn027.rule,
+            idiom: syn027.idiom,
+            rewrite: syn027.rewrite,
           });
           break;
         }

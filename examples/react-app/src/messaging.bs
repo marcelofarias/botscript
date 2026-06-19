@@ -1,0 +1,29 @@
+?bs 0.7
+
+// SYN027 example: bare postMessage is invisible to the capability model.
+// Pass the messaging function as a parameter so the dependency is declared.
+
+// This would fire SYN027 — caller cannot see the cross-origin dependency:
+//   fn notifyParent(userId: string) -> void {
+//     postMessage({ type: "user-ready", id: userId }, "https://parent.example.com")
+//   }
+
+// Fix: pass the post function as a parameter — dependency is now visible
+fn notifyParent(
+  post: (msg: object, origin: string) -> void,
+  userId: string,
+) -> void {
+  post({ type: "user-ready", id: userId }, "https://parent.example.com")
+}
+
+// Unsafe escape hatch when direct cross-origin messaging is required
+fn notifyParentDirect(userId: string) -> void {
+  unsafe "posts user-ready event to parent frame" {
+    postMessage({ type: "user-ready", id: userId }, "https://parent.example.com")
+  }
+}
+
+// Member calls on a declared handle are fine (NOT flagged by SYN027):
+fn sendToWorker(worker: Worker, data: object) -> void {
+  worker.postMessage(data)
+}

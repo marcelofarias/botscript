@@ -1049,6 +1049,54 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return argv[2]\n" +
       "}",
   },
+  SYN027: {
+    code: "SYN027",
+    title: "bare postMessage() call sends data cross-origin, bypassing the capability model",
+    rule:
+      "a bare `postMessage(data, origin)` or `postMessage?.(data, origin)` call (not preceded " +
+      "by `.` or `?.`) in a fn body sends structured data to another browsing context at a " +
+      "different origin — a cross-origin communication dependency invisible to botscript's " +
+      "capability model; no `uses {}`, `writes {}`, or `reads {}` declaration covers it; " +
+      "in bot/agent contexts, `postMessage` is a known prompt-injection exfiltration vector: " +
+      "injected content can call bare `postMessage` to leak data to an attacker-controlled origin; " +
+      "excluded: member calls (`worker.postMessage`, `iframe.contentWindow.postMessage`) — " +
+      "these operate on an already-declared handle; `fn`/`function`/`function*` declarations " +
+      "named `postMessage` and method shorthands are also excluded; " +
+      "suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies",
+    idiom:
+      "pass the messaging function as an explicit parameter so the cross-origin dependency is " +
+      "declared in the fn header; if direct bare `postMessage` is required, wrap in unsafe",
+    rewrite:
+      "// before — bare postMessage is invisible to the capability model\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")  // SYN027\n" +
+      "}\n\n" +
+      "// after — pass the post function as a parameter so the dependency is declared\n" +
+      "fn notifyParent(\n" +
+      "  post: (msg: object, origin: string) -> void,\n" +
+      "  userId: string\n" +
+      ") -> void {\n" +
+      "  post({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}",
+    example:
+      "// SYN027: bare postMessage bypasses the capability model\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n\n" +
+      "// fix A: pass the messaging function as a parameter\n" +
+      "fn notifyParent(\n" +
+      "  post: (msg: object, origin: string) -> void,\n" +
+      "  userId: string,\n" +
+      ") -> void {\n" +
+      "  post({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n\n" +
+      "// fix B: wrap in unsafe when direct cross-origin messaging is required\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  unsafe \"posts user-ready event to parent frame\" {\n" +
+      "    postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "  }\n" +
+      "}",
+  },
   SYN023: {
     code: "SYN023",
     title: "navigator.* ambient browser capability access bypasses the capability model",
