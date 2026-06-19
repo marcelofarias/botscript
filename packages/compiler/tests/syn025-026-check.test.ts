@@ -25,11 +25,11 @@ describe("SYN025 — requestAnimationFrame scheduling bypass (?bs 0.7+)", () => 
     expect(result.warnings.some((w) => w.code === "SYN025")).toBe(true);
   });
 
-  it("fires SYN025 on requestAnimationFrame?.(cb)", () => {
+  it("fires SYN025 on requestAnimationFrame?.(cb) — optional-call form with callback", () => {
     const src =
       "?bs 0.7\n" +
-      "fn scheduleRender(frame: number) -> void {\n" +
-      "  requestAnimationFrame?.()\n" +
+      "fn scheduleRender(cb: () -> void) -> void {\n" +
+      "  requestAnimationFrame?.(cb)\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN025")).toBe(true);

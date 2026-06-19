@@ -234,7 +234,6 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
-const SCHEDULING_GLOBALS = new Set(["requestAnimationFrame", "requestIdleCallback"]);
 // process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
 const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
