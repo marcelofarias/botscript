@@ -144,4 +144,54 @@ describe("SYN027: bare postMessage() cross-origin messaging detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN027")).toBe(false);
   });
+
+  it("fires on window.postMessage(data, origin) — ambient global spelling", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  window.postMessage({ type: \"ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("fires on globalThis.postMessage(data, origin) — ambient global spelling", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  globalThis.postMessage({ type: \"ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("fires on self.postMessage(data, origin) — ambient global spelling", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  self.postMessage({ type: \"ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("does NOT fire on obj.window.postMessage(data, origin) — non-ambient receiver", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn sendTo(ctx: any, data: object) -> void {\n" +
+      "  ctx.window.postMessage(data, \"https://example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(false);
+  });
+
+  it("fires on window?.postMessage(data, origin) — optional-chain ambient spelling", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  window?.postMessage({ type: \"ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
 });

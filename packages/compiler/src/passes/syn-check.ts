@@ -182,17 +182,19 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
- *   SYN027  A bare `postMessage(data, origin)` or `postMessage?.(data, origin)` call was
- *           detected in a fn body (?bs 0.7+). Bare `postMessage` (not preceded by `.`/`?.`)
- *           sends structured data to another browsing context at a different origin — a
- *           cross-origin communication dependency invisible to botscript's capability model:
- *           no `uses { net }`, `writes {}`, or `reads {}` declaration covers it.
+ *   SYN027  A bare `postMessage(data, origin)`, `window.postMessage(...)`,
+ *           `globalThis.postMessage(...)`, or `self.postMessage(...)` call was detected in a
+ *           fn body (?bs 0.7+). These are all ambient-global spellings that send structured
+ *           data to another browsing context — a cross-origin communication dependency
+ *           invisible to botscript's capability model: no `uses { net }`, `writes {}`, or
+ *           `reads {}` declaration covers it.
  *           In bot/agent contexts this is a known prompt-injection exfiltration vector:
- *           injected content can call bare `postMessage` to leak data to an attacker-controlled
+ *           injected content can call `postMessage` to leak data to an attacker-controlled
  *           origin without any declared capability.
- *           Excluded: member calls (`worker.postMessage`, `iframe.contentWindow.postMessage`) —
- *           these operate on an already-declared handle. `fn`/`function`/`function*` declarations
- *           named `postMessage` and method shorthands are also excluded.
+ *           Excluded: member calls on non-ambient handles (`worker.postMessage`,
+ *           `iframe.contentWindow.postMessage`) — these operate on an already-declared handle.
+ *           `fn`/`function`/`function*` declarations named `postMessage` and method shorthands
+ *           are also excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
@@ -1697,14 +1699,30 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN027: bare postMessage() call (cross-origin messaging bypass) ──
+        // ── SYN027: bare postMessage() / window.postMessage() / globalThis.postMessage() ──
         case "postMessage": {
           const prevIdx27 = prevSignificant(tokens, i - 1);
           const prev27 = tokens[prevIdx27];
 
-          // Exclude: member calls — `worker.postMessage(...)`, `window.postMessage(...)`
-          if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot"))
-            continue;
+          // Exclude non-ambient member calls: `worker.postMessage(...)`, `iframe.contentWindow.postMessage(...)`.
+          // But include ambient-global spellings: `window.postMessage(...)`, `globalThis.postMessage(...)`,
+          // `self.postMessage(...)` — these are still ambient globals, just written explicitly.
+          if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot")) {
+            const AMBIENT_GLOBALS_27 = new Set(["window", "globalThis", "self"]);
+            const prevPrevIdx27 = prevSignificant(tokens, prevIdx27 - 1);
+            const prevPrev27 = tokens[prevPrevIdx27];
+            // Must be a bare ambient global (not itself a member access like `obj.window.postMessage`)
+            const isAmbient =
+              prevPrev27?.kind === "ident" &&
+              AMBIENT_GLOBALS_27.has(prevPrev27.text) &&
+              (() => {
+                const pppi = prevSignificant(tokens, prevPrevIdx27 - 1);
+                const ppp = tokens[pppi];
+                return !(ppp && ((ppp.kind === "punct" && ppp.text === ".") || ppp.kind === "questionDot"));
+              })();
+            if (!isAmbient) continue;
+            // Fall through: `window.postMessage(...)` — treat as ambient, warn below
+          }
 
           // Exclude: fn/function/function* declarations named postMessage
           if (prev27 && prev27.kind === "ident" && prev27.text === "function") continue;

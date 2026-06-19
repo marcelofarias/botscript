@@ -1051,15 +1051,15 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN027: {
     code: "SYN027",
-    title: "bare postMessage() call sends data cross-origin, bypassing the capability model",
+    title: "postMessage() cross-origin call (bare or via window/globalThis/self) bypasses the capability model",
     rule:
-      "a bare `postMessage(data, origin)` or `postMessage?.(data, origin)` call (not preceded " +
-      "by `.` or `?.`) in a fn body sends structured data to another browsing context at a " +
-      "different origin — a cross-origin communication dependency invisible to botscript's " +
-      "capability model; no `uses {}`, `writes {}`, or `reads {}` declaration covers it; " +
+      "a bare `postMessage(...)` or ambient-global spelling (`window.postMessage(...)`, " +
+      "`globalThis.postMessage(...)`, `self.postMessage(...)`) in a fn body sends structured " +
+      "data to another browsing context — a cross-origin communication dependency invisible to " +
+      "botscript's capability model; no `uses {}`, `writes {}`, or `reads {}` declaration covers it; " +
       "in bot/agent contexts, `postMessage` is a known prompt-injection exfiltration vector: " +
-      "injected content can call bare `postMessage` to leak data to an attacker-controlled origin; " +
-      "excluded: member calls (`worker.postMessage`, `iframe.contentWindow.postMessage`) — " +
+      "injected content can call `postMessage` to leak data to an attacker-controlled origin; " +
+      "excluded: member calls on non-ambient handles (`worker.postMessage`, `iframe.contentWindow.postMessage`) — " +
       "these operate on an already-declared handle; `fn`/`function`/`function*` declarations " +
       "named `postMessage` and method shorthands are also excluded; " +
       "suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies",
