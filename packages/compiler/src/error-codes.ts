@@ -1085,6 +1085,36 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN028: {
+    code: "SYN028",
+    title: "fn uses a navigation API that bypasses the net capability model (?bs 0.7+)",
+    rule:
+      "window.open(), globalThis.open(), self.open(), location.href=, location.assign(), " +
+      "location.replace(), and location.reload() all cause real network activity at runtime; " +
+      "none are covered by uses { net }, reads {}, or writes {} — callers cannot see the dependency",
+    idiom:
+      "pass a navigation callback as an explicit parameter so the dependency is visible in the fn header, " +
+      "or wrap in unsafe \"navigates for <reason>\" { ... } when direct navigation is required at an entry point",
+    rewrite: "fn name(navigate: (url: string) -> void, ...) -> ...",
+    example:
+      "// SYN028: location.href = url bypasses the capability model\n" +
+      "?bs 0.7\n" +
+      "fn redirectTo(url: string) -> void {\n" +
+      "  location.href = url  // SYN028\n" +
+      "}\n\n" +
+      "// SYN028: window.open() opens a new context without net declaration\n" +
+      "fn openTab(url: string) -> void {\n" +
+      "  window.open(url, '_blank')  // SYN028\n" +
+      "}\n\n" +
+      "// fix: pass navigation as a parameter\n" +
+      "fn redirectTo(navigate: (url: string) -> void, url: string) -> void {\n" +
+      "  navigate(url)\n" +
+      "}\n\n" +
+      "// or use unsafe when navigation is genuinely required at an entry point\n" +
+      "fn redirectTo(url: string) -> void {\n" +
+      "  unsafe \"redirects to login page\" { location.href = url }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

