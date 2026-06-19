@@ -1093,7 +1093,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "Any effects inside `cb` are invisible to callers: no capability declaration, no `writes {}` label, no `throws {}` entry reflects them. " +
       "The fn appears to return nothing; the real work happens asynchronously in a future animation frame.",
     idiom:
-      "pass the work as a return value the caller can schedule, or wrap in " +
+      "extract the deferred work into a separate fn the caller can pass to requestAnimationFrame, or wrap in " +
       "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(cb) }` when direct use is required",
     rewrite:
       "// before — animation frame callback hides side effects from callers\n" +
@@ -1129,7 +1129,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn deferCleanup() uses { fs } -> void {\n" +
       "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
       "}\n\n" +
-      "// after — return the work; caller decides when to schedule it\n" +
+      "// after — extract the work into a separate fn; caller decides when to schedule it\n" +
       "fn cleanup() uses { fs } -> void {\n" +
       "  fs.delete(\"/tmp/cache\")\n" +
       "}",
