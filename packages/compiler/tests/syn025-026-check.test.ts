@@ -123,6 +123,16 @@ describe("SYN025 — requestAnimationFrame scheduling bypass (?bs 0.7+)", () => 
     expect(result.warnings.some((w) => w.code === "SYN025")).toBe(false);
   });
 
+  it("does NOT fire SYN025 on object method shorthand named requestAnimationFrame", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test(cb: () -> void) -> any {\n" +
+      "  return { requestAnimationFrame(cb: any) { cb() } }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN025")).toBe(false);
+  });
+
   it("SYN025 carries rule and rewrite from registry", () => {
     const src =
       "?bs 0.7\n" +
@@ -208,6 +218,16 @@ describe("SYN026 — requestIdleCallback scheduling bypass (?bs 0.7+)", () => {
       "?bs 0.7\n" +
       "fn f(obj: any) -> void {\n" +
       "  obj.requestIdleCallback(cb)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+
+  it("does NOT fire SYN026 on bare requestIdleCallback reference (no call)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn f() -> any {\n" +
+      "  return requestIdleCallback\n" +
       "}\n";
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
