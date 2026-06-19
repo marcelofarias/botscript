@@ -439,7 +439,9 @@ function findFirstStatefulFreeUse(
         tokens[nextSignificant(tokens, afterMemberIdx + 1)]?.kind === "open" &&
         tokens[nextSignificant(tokens, afterMemberIdx + 1)]?.text === "("); // clock.sequence?.()
     if (!isCall) continue;
-    return { namespace: canonical, member, accessOp: isDot ? "." : "?." };
+    // Use the source token text (not canonical) so diagnostics reference
+    // the identifier the user actually wrote (e.g. alias `c` not `clock`).
+    return { namespace: tok.text, member, accessOp: isDot ? "." : "?." };
   }
   return null;
 }

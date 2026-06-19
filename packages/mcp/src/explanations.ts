@@ -339,13 +339,18 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   INT002: {
     code: "INT002",
-    title: "intent declares 'pure' but function body uses a capability",
+    title: "intent declares 'pure' but function body uses a capability or stateful-free namespace",
     body:
       "INT002 is the body-level complement to INT001. INT001 catches the case where " +
       "`intent: \"pure\"` and a non-empty `uses { ... }` clause are both declared in the " +
       "header (an obvious contradiction). INT002 catches the more subtle case: the header " +
       "looks fine (empty or absent `uses {}`), but the function body directly references a " +
       "stdlib capability namespace like `http`, `time`, `random`, `fs`, `stdout`, or `stderr`.\n\n" +
+      "INT002 also fires for stateful-free namespaces — namespaces that require no `uses {}` " +
+      "declaration but are non-deterministic. The primary example is `clock.sequence()`: it " +
+      "returns a strictly-increasing monotonic counter, so each call produces a different value. " +
+      "A `pure` function must be deterministic, so `clock.sequence()` violates the claim even " +
+      "though it needs no capability.\n\n" +
       "This matters because INT001 is a header-level consistency check — it compares clauses " +
       "to each other, but does not look at the body. A function that declares " +
       "`intent: \"pure\"` and no capabilities can still lie: the body can call `http.get()` " +
@@ -361,14 +366,19 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       fails:
         "?bs 0.7\n" +
         "// drainSecrets claims pure but directly calls http.get\n" +
-        "fn drainSecrets(id: string) intent: \"pure\" -> string = http.get(\"/s/\" + id)\n",
+        "fn drainSecrets(id: string) intent: \"pure\" -> string = http.get(\"/s/\" + id)\n\n" +
+        "// also fails — clock.sequence() is stateful (non-deterministic)\n" +
+        "fn tag() intent: \"pure\" -> number = clock.sequence()\n",
       passes:
         "// option A — remove the capability call (make it truly pure)\n" +
         "?bs 0.7\n" +
         "fn formatId(id: string) intent: \"pure\" -> string = pure { \"user-\" + id }\n\n" +
         "// option B — remove the pure claim and declare the capability\n" +
         "?bs 0.7\n" +
-        "fn drainSecrets(id: string) uses { net } -> string = http.get(\"/s/\" + id)\n",
+        "fn drainSecrets(id: string) uses { net } -> string = http.get(\"/s/\" + id)\n\n" +
+        "// option B (stateful-free) — remove the pure claim\n" +
+        "?bs 0.7\n" +
+        "fn tag() -> number = clock.sequence()\n",
     },
   },
   INT003: {
@@ -405,31 +415,40 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
   },
   INT004: {
     code: "INT004",
-    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability",
+    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability or stateful-free namespace",
     body:
       "INT004 is the body-level complement to INT003. INT003 catches the case where " +
       "`intent: \"idempotent\"` and `uses { random }` or `uses { time }` are both present in " +
       "the header (an obvious contradiction). INT004 catches the subtler case: the header looks " +
       "fine (no `random` or `time` in `uses {}`), but the function body directly references " +
       "`random.*` or `time.*` without declaring them.\n\n" +
+      "INT004 also fires for stateful-free namespaces — namespaces that require no `uses {}` " +
+      "declaration but are non-deterministic. The primary example is `clock.sequence()`: it " +
+      "returns a strictly-increasing monotonic counter (different value on every call), which " +
+      "violates the idempotency contract even though no capability declaration is needed.\n\n" +
       "This matters because INT003 is a header-level check — it compares clauses to each other " +
       "but does not look at the body. A function can declare `intent: \"idempotent\"` and an empty " +
       "`uses {}` clause while still calling `random.next()` directly in the body. INT004 closes " +
       "that gap. INT003 takes priority: if both header and body are inconsistent, only INT003 fires.\n\n" +
-      "The check scans the fn body's own token range for direct `random.*` or `time.*` references, " +
-      "excluding nested `fn` declarations. It does not do transitive call-graph inference.\n\n" +
+      "The check scans the fn body's own token range for direct `random.*`, `time.*`, or stateful-free " +
+      "namespace references, excluding nested `fn` declarations. It does not do transitive call-graph inference.\n\n" +
       "INT004 is gated on `?bs 0.7` (same gate as INT003). Files on earlier pins are not checked.",
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n",
+        "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n\n" +
+        "// also fails — clock.sequence() is non-deterministic\n" +
+        "fn tag() intent: \"idempotent\" -> number = clock.sequence()\n",
       passes:
         "// option A — remove the non-idempotent call (make it truly idempotent)\n" +
         "?bs 0.7\n" +
         "fn generateId(prefix: string, suffix: string) intent: \"idempotent\" -> string = prefix + suffix\n\n" +
         "// option B — remove the idempotent claim and declare the capability\n" +
         "?bs 0.7\n" +
-        "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()\n",
+        "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()\n\n" +
+        "// option B (stateful-free) — remove the idempotent claim\n" +
+        "?bs 0.7\n" +
+        "fn tag() -> number = clock.sequence()\n",
     },
   },
   INT005: {
