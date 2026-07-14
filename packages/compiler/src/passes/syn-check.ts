@@ -182,6 +182,18 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN026  A `caches.*` access was detected in a fn body (?bs 0.7+).
+ *           `caches` is the Cache Storage API entry point — persistent, same-origin
+ *           request/response storage used by Service Workers for offline-first strategies.
+ *           Cache Storage is entirely invisible to botscript's capability model: no
+ *           `reads {}`, `writes {}`, or `uses {}` declaration covers it. A fn that reads
+ *           from or writes to the cache has an undeclared persistent-storage side effect
+ *           that callers cannot observe in the fn header.
+ *           Detection: `caches` ident not preceded by `.`/`?.`, followed by `.` or `?.`.
+ *           `fn`/`function` declarations named `caches` and bare `caches` references
+ *           (e.g. passing the global as an argument) are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +267,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn026 = getErrorCode("SYN026")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1335,6 +1348,50 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn016.rule,
             idiom: syn016.idiom,
             rewrite: syn016.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN026: caches.* access (Cache Storage API) ──────────────────────
+        case "caches": {
+          // Exclude: `obj.caches` — preceded by `.` or `?.`
+          const prevIdx26 = prevSignificant(tokens, i - 1);
+          const prev26 = tokens[prevIdx26];
+          if (prev26 && ((prev26.kind === "punct" && prev26.text === ".") || prev26.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named caches
+          if (prev26 && prev26.kind === "keyword" && prev26.text === "fn") continue;
+          if (prev26 && prev26.kind === "ident" && prev26.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx26)) continue;
+
+          // Must be followed by `.` or `?.` — bare `caches` references (e.g. passing as argument) are excluded
+          const nextIdx26 = nextSignificant(tokens, i + 1);
+          const next26 = tokens[nextIdx26];
+          const isDot26 = next26 && next26.kind === "punct" && next26.text === ".";
+          const isOptChain26 = next26 && next26.kind === "questionDot";
+          if (!isDot26 && !isOptChain26) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep26 = isOptChain26 ? "?." : ".";
+          const loc26 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN026",
+            severity: "warning",
+            file: null,
+            line: loc26.line,
+            column: loc26.column,
+            start: tok.start,
+            end: next26!.end,
+            message:
+              `fn '${decl.name}' accesses caches${sep26} — ` +
+              `caches is the Cache Storage API (persistent request/response storage invisible to the capability model); ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a CacheStorage handle as a parameter or wrap in unsafe "accesses caches for <reason>" { caches.open(name) }`,
+            rule: syn026.rule,
+            idiom: syn026.idiom,
+            rewrite: syn026.rewrite,
           });
           break;
         }

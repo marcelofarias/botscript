@@ -1085,6 +1085,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN026: {
+    code: "SYN026",
+    title: "caches.* access bypasses the storage capability model",
+    rule:
+      "`caches.*` accesses (`caches.open(name)`, `caches.match(req)`, `caches.has(name)`, " +
+      "`caches.delete(name)`, `caches.keys()`, etc.) use the Cache Storage API — persistent " +
+      "same-origin request/response storage invisible to botscript's capability model. " +
+      "No `reads {}`, `writes {}`, or `uses {}` declaration covers Cache Storage; a fn that " +
+      "accesses `caches.*` has an undeclared persistent-storage side effect that callers " +
+      "cannot see in the header.",
+    idiom:
+      "pass a `CacheStorage` handle (or a typed wrapper) as an explicit parameter so callers " +
+      "and tests can inject a controlled value (preferred); if the ambient access is intentional, " +
+      "wrap in `unsafe \"accesses caches for <reason>\" { caches.open(name) }`",
+    rewrite:
+      "// before — ambient caches access invisible to the capability model\n" +
+      "fn loadAsset(url: string) -> Promise<Response> {\n" +
+      "  return caches.match(url)  // SYN026\n" +
+      "}\n\n" +
+      "// after — cache handle passed as a parameter; tests can inject a mock\n" +
+      "fn loadAsset(url: string, store: CacheStorage) -> Promise<Response> {\n" +
+      "  return store.match(url)\n" +
+      "}",
+    example:
+      "// SYN026: caches.open bypasses the storage capability model\n" +
+      "fn warmCache(name: string) -> Promise<Cache> {\n" +
+      "  return caches.open(name)  // SYN026\n" +
+      "}\n\n" +
+      "// fix: accept a CacheStorage handle as a parameter\n" +
+      "fn warmCache(name: string, store: CacheStorage) -> Promise<Cache> {\n" +
+      "  return store.open(name)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

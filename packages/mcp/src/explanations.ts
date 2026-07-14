@@ -1386,6 +1386,52 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN026: {
+    code: "SYN026",
+    title: "caches.* access bypasses the storage capability model",
+    body:
+      "SYN026 fires when a fn body accesses `caches.*` in `?bs 0.7+`. The `caches` global is " +
+      "the Cache Storage API entry point, providing persistent request/response storage used by " +
+      "Service Workers for offline-first strategies.\n\n" +
+      "**Why it matters:** Cache Storage is entirely invisible to botscript's capability model. " +
+      "No `reads {}`, `writes {}`, or `uses {}` declaration covers `caches.*` access. A fn that " +
+      "reads from or writes to the cache has an undeclared persistent-storage side effect — callers " +
+      "see nothing in the fn header that indicates the fn touches persistent storage. Entries in the " +
+      "cache survive page reloads and origin restarts, making this a stronger persistence side effect " +
+      "than `sessionStorage` but comparable to `localStorage` or `indexedDB` in impact.\n\n" +
+      "**Detected forms:** `caches.<member>` or `caches?.<member>` where `caches` is the global " +
+      "Cache Storage object. Member calls on local bindings (`obj.caches.*`) and " +
+      "`fn caches(...)` / `function caches(...)` / `function* caches(...)` declarations are excluded. " +
+      "Bare `caches` references (e.g. passing the global as an argument: `init(caches)`) are excluded " +
+      "— only member accesses fire.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN026 — before\n" +
+      "fn warmCache(name: string) -> Promise<Cache> {\n" +
+      "  return caches.open(name)\n" +
+      "}\n\n" +
+      "// fix — CacheStorage handle passed as a parameter; tests can inject a mock\n" +
+      "fn warmCache(name: string, store: CacheStorage) -> Promise<Cache> {\n" +
+      "  return store.open(name)\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses caches for service worker asset caching\" { caches.open(name) }`\n\n" +
+      "SYN026 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn loadAsset(url: string) -> Promise<Response> {\n" +
+        "  return caches.match(url)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn loadAsset(url: string, store: CacheStorage) -> Promise<Response> {\n" +
+        "  return store.match(url)\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
