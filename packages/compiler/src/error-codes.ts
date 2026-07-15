@@ -1085,6 +1085,53 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN030: {
+    code: "SYN030",
+    title: "addEventListener('message', ...) opens a cross-origin receive channel bypassing the capability model",
+    rule:
+      "a bare `addEventListener('message', handler)` or ambient-global spelling " +
+      "(`window.addEventListener(...)`, `globalThis.addEventListener(...)`, `self.addEventListener(...)`) " +
+      "in a fn body registers a persistent cross-origin receive channel: any document, worker, or " +
+      "extension that can reach this browsing context can post arbitrary data to the handler — " +
+      "the primary prompt-injection vector for bots embedded in web pages; the registration is " +
+      "invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` " +
+      "declaration captures an event listener registration; only the `'message'` event type fires " +
+      "SYN030 — other event types (click, keydown, etc.) do not; suppressed inside `unsafe {}` " +
+      "blocks and `unsafe \"reason\" fn` bodies",
+    idiom:
+      "pass the message handler as an explicit parameter so the cross-origin receive dependency is " +
+      "declared in the fn header; if the ambient registration is intentional, wrap in unsafe",
+    rewrite:
+      "// before — bare addEventListener is invisible to the capability model\n" +
+      "fn setupIncoming(url: string) -> void {\n" +
+      "  addEventListener('message', (e) => handleMsg(e.data))\n" +
+      "}\n\n" +
+      "// after — pass the registration function as a parameter\n" +
+      "fn setupIncoming(\n" +
+      "  addListener: (type: string, handler: (e: MessageEvent) -> void) -> void,\n" +
+      "  url: string,\n" +
+      ") -> void {\n" +
+      "  addListener('message', (e) => handleMsg(e.data))\n" +
+      "}",
+    example:
+      "// SYN030: bare addEventListener bypasses the capability model\n" +
+      "fn setupIncoming() -> void {\n" +
+      "  addEventListener('message', (e) => handleMsg(e.data))\n" +
+      "}\n\n" +
+      "// fix A: pass the handler as a parameter\n" +
+      "fn setupIncoming(\n" +
+      "  onMessage: (e: MessageEvent) -> void,\n" +
+      ") -> void {\n" +
+      "  // caller decides whether to register and with what guard\n" +
+      "  onMessage({ data: readPending() } as MessageEvent)\n" +
+      "}\n\n" +
+      "// fix B: wrap in unsafe when direct ambient registration is required\n" +
+      "fn setupIncoming() -> void {\n" +
+      "  unsafe \"listens for messages from parent frame\" {\n" +
+      "    addEventListener('message', (e) => handleMsg(e.data))\n" +
+      "  }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

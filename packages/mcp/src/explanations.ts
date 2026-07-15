@@ -1386,6 +1386,59 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN030: {
+    code: "SYN030",
+    title: "addEventListener('message', ...) cross-origin receive channel bypasses the capability model",
+    body:
+      "SYN030 fires when a fn body calls `addEventListener('message', handler)` as a bare global " +
+      "or on an ambient object (`window`, `globalThis`, or `self`) in `?bs 0.7+`.\n\n" +
+      "**Why it matters:** `addEventListener('message', ...)` opens a persistent receive channel: " +
+      "any document, worker, extension, or attacker-controlled origin that can reach this browsing " +
+      "context can post arbitrary data to the handler. This is the primary prompt-injection vector " +
+      "for bots and agents embedded in web pages — injected content from a compromised tab or " +
+      "iframe can exfiltrate context, hijack tool calls, or redirect behavior by crafting a " +
+      "message the handler accepts. The registration is invisible to botscript's capability model: " +
+      "no `uses {}`, `reads {}`, or `writes {}` declaration captures an event listener, so callers " +
+      "cannot see or reason about the cross-origin receive surface.\n\n" +
+      "Only the `'message'` event type fires SYN030. Other event types (click, keydown, storage, " +
+      "etc.) do not — they do not create a cross-origin data injection channel.\n\n" +
+      "**Detected forms:** bare `addEventListener('message', ...)`, and ambient-global spellings " +
+      "`window.addEventListener('message', ...)`, `globalThis.addEventListener('message', ...)`, " +
+      "`self.addEventListener('message', ...)`. Member calls on non-ambient receivers " +
+      "(`worker.addEventListener`, `iframe.contentWindow.addEventListener`) are excluded — they " +
+      "operate on an already-declared handle, not an ambient global. " +
+      "`fn addEventListener(...)` / `function addEventListener(...)` declarations and object/class " +
+      "method shorthands named `addEventListener` are also excluded.\n\n" +
+      "**Fix (preferred — pass the handler as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN030 — before\n" +
+      "fn setupIncoming() -> void {\n" +
+      "  addEventListener('message', (e) => handleMsg(e.data))\n" +
+      "}\n\n" +
+      "// fix — caller decides whether to register; handler is explicit in the fn header\n" +
+      "fn setupIncoming(\n" +
+      "  onMessage: (e: MessageEvent) -> void,\n" +
+      ") -> void {\n" +
+      "  onMessage({ data: readPending() } as MessageEvent)\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct ambient registration is required:\n" +
+      "`unsafe \"listens for messages from parent frame\" { addEventListener('message', handler) }`\n\n" +
+      "SYN030 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn setupIncoming() -> void {\n" +
+        "  addEventListener('message', (e) => handleMsg(e.data))\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn setupIncoming(onMessage: (e: MessageEvent) -> void) -> void {\n" +
+        "  onMessage({ data: 'pending' })\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

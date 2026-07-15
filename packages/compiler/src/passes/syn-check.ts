@@ -182,6 +182,20 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN030  A `addEventListener('message', handler)`, `window.addEventListener('message', ...)`,
+ *           `globalThis.addEventListener('message', ...)`, or `self.addEventListener('message', ...)`
+ *           call was detected in a fn body (?bs 0.7+). `addEventListener('message', ...)` opens a
+ *           persistent cross-origin receive channel: any document, worker, or extension that can
+ *           reach this browsing context can inject arbitrary data into the handler — the primary
+ *           prompt-injection vector for bots embedded in web pages. The dependency is invisible to
+ *           botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` declaration
+ *           captures an event listener registration. Only the `'message'` event type is flagged;
+ *           other event types (click, keydown, etc.) do not fire SYN030.
+ *           Excluded: `obj.addEventListener(...)` where `obj` is not an ambient global (window,
+ *           globalThis, self), fn/function/function* declarations named `addEventListener`, and
+ *           object/class method shorthands named `addEventListener`.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -229,6 +243,8 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
 ]);
+// ambient globals for SYN030 (addEventListener('message', ...) on a known global is flagged)
+const AMBIENT_GLOBALS_30 = new Set(["window", "globalThis", "self"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -255,6 +271,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn030 = getErrorCode("SYN030")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1696,80 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN030: addEventListener('message', ...) cross-origin receive channel ──
+        case "addEventListener": {
+          const prevIdx30 = prevSignificant(tokens, i - 1);
+          const prev30 = tokens[prevIdx30];
+
+          // Determine if this is on an ambient global or a bare call.
+          let ambientReceiver30: string | null = null;
+          let ambientDot30: string | null = null;
+          if (prev30 && ((prev30.kind === "punct" && prev30.text === ".") || prev30.kind === "questionDot")) {
+            const prevPrevIdx30 = prevSignificant(tokens, prevIdx30 - 1);
+            const prevPrev30 = tokens[prevPrevIdx30];
+            // Must be a bare ambient global (not itself preceded by . or ?.)
+            const isAmbient30 =
+              prevPrev30?.kind === "ident" &&
+              AMBIENT_GLOBALS_30.has(prevPrev30.text) &&
+              (() => {
+                const pppi = prevSignificant(tokens, prevPrevIdx30 - 1);
+                const ppp = tokens[pppi];
+                return !(ppp && ((ppp.kind === "punct" && ppp.text === ".") || ppp.kind === "questionDot"));
+              })();
+            if (!isAmbient30) continue;
+            ambientReceiver30 = prevPrev30!.text;
+            ambientDot30 = prev30.kind === "questionDot" ? "?." : ".";
+          }
+
+          // Exclude: fn/function/function* declarations named addEventListener.
+          if (prev30 && prev30.kind === "ident" && prev30.text === "function") continue;
+          if (prev30 && prev30.kind === "keyword" && prev30.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx30)) continue;
+
+          // Must be followed by `(` — confirming this is a call.
+          const afterIdx30 = nextSignificant(tokens, i + 1);
+          const afterTok30 = tokens[afterIdx30];
+          if (!afterTok30 || !(afterTok30.kind === "open" && afterTok30.text === "(")) continue;
+
+          // Exclude object/class method shorthands: `{ addEventListener(type, cb) { ... } }`
+          if (afterTok30.matchedAt !== undefined) {
+            const afterParen30 = tokens[nextSignificant(tokens, afterTok30.matchedAt + 1)];
+            if (afterParen30 && afterParen30.kind === "open" && afterParen30.text === "{") continue;
+          }
+
+          // Check the first argument is the string literal 'message' or "message".
+          const firstArgIdx30 = nextSignificant(tokens, afterIdx30 + 1);
+          const firstArg30 = tokens[firstArgIdx30];
+          if (!firstArg30 || firstArg30.kind !== "string") continue;
+          const eventName30 = firstArg30.text.slice(1, -1); // strip surrounding quotes
+          if (eventName30 !== "message") continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callDesc30 = ambientReceiver30
+            ? `${ambientReceiver30}${ambientDot30}addEventListener()`
+            : `addEventListener()`;
+          const loc30 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN030",
+            severity: "warning",
+            file: null,
+            line: loc30.line,
+            column: loc30.column,
+            start: tok.start,
+            end: afterTok30.start + 1,
+            message:
+              `fn '${decl.name}' calls ${callDesc30} with 'message' — ` +
+              `addEventListener('message', ...) opens a persistent cross-origin receive channel; ` +
+              `any origin can inject arbitrary data into the handler, bypassing the capability model; ` +
+              `pass the message handler as a parameter, or wrap in unsafe "listens for <source> messages" { ... }`,
+            rule: syn030.rule,
+            idiom: syn030.idiom,
+            rewrite: syn030.rewrite,
           });
           break;
         }
