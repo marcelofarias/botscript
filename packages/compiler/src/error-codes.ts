@@ -707,6 +707,45 @@ const E: Record<string, ErrorCodeEntry> = {
       "  ws.onmessage = (e) => handle(e.data)\n" +
       "}",
   },
+  SYN009: {
+    code: "SYN009",
+    title: "new XMLHttpRequest() / XMLHttpRequest() call bypasses the net capability model",
+    rule:
+      "`new XMLHttpRequest()`, `XMLHttpRequest()`, and optional-call forms like `XMLHttpRequest?.()` " +
+      "open HTTP connections at runtime but are invisible to botscript's capability model: CAP001 checks " +
+      "for `http.*` member calls, not the `XMLHttpRequest` global. A fn that constructs an XHR has an " +
+      "undeclared network dependency — no `uses {}` declaration covers it, and no audit tool can observe " +
+      "it from the fn header.",
+    idiom:
+      "replace `new XMLHttpRequest()` with `http.get(url)` / `http.post(url, { body })` and add " +
+      "`uses { net }` to the fn header; if XHR is genuinely required, wrap in " +
+      "`unsafe \"<reason>\" { new XMLHttpRequest() }` to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — XHR is invisible to the capability model\n" +
+      "fn loadUser(url: string) -> Promise<User> {\n" +
+      "  const xhr = new XMLHttpRequest()  // SYN009\n" +
+      "  xhr.open('GET', url)\n" +
+      "  xhr.send()\n" +
+      "  return new Promise((resolve) => { xhr.onload = () => resolve(xhr.response) })\n" +
+      "}\n\n" +
+      "// after — idiomatic net capability\n" +
+      "async fn loadUser(url: string) uses { net } -> Result<User, string> {\n" +
+      "  let res = http.get(url)?\n" +
+      "  ok(await res.json() as User)\n" +
+      "}",
+    example:
+      "// SYN009: XHR bypasses the net capability model\n" +
+      "fn fetchData(url: string) -> void {\n" +
+      "  const xhr = new XMLHttpRequest()  // SYN009\n" +
+      "  xhr.open('GET', url)\n" +
+      "  xhr.send()\n" +
+      "}\n\n" +
+      "// fix: use http.get and declare uses { net }\n" +
+      "async fn fetchData(url: string) uses { net } -> Result<void, string> {\n" +
+      "  http.get(url)?\n" +
+      "  ok(undefined)\n" +
+      "}",
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",

@@ -57,6 +57,16 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN009  A `new XMLHttpRequest()`, `XMLHttpRequest()`, or `XMLHttpRequest?.()` call
+ *           was detected in a fn body (?bs 0.7+). `XMLHttpRequest` opens HTTP connections at
+ *           runtime but is invisible to botscript's capability model: CAP001 checks for
+ *           `http.*` member calls, not the `XMLHttpRequest` global. A fn that constructs an
+ *           XHR has an undeclared network dependency that no `uses { net }` declaration covers.
+ *           Excluded: member calls (`obj.XMLHttpRequest`), `function`/`fn`/`function*` declarations
+ *           named `XMLHttpRequest`, object/class method shorthands, and TypeScript method
+ *           signatures (`{ XMLHttpRequest(): T; }`). The `:` exclusion is guarded against
+ *           ternary consequents. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -244,6 +254,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn006 = getErrorCode("SYN006")!;
   const syn007 = getErrorCode("SYN007")!;
   const syn008 = getErrorCode("SYN008")!;
+  const syn009 = getErrorCode("SYN009")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
   const syn012 = getErrorCode("SYN012")!;
@@ -864,6 +875,80 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn008.rule,
             idiom: syn008.idiom,
             rewrite: syn008.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN009: new XMLHttpRequest() / XMLHttpRequest() call ─────────────
+        case "XMLHttpRequest": {
+          const prevIdx9 = prevSignificant(tokens, i - 1);
+          const prev9 = tokens[prevIdx9];
+
+          // Exclude: `obj.XMLHttpRequest(...)` — preceded by `.` or `?.`
+          if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named XMLHttpRequest
+          if (prev9 && prev9.kind === "ident" && prev9.text === "function") continue;
+          if (prev9 && prev9.kind === "keyword" && prev9.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx9)) continue;
+
+          const hasNew9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
+          // For ternary guard: check if token before XMLHttpRequest (or before `new`) is `?`
+          const prevBeforeNew9 = hasNew9
+            ? tokens[prevSignificant(tokens, prevIdx9 - 1)]
+            : undefined;
+          const isTernaryConsequent9 =
+            (prev9 !== undefined && prev9 !== null && prev9.kind === "question") ||
+            (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question");
+
+          const nextIdx9 = nextSignificant(tokens, i + 1);
+          const next9 = tokens[nextIdx9];
+
+          let isOpt9 = false;
+          let callIdx9 = nextIdx9;
+
+          if (next9 && next9.kind === "questionDot") {
+            isOpt9 = true;
+            callIdx9 = nextSignificant(tokens, nextIdx9 + 1);
+          }
+
+          const callTok9 = tokens[callIdx9];
+          if (!callTok9 || !(callTok9.kind === "open" && callTok9.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { XMLHttpRequest() { ... } } / { XMLHttpRequest(): T; }
+          // Guard the `:` check against ternary consequents.
+          if (callTok9.matchedAt !== undefined) {
+            const afterCloseIdx9 = nextSignificant(tokens, callTok9.matchedAt + 1);
+            const afterClose9 = tokens[afterCloseIdx9];
+            if (afterClose9 && (
+              (afterClose9.kind === "open" && afterClose9.text === "{") ||
+              afterClose9.kind === "fatArrow" ||
+              (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep9 = isOpt9 ? "?." : "";
+          const warnStart9 = hasNew9 ? prev9!.start : tok.start;
+          const loc9 = locationOf(src, warnStart9);
+          warnings.push({
+            code: "SYN009",
+            severity: "warning",
+            file: null,
+            line: loc9.line,
+            column: loc9.column,
+            start: warnStart9,
+            end: callTok9.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew9 ? "constructs new " : "calls "}XMLHttpRequest${callSep9}() — ` +
+              `XMLHttpRequest opens a network connection invisible to the capability model; ` +
+              `replace with http.get(url)/http.post(url, { body }) and add uses { net }, ` +
+              `or wrap in unsafe "wraps XHR for <reason>" { ${hasNew9 ? "new " : ""}XMLHttpRequest${isOpt9 ? "?." : ""}() }`,
+            rule: syn009.rule,
+            idiom: syn009.idiom,
+            rewrite: syn009.rewrite,
           });
           break;
         }
