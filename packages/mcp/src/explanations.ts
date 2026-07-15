@@ -1386,6 +1386,55 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN024: {
+    code: "SYN024",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    body:
+      "SYN024 fires when a fn body accesses `localStorage.*` or `sessionStorage.*` — " +
+      "any member access on either Web Storage global in `?bs 0.7+`.\n\n" +
+      "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource " +
+      "identifiers (e.g. `reads { prefs }`, `writes { cache }`). The `localStorage` and " +
+      "`sessionStorage` globals are not part of the stdlib namespace system. A fn that calls " +
+      "`localStorage.setItem(key, value)` or `sessionStorage.getItem(key)` reads or writes " +
+      "persistent browser state at runtime but declares nothing about it in its header. " +
+      "Callers cannot see the dependency, and no audit tool can observe it from the fn signature. " +
+      "`localStorage` persists across sessions; `sessionStorage` persists until the tab closes — " +
+      "both are synchronous, so any access blocks the main thread and no Promise or callback " +
+      "makes the side-effect visible to callers.\n\n" +
+      "**Detection:** the check looks for a `localStorage` or `sessionStorage` ident token not " +
+      "preceded by `.`/`?.` (which would make it a member of another object), followed by `.` " +
+      "or `?.` (confirming this is a member access on the global, not a bare reference or " +
+      "declaration). `fn`/`function`/`function*` declarations named `localStorage` or " +
+      "`sessionStorage` are excluded.\n\n" +
+      "**Fix (preferred):** pass a storage adapter as an explicit fn parameter. " +
+      "This makes the dependency visible in the signature and tests can inject an in-memory stub:\n\n" +
+      "```\n" +
+      "// SYN024\n" +
+      "fn loadTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'\n" +
+      "}\n\n" +
+      "// fix — storage adapter is now an explicit parameter\n" +
+      "fn loadTheme(storage: { get(k: string): string | null }) -> string {\n" +
+      "  return storage.get('theme') ?? 'light'\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct access is genuinely required, wrap in an `unsafe` block:\n" +
+      "`unsafe \"reads localStorage for theme preference\" { localStorage.getItem('theme') }`\n\n" +
+      "SYN024 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn loadTheme() -> string {\n" +
+        "  return localStorage.getItem('theme') ?? 'light'\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn loadTheme() -> string {\n" +
+        "  return unsafe \"reads localStorage for theme preference\" { localStorage.getItem('theme') } ?? 'light'\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

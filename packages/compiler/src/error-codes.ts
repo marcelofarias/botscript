@@ -1085,6 +1085,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN024: {
+    code: "SYN024",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    rule:
+      "direct `localStorage.*` or `sessionStorage.*` access in a fn body is invisible to " +
+      "botscript's capability model: `reads {}` and `writes {}` labels cover declared resource " +
+      "identifiers, not the Web Storage globals. Both are synchronous and capped at ~5 MB per " +
+      "origin, but the data persists across sessions (localStorage) or until the tab closes " +
+      "(sessionStorage) with no fn-header declaration. A fn that reads or writes Web Storage " +
+      "has an undeclared persistent-state dependency — callers cannot see it and tests cannot " +
+      "mock or isolate it; suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies",
+    idiom:
+      "pass a `Storage`-compatible adapter (or a typed `{ get(k: string): string | null; set(k: string, v: string): void; remove(k: string): void }` pair) " +
+      "as an explicit parameter so the dependency is visible in the fn header and tests can inject an in-memory stub; " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes localStorage for <reason>\" { localStorage.getItem(key) }`",
+    rewrite:
+      "// before — localStorage access invisible to the capability model\n" +
+      "fn loadTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'  // SYN024\n" +
+      "}\n\n" +
+      "// after — storage adapter passed as an explicit parameter\n" +
+      "fn loadTheme(storage: { get(k: string): string | null }) -> string {\n" +
+      "  return storage.get('theme') ?? 'light'\n" +
+      "}",
+    example:
+      "// SYN024: localStorage access bypasses the capability model\n" +
+      "fn loadTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'\n" +
+      "}\n\n" +
+      "// fix: pass a storage adapter so callers and tests can control it\n" +
+      "fn loadTheme(storage: { get(k: string): string | null }) -> string {\n" +
+      "  return storage.get('theme') ?? 'light'\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

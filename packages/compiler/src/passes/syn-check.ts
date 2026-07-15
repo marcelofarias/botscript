@@ -182,6 +182,18 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN024  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
+ *           Both are synchronous Web Storage globals invisible to botscript's capability model:
+ *           `reads {}` and `writes {}` labels cover declared resource identifiers, not the Web
+ *           Storage globals. A fn that reads or writes `localStorage`/`sessionStorage` has an
+ *           undeclared persistent-state dependency — callers cannot see it and tests cannot mock
+ *           or isolate it.
+ *           Detection: `localStorage` or `sessionStorage` not preceded by `.`/`?.` (which would
+ *           make it a member of another object), followed by `.` or `?.` (confirming this is a
+ *           member access on the global, not a bare reference or declaration).
+ *           `fn`/`function`/`function*` declarations named `localStorage`/`sessionStorage` are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +267,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn024 = getErrorCode("SYN024")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1692,52 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN024: localStorage / sessionStorage access ──────────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          // Exclude: `obj.localStorage` / `obj.sessionStorage` — preceded by `.` or `?.`
+          const prevIdx24 = prevSignificant(tokens, i - 1);
+          const prev24 = tokens[prevIdx24];
+          if (prev24 && ((prev24.kind === "punct" && prev24.text === ".") || prev24.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named localStorage/sessionStorage
+          if (prev24 && prev24.kind === "keyword" && prev24.text === "fn") continue;
+          if (prev24 && prev24.kind === "ident" && prev24.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx24)) continue;
+
+          // Must be followed by `.` or `?.` — confirming this is a member access on the global, not a bare reference
+          const nextIdx24 = nextSignificant(tokens, i + 1);
+          const next24 = tokens[nextIdx24];
+          const isDot24 = next24 && next24.kind === "punct" && next24.text === ".";
+          const isOptChain24 = next24 && next24.kind === "questionDot";
+          if (!isDot24 && !isOptChain24) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const globalName24 = tok.text;
+          const sep24 = isOptChain24 ? "?." : ".";
+          const loc24 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN024",
+            severity: "warning",
+            file: null,
+            line: loc24.line,
+            column: loc24.column,
+            start: tok.start,
+            end: next24!.end,
+            message:
+              `fn '${decl.name}' accesses ${globalName24}${sep24} — ` +
+              `${globalName24} is Web Storage: synchronous, persistent, and invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a storage adapter as a parameter or wrap in unsafe "reads/writes ${globalName24} for <reason>" { ${globalName24}.getItem(key) }`,
+            rule: syn024.rule,
+            idiom: syn024.idiom,
+            rewrite: syn024.rewrite,
           });
           break;
         }
