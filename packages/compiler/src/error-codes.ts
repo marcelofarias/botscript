@@ -1085,8 +1085,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
-  SYN026: {
-    code: "SYN026",
+  SYN029: {
+    code: "SYN029",
     title: "caches.* access bypasses the storage capability model",
     rule:
       "`caches.*` accesses (`caches.open(name)`, `caches.match(req)`, `caches.has(name)`, " +
@@ -1102,16 +1102,16 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "// before — ambient caches access invisible to the capability model\n" +
       "fn loadAsset(url: string) -> Promise<Response> {\n" +
-      "  return caches.match(url)  // SYN026\n" +
+      "  return caches.match(url)  // SYN029\n" +
       "}\n\n" +
       "// after — cache handle passed as a parameter; tests can inject a mock\n" +
       "fn loadAsset(url: string, store: CacheStorage) -> Promise<Response> {\n" +
       "  return store.match(url)\n" +
       "}",
     example:
-      "// SYN026: caches.open bypasses the storage capability model\n" +
+      "// SYN029: caches.open bypasses the storage capability model\n" +
       "fn warmCache(name: string) -> Promise<Cache> {\n" +
-      "  return caches.open(name)  // SYN026\n" +
+      "  return caches.open(name)  // SYN029\n" +
       "}\n\n" +
       "// fix: accept a CacheStorage handle as a parameter\n" +
       "fn warmCache(name: string, store: CacheStorage) -> Promise<Cache> {\n" +

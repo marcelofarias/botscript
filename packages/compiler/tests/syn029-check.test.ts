@@ -5,7 +5,7 @@ function compile(src: string) {
   return passSynCheck(src, { resolved: "0.7", declared: "0.7" });
 }
 
-describe("SYN026: caches.* Cache Storage API access detection", () => {
+describe("SYN029: caches.* Cache Storage API access detection", () => {
   it("fires on caches.open()", () => {
     const src =
       "?bs 0.7\n" +
@@ -13,7 +13,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.open(name)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("fires on caches.match()", () => {
@@ -23,7 +23,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.match(url)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("fires on caches.has()", () => {
@@ -33,7 +33,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.has(name)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("fires on caches.delete()", () => {
@@ -43,7 +43,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.delete(name)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("fires on caches.keys()", () => {
@@ -53,7 +53,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.keys()\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("fires on optional-chain caches?.open()", () => {
@@ -63,7 +63,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches?.open(name)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(true);
   });
 
   it("does NOT fire on obj.caches.open() — member of a local binding", () => {
@@ -73,7 +73,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return ctx.caches.open('v1')\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("does NOT fire on bare caches reference without member access", () => {
@@ -84,7 +84,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  init(caches)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("does NOT fire on fn caches() botscript declarations", () => {
@@ -94,7 +94,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return name\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("does NOT fire on JS function caches() declaration inside a fn body", () => {
@@ -105,7 +105,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return null\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("does NOT fire on JS generator function* caches() declaration inside a fn body", () => {
@@ -116,7 +116,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return null\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("is suppressed inside unsafe {} blocks", () => {
@@ -126,7 +126,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       '  return unsafe "accesses caches for sw asset caching" { caches.open(name) }\n' +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("is suppressed inside unsafe fn bodies", () => {
@@ -136,7 +136,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.open(name)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("does NOT fire before ?bs 0.7", () => {
@@ -146,7 +146,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.open(name)\n" +
       "}\n";
     const result = passSynCheck(src, { resolved: "0.6", declared: "0.6" });
-    expect(result.warnings.some((w) => w.code === "SYN026")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN029")).toBe(false);
   });
 
   it("fires with warning severity", () => {
@@ -156,7 +156,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.open(name)\n" +
       "}\n";
     const result = compile(src);
-    const w = result.warnings.find((w) => w.code === "SYN026");
+    const w = result.warnings.find((w) => w.code === "SYN029");
     expect(w?.severity).toBe("warning");
   });
 
@@ -169,7 +169,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return [exists, cache]\n" +
       "}\n";
     const result = compile(src);
-    const codes = result.warnings.filter((w) => w.code === "SYN026");
+    const codes = result.warnings.filter((w) => w.code === "SYN029");
     expect(codes.length).toBe(2);
   });
 
@@ -180,7 +180,7 @@ describe("SYN026: caches.* Cache Storage API access detection", () => {
       "  return caches.open(name)\n" +
       "}\n";
     const result = compile(src);
-    const w = result.warnings.find((w) => w.code === "SYN026");
+    const w = result.warnings.find((w) => w.code === "SYN029");
     expect(w?.message).toContain("caches.");
     expect(w?.message).toContain("capability model");
   });

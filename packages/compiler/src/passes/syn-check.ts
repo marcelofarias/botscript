@@ -182,7 +182,7 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
- *   SYN026  A `caches.*` access was detected in a fn body (?bs 0.7+).
+ *   SYN029  A `caches.*` access was detected in a fn body (?bs 0.7+).
  *           `caches` is the Cache Storage API entry point — persistent, same-origin
  *           request/response storage used by Service Workers for offline-first strategies.
  *           Cache Storage is entirely invisible to botscript's capability model: no
@@ -267,7 +267,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
-  const syn026 = getErrorCode("SYN026")!;
+  const syn029 = getErrorCode("SYN029")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1352,46 +1352,46 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN026: caches.* access (Cache Storage API) ──────────────────────
+        // ── SYN029: caches.* access (Cache Storage API) ──────────────────────
         case "caches": {
           // Exclude: `obj.caches` — preceded by `.` or `?.`
-          const prevIdx26 = prevSignificant(tokens, i - 1);
-          const prev26 = tokens[prevIdx26];
-          if (prev26 && ((prev26.kind === "punct" && prev26.text === ".") || prev26.kind === "questionDot"))
+          const prevIdx29 = prevSignificant(tokens, i - 1);
+          const prev29 = tokens[prevIdx29];
+          if (prev29 && ((prev29.kind === "punct" && prev29.text === ".") || prev29.kind === "questionDot"))
             continue;
 
           // Exclude: fn/function/function* declarations named caches
-          if (prev26 && prev26.kind === "keyword" && prev26.text === "fn") continue;
-          if (prev26 && prev26.kind === "ident" && prev26.text === "function") continue;
-          if (isFunctionStarDecl(tokens, prevIdx26)) continue;
+          if (prev29 && prev29.kind === "keyword" && prev29.text === "fn") continue;
+          if (prev29 && prev29.kind === "ident" && prev29.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx29)) continue;
 
           // Must be followed by `.` or `?.` — bare `caches` references (e.g. passing as argument) are excluded
-          const nextIdx26 = nextSignificant(tokens, i + 1);
-          const next26 = tokens[nextIdx26];
-          const isDot26 = next26 && next26.kind === "punct" && next26.text === ".";
-          const isOptChain26 = next26 && next26.kind === "questionDot";
-          if (!isDot26 && !isOptChain26) continue;
+          const nextIdx29 = nextSignificant(tokens, i + 1);
+          const next29 = tokens[nextIdx29];
+          const isDot29 = next29 && next29.kind === "punct" && next29.text === ".";
+          const isOptChain29 = next29 && next29.kind === "questionDot";
+          if (!isDot29 && !isOptChain29) continue;
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
-          const sep26 = isOptChain26 ? "?." : ".";
-          const loc26 = locationOf(src, tok.start);
+          const sep29 = isOptChain29 ? "?." : ".";
+          const loc29 = locationOf(src, tok.start);
           warnings.push({
-            code: "SYN026",
+            code: "SYN029",
             severity: "warning",
             file: null,
-            line: loc26.line,
-            column: loc26.column,
+            line: loc29.line,
+            column: loc29.column,
             start: tok.start,
-            end: next26!.end,
+            end: next29!.end,
             message:
-              `fn '${decl.name}' accesses caches${sep26} — ` +
+              `fn '${decl.name}' accesses caches${sep29} — ` +
               `caches is the Cache Storage API (persistent request/response storage invisible to the capability model); ` +
               `no reads {} / writes {} label covers it; ` +
               `pass a CacheStorage handle as a parameter or wrap in unsafe "accesses caches for <reason>" { caches.open(name) }`,
-            rule: syn026.rule,
-            idiom: syn026.idiom,
-            rewrite: syn026.rewrite,
+            rule: syn029.rule,
+            idiom: syn029.idiom,
+            rewrite: syn029.rewrite,
           });
           break;
         }
