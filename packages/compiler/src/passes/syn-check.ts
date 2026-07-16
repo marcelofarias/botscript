@@ -182,6 +182,19 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN029  A `new RTCPeerConnection(...)` / `RTCPeerConnection(...)` call was detected in a fn
+ *           body (?bs 0.7+). `RTCPeerConnection` establishes a peer-to-peer WebRTC channel that
+ *           can carry arbitrary data in both directions via STUN/TURN negotiation. Unlike `fetch`
+ *           or `WebSocket`, it bypasses botscript's http/ws namespaces entirely — the `uses { net }`
+ *           declaration does not cover it and callers cannot observe the network dependency from
+ *           the fn header. In an agent context, `RTCPeerConnection` is an unmonitored exfiltration
+ *           surface: data channels open after ICE negotiation with no botscript-visible side effect.
+ *           Excluded: `obj.RTCPeerConnection(...)` (member on a local binding), `function`/`fn`/
+ *           `function*` declarations named `RTCPeerConnection`, object/class method shorthands,
+ *           TypeScript method signatures (`{ RTCPeerConnection(cfg): T; }`). The `:` exclusion
+ *           is guarded against ternary consequents. Generic `<T>` detection only when preceded
+ *           by `new`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +268,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn029 = getErrorCode("SYN029")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1506,6 +1520,90 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn017.rule,
             idiom: syn017.idiom,
             rewrite: syn017.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN029: new RTCPeerConnection() / RTCPeerConnection() call ────────
+        case "RTCPeerConnection": {
+          // Exclude: `obj.RTCPeerConnection(...)` — preceded by `.` or `?.`
+          const prevIdx29 = prevSignificant(tokens, i - 1);
+          const prev29 = tokens[prevIdx29];
+          if (prev29 && ((prev29.kind === "punct" && prev29.text === ".") || prev29.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named RTCPeerConnection
+          if (prev29 && prev29.kind === "ident" && prev29.text === "function") continue;
+          if (prev29 && prev29.kind === "keyword" && prev29.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx29)) continue;
+
+          const hasNew29 = prev29 && prev29.kind === "ident" && prev29.text === "new";
+          const prevBeforeNew29 = hasNew29
+            ? tokens[prevSignificant(tokens, prevIdx29 - 1)]
+            : undefined;
+          const isTernaryConsequent29 =
+            (prev29 !== undefined && prev29 !== null && prev29.kind === "question") ||
+            (prevBeforeNew29 !== undefined && prevBeforeNew29 !== null && prevBeforeNew29.kind === "question");
+
+          const nextIdx29 = nextSignificant(tokens, i + 1);
+          const next29 = tokens[nextIdx29];
+
+          let isOpt29 = false;
+          let callIdx29 = nextIdx29;
+
+          if (next29 && next29.kind === "questionDot") {
+            // RTCPeerConnection?.( — optional call
+            isOpt29 = true;
+            callIdx29 = nextSignificant(tokens, nextIdx29 + 1);
+          } else if (hasNew29 && next29 && next29.kind === "operator" && next29.text === "<") {
+            // new RTCPeerConnection<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx29 + 1;
+            while (j < decl.tokenEnd && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx29 = nextSignificant(tokens, j);
+          }
+
+          const callTok29 = tokens[callIdx29];
+          if (!callTok29 || !(callTok29.kind === "open" && callTok29.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures
+          if (callTok29.matchedAt !== undefined) {
+            const afterCloseIdx29 = nextSignificant(tokens, callTok29.matchedAt + 1);
+            const afterClose29 = tokens[afterCloseIdx29];
+            if (afterClose29 && (
+              (afterClose29.kind === "open" && afterClose29.text === "{") ||
+              afterClose29.kind === "fatArrow" ||
+              (!isTernaryConsequent29 && afterClose29.kind === "punct" && afterClose29.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep29 = isOpt29 ? "?." : "";
+          const warnStart29 = hasNew29 ? prev29!.start : tok.start;
+          const loc29 = locationOf(src, warnStart29);
+          warnings.push({
+            code: "SYN029",
+            severity: "warning",
+            file: null,
+            line: loc29.line,
+            column: loc29.column,
+            start: warnStart29,
+            end: callTok29.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew29 ? "constructs new " : "calls "}RTCPeerConnection${callSep29}() — ` +
+              `RTCPeerConnection opens a peer-to-peer WebRTC channel invisible to the capability model; ` +
+              `wrap in unsafe "creates RTCPeerConnection for <reason>" { ${hasNew29 ? "new " : ""}RTCPeerConnection${isOpt29 ? "?." : ""}(...) }`,
+            rule: syn029.rule,
+            idiom: syn029.idiom,
+            rewrite: syn029.rewrite,
           });
           break;
         }

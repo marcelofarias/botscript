@@ -1085,6 +1085,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN029: {
+    code: "SYN029",
+    title: "RTCPeerConnection bypasses the net capability model",
+    rule:
+      "`RTCPeerConnection` establishes a peer-to-peer WebRTC channel that can carry arbitrary " +
+      "data in both directions. Unlike `fetch` or `WebSocket`, it negotiates connectivity through " +
+      "STUN/TURN servers and then opens a direct data channel — all without touching the `uses { net }` " +
+      "declaration or botscript's http/ws namespaces. A fn that constructs an `RTCPeerConnection` " +
+      "has an undeclared bidirectional network dependency that callers cannot observe from the fn header. " +
+      "Excluded: member calls (`obj.RTCPeerConnection`), `function`/`fn`/`function*` declarations " +
+      "named `RTCPeerConnection`, object/class method shorthands, TypeScript method signatures, " +
+      "and `unsafe {}` / `unsafe fn` bodies.",
+    idiom:
+      "pass a factory or an already-negotiated data-channel handle as a parameter so callers " +
+      "and tests control the network surface; if direct WebRTC construction is genuinely required " +
+      "(e.g. a thin WebRTC adapter), wrap in `unsafe \"creates RTCPeerConnection for <reason>\" { new RTCPeerConnection(...) }`",
+    rewrite:
+      "// before — RTCPeerConnection invisible to the capability model\n" +
+      "fn openDataChannel(config: RTCConfiguration) -> RTCPeerConnection {\n" +
+      "  return new RTCPeerConnection(config)  // SYN029\n" +
+      "}\n\n" +
+      "// after — inject the connection so callers can substitute a mock\n" +
+      "fn openDataChannel(pc: RTCPeerConnection) -> RTCDataChannel {\n" +
+      "  return pc.createDataChannel('data')\n" +
+      "}",
+    example:
+      "// SYN029: RTCPeerConnection bypasses the net capability model\n" +
+      "fn connectPeer(config: RTCConfiguration) -> RTCPeerConnection {\n" +
+      "  return new RTCPeerConnection(config)  // SYN029\n" +
+      "}\n\n" +
+      "// fix: inject the connection; callers and tests control the surface\n" +
+      "fn connectPeer(pc: RTCPeerConnection) -> RTCDataChannel {\n" +
+      "  return pc.createDataChannel('data')\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

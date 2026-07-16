@@ -1386,6 +1386,41 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN029: {
+    code: "SYN029",
+    title: "RTCPeerConnection bypasses the net capability model",
+    body:
+      "SYN029 fires when a fn body calls `new RTCPeerConnection(...)` or `RTCPeerConnection(...)` " +
+      "in `?bs 0.7+`. `RTCPeerConnection` is the WebRTC peer-to-peer connection constructor. " +
+      "Unlike `fetch` (SYN007) or `WebSocket` (SYN008), WebRTC does not go through botscript's " +
+      "`http` or `ws` namespaces — it negotiates connectivity via STUN/TURN servers and then opens " +
+      "direct data channels with no botscript-visible net declaration.\n\n" +
+      "**Why it matters for agents:** A bot that constructs an `RTCPeerConnection` can open a " +
+      "full-duplex data channel to any reachable peer — exfiltrating data, receiving commands, " +
+      "or tunneling traffic — with no entry in its `uses { net }` declaration. Callers cannot " +
+      "observe the network dependency from the fn header, and there is no botscript namespace to " +
+      "intercept in tests.\n\n" +
+      "**Fix:** inject an already-negotiated connection or a factory as a parameter so callers and " +
+      "tests control the network surface. If direct construction is genuinely required (e.g. a thin " +
+      "WebRTC adapter layer), wrap in " +
+      "`unsafe \"creates RTCPeerConnection for <reason>\" { new RTCPeerConnection(...) }`.\n\n" +
+      "SYN029 fires at `?bs 0.7+` as a non-blocking warning. Excluded: `obj.RTCPeerConnection(...)` " +
+      "(member on a local binding), `function`/`fn`/`function*` declarations named `RTCPeerConnection`, " +
+      "object/class method shorthands, TypeScript method signatures, ternary-guarded construction, " +
+      "generic calls without `new`, and calls inside `unsafe {}` blocks or `unsafe fn` bodies.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn connectPeer(config: RTCConfiguration) -> RTCPeerConnection {\n" +
+        "  return new RTCPeerConnection(config)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn connectPeer(pc: RTCPeerConnection) -> RTCDataChannel {\n" +
+        "  return pc.createDataChannel('data')\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
