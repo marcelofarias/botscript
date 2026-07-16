@@ -5,7 +5,7 @@ function compile(src: string) {
   return passSynCheck(src, { resolved: "0.7", declared: "0.7" });
 }
 
-describe("SYN024: localStorage / sessionStorage access detection", () => {
+describe("SYN031: localStorage / sessionStorage access detection", () => {
   // ── localStorage fires ──────────────────────────────────────────────────
 
   it("fires on localStorage.getItem()", () => {
@@ -15,7 +15,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on localStorage.setItem()", () => {
@@ -25,7 +25,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  localStorage.setItem('theme', theme)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on localStorage.removeItem()", () => {
@@ -35,7 +35,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  localStorage.removeItem('theme')\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on localStorage.clear()", () => {
@@ -45,7 +45,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  localStorage.clear()\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on localStorage.length access", () => {
@@ -55,7 +55,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.length\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on optional-chain localStorage?.getItem()", () => {
@@ -65,7 +65,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage?.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   // ── sessionStorage fires ─────────────────────────────────────────────────
@@ -77,7 +77,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return sessionStorage.getItem('tab') ?? 'home'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on sessionStorage.setItem()", () => {
@@ -87,7 +87,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  sessionStorage.setItem('tab', tab)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   it("fires on optional-chain sessionStorage?.getItem()", () => {
@@ -97,7 +97,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return sessionStorage?.getItem('tab') ?? 'home'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(true);
   });
 
   // ── exclusions ───────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return ctx.localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on obj.sessionStorage.getItem() — member of a local", () => {
@@ -119,7 +119,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return ctx.sessionStorage.getItem('tab') ?? 'home'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on bare localStorage reference without member access", () => {
@@ -129,7 +129,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  fn(localStorage)\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on fn localStorage() botscript declaration", () => {
@@ -139,7 +139,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return key\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on fn sessionStorage() botscript declaration", () => {
@@ -149,7 +149,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return key\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on JS function localStorage() declaration inside a fn body", () => {
@@ -160,7 +160,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return null\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("does NOT fire on JS generator function* localStorage() declaration", () => {
@@ -171,7 +171,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return null\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   // ── unsafe suppression ───────────────────────────────────────────────────
@@ -183,7 +183,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       '  return unsafe "reads localStorage for theme preference" { localStorage.getItem(\'theme\') } ?? \'light\'\n' +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("is suppressed inside unsafe {} blocks (sessionStorage)", () => {
@@ -193,7 +193,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       '  return unsafe "reads sessionStorage for active tab" { sessionStorage.getItem(\'tab\') } ?? \'home\'\n' +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   it("is suppressed inside unsafe fn bodies", () => {
@@ -203,7 +203,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   // ── version gate ─────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = passSynCheck(src, { resolved: "0.6", declared: "0.6" });
-    expect(result.warnings.some((w) => w.code === "SYN024")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN031")).toBe(false);
   });
 
   // ── diagnostic quality ───────────────────────────────────────────────────
@@ -227,7 +227,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    const w = result.warnings.find((w) => w.code === "SYN024");
+    const w = result.warnings.find((w) => w.code === "SYN031");
     expect(w?.severity).toBe("warning");
   });
 
@@ -238,7 +238,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    const w = result.warnings.find((w) => w.code === "SYN024");
+    const w = result.warnings.find((w) => w.code === "SYN031");
     expect(w?.message).toContain("localStorage");
     expect(w?.message).toContain("capability model");
   });
@@ -250,7 +250,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n";
     const result = compile(src);
-    const w = result.warnings.find((w) => w.code === "SYN024");
+    const w = result.warnings.find((w) => w.code === "SYN031");
     expect(w?.message).toContain("loadTheme");
     expect(w?.message).toContain("localStorage.");
   });
@@ -263,7 +263,7 @@ describe("SYN024: localStorage / sessionStorage access detection", () => {
       "  sessionStorage.setItem('theme', theme ?? 'light')\n" +
       "}\n";
     const result = compile(src);
-    const codes = result.warnings.filter((w) => w.code === "SYN024");
+    const codes = result.warnings.filter((w) => w.code === "SYN031");
     expect(codes.length).toBe(2);
   });
 });

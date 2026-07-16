@@ -182,7 +182,7 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
- *   SYN024  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
+ *   SYN031  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body (?bs 0.7+).
  *           Both are synchronous Web Storage globals invisible to botscript's capability model:
  *           `reads {}` and `writes {}` labels cover declared resource identifiers, not the Web
  *           Storage globals. A fn that reads or writes `localStorage`/`sessionStorage` has an
@@ -267,7 +267,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
-  const syn024 = getErrorCode("SYN024")!;
+  const syn024 = getErrorCode("SYN031")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1696,7 +1696,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN024: localStorage / sessionStorage access ──────────────────────
+        // ── SYN031: localStorage / sessionStorage access ──────────────────────
         case "localStorage":
         case "sessionStorage": {
           // Exclude: `obj.localStorage` / `obj.sessionStorage` — preceded by `.` or `?.`
@@ -1741,7 +1741,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           const loc24 = locationOf(src, tok.start);
           warnings.push({
-            code: "SYN024",
+            code: "SYN031",
             severity: "warning",
             file: null,
             line: loc24.line,

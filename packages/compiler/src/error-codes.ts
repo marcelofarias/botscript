@@ -1085,8 +1085,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
-  SYN024: {
-    code: "SYN024",
+  SYN031: {
+    code: "SYN031",
     title: "localStorage / sessionStorage access bypasses the storage capability model",
     rule:
       "direct `localStorage.*` or `sessionStorage.*` access in a fn body is invisible to " +
@@ -1105,14 +1105,14 @@ const E: Record<string, ErrorCodeEntry> = {
     rewrite:
       "// before — localStorage access invisible to the capability model\n" +
       "fn loadTheme() -> string {\n" +
-      "  return localStorage.getItem('theme') ?? 'light'  // SYN024\n" +
+      "  return localStorage.getItem('theme') ?? 'light'  // SYN031\n" +
       "}\n\n" +
       "// after — storage adapter passed as an explicit parameter\n" +
       "fn loadTheme(storage: { get(k: string): string | null }) -> string {\n" +
       "  return storage.get('theme') ?? 'light'\n" +
       "}",
     example:
-      "// SYN024: localStorage access bypasses the capability model\n" +
+      "// SYN031: localStorage access bypasses the capability model\n" +
       "fn loadTheme() -> string {\n" +
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n\n" +

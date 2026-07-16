@@ -1386,11 +1386,11 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
-  SYN024: {
-    code: "SYN024",
+  SYN031: {
+    code: "SYN031",
     title: "localStorage / sessionStorage access bypasses the storage capability model",
     body:
-      "SYN024 fires when a fn body accesses `localStorage.*` or `sessionStorage.*` — " +
+      "SYN031 fires when a fn body accesses `localStorage.*` or `sessionStorage.*` — " +
       "any member access on either Web Storage global in `?bs 0.7+`.\n\n" +
       "**Why it matters:** `reads {}` and `writes {}` labels in botscript cover declared resource " +
       "identifiers (e.g. `reads { prefs }`, `writes { cache }`). The `localStorage` and " +
@@ -1409,7 +1409,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Fix (preferred):** pass a storage adapter as an explicit fn parameter. " +
       "This makes the dependency visible in the signature and tests can inject an in-memory stub:\n\n" +
       "```\n" +
-      "// SYN024\n" +
+      "// SYN031\n" +
       "fn loadTheme() -> string {\n" +
       "  return localStorage.getItem('theme') ?? 'light'\n" +
       "}\n\n" +
@@ -1420,7 +1420,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "```\n\n" +
       "**Fix (escape hatch):** if direct access is genuinely required, wrap in an `unsafe` block:\n" +
       "`unsafe \"reads localStorage for theme preference\" { localStorage.getItem('theme') }`\n\n" +
-      "SYN024 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "SYN031 fires at `?bs 0.7+` as a non-blocking warning. " +
       "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {
       fails:
