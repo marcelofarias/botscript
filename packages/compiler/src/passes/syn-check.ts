@@ -1721,6 +1721,24 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           const globalName24 = tok.text;
           const sep24 = isOptChain24 ? "?." : ".";
+
+          // Peek at the member identifier to build an accurate unsafe-block hint.
+          const memberIdx24 = nextSignificant(tokens, nextIdx24 + 1);
+          const memberTok24 = tokens[memberIdx24];
+          const memberName24 = memberTok24?.kind === "ident" ? memberTok24.text : "member";
+          const afterMemberIdx24 = memberTok24 ? nextSignificant(tokens, memberIdx24 + 1) : -1;
+          const afterMember24 = afterMemberIdx24 >= 0 ? tokens[afterMemberIdx24] : undefined;
+          const isCall24 = afterMember24?.kind === "open" && afterMember24.text === "(";
+          const exampleAccess24 = isCall24
+            ? `${globalName24}.${memberName24}(…)`
+            : `${globalName24}.${memberName24}`;
+
+          // localStorage is cross-session persistent; sessionStorage is per-tab and cleared on close.
+          const scopeDesc24 =
+            globalName24 === "localStorage"
+              ? "cross-session persistent"
+              : "session-scoped (cleared when the tab closes)";
+
           const loc24 = locationOf(src, tok.start);
           warnings.push({
             code: "SYN024",
@@ -1729,12 +1747,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             line: loc24.line,
             column: loc24.column,
             start: tok.start,
-            end: next24!.end,
+            end: memberTok24 ? memberTok24.end : next24!.end,
             message:
               `fn '${decl.name}' accesses ${globalName24}${sep24} — ` +
-              `${globalName24} is Web Storage: synchronous, persistent, and invisible to the capability model; ` +
+              `${globalName24} is Web Storage: synchronous, ${scopeDesc24}, and invisible to the capability model; ` +
               `no reads {} / writes {} label covers it; ` +
-              `pass a storage adapter as a parameter or wrap in unsafe "reads/writes ${globalName24} for <reason>" { ${globalName24}.getItem(key) }`,
+              `pass a storage adapter as a parameter or wrap in unsafe "reads/writes ${globalName24} for <reason>" { ${exampleAccess24} }`,
             rule: syn024.rule,
             idiom: syn024.idiom,
             rewrite: syn024.rewrite,

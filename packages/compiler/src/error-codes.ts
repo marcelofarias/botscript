@@ -1100,7 +1100,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "pass a `Storage`-compatible adapter (or a typed `{ get(k: string): string | null; set(k: string, v: string): void; remove(k: string): void }` pair) " +
       "as an explicit parameter so the dependency is visible in the fn header and tests can inject an in-memory stub; " +
       "if direct access is genuinely required, wrap in " +
-      "`unsafe \"reads/writes localStorage for <reason>\" { localStorage.getItem(key) }`",
+      "`unsafe \"reads/writes <storage> for <reason>\" { <storage>.<member>(…) }` " +
+      "(e.g. `unsafe \"reads localStorage for theme preference\" { localStorage.getItem('theme') }`)",
     rewrite:
       "// before — localStorage access invisible to the capability model\n" +
       "fn loadTheme() -> string {\n" +
