@@ -57,6 +57,16 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN009  A `new XMLHttpRequest()`, `XMLHttpRequest()`, `new XMLHttpRequest` (no-parens),
+ *           `new XMLHttpRequest<T>()`, or `XMLHttpRequest?.()` was detected in a fn body
+ *           (?bs 0.7+). `XMLHttpRequest` is the legacy browser HTTP API and opens an HTTP
+ *           connection invisible to CAP001 (which checks `http.*` member calls, not the XHR
+ *           global). A fn that constructs an XHR has an undeclared network dependency.
+ *           Excluded: member calls (`obj.XMLHttpRequest`), object/class method shorthands,
+ *           and TypeScript method signatures (`{ XMLHttpRequest(url): T; }`). The `:`
+ *           exclusion is guarded against ternary consequents. Generic `<T>` detection
+ *           only when preceded by `new` (avoids false-positives on comparison expressions).
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -244,6 +254,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn006 = getErrorCode("SYN006")!;
   const syn007 = getErrorCode("SYN007")!;
   const syn008 = getErrorCode("SYN008")!;
+  const syn009 = getErrorCode("SYN009")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
   const syn012 = getErrorCode("SYN012")!;
@@ -864,6 +875,102 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn008.rule,
             idiom: syn008.idiom,
             rewrite: syn008.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN009: new XMLHttpRequest() / XMLHttpRequest() call ─────────────
+        case "XMLHttpRequest": {
+          // Exclude: `obj.XMLHttpRequest(...)` — preceded by `.` or `?.`
+          const prevIdx9 = prevSignificant(tokens, i - 1);
+          const prev9 = tokens[prevIdx9];
+          if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
+            continue;
+
+          // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
+          const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
+
+          // Ternary guard: `cond ? XMLHttpRequest(url) : other` / `cond ? new XMLHttpRequest(url) : other`.
+          const prevBeforeNew9 = isNewExpr9
+            ? tokens[prevSignificant(tokens, prevIdx9 - 1)]
+            : undefined;
+          const isTernaryConsequent9 =
+            (prev9 !== undefined && prev9 !== null && prev9.kind === "question") ||
+            (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question");
+
+          // Must be followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`).
+          const afterXhrFirstIdx = nextSignificant(tokens, i + 1);
+          const afterXhr = tokens[afterXhrFirstIdx];
+
+          if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
+            // TypeScript instantiation form: `XMLHttpRequest<T>(...)` or `new XMLHttpRequest<T>`
+            let anglDepth = 1;
+            let j = afterXhrFirstIdx + 1;
+            while (j < decl.tokenEnd && anglDepth > 0) {
+              const at = tokens[j];
+              if (!at) { j++; continue; }
+              if (at.kind === "operator" && at.text === "<") anglDepth++;
+              else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+                anglDepth = Math.max(0, anglDepth - at.text.length);
+              j++;
+            }
+            const afterAngleIdx = nextSignificant(tokens, j);
+            const afterAngle9 = tokens[afterAngleIdx];
+            if (afterAngle9 && afterAngle9.kind === "open" && afterAngle9.text === "(") {
+              // has parens — exclude method shorthands and TS method signatures
+              if (afterAngle9.matchedAt !== undefined) {
+                const afterCloseIdx9 = nextSignificant(tokens, afterAngle9.matchedAt + 1);
+                const afterClose9 = tokens[afterCloseIdx9];
+                if (afterClose9 && (
+                  (afterClose9.kind === "open" && afterClose9.text === "{") ||
+                  afterClose9.kind === "fatArrow" ||
+                  (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
+                )) continue;
+              }
+            } else if (!isNewExpr9) {
+              continue; // bare `XMLHttpRequest<T>` without new and without parens — not a construction
+            }
+          } else if (afterXhr && afterXhr.kind === "questionDot") {
+            // `XMLHttpRequest?.(...)` — optional call
+            const afterQD9 = nextSignificant(tokens, afterXhrFirstIdx + 1);
+            const afterQDTok9 = tokens[afterQD9];
+            if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
+          } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
+            // Direct call — exclude method shorthands and TS method signatures
+            if (afterXhr.matchedAt !== undefined) {
+              const afterCloseIdx9 = nextSignificant(tokens, afterXhr.matchedAt + 1);
+              const afterClose9 = tokens[afterCloseIdx9];
+              if (afterClose9 && (
+                (afterClose9.kind === "open" && afterClose9.text === "{") ||
+                afterClose9.kind === "fatArrow" ||
+                (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
+              )) continue;
+            }
+          } else {
+            // Member access on the constructor itself — not a construction
+            if (afterXhr && afterXhr.kind === "punct" && afterXhr.text === ".") continue;
+            // No parens — only fire if preceded by `new` (bare construction: `new XMLHttpRequest`)
+            if (!isNewExpr9) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const loc9 = locationOf(src, tok.start);
+          warnings.push({
+            code: syn009.code,
+            severity: "warning",
+            file: null,
+            line: loc9.line,
+            column: loc9.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' constructs an XMLHttpRequest — bypasses the net capability model; ` +
+              `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
+              `or wrap in unsafe "wraps XHR directly" { new XMLHttpRequest() }`,
+            rule: syn009.rule,
+            idiom: syn009.idiom,
+            rewrite: syn009.rewrite,
           });
           break;
         }
