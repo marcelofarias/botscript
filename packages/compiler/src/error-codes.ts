@@ -1143,6 +1143,41 @@ const E: Record<string, ErrorCodeEntry> = {
       "  http.post(\"/analytics\", { body: data })\n" +
       "}",
   },
+  SYN032: {
+    code: "SYN032",
+    title: "WebAssembly.* call executes native compiled code outside the capability model",
+    rule:
+      "`WebAssembly.instantiate()`, `WebAssembly.compile()`, and related forms load and execute native compiled code at runtime. " +
+      "The WASM module runs outside botscript's static analysis: any capability it touches — net, fs, random, time, process — " +
+      "is invisible to callers. No `uses {}`, `reads {}`, `writes {}`, or `throws {}` declaration in the fn header covers " +
+      "effects that originate inside the WASM binary. The fn's declared surface is a lie.",
+    idiom:
+      "use botscript stdlib capabilities (http, fs, random, time) instead of loading native WASM; " +
+      "if WASM is genuinely required, wrap in `unsafe \"loads WebAssembly for <reason>\" { WebAssembly.instantiate(...) }` " +
+      "to make the bypass visible in code review",
+    rewrite:
+      "// before — WASM call; capability surface of the module is opaque\n" +
+      "fn processData(buf: ArrayBuffer) uses { } -> any {\n" +
+      "  const { instance } = await WebAssembly.instantiate(buf, {})  // SYN032\n" +
+      "  return instance.exports.run()\n" +
+      "}\n\n" +
+      "// after — wrap in unsafe {} to make the bypass explicit\n" +
+      "fn processData(buf: ArrayBuffer) uses { } -> any {\n" +
+      "  const { instance } = await unsafe \"loads WASM processor\" { WebAssembly.instantiate(buf, {}) }\n" +
+      "  return instance.exports.run()\n" +
+      "}",
+    example:
+      "// SYN032: WASM instantiation; capability surface of the module is opaque to botscript\n" +
+      "fn processData(buf: ArrayBuffer) uses { } -> any {\n" +
+      "  const { instance } = await WebAssembly.instantiate(buf, {})  // SYN032\n" +
+      "  return instance.exports.run()\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe {} so reviewers see the bypass\n" +
+      "fn processData(buf: ArrayBuffer) uses { } -> any {\n" +
+      "  const { instance } = await unsafe \"loads WASM processor\" { WebAssembly.instantiate(buf, {}) }\n" +
+      "  return instance.exports.run()\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

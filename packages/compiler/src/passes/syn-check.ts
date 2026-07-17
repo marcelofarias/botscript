@@ -182,6 +182,20 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN032  A `WebAssembly.instantiate(...)`, `WebAssembly.instantiateStreaming(...)`,
+ *           `WebAssembly.compile(...)`, `WebAssembly.compileStreaming(...)`,
+ *           `new WebAssembly.Module(...)`, or `new WebAssembly.Instance(...)` call was
+ *           detected in a fn body (?bs 0.7+). WebAssembly executes native compiled code at
+ *           runtime — the WASM binary's capability surface is opaque to botscript's static
+ *           analysis. Any net, fs, random, time, or process access inside the WASM module is
+ *           invisible to callers: no `uses {}`, `reads {}`, `writes {}`, or `throws {}`
+ *           declaration covers it. The fn's declared surface is a lie.
+ *           Detection: `WebAssembly` ident not preceded by `.`/`?.`, followed by `.`/`?.`,
+ *           member in `{instantiate, instantiateStreaming, compile, compileStreaming}` plus
+ *           a call `(`; OR `new WebAssembly` followed by `.` + `Module`/`Instance` + `(`.
+ *           Excluded: `obj.WebAssembly.*`, fn/function/function* declarations named
+ *           `WebAssembly`, bare `WebAssembly` reference without a member call.
+ *
  *   SYN025  A `requestAnimationFrame(cb)` call was detected in a fn body (?bs 0.7+).
  *           `requestAnimationFrame` schedules `cb` to run before the next browser repaint —
  *           after the current fn has returned. Any effects inside the callback are invisible to
@@ -273,6 +287,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn023 = getErrorCode("SYN023")!;
   const syn025 = getErrorCode("SYN025")!;
   const syn026 = getErrorCode("SYN026")!;
+  const syn032 = getErrorCode("SYN032")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1757,6 +1772,83 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: synRaf.rule,
             idiom: synRaf.idiom,
             rewrite: synRaf.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN032: WebAssembly.* call ───────────────────────────────────────
+        case "WebAssembly": {
+          // Exclude: `obj.WebAssembly.*` — WebAssembly preceded by `.` or `?.`
+          const prevIdx32 = prevSignificant(tokens, i - 1);
+          const prev32 = tokens[prevIdx32];
+          if (prev32 && ((prev32.kind === "punct" && prev32.text === ".") || prev32.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named WebAssembly
+          if (prev32 && prev32.kind === "keyword" && prev32.text === "fn") continue;
+          if (prev32 && prev32.kind === "ident" && prev32.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx32)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx32 = nextSignificant(tokens, i + 1);
+          const next32 = tokens[nextIdx32];
+          const isDot32 = next32 && next32.kind === "punct" && next32.text === ".";
+          const isOptChain32 = next32 && next32.kind === "questionDot";
+          if (!isDot32 && !isOptChain32) continue;
+
+          // Get the member name after `.`/`?.`
+          const memberIdx32 = nextSignificant(tokens, nextIdx32 + 1);
+          const memberTok32 = tokens[memberIdx32];
+          if (!memberTok32 || memberTok32.kind !== "ident") continue;
+
+          const WASM_CALL_MEMBERS = new Set(["instantiate", "instantiateStreaming", "compile", "compileStreaming"]);
+          const WASM_CTOR_MEMBERS = new Set(["Module", "Instance"]);
+
+          if (WASM_CALL_MEMBERS.has(memberTok32.text)) {
+            // Must be a call: member followed by `(` or `?.(`
+            let afterMemberIdx32 = nextSignificant(tokens, memberIdx32 + 1);
+            let afterMember32 = tokens[afterMemberIdx32];
+            if (afterMember32 && afterMember32.kind === "questionDot") {
+              afterMemberIdx32 = nextSignificant(tokens, afterMemberIdx32 + 1);
+              afterMember32 = tokens[afterMemberIdx32];
+            }
+            if (!afterMember32 || !(afterMember32.kind === "open" && afterMember32.text === "(")) continue;
+          } else if (WASM_CTOR_MEMBERS.has(memberTok32.text)) {
+            // Only fire for `new WebAssembly.Module/Instance(...)`, not type references.
+            // `new` must immediately precede `WebAssembly`.
+            if (!prev32 || !(prev32.kind === "ident" && prev32.text === "new")) continue;
+            // Must be a constructor call: member followed by `(`
+            let afterCtorIdx32 = nextSignificant(tokens, memberIdx32 + 1);
+            let afterCtor32 = tokens[afterCtorIdx32];
+            if (afterCtor32 && afterCtor32.kind === "questionDot") {
+              afterCtorIdx32 = nextSignificant(tokens, afterCtorIdx32 + 1);
+              afterCtor32 = tokens[afterCtorIdx32];
+            }
+            if (!afterCtor32 || !(afterCtor32.kind === "open" && afterCtor32.text === "(")) continue;
+          } else {
+            continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep32 = isOptChain32 ? "?." : ".";
+          const loc32 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN032",
+            severity: "warning",
+            file: null,
+            line: loc32.line,
+            column: loc32.column,
+            start: tok.start,
+            end: memberTok32.end,
+            message:
+              `fn '${decl.name}' calls WebAssembly${sep32}${memberTok32.text}() — ` +
+              `WebAssembly executes native compiled code whose capability surface is opaque to botscript; ` +
+              `any net, fs, random, time, or process access inside the WASM module is invisible to callers; ` +
+              `use stdlib capabilities instead, or wrap in unsafe "loads WebAssembly for <reason>" { WebAssembly.${memberTok32.text}(...) }`,
+            rule: syn032.rule,
+            idiom: syn032.idiom,
+            rewrite: syn032.rewrite,
           });
           break;
         }
