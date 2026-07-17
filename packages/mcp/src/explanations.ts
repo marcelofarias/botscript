@@ -1444,12 +1444,12 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "**Fix (preferred):** extract the deferred work into a separate fn the caller can schedule:\n\n" +
       "```\n" +
       "// SYN026 — before\n" +
-      "fn deferCleanup() uses { fs } -> void {\n" +
-      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
+      "fn deferFlush(data: string) uses { net } -> void {\n" +
+      "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))  // SYN026\n" +
       "}\n\n" +
       "// after — extract the work; caller controls scheduling\n" +
-      "fn cleanup() uses { fs } -> void {\n" +
-      "  fs.delete(\"/tmp/cache\")\n" +
+      "fn flush(data: string) uses { net } -> void {\n" +
+      "  http.post(\"/analytics\", { body: data })\n" +
       "}\n" +
       "```\n\n" +
       "**Fix (escape hatch):** if idle-period scheduling is required at this layer:\n" +
@@ -1459,13 +1459,13 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     example: {
       fails:
         "?bs 0.7\n" +
-        "fn deferCleanup() uses { fs } -> void {\n" +
-        "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))\n" +
+        "fn deferFlush(data: string) uses { net } -> void {\n" +
+        "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))\n" +
         "}\n",
       passes:
         "?bs 0.7\n" +
-        "fn cleanup() uses { fs } -> void {\n" +
-        "  fs.delete(\"/tmp/cache\")\n" +
+        "fn flush(data: string) uses { net } -> void {\n" +
+        "  http.post(\"/analytics\", { body: data })\n" +
         "}\n",
     },
   },

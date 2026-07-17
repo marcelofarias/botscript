@@ -1,18 +1,34 @@
 ?bs 0.7
 
-// SYN025/SYN026 — safe scheduling pattern
+// SYN025/SYN026 — scheduling bypass examples.
 // requestAnimationFrame and requestIdleCallback schedule callbacks outside
-// the capability surface. The fix: extract the side-effectful work into
-// a separately declared fn, then let the caller decide when to schedule it.
+// the capability surface, making effects invisible to callers.
 
-// Safe: the work fn is declared separately, no implicit scheduling
-fn applyFrame(el: any, opacity: number) -> void {
-  el.style.opacity = opacity
+// ── What fires SYN025 ──────────────────────────────────────────────────────
+// fn scheduleRender(frame: number) uses { net } -> void {
+//   requestAnimationFrame(() => http.get("/render/" + frame))  // SYN025
+// }
+
+// ── Fix: extract the work; caller decides when to schedule it ──────────────
+fn render(frame: number) uses { net } -> void {
+  http.get("/render/" + frame)
 }
 
-// Safe: cleanup work extracted and callable directly or via requestIdleCallback
-fn clearStaleCache(cache: Map<string, any>) -> void {
-  cache.clear()
+// ── What fires SYN026 ──────────────────────────────────────────────────────
+// fn deferFlush(data: string) uses { net } -> void {
+//   requestIdleCallback(() => http.post("/analytics", { body: data }))  // SYN026
+// }
+
+// ── Fix: extract the work; caller decides when to schedule it ──────────────
+fn flush(data: string) uses { net } -> void {
+  http.post("/analytics", { body: data })
 }
 
-export { applyFrame, clearStaleCache };
+// ── Unsafe escape hatch when direct scheduling is required ─────────────────
+fn scheduleRenderDirect(cb: () -> void) -> void {
+  unsafe "schedules animation frame for render pipeline" {
+    requestAnimationFrame(cb)
+  }
+}
+
+export { render, flush, scheduleRenderDirect };

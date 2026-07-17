@@ -1126,21 +1126,21 @@ const E: Record<string, ErrorCodeEntry> = {
       "`unsafe \"schedules idle callback\" { requestIdleCallback(cb) }` when direct use is required",
     rewrite:
       "// before — idle callback hides side effects from callers\n" +
-      "fn deferCleanup() uses { fs } -> void {\n" +
-      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
+      "fn deferFlush(data: string) uses { net } -> void {\n" +
+      "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))  // SYN026\n" +
       "}\n\n" +
       "// after — extract the work into a separate fn; caller decides when to schedule it\n" +
-      "fn cleanup() uses { fs } -> void {\n" +
-      "  fs.delete(\"/tmp/cache\")\n" +
+      "fn flush(data: string) uses { net } -> void {\n" +
+      "  http.post(\"/analytics\", { body: data })\n" +
       "}",
     example:
-      "// SYN026: idle callback hides a filesystem effect from callers\n" +
-      "fn deferCleanup() uses { fs } -> void {\n" +
-      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
+      "// SYN026: idle callback hides a network effect from callers\n" +
+      "fn deferFlush(data: string) uses { net } -> void {\n" +
+      "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))  // SYN026\n" +
       "}\n\n" +
       "// fix: extract the work into a separate fn\n" +
-      "fn cleanup() uses { fs } -> void {\n" +
-      "  fs.delete(\"/tmp/cache\")\n" +
+      "fn flush(data: string) uses { net } -> void {\n" +
+      "  http.post(\"/analytics\", { body: data })\n" +
       "}",
   },
   DEP001: {
