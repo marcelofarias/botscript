@@ -1386,6 +1386,54 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN033: {
+    code: "SYN033",
+    title: "import.meta.env access hides a deployment dependency",
+    body:
+      "SYN033 fires when a fn body accesses `import.meta.env.*` in `?bs 0.7+`. " +
+      "`import.meta.env` is the standard pattern for reading build-time environment variables " +
+      "injected by Vite, Vitest, esbuild, and similar bundlers — the browser-targeted and " +
+      "isomorphic equivalent of Node.js's `process.env` (SYN005).\n\n" +
+      "**Why it matters:** Both `import.meta.env.X` and `process.env.X` have the same " +
+      "structural problem: the fn silently depends on a deployment configuration value that " +
+      "callers cannot see, cannot pass, and cannot override in tests. Any unit test calling " +
+      "the fn must also have the correct build-time environment set up, making the dependency " +
+      "invisible and the fn harder to isolate. Unlike `process.env`, which is a runtime global, " +
+      "`import.meta.env` is typically inlined at build time — the value is baked into the " +
+      "bundle, which means mismatches between dev and production builds are harder to catch.\n\n" +
+      "**Detected forms:** `import.meta.env` (any member access that follows — e.g. " +
+      "`import.meta.env.VITE_API_URL`, `import.meta.env.MODE`, `import.meta.env.DEV`). " +
+      "`import.meta.url`, `import.meta.resolve()`, `import.meta.hot`, and all other " +
+      "`import.meta.*` accesses that are NOT `import.meta.env` are excluded. " +
+      "`unsafe {}` blocks and `unsafe \"reason\" fn` bodies are suppressed.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN033 — before\n" +
+      "fn getApiUrl() -> string {\n" +
+      "  return import.meta.env.VITE_API_URL  // SYN033\n" +
+      "}\n\n" +
+      "// fix — caller controls the value; tests can inject\n" +
+      "fn getApiUrl(baseUrl: string) -> string {\n" +
+      "  return baseUrl\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the direct access is intentional at a module entry point:\n" +
+      "`unsafe \"reads build-time env\" { import.meta.env.API_KEY }`\n\n" +
+      "SYN033 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getApiUrl() -> string {\n" +
+        "  return import.meta.env.VITE_API_URL\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getApiUrl(baseUrl: string) -> string {\n" +
+        "  return baseUrl\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
