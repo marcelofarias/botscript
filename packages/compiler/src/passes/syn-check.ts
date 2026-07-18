@@ -193,8 +193,9 @@
  *           origin without any declared capability.
  *           Excluded: member calls on non-ambient handles (`worker.postMessage`,
  *           `iframe.contentWindow.postMessage`) — these operate on an already-declared handle.
- *           `fn`/`function`/`function*` declarations named `postMessage` and method shorthands
- *           are also excluded.
+ *           `fn`/`function`/`function*` declarations named `postMessage`, object/class method
+ *           shorthands, and TypeScript method signatures in type/interface bodies are also excluded.
+ *           The `:` exclusion is guarded against ternary consequents.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
@@ -1710,6 +1711,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // `self.postMessage(...)` — these are still ambient globals, just written explicitly.
           let ambientReceiver27: string | null = null;
           let ambientDot27: string | null = null;
+          let tokenBeforeGlobal27: (typeof tokens)[number] | null = null;
           if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot")) {
             const prevPrevIdx27 = prevSignificant(tokens, prevIdx27 - 1);
             const prevPrev27 = tokens[prevPrevIdx27];
@@ -1726,6 +1728,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             // Fall through: `window.postMessage(...)` — treat as ambient, track receiver for message
             ambientReceiver27 = prevPrev27!.text;
             ambientDot27 = prev27.kind === "questionDot" ? "?." : ".";
+            // Capture the token before the ambient global for ternary-consequent guard below
+            // (`cond ? window.postMessage(data) : other` — `?` is before `window`, not before `postMessage`)
+            const pbbIdx27 = prevSignificant(tokens, prevPrevIdx27 - 1);
+            tokenBeforeGlobal27 = tokens[pbbIdx27] ?? null;
           }
 
           // Exclude: fn/function/function* declarations named postMessage
@@ -1744,12 +1750,20 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           }
           if (!afterTok27 || !(afterTok27.kind === "open" && afterTok27.text === "(")) continue;
 
-          // Exclude object method shorthands: `{ postMessage(data) { ... } }`
-          // Do NOT exclude on `:` — that would create false negatives for ternary consequents
-          // like `cond ? postMessage(data, origin) : other` where `:` is the ternary separator.
+          // Exclude object method shorthands, arrow methods, and TypeScript method signatures.
+          // Guard `:` against ternary consequents: `cond ? postMessage(data, origin) : other`
+          // and ambient-global forms: `cond ? window.postMessage(data) : other` — in those cases
+          // the `?` precedes the ambient global, not `postMessage` itself.
+          const isTernaryConsequent27 =
+            (prev27 !== undefined && prev27 !== null && prev27.kind === "question") ||
+            (tokenBeforeGlobal27 !== null && tokenBeforeGlobal27.kind === "question");
           if (afterTok27.matchedAt !== undefined) {
             const afterParen27 = tokens[nextSignificant(tokens, afterTok27.matchedAt + 1)];
-            if (afterParen27 && afterParen27.kind === "open" && afterParen27.text === "{") continue;
+            if (afterParen27 && (
+              (afterParen27.kind === "open" && afterParen27.text === "{") ||
+              afterParen27.kind === "fatArrow" ||
+              (!isTernaryConsequent27 && afterParen27.kind === "punct" && afterParen27.text === ":")
+            )) continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;

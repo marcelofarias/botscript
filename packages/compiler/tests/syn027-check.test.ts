@@ -226,4 +226,39 @@ describe("SYN027: bare postMessage() cross-origin messaging detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
   });
+
+  it("does NOT fire on TypeScript type alias method signature inside fn body", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setupHandler() -> void {\n" +
+      "  type Messenger = {\n" +
+      "    postMessage(data: object, origin: string): void\n" +
+      "  }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(false);
+  });
+
+  it("does NOT fire on TypeScript type method signature when not the first property", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn setupHandler() -> void {\n" +
+      "  type Messenger = {\n" +
+      "    send(data: object): void\n" +
+      "    postMessage(data: object, origin: string): void\n" +
+      "  }\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(false);
+  });
+
+  it("fires on window.postMessage() in ternary consequent — ambient form not suppressed", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn maybeNotify(send: boolean, data: object) -> void {\n" +
+      "  send ? window.postMessage(data, \"https://parent.example.com\") : null\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
 });
