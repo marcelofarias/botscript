@@ -182,6 +182,22 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN027  A bare `postMessage(data, origin)`, `window.postMessage(...)`,
+ *           `globalThis.postMessage(...)`, or `self.postMessage(...)` call was detected in a
+ *           fn body (?bs 0.7+). These are all ambient-global spellings that send structured
+ *           data to another browsing context — a cross-origin communication dependency
+ *           invisible to botscript's capability model: no `uses { net }`, `writes {}`, or
+ *           `reads {}` declaration covers it.
+ *           In bot/agent contexts this is a known prompt-injection exfiltration vector:
+ *           injected content can call `postMessage` to leak data to an attacker-controlled
+ *           origin without any declared capability.
+ *           Excluded: member calls on non-ambient handles (`worker.postMessage`,
+ *           `iframe.contentWindow.postMessage`) — these operate on an already-declared handle.
+ *           `fn`/`function`/`function*` declarations named `postMessage`, object/class method
+ *           shorthands, and TypeScript method signatures in type/interface bodies are also excluded.
+ *           The `:` exclusion is guarded against ternary consequents.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -229,6 +245,7 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
 ]);
+const AMBIENT_GLOBALS_27 = new Set(["window", "globalThis", "self"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -255,6 +272,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn027 = getErrorCode("SYN027")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1697,99 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN027: bare postMessage() / window.postMessage() / globalThis.postMessage() ──
+        case "postMessage": {
+          const prevIdx27 = prevSignificant(tokens, i - 1);
+          const prev27 = tokens[prevIdx27];
+
+          // Exclude non-ambient member calls: `worker.postMessage(...)`, `iframe.contentWindow.postMessage(...)`.
+          // But include ambient-global spellings: `window.postMessage(...)`, `globalThis.postMessage(...)`,
+          // `self.postMessage(...)` — these are still ambient globals, just written explicitly.
+          let ambientReceiver27: string | null = null;
+          let ambientDot27: string | null = null;
+          let tokenBeforeGlobal27: (typeof tokens)[number] | null = null;
+          if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot")) {
+            const prevPrevIdx27 = prevSignificant(tokens, prevIdx27 - 1);
+            const prevPrev27 = tokens[prevPrevIdx27];
+            // Must be a bare ambient global (not itself a member access like `obj.window.postMessage`)
+            const isAmbient =
+              prevPrev27?.kind === "ident" &&
+              AMBIENT_GLOBALS_27.has(prevPrev27.text) &&
+              (() => {
+                const pppi = prevSignificant(tokens, prevPrevIdx27 - 1);
+                const ppp = tokens[pppi];
+                return !(ppp && ((ppp.kind === "punct" && ppp.text === ".") || ppp.kind === "questionDot"));
+              })();
+            if (!isAmbient) continue;
+            // Fall through: `window.postMessage(...)` — treat as ambient, track receiver for message
+            ambientReceiver27 = prevPrev27!.text;
+            ambientDot27 = prev27.kind === "questionDot" ? "?." : ".";
+            // Capture the token before the ambient global for ternary-consequent guard below
+            // (`cond ? window.postMessage(data) : other` — `?` is before `window`, not before `postMessage`)
+            const pbbIdx27 = prevSignificant(tokens, prevPrevIdx27 - 1);
+            tokenBeforeGlobal27 = tokens[pbbIdx27] ?? null;
+          }
+
+          // Exclude: fn/function/function* declarations named postMessage
+          if (prev27 && prev27.kind === "ident" && prev27.text === "function") continue;
+          if (prev27 && prev27.kind === "keyword" && prev27.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx27)) continue;
+
+          // Must be followed by `(` or `?.(` — confirming this is a call.
+          let afterIdx27 = nextSignificant(tokens, i + 1);
+          let afterTok27 = tokens[afterIdx27];
+          let isOpt27 = false;
+          if (afterTok27 && afterTok27.kind === "questionDot") {
+            isOpt27 = true;
+            afterIdx27 = nextSignificant(tokens, afterIdx27 + 1);
+            afterTok27 = tokens[afterIdx27];
+          }
+          if (!afterTok27 || !(afterTok27.kind === "open" && afterTok27.text === "(")) continue;
+
+          // Exclude object method shorthands, arrow methods, and TypeScript method signatures.
+          // Guard `:` against ternary consequents: `cond ? postMessage(data, origin) : other`
+          // and ambient-global forms: `cond ? window.postMessage(data) : other` — in those cases
+          // the `?` precedes the ambient global, not `postMessage` itself.
+          const isTernaryConsequent27 =
+            (prev27 !== undefined && prev27 !== null && prev27.kind === "question") ||
+            (tokenBeforeGlobal27 !== null && tokenBeforeGlobal27.kind === "question");
+          if (afterTok27.matchedAt !== undefined) {
+            const afterParen27 = tokens[nextSignificant(tokens, afterTok27.matchedAt + 1)];
+            if (afterParen27 && (
+              (afterParen27.kind === "open" && afterParen27.text === "{") ||
+              afterParen27.kind === "fatArrow" ||
+              (!isTernaryConsequent27 && afterParen27.kind === "punct" && afterParen27.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep27 = isOpt27 ? "?." : "";
+          // Build call site description: `window.postMessage()` or `postMessage()`
+          const callDesc27 = ambientReceiver27
+            ? `${ambientReceiver27}${ambientDot27}postMessage${callSep27}()`
+            : `postMessage${callSep27}()`;
+          const loc27 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN027",
+            severity: "warning",
+            file: null,
+            line: loc27.line,
+            column: loc27.column,
+            start: tok.start,
+            end: afterTok27.start + 1,
+            message:
+              `fn '${decl.name}' calls ${callDesc27} — ` +
+              `${callDesc27} sends data to another browsing context, invisible to the capability model; ` +
+              `pass the messaging function as a parameter so the dependency is declared in the fn header, ` +
+              `or wrap in unsafe "posts message for <reason>" { ${callDesc27.replace(/\(\)$/, "(data, origin)")} }`,
+            rule: syn027.rule,
+            idiom: syn027.idiom,
+            rewrite: syn027.rewrite,
           });
           break;
         }

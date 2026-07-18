@@ -1386,6 +1386,70 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN027: {
+    code: "SYN027",
+    title: "postMessage() cross-origin call (bare or via window/globalThis/self) bypasses the capability model",
+    body:
+      "SYN027 fires when a fn body contains a cross-origin `postMessage` call in `?bs 0.7+`. " +
+      "Detected forms: bare `postMessage(...)`, `postMessage?.(...)`; and the explicit ambient-global " +
+      "spellings `window.postMessage(...)`, `globalThis.postMessage(...)`, `self.postMessage(...)` " +
+      "(including optional-chain variants like `window?.postMessage(...)`).\n\n" +
+      "**Why it matters:** All of these are the same cross-origin communication surface — they " +
+      "send structured data to another browsing context (a different tab, iframe, or worker) at " +
+      "a specified origin. This dependency is completely invisible to botscript's capability " +
+      "model: no `uses { net }`, `writes {}`, or `reads {}` declaration covers it. A fn that " +
+      "calls any of these forms can exfiltrate data or trigger remote behavior in other browsing " +
+      "contexts, with nothing visible in the fn header.\n\n" +
+      "**Security angle:** In bot/agent contexts, `postMessage` (in any form) is a known " +
+      "prompt-injection exfiltration vector. Injected content in a page can call it to leak " +
+      "data to an attacker-controlled origin. Making this surface visible in code review is " +
+      "the point of the check.\n\n" +
+      "**Relation to SYN007/SYN014:** SYN007 catches `fetch()` (HTTP net bypass); " +
+      "SYN014 catches `BroadcastChannel` (same-origin broadcast bypass); SYN027 covers " +
+      "the missing entry — bare cross-origin messaging.\n\n" +
+      "**Excluded forms:**\n" +
+      "- Member calls on non-ambient handles (`worker.postMessage(data)`, " +
+      "  `iframe.contentWindow.postMessage(data, origin)`) — these operate on an already-declared handle.\n" +
+      "- `obj.window.postMessage(...)` where `window` is not itself a bare global.\n" +
+      "- `fn postMessage(...)` / `function postMessage(...)` / `function* postMessage(...)` declarations.\n" +
+      "- Object method shorthands `{ postMessage(data) { ... } }`.\n" +
+      "- Inside `unsafe { }` blocks and `unsafe \"reason\" fn` bodies.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN027 — before (any of these forms fires)\n" +
+      "fn notifyParent(userId: string) -> void {\n" +
+      "  postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "  // also detected: window.postMessage(...), globalThis.postMessage(...), self.postMessage(...)\n" +
+      "}\n\n" +
+      "// fix — pass the messaging function as a parameter\n" +
+      "fn notifyParent(\n" +
+      "  post: (msg: object, origin: string) -> void,\n" +
+      "  userId: string,\n" +
+      ") -> void {\n" +
+      "  post({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct cross-origin messaging is required:\n" +
+      "`unsafe \"posts user-ready event to parent frame\" { postMessage(data, origin) }`\n\n" +
+      "SYN027 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn notifyParent(userId: string) -> void {\n" +
+        "  window.postMessage({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "// pass the messaging function as a parameter\n" +
+        "fn notifyParent(\n" +
+        "  post: (msg: object, origin: string) -> void,\n" +
+        "  userId: string,\n" +
+        ") -> void {\n" +
+        "  post({ type: \"user-ready\", id: userId }, \"https://parent.example.com\")\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
