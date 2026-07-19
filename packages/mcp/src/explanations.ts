@@ -1411,7 +1411,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "}\n" +
       "```\n\n" +
       "**Fix (escape hatch):** if animation frame scheduling is required at this layer:\n" +
-      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(cb) }`\n\n" +
+      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(callback) }`\n\n" +
       "SYN025 fires at `?bs 0.7+` as a non-blocking warning. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {
@@ -1453,7 +1453,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "}\n" +
       "```\n\n" +
       "**Fix (escape hatch):** if idle-period scheduling is required at this layer:\n" +
-      "`unsafe \"schedules idle callback\" { requestIdleCallback(cb) }`\n\n" +
+      "`unsafe \"schedules idle callback\" { requestIdleCallback(callback) }`\n\n" +
       "SYN026 fires at `?bs 0.7+` as a non-blocking warning. " +
       "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
     example: {

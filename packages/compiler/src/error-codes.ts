@@ -1094,7 +1094,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "The fn appears to return nothing; the real work happens asynchronously in a future animation frame.",
     idiom:
       "extract the deferred work into a separate fn the caller can pass to requestAnimationFrame, or wrap in " +
-      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(cb) }` when direct use is required",
+      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(callback) }` when direct use is required",
     rewrite:
       "// before — animation frame callback hides side effects from callers\n" +
       "fn scheduleRender(frame: number) uses { net } -> void {\n" +
@@ -1123,7 +1123,7 @@ const E: Record<string, ErrorCodeEntry> = {
       "The fn appears to return nothing; the real work happens asynchronously when the browser is idle.",
     idiom:
       "extract the deferred work into a separately declared fn the caller passes to `requestIdleCallback`, or wrap in " +
-      "`unsafe \"schedules idle callback\" { requestIdleCallback(cb) }` when direct use is required",
+      "`unsafe \"schedules idle callback\" { requestIdleCallback(callback) }` when direct use is required",
     rewrite:
       "// before — idle callback hides side effects from callers\n" +
       "fn deferFlush(data: string) uses { net } -> void {\n" +
