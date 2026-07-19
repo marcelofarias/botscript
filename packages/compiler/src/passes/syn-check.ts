@@ -147,6 +147,16 @@
  *           `fn`/`function` declarations named `crypto` and non-randomness members are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN020  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body
+ *           (?bs 0.7+). `localStorage` and `sessionStorage` are synchronous same-origin
+ *           storage globals invisible to botscript's capability model: `reads {}` / `writes {}`
+ *           labels cover declared resource identifiers, not the Web Storage API globals.
+ *           A fn that accesses either global has undeclared persistent state dependencies —
+ *           callers cannot observe or audit the dependency from the fn's declared surface.
+ *           Detection: identifier not preceded by `.`/`?.`, followed by `.` or `?.`.
+ *           `fn`/`function` declarations named `localStorage`/`sessionStorage` are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
  *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
  *           `process.hrtime`, `process.uptime`, `process.memoryUsage`,
@@ -253,6 +263,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn017 = getErrorCode("SYN017")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn019 = getErrorCode("SYN019")!;
+  const syn020 = getErrorCode("SYN020")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
 
@@ -1291,6 +1302,52 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn014.rule,
             idiom: syn014.idiom,
             rewrite: syn014.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN020: localStorage.* / sessionStorage.* access ────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          // Exclude: `obj.localStorage.*` — preceded by `.` or `?.`
+          const prevIdx20 = prevSignificant(tokens, i - 1);
+          const prev20 = tokens[prevIdx20];
+          if (prev20 && ((prev20.kind === "punct" && prev20.text === ".") || prev20.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named localStorage/sessionStorage
+          if (prev20 && prev20.kind === "keyword" && prev20.text === "fn") continue;
+          if (prev20 && prev20.kind === "ident" && prev20.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx20)) continue;
+
+          // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
+          const nextIdx20 = nextSignificant(tokens, i + 1);
+          const next20 = tokens[nextIdx20];
+          const isDot20 = next20 && next20.kind === "punct" && next20.text === ".";
+          const isOptChain20 = next20 && next20.kind === "questionDot";
+          if (!isDot20 && !isOptChain20) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep20 = isOptChain20 ? "?." : ".";
+          const globalName20 = tok.text;
+          const loc20 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN020",
+            severity: "warning",
+            file: null,
+            line: loc20.line,
+            column: loc20.column,
+            start: tok.start,
+            end: next20!.end,
+            message:
+              `fn '${decl.name}' accesses ${globalName20}${sep20} — ` +
+              `${globalName20} is synchronous same-origin storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a storage abstraction as a parameter or wrap in unsafe "accesses ${globalName20} for <reason>" { ${globalName20}.getItem(key) }`,
+            rule: syn020.rule,
+            idiom: syn020.idiom,
+            rewrite: syn020.rewrite,
           });
           break;
         }

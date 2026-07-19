@@ -1014,6 +1014,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return random.int(1, 7)\n" +
       "}",
   },
+  SYN020: {
+    code: "SYN020",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    rule:
+      "`localStorage.*` and `sessionStorage.*` accesses are synchronous same-origin storage operations invisible to " +
+      "botscript's capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
+      "Web Storage API globals. A fn that reads from or writes to `localStorage` or `sessionStorage` has undeclared " +
+      "persistent state dependencies — no `reads {}` / `writes {}` declaration in the fn header covers the access, " +
+      "and callers cannot observe or audit the dependency from the fn's declared surface.",
+    idiom:
+      "pass an explicit storage abstraction or key/value pair as a fn parameter so callers control what is stored, " +
+      "the dependency is visible in the fn signature, and tests can inject a mock; " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes localStorage for <reason>\" { localStorage.getItem(key) }`",
+    rewrite:
+      "// before — localStorage access invisible to the capability model\n" +
+      "fn getToken() -> string | null {\n" +
+      "  return localStorage.getItem('auth-token')  // SYN020\n" +
+      "}\n\n" +
+      "// after — storage abstraction passed as parameter; dependency visible in the signature\n" +
+      "fn getToken(storage: Pick<Storage, 'getItem'>) -> string | null {\n" +
+      "  return storage.getItem('auth-token')\n" +
+      "}",
+    example:
+      "// SYN020 fires — localStorage.setItem bypasses storage capability model\n" +
+      "fn cacheUser(id: string, name: string) -> void {\n" +
+      "  localStorage.setItem(`user:${id}`, name)  // SYN020\n" +
+      "}\n\n" +
+      "// fix — pass storage as a parameter\n" +
+      "fn cacheUser(storage: Pick<Storage, 'setItem'>, id: string, name: string) -> void {\n" +
+      "  storage.setItem(`user:${id}`, name)\n" +
+      "}",
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
