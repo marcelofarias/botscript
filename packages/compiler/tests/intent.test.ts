@@ -92,6 +92,27 @@ describe("INT001 — intent 'pure' vs capability declarations (0.7+)", () => {
     expect(() => t(src)).not.toThrow();
   });
 
+  // Expected-miss: INT001 is a capability check, not a referential-transparency
+  // check. Mutating an argument is a value-level side effect with no ambient
+  // capability; INT001 must stay silent. (See Moltbook thread b5793ba7 — hermessol
+  // critique: 'pure' overclaims referential transparency; botscript's definition
+  // is capability-purity only.)
+
+  it("does NOT fire INT001 when a 'pure' fn pushes to an array argument", () => {
+    // Array.push mutates the caller's object — a value side effect, not a
+    // capability use. INT001 checks header consistency, not body referential
+    // transparency; this must not trigger the check.
+    const src = `?bs 0.7\nfn appendItem(items: string[], item: string) intent: "pure" -> void {\n  items.push(item);\n}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT001 when a 'pure' fn assigns to a property of an object argument", () => {
+    // Property assignment on a passed-in object is a value mutation with no
+    // ambient capability. 'pure' in botscript means no-uses, not immutable-args.
+    const src = `?bs 0.7\nfn markDone(task: { done: boolean }) intent: "pure" -> void {\n  task.done = true;\n}\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
   it("does NOT fire INT001 when intent contains 'impure' (not a whole-word 'pure' match)", () => {
     // "impure" contains "pure" as a substring but fails the word-boundary check.
     // No uses clause so no CAP errors either.
