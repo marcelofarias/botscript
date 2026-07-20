@@ -242,8 +242,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const open: typeof inner = [];
     let nextInner = 0;
 
-    // Lazily computed on first localStorage/sessionStorage hit to avoid scanning
-    // every fn body unconditionally — see case "localStorage"/"sessionStorage" below.
+    // Lazily computed on first localStorage/sessionStorage hit to avoid parsing
+    // parameter names for every fn body unconditionally — see case "localStorage"/"sessionStorage" below.
     let localBindings: Set<string> | null = null;
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
