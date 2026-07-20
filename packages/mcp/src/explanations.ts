@@ -1386,6 +1386,49 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN034: {
+    code: "SYN034",
+    title: "new MessageChannel() / MessageChannel() call bypasses the messaging capability model",
+    body:
+      "SYN034 fires when a fn body constructs a `MessageChannel` via `new MessageChannel()` or " +
+      "bare `MessageChannel()`. This is the same class of capability-surface bypass as " +
+      "`new BroadcastChannel()` (SYN014), but with a wider blast radius.\n\n" +
+      "**Why it matters:** `MessageChannel` creates two linked `MessagePort` objects — `port1` " +
+      "and `port2`. Either port can be transferred via `postMessage(msg, [port])` to a worker, " +
+      "iframe, service worker, or any other browsing context — including cross-origin ones. " +
+      "Once transferred, the port holder can send and receive arbitrary messages with no further " +
+      "restrictions or audit surface. Unlike `BroadcastChannel`, which is scoped to a named " +
+      "same-origin channel, `MessageChannel` ports can cross origin boundaries when passed " +
+      "through a trusted relay. A fn that constructs a `MessageChannel` has an undeclared, " +
+      "potentially cross-origin communication dependency invisible to the capability model.\n\n" +
+      "**Detection:** the check looks for a `MessageChannel` ident token not preceded by " +
+      "`.`/`?.` (property access exclusion), followed by `(` or `?.(`. " +
+      "Object/class method shorthands, TypeScript method signatures, and " +
+      "`fn`/`function`/`function*` declarations named `MessageChannel` are excluded. " +
+      "The `:` check for method signatures is guarded against ternary consequents.\n\n" +
+      "**Fix:** wrap in `unsafe \"<reason>\" { new MessageChannel() }` to document " +
+      "the escape hatch in the diff. The reason should describe what the channel is for " +
+      "and why the cross-context communication surface is acceptable " +
+      "(e.g. 'creates MessageChannel for worker bridge').\n\n" +
+      "SYN034 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn bridgeWorker(w: Worker) -> MessagePort {\n" +
+        "  const ch = new MessageChannel()\n" +
+        "  w.postMessage('port', [ch.port2])\n" +
+        "  return ch.port1\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn bridgeWorker(w: Worker) -> MessagePort {\n" +
+        "  const ch = unsafe \"creates MessageChannel for worker bridge\" { new MessageChannel() }\n" +
+        "  w.postMessage('port', [ch.port2])\n" +
+        "  return ch.port1\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

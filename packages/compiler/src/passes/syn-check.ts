@@ -182,6 +182,18 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN034  A `new MessageChannel()` / `MessageChannel()` call was detected in a fn body
+ *           (?bs 0.7+). `MessageChannel` creates a pair of `MessagePort` objects — `port1`
+ *           and `port2` — that can be transferred to any worker, iframe, or service worker
+ *           via `postMessage(msg, [port])`, enabling cross-context, cross-origin, and
+ *           cross-process communication invisible to botscript's capability model. Unlike
+ *           `BroadcastChannel` (same-origin named bus, SYN014), transferred `MessagePort`
+ *           objects can cross origins and be handed to arbitrary contexts.
+ *           Excluded: `obj.MessageChannel(...)` (member on a local binding),
+ *           `function`/`fn`/`function*` declarations named `MessageChannel`, object/class
+ *           method shorthands, TypeScript method signatures.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +267,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn034 = getErrorCode("SYN034")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1692,76 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN034: new MessageChannel() / MessageChannel() call ─────────────
+        case "MessageChannel": {
+          // Exclude: `obj.MessageChannel(...)` — preceded by `.` or `?.`
+          const prevIdx34 = prevSignificant(tokens, i - 1);
+          const prev34 = tokens[prevIdx34];
+          if (prev34 && ((prev34.kind === "punct" && prev34.text === ".") || prev34.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named MessageChannel
+          if (prev34 && prev34.kind === "ident" && prev34.text === "function") continue;
+          if (prev34 && prev34.kind === "keyword" && prev34.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx34)) continue;
+
+          const hasNew34 = prev34 && prev34.kind === "ident" && prev34.text === "new";
+          const prevBeforeNew34 = hasNew34
+            ? tokens[prevSignificant(tokens, prevIdx34 - 1)]
+            : undefined;
+          const isTernaryConsequent34 =
+            (prev34 !== undefined && prev34 !== null && prev34.kind === "question") ||
+            (prevBeforeNew34 !== undefined && prevBeforeNew34 !== null && prevBeforeNew34.kind === "question");
+
+          const nextIdx34 = nextSignificant(tokens, i + 1);
+          const next34 = tokens[nextIdx34];
+
+          let isOpt34 = false;
+          let callIdx34 = nextIdx34;
+
+          if (next34 && next34.kind === "questionDot") {
+            isOpt34 = true;
+            callIdx34 = nextSignificant(tokens, nextIdx34 + 1);
+          }
+
+          const callTok34 = tokens[callIdx34];
+          if (!callTok34 || !(callTok34.kind === "open" && callTok34.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures
+          if (callTok34.matchedAt !== undefined) {
+            const afterCloseIdx34 = nextSignificant(tokens, callTok34.matchedAt + 1);
+            const afterClose34 = tokens[afterCloseIdx34];
+            if (afterClose34 && (
+              (afterClose34.kind === "open" && afterClose34.text === "{") ||
+              afterClose34.kind === "fatArrow" ||
+              (!isTernaryConsequent34 && afterClose34.kind === "punct" && afterClose34.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep34 = isOpt34 ? "?." : "";
+          const warnStart34 = hasNew34 ? prev34!.start : tok.start;
+          const loc34 = locationOf(src, warnStart34);
+          warnings.push({
+            code: "SYN034",
+            severity: "warning",
+            file: null,
+            line: loc34.line,
+            column: loc34.column,
+            start: warnStart34,
+            end: callTok34.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew34 ? "constructs new " : "calls "}MessageChannel${callSep34}() — ` +
+              `MessageChannel creates a pair of transferable MessagePort objects that can cross origin and process boundaries, ` +
+              `invisible to the capability model; wrap in unsafe "<reason>" { ${hasNew34 ? "new " : ""}MessageChannel${callSep34}() }`,
+            rule: syn034.rule,
+            idiom: syn034.idiom,
+            rewrite: syn034.rewrite,
           });
           break;
         }

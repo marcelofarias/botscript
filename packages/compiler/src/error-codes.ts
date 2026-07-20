@@ -1085,6 +1085,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN034: {
+    code: "SYN034",
+    title: "new MessageChannel() / MessageChannel() call bypasses the messaging capability model",
+    rule:
+      "`new MessageChannel()` creates a pair of `MessagePort` objects — `port1` and `port2` — that " +
+      "can be transferred to any worker, iframe, or service worker via `postMessage(msg, [port])`. " +
+      "Once transferred, either end can receive and send messages across origin and process boundaries " +
+      "with no further restrictions. This is invisible to botscript's capability model: CAP001 checks " +
+      "for stdlib namespace calls, not the `MessageChannel` global. A fn that constructs a " +
+      "MessageChannel has an undeclared cross-context messaging dependency — no `uses {}` declaration " +
+      "covers it, and callers cannot audit the communication surface from the fn header.",
+    idiom:
+      "wrap the `MessageChannel` constructor in `unsafe \"<reason>\" { new MessageChannel() }` " +
+      "to make the escape hatch visible in the diff",
+    rewrite:
+      "// before — MessageChannel is invisible to the capability model\n" +
+      "fn openChannel() -> MessageChannel {\n" +
+      "  return new MessageChannel()  // SYN034\n" +
+      "}\n\n" +
+      "// after — escape hatch justified in the diff\n" +
+      "fn openChannel() -> MessageChannel {\n" +
+      "  return unsafe \"wraps MessageChannel for worker handoff\" { new MessageChannel() }\n" +
+      "}",
+    example:
+      "// SYN034: MessageChannel bypasses the messaging capability model\n" +
+      "fn bridgeWorker(w: Worker) -> MessagePort {\n" +
+      "  const ch = new MessageChannel()  // SYN034\n" +
+      "  w.postMessage('port', [ch.port2])\n" +
+      "  return ch.port1\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a justification\n" +
+      "fn bridgeWorker(w: Worker) -> MessagePort {\n" +
+      "  const ch = unsafe \"creates MessageChannel for worker bridge\" { new MessageChannel() }\n" +
+      "  w.postMessage('port', [ch.port2])\n" +
+      "  return ch.port1\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
