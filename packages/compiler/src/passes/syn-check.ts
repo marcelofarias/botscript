@@ -1753,7 +1753,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               `fn '${decl.name}' calls ${tok.text}() — ` +
               `${tok.text} schedules a callback that runs after the fn returns (${isRAF ? "before the next repaint" : "during a browser idle period"}); ` +
               `any effects inside that callback are invisible to callers and cannot be declared in the fn header; ` +
-              `wrap in unsafe "${isRAF ? "schedules animation frame callback" : "schedules idle callback"}" { ${tok.text}(callback) }`,
+              `wrap in unsafe "${isRAF ? "schedules animation frame callback" : "schedules idle callback"}" { ${tok.text}(...) }`,
             rule: synRaf.rule,
             idiom: synRaf.idiom,
             rewrite: synRaf.rewrite,

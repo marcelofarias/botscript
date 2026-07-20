@@ -4,20 +4,20 @@
 // requestAnimationFrame and requestIdleCallback schedule callbacks outside
 // the capability surface, making effects invisible to callers.
 
-// ── What fires SYN025 ──────────────────────────────────────────────────────
-// fn scheduleRender(frame: number) uses { net } -> void {
-//   requestAnimationFrame(() => http.get("/render/" + frame))  // SYN025
-// }
+// ── SYN025 fires here ─────────────────────────────────────────────────────
+fn scheduleRender(frame: number) uses { net } -> void {
+  requestAnimationFrame(() => http.get("/render/" + frame)) // SYN025
+}
 
 // ── Fix: extract the work; caller decides when to schedule it ──────────────
 fn render(frame: number) uses { net } -> void {
   http.get("/render/" + frame)
 }
 
-// ── What fires SYN026 ──────────────────────────────────────────────────────
-// fn deferFlush(data: string) uses { net } -> void {
-//   requestIdleCallback(() => http.post("/analytics", { body: data }))  // SYN026
-// }
+// ── SYN026 fires here ─────────────────────────────────────────────────────
+fn deferFlush(data: string) uses { net } -> void {
+  requestIdleCallback(() => http.post("/analytics", { body: data })) // SYN026
+}
 
 // ── Fix: extract the work; caller decides when to schedule it ──────────────
 fn flush(data: string) uses { net } -> void {
@@ -31,4 +31,4 @@ fn scheduleRenderDirect(cb: () -> void) -> void {
   }
 }
 
-export { render, flush, scheduleRenderDirect };
+export { scheduleRender, render, deferFlush, flush, scheduleRenderDirect };
