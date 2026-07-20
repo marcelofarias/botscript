@@ -1085,6 +1085,64 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN025: {
+    code: "SYN025",
+    title: "requestAnimationFrame schedules a callback outside the fn's capability surface",
+    rule:
+      "`requestAnimationFrame(cb)` schedules `cb` to run before the next browser repaint — after the current fn has returned. " +
+      "Any effects inside `cb` are invisible to callers: no capability declaration, no `writes {}` label, no `throws {}` entry reflects them. " +
+      "The fn appears to return nothing; the real work happens asynchronously in a future animation frame.",
+    idiom:
+      "extract the deferred work into a separate fn the caller can pass to requestAnimationFrame, or wrap in " +
+      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(callback) }` when direct use is required",
+    rewrite:
+      "// before — animation frame callback hides side effects from callers\n" +
+      "fn scheduleRender(frame: number) uses { net } -> void {\n" +
+      "  requestAnimationFrame(() => http.get(\"/render/\" + frame))  // SYN025\n" +
+      "}\n\n" +
+      "// after — extract the side-effectful work; let the caller schedule it\n" +
+      "fn render(frame: number) uses { net } -> void {\n" +
+      "  http.get(\"/render/\" + frame)\n" +
+      "}",
+    example:
+      "// SYN025: animation frame callback hides a network effect from callers\n" +
+      "fn scheduleRender(frame: number) uses { net } -> void {\n" +
+      "  requestAnimationFrame(() => http.get(\"/render/\" + frame))  // SYN025\n" +
+      "}\n\n" +
+      "// fix: extract the work into a separate fn\n" +
+      "fn render(frame: number) uses { net } -> void {\n" +
+      "  http.get(\"/render/\" + frame)\n" +
+      "}",
+  },
+  SYN026: {
+    code: "SYN026",
+    title: "requestIdleCallback schedules a callback outside the fn's capability surface",
+    rule:
+      "`requestIdleCallback(cb)` schedules `cb` to run during a browser idle period — after the current fn has returned. " +
+      "Any effects inside `cb` are invisible to callers: no capability declaration, no `writes {}` label, no `throws {}` entry reflects them. " +
+      "The fn appears to return nothing; the real work happens asynchronously when the browser is idle.",
+    idiom:
+      "extract the deferred work into a separately declared fn the caller passes to `requestIdleCallback`, or wrap in " +
+      "`unsafe \"schedules idle callback\" { requestIdleCallback(callback) }` when direct use is required",
+    rewrite:
+      "// before — idle callback hides side effects from callers\n" +
+      "fn deferFlush(data: string) uses { net } -> void {\n" +
+      "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))  // SYN026\n" +
+      "}\n\n" +
+      "// after — extract the work into a separate fn; caller decides when to schedule it\n" +
+      "fn flush(data: string) uses { net } -> void {\n" +
+      "  http.post(\"/analytics\", { body: data })\n" +
+      "}",
+    example:
+      "// SYN026: idle callback hides a network effect from callers\n" +
+      "fn deferFlush(data: string) uses { net } -> void {\n" +
+      "  requestIdleCallback(() => http.post(\"/analytics\", { body: data }))  // SYN026\n" +
+      "}\n\n" +
+      "// fix: extract the work into a separate fn\n" +
+      "fn flush(data: string) uses { net } -> void {\n" +
+      "  http.post(\"/analytics\", { body: data })\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

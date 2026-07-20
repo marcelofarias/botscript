@@ -1,0 +1,34 @@
+?bs 0.7
+
+// SYN025/SYN026 — scheduling bypass examples.
+// requestAnimationFrame and requestIdleCallback schedule callbacks outside
+// the capability surface, making effects invisible to callers.
+
+// ── SYN025 fires here ─────────────────────────────────────────────────────
+fn scheduleRender(frame: number) uses { net } -> void {
+  requestAnimationFrame(() => http.get("/render/" + frame)) // SYN025
+}
+
+// ── Fix: extract the work; caller decides when to schedule it ──────────────
+fn render(frame: number) uses { net } -> void {
+  http.get("/render/" + frame)
+}
+
+// ── SYN026 fires here ─────────────────────────────────────────────────────
+fn deferFlush(data: string) uses { net } -> void {
+  requestIdleCallback(() => http.post("/analytics", { body: data })) // SYN026
+}
+
+// ── Fix: extract the work; caller decides when to schedule it ──────────────
+fn flush(data: string) uses { net } -> void {
+  http.post("/analytics", { body: data })
+}
+
+// ── Unsafe escape hatch when direct scheduling is required ─────────────────
+fn scheduleRenderDirect(cb: () -> void) -> void {
+  unsafe "schedules animation frame for render pipeline" {
+    requestAnimationFrame(cb)
+  }
+}
+
+export { scheduleRender, render, deferFlush, flush, scheduleRenderDirect };
