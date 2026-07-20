@@ -229,6 +229,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS006: {
+    code: "UNS006",
+    title: "`// @ts-ignore` / `// @ts-expect-error` suppression comment bypasses type checking",
+    rule:
+      "`// @ts-ignore` and `// @ts-expect-error` are TypeScript-level escape hatches that silently suppress " +
+      "type errors on the following line — including errors the botscript compiler introduces during compilation. " +
+      "A model that cannot satisfy the type system will reach for these comments rather than fixing the " +
+      "underlying issue, defeating botscript's safety net without any visible trace in the fn header or diff.",
+    idiom:
+      "fix the underlying type error rather than suppressing it; if the suppression is genuinely necessary " +
+      "(e.g. a known TypeScript bug, a third-party type mismatch), wrap the offending statement in " +
+      "`unsafe \"<reason for suppressing TS error>\" { ... }` to make the escape hatch explicit and auditable",
+    rewrite:
+      "// before — @ts-ignore silently suppresses a type error\n" +
+      "fn cast(val: unknown) -> string {\n" +
+      "  // @ts-ignore\n" +
+      "  return val  // UNS006\n" +
+      "}\n\n" +
+      "// after — fix the underlying issue, or use unsafe with a reason\n" +
+      "fn cast(val: unknown) -> string {\n" +
+      "  unsafe \"val is always a string at this call site (validated by caller)\" { return val as string }\n" +
+      "}",
+    example:
+      "// UNS006: @ts-expect-error silences a type error without a written reason\n" +
+      "fn getCount(arr: string[]) -> number {\n" +
+      "  // @ts-expect-error\n" +
+      "  return arr.count  // UNS006\n" +
+      "}\n\n" +
+      "// fix: correct the property access; or use unsafe with a reason if arr is truly a non-standard shape\n" +
+      "fn getCount(arr: string[]) -> number {\n" +
+      "  return arr.length\n" +
+      "}",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

@@ -294,6 +294,40 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  UNS006: {
+    code: "UNS006",
+    title: "`@ts-ignore` / `@ts-expect-error` suppression comment bypasses type checking",
+    body:
+      "UNS006 fires when a `// @ts-ignore` or `// @ts-expect-error` pragma comment appears " +
+      "in a botscript source file. These are TypeScript-level escape hatches that silence type " +
+      "errors on the following line without any written reason or explicit escape annotation.\n\n" +
+      "**Why this matters:** A language model that cannot satisfy the type system will frequently " +
+      "reach for these comments rather than fixing the underlying problem. When botscript compiles " +
+      "to TypeScript and emits a type-annotated output, a `@ts-ignore` on a following line silently " +
+      "suppresses whatever TypeScript would have caught — including mismatches introduced by the " +
+      "compiler's own transforms. The safety net is defeated without a trace in the fn header or diff.\n\n" +
+      "**Suppression mechanisms:**\n\n" +
+      "There is no in-language suppression for UNS006. The intended fix paths are:\n\n" +
+      "1. **Fix the underlying type error** — the comment exists because the code is wrong. Fix it.\n\n" +
+      "2. **`unsafe` block** — if the suppression is genuinely necessary (e.g. a known TypeScript bug, " +
+      "a third-party type mismatch), wrap the offending statement in " +
+      "`unsafe \"<reason for suppressing TS error>\" { ... }`. The reason string becomes the review " +
+      "record and shows up in the diff; the suppressor's intent is visible to every reader.\n\n" +
+      "UNS006 is gated on `?bs 0.5`.",
+    example: {
+      fails:
+        "?bs 0.5\n" +
+        "fn cast(val: unknown) -> string {\n" +
+        "  // @ts-ignore\n" +
+        "  return val\n" +
+        "}\n",
+      passes:
+        "?bs 0.5\n" +
+        "fn cast(val: unknown) -> string {\n" +
+        "  unsafe \"val is always a string at this call site (validated by caller)\" { return val as string }\n" +
+        "}\n",
+    },
+  },
   INT001: {
     code: "INT001",
     title: "intent declares 'pure' but function has capability, resource, or throws declarations",

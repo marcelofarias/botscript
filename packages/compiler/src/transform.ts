@@ -24,6 +24,7 @@ import { passTaggedUnion } from "./passes/tagged-union.js";
 import { passTest } from "./passes/test.js";
 import { passTestMocks } from "./passes/test-mocks.js";
 import { passBareAs } from "./passes/bare-as.js";
+import { passTsSuppress } from "./passes/ts-suppress.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
 import { atLeast, passVersion, type VersionInfo } from "./passes/version.js";
@@ -117,6 +118,11 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // rewrites the source and erases unsafe keywords used as suppression markers.
   { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
+  // tsSuppress: fires UNS006 on @ts-ignore / @ts-expect-error pragma comments.
+  // These TypeScript suppression pragmas bypass type checking silently — a model
+  // reaching for them is suppressing an error rather than fixing it. Runs before
+  // bareAs so the comment scan sees the original unmodified source.
+  { name: "tsSuppress", fn: passTsSuppress, minVersion: "0.5" },
   // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
   // to build skip ranges) AND before testMocks (passTestMocks generates
   // `as const` in compiled output which is not a botscript bare-as cast).
