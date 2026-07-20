@@ -1562,8 +1562,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                   const openBraceIdx9 = closeBrace9.matchedAt;
                   const prevOpenIdx9 = prevSignificant(tokens, openBraceIdx9 - 1);
                   const prevOpen9 = tokens[prevOpenIdx9];
-                  const firstInsideIdx9 = nextSignificant(tokens, openBraceIdx9 + 1);
-                  if (firstInsideIdx9 === i && prevOpen9 && (
+                  if (prevOpen9 && (
                     prevOpen9.kind === "eq" ||
                     (prevOpen9.kind === "punct" && prevOpen9.text === ":")
                   )) continue;
