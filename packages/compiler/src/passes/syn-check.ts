@@ -182,6 +182,16 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN025  A `document.cookie` (or `document?.cookie`) access was detected in a fn body (?bs 0.7+).
+ *           `document.cookie` reads or writes the browser's ambient cookie store at runtime —
+ *           a shared mutable state invisible to botscript's capability model: no `uses {}`,
+ *           `reads {}`, or `writes {}` declaration covers cookie access. Cookie values cross
+ *           security boundaries (HttpOnly, SameSite, domain scope) making invisible access
+ *           especially hazardous in agent / bot contexts.
+ *           Detection: `document` not preceded by `.`/`?.`, followed by `.` or `?.`, then `cookie`.
+ *           `fn`/`function` declarations named `document` and `obj.document.cookie` are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +265,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn025 = getErrorCode("SYN025")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1690,56 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN025: document.cookie access ───────────────────────────────────
+        case "document": {
+          // Exclude: `obj.document.cookie` — document preceded by `.` or `?.`
+          const prevIdx25 = prevSignificant(tokens, i - 1);
+          const prev25 = tokens[prevIdx25];
+          if (prev25 && ((prev25.kind === "punct" && prev25.text === ".") || prev25.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named document
+          if (prev25 && prev25.kind === "keyword" && prev25.text === "fn") continue;
+          if (prev25 && prev25.kind === "ident" && prev25.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx25)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx25 = nextSignificant(tokens, i + 1);
+          const next25 = tokens[nextIdx25];
+          const isDot25 = next25 && next25.kind === "punct" && next25.text === ".";
+          const isOptChain25 = next25 && next25.kind === "questionDot";
+          if (!isDot25 && !isOptChain25) continue;
+
+          // Member must be `cookie`
+          const memberIdx25 = nextSignificant(tokens, nextIdx25 + 1);
+          const memberTok25 = tokens[memberIdx25];
+          if (!memberTok25 || memberTok25.kind !== "ident" || memberTok25.text !== "cookie") continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep25 = isOptChain25 ? "?." : ".";
+          const loc25 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN025",
+            severity: "warning",
+            file: null,
+            line: loc25.line,
+            column: loc25.column,
+            start: tok.start,
+            end: memberTok25.end,
+            message:
+              `fn '${decl.name}' accesses document${sep25}cookie — ` +
+              `document.cookie reads or writes the ambient browser cookie store invisible to the capability model; ` +
+              `no uses {} / reads {} / writes {} declaration covers it; ` +
+              `pass the cookie string as a parameter so callers can see the dependency and tests can inject a mock, ` +
+              `or wrap in unsafe "reads/writes cookie for <reason>" { document${sep25}cookie }`,
+            rule: syn025.rule,
+            idiom: syn025.idiom,
+            rewrite: syn025.rewrite,
           });
           break;
         }

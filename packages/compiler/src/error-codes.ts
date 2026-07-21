@@ -1085,6 +1085,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN025: {
+    code: "SYN025",
+    title: "document.cookie access bypasses the capability model",
+    rule:
+      "`document.cookie` reads or writes the browser's ambient cookie store at runtime but is " +
+      "invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` " +
+      "declaration covers cookie access. A fn that reads or writes `document.cookie` has an " +
+      "undeclared ambient state dependency — callers cannot see it in the header, and tests " +
+      "cannot inject or inspect cookie state without global mutation. Cookie values cross " +
+      "security boundaries (HttpOnly, SameSite, domain scope) making invisible access " +
+      "especially hazardous in agent / bot contexts.",
+    idiom:
+      "pass the required cookie value as an explicit parameter so callers and tests can control it; " +
+      "if a cookie abstraction must be used, accept a `CookieJar` or similar object as a parameter; " +
+      "if direct `document.cookie` access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes cookie for <reason>\" { document.cookie }`",
+    rewrite:
+      "// before — cookie access invisible to the capability model\n" +
+      "fn getSessionId() -> string {\n" +
+      "  const match = document.cookie.match(/sessionId=([^;]+)/)  // SYN025\n" +
+      "  return match?.[1] ?? ''\n" +
+      "}\n\n" +
+      "// after — session ID passed as a parameter; tests can control it\n" +
+      "fn getSessionId(cookieStr: string) -> string {\n" +
+      "  const match = cookieStr.match(/sessionId=([^;]+)/)\n" +
+      "  return match?.[1] ?? ''\n" +
+      "}",
+    example:
+      "// SYN025: document.cookie bypasses the capability model\n" +
+      "fn isLoggedIn() -> boolean {\n" +
+      "  return document.cookie.includes('auth=')  // SYN025\n" +
+      "}\n\n" +
+      "// fix: accept cookie string as a parameter\n" +
+      "fn isLoggedIn(cookieStr: string) -> boolean {\n" +
+      "  return cookieStr.includes('auth=')\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

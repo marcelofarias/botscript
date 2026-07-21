@@ -1386,6 +1386,53 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN025: {
+    code: "SYN025",
+    title: "document.cookie access bypasses the capability model",
+    body:
+      "SYN025 fires when a fn body accesses `document.cookie` or `document?.cookie` in `?bs 0.7+`.\n\n" +
+      "**Why it matters:** `document.cookie` is the browser's ambient key-value cookie store. " +
+      "Reading or writing it is entirely invisible to botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration covers cookie access. A fn that reads " +
+      "`document.cookie` has an undeclared ambient state dependency — callers cannot see it in " +
+      "the header, and tests cannot inject a controlled cookie string without mutating the global " +
+      "`document` object.\n\n" +
+      "Cookie access also crosses security boundaries. Cookies carry `HttpOnly`, `SameSite`, and " +
+      "domain-scope attributes that affect what can be read. An agent or bot reading " +
+      "`document.cookie` invisibly may expose session tokens, auth credentials, or tracking " +
+      "identifiers to callers who have no idea the function touches ambient browser state.\n\n" +
+      "**Detected forms:** `document.cookie` and `document?.cookie`. Member calls on local " +
+      "bindings (`obj.document.cookie`) and `fn document(...)` / `function document(...)` " +
+      "declarations are excluded. Only the `cookie` member is flagged — other `document.*` " +
+      "accesses are not covered by SYN025.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN025 — before\n" +
+      "fn isLoggedIn() -> boolean {\n" +
+      "  return document.cookie.includes('auth=')\n" +
+      "}\n\n" +
+      "// fix — cookie string passed as a parameter; tests can control it\n" +
+      "fn isLoggedIn(cookieStr: string) -> boolean {\n" +
+      "  return cookieStr.includes('auth=')\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if direct cookie access is genuinely required:\n" +
+      "`unsafe \"reads browser cookie for session check\" { document.cookie }`\n\n" +
+      "SYN025 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn isLoggedIn() -> boolean {\n" +
+        "  return document.cookie.includes('auth=')\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn isLoggedIn(cookieStr: string) -> boolean {\n" +
+        "  return cookieStr.includes('auth=')\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
