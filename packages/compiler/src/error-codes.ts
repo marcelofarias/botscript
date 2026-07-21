@@ -961,6 +961,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
       "}",
   },
+  SYN017: {
+    code: "SYN017",
+    title: "new Notification() / Notification() call bypasses the capability model",
+    rule:
+      "`new Notification(title)`, bare `Notification(title)`, optional-call `Notification?.(title)`, " +
+      "and TypeScript generic form `new Notification<T>(title)` calls create user-visible browser " +
+      "notifications at runtime — a side effect entirely invisible to botscript's capability model. " +
+      "No `uses {}`, `reads {}`, or `writes {}` declaration covers notification dispatch: callers " +
+      "cannot observe, audit, or suppress the UI effect from the fn's declared surface.",
+    idiom:
+      "accept a notification-dispatch callback as an explicit fn parameter so callers control " +
+      "whether a notification is shown and tests can capture or suppress it; " +
+      "if direct `Notification` access is required, wrap in " +
+      "`unsafe \"sends browser notification for <reason>\" { new Notification(title, options) }`",
+    rewrite:
+      "// before — notification dispatch invisible to the capability model\n" +
+      "fn alertUser(msg: string) -> void {\n" +
+      "  new Notification(msg)  // SYN017\n" +
+      "}\n\n" +
+      "// after — dispatch function passed as parameter; callers control UI side effect\n" +
+      "fn alertUser(notify: (msg: string) => void, msg: string) -> void {\n" +
+      "  notify(msg)\n" +
+      "}",
+    example:
+      "// SYN017: Notification dispatch bypasses the capability model\n" +
+      "fn warnUser(title: string, body: string) -> void {\n" +
+      "  new Notification(title, { body })  // SYN017\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason\n" +
+      "fn warnUser(title: string, body: string) -> void {\n" +
+      "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title, { body }) }\n" +
+      "}",
+  },
   SYN018: {
     code: "SYN018",
     title: "Math.random() call bypasses the random capability model",
@@ -990,6 +1023,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: use random.next() and declare uses { random }\n" +
       "fn roll(sides: number) uses { random } -> number {\n" +
       "  return Math.floor(random.next() * sides) + 1\n" +
+      "}",
+  },
+  SYN019: {
+    code: "SYN019",
+    title: "crypto.getRandomValues() / crypto.randomUUID() call bypasses the random capability model",
+    rule:
+      "`crypto.getRandomValues()` and `crypto.randomUUID()` generate cryptographic randomness at runtime " +
+      "but are invisible to botscript's capability model: `uses { random }` covers `random.*` stdlib calls, " +
+      "not the `crypto` global. A fn that calls these methods has an undeclared randomness dependency — " +
+      "tests cannot control the output and callers cannot observe the dependency from the fn header.",
+    idiom:
+      "use `random.next()` (float [0,1)) or `random.int(min, max)` from the `random` stdlib with `uses { random }` " +
+      "so the randomness dependency is visible in the fn header and tests can inject a mock; " +
+      "if cryptographic randomness or UUIDs are genuinely required, wrap in " +
+      "`unsafe \"uses crypto for <reason>\" { crypto.getRandomValues(buf) }`",
+    rewrite:
+      "// before — crypto call invisible to the capability model\n" +
+      "fn rollToken() -> number {\n" +
+      "  const buf = new Uint8Array(4)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return buf[0]\n" +
+      "}\n\n" +
+      "// after — randomness declared in uses {}; tests can control output\n" +
+      "fn rollToken() uses { random } -> number {\n" +
+      "  return random.int(0, 256)  // [0, 256) == [0, 255] inclusive\n" +
+      "}",
+    example:
+      "// SYN019: crypto call bypasses the random capability model\n" +
+      "fn rollDice() -> number {\n" +
+      "  const buf = new Uint8Array(1)\n" +
+      "  crypto.getRandomValues(buf)  // SYN019\n" +
+      "  return (buf[0] % 6) + 1\n" +
+      "}\n\n" +
+      "// fix: use random stdlib\n" +
+      "fn rollDice() uses { random } -> number {\n" +
+      "  return random.int(1, 7)\n" +
       "}",
   },
   SYN022: {
@@ -1025,6 +1094,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: accept argv as a parameter\n" +
       "fn getFlag(argv: string[]) -> string {\n" +
       "  return argv[2]\n" +
+      "}",
+  },
+  SYN023: {
+    code: "SYN023",
+    title: "navigator.* ambient browser capability access bypasses the capability model",
+    rule:
+      "`navigator.geolocation`, `navigator.clipboard`, `navigator.mediaDevices`, " +
+      "`navigator.serviceWorker`, `navigator.permissions`, `navigator.onLine`, " +
+      "`navigator.userAgent`, `navigator.language`, `navigator.languages`, " +
+      "`navigator.platform`, `navigator.hardwareConcurrency`, `navigator.deviceMemory`, " +
+      "`navigator.connection`, and `navigator.wakeLock` read ambient browser capability " +
+      "state at runtime but are invisible to botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration covers them. A fn that reads these values " +
+      "has an undeclared browser-environment dependency — callers cannot see it in the " +
+      "header, and tests cannot inject a controlled value.",
+    idiom:
+      "pass the required value as an explicit parameter so callers and tests can control it (preferred); " +
+      "if the ambient access is intentional, wrap in " +
+      "`unsafe \"accesses navigator.<member> for <reason>\" { navigator.<member> }`",
+    rewrite:
+      "// before — ambient navigator state invisible to the capability model\n" +
+      "fn isConnected() -> boolean {\n" +
+      "  return navigator.onLine  // SYN023\n" +
+      "}\n\n" +
+      "// after — online status passed as a parameter; tests can control it\n" +
+      "fn isConnected(onLine: boolean) -> boolean {\n" +
+      "  return onLine\n" +
+      "}",
+    example:
+      "// SYN023: navigator.userAgent bypasses the capability model\n" +
+      "fn getBrowser() -> string {\n" +
+      "  return navigator.userAgent  // SYN023\n" +
+      "}\n\n" +
+      "// fix: accept userAgent as a parameter\n" +
+      "fn getBrowser(userAgent: string) -> string {\n" +
+      "  return userAgent\n" +
       "}",
   },
   DEP001: {

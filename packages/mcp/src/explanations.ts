@@ -148,7 +148,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
     code: "CAP003",
     title: "Capability declared inside unsafe fn — asserted, not proven",
     body:
-      "CAP003 is a **warning** (non-blocking) that fires when a `uses { }` declaration " +
+      "CAP003 is a **warning** (non-blocking) that fires when a `uses {}` declaration " +
       "appears on an `unsafe fn`. Compilation still succeeds.\n\n" +
       "The capability inference pass (CAP001/CAP002) still runs on the visible stdlib calls " +
       "inside the body — but an `unsafe fn` can contain `as` casts that alias stdlib " +
@@ -1200,6 +1200,46 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN017: {
+    code: "SYN017",
+    title: "new Notification() / Notification() call bypasses the capability model",
+    body:
+      "SYN017 fires when a fn body constructs a `Notification` via `new Notification(title)`, " +
+      "bare `Notification(title)`, `Notification?.(title)`, or TypeScript instantiation " +
+      "`new Notification<T>(title)`.\n\n" +
+      "**Why it matters:** `Notification` dispatches a user-visible browser notification at " +
+      "runtime — a UI side effect that is entirely invisible to botscript's capability model. " +
+      "No `uses {}`, `reads {}`, or `writes {}` declaration covers notification dispatch. " +
+      "Callers reading the fn header see no indication that the fn can create system-level " +
+      "notifications; tests cannot intercept or suppress the effect without global mocking. " +
+      "In agent / bot contexts this is especially hazardous: an autonomously-running bot that " +
+      "calls `new Notification()` creates user-visible interruptions with no observable " +
+      "capability surface for callers to audit or gate.\n\n" +
+      "**Detection:** the check looks for an identifier token `Notification` not preceded by " +
+      "`.`/`?.` (member-call exclusion), followed by `(` or `?.(` — or `<T>(` when preceded " +
+      "by `new` (generic scan gated on `new` to avoid `<`/`>` comparison false-positives). " +
+      "Object/class method shorthands, TypeScript method signatures (including optional-param " +
+      "forms like `{ Notification(title?: string) }`), and `fn`/`function` declarations " +
+      "named `Notification` are excluded. The `:` check is guarded against ternary " +
+      "consequents (`cond ? new Notification(a) : ...`).\n\n" +
+      "**Fix:** pass a notification-dispatch callback as an explicit fn parameter so callers " +
+      "control whether a notification fires and tests can capture or suppress it. If direct " +
+      "access is required, wrap in `unsafe \"sends notification for <reason>\" { new Notification(title, options) }`.\n\n" +
+      "SYN017 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  new Notification(title)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title) }\n" +
+        "}\n",
+    },
+  },
   SYN018: {
     code: "SYN018",
     title: "Math.random() call bypasses the random capability model",
@@ -1250,6 +1290,49 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN019: {
+    code: "SYN019",
+    title: "crypto.getRandomValues() / crypto.randomUUID() call bypasses the random capability model",
+    body:
+      "SYN019 fires when a fn body calls `crypto.getRandomValues(buf)` or `crypto.randomUUID()` " +
+      "(including optional-chain forms like `crypto?.getRandomValues(buf)` and optional-call forms like " +
+      "`crypto.getRandomValues?.(buf)`).\n\n" +
+      "**Why it matters:** `uses { random }` in botscript covers calls to the `random.*` stdlib namespace " +
+      "(`random.next()` for a float in [0,1), `random.int(min, max)` for integers). It does NOT cover the `crypto` Web API global. " +
+      "A fn that calls `crypto.getRandomValues()` or `crypto.randomUUID()` generates cryptographic " +
+      "randomness at runtime without any entry in its `uses {}` clause — callers cannot see the dependency, " +
+      "and tests cannot mock or control the output.\n\n" +
+      "**Detection:** the check looks for a `crypto` ident token not preceded by `.`/`?.` " +
+      "(which would make it a member of another object), followed by `.` or `?.`, followed by " +
+      "`getRandomValues` or `randomUUID`, followed by `(` or `?.(` (confirming this is a call, not a " +
+      "bare reference). Fn/function declarations named `crypto` and non-randomness members " +
+      "(e.g. `crypto.subtle.digest(...)`) are excluded.\n\n" +
+      "**Fix (preferred — general randomness):** use `random.next()` or `random.int(min, max)` from " +
+      "the `random` stdlib namespace and declare `uses { random }` in the fn header. This makes the " +
+      "randomness dependency visible to callers and lets tests inject a deterministic mock.\n\n" +
+      "**Fix (escape hatch):** if direct crypto access is genuinely required (e.g. for specific " +
+      "algorithm reasons), wrap in an `unsafe` block with a justification:\n" +
+      "`unsafe \"uses crypto for FIPS-compliant key generation\" { crypto.getRandomValues(buf) }`\n\n" +
+      "SYN019 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn makeId() -> string {\n" +
+        "  return crypto.randomUUID()\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "// if you only need a random number, use the random stdlib:\n" +
+        "fn rollDice() uses { random } -> number {\n" +
+        "  return random.int(1, 7)\n" +
+        "}\n" +
+        "// if cryptographic randomness is required, use unsafe:\n" +
+        "fn makeId() -> string {\n" +
+        "  return unsafe \"uses crypto.randomUUID for unique key\" { crypto.randomUUID() }\n" +
+        "}\n",
+    },
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",
@@ -1297,6 +1380,54 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "?bs 0.7\n" +
         "fn getFlag(argv: string[]) -> string {\n" +
         "  return argv[2]\n" +
+        "}\n",
+    },
+  },
+  SYN023: {
+    code: "SYN023",
+    title: "navigator.* ambient browser capability access bypasses the capability model",
+    body:
+      "SYN023 fires when a fn body accesses a high-concern `navigator.*` member in `?bs 0.7+`. " +
+      "The covered members are: `geolocation`, `clipboard`, `mediaDevices`, `serviceWorker`, " +
+      "`permissions`, `onLine`, `userAgent`, `language`, `languages`, `platform`, " +
+      "`hardwareConcurrency`, `deviceMemory`, `connection`, and `wakeLock`.\n\n" +
+      "**Why it matters:** These properties expose ambient browser capability state — the " +
+      "device's physical location, the clipboard contents, media input devices, background " +
+      "service workers, network connectivity, browser identity, hardware specs, and display " +
+      "wake locks. None of these are covered by botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration captures a `navigator.*` access. A fn that " +
+      "reads them has an undeclared browser-environment dependency — callers cannot see it " +
+      "in the header, and tests cannot inject a controlled value without monkey-patching the " +
+      "global `navigator` object.\n\n" +
+      "**Detected forms:** `navigator.<member>` or `navigator?.<member>` where `<member>` " +
+      "is in the high-concern set above. Member calls on local bindings (`obj.navigator.*`) " +
+      "and `fn navigator(...)` / `function navigator(...)` / `function* navigator(...)` " +
+      "declarations are excluded. Members not in the listed set do not fire.\n\n" +
+      "**Fix (preferred — pass as a parameter):**\n\n" +
+      "```\n" +
+      "// SYN023 — before\n" +
+      "fn isConnected() -> boolean {\n" +
+      "  return navigator.onLine\n" +
+      "}\n\n" +
+      "// fix — onLine passed as a parameter; tests can control it\n" +
+      "fn isConnected(onLine: boolean) -> boolean {\n" +
+      "  return onLine\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if the ambient access is intentional:\n" +
+      "`unsafe \"accesses navigator.geolocation for location services\" { navigator.geolocation }`\n\n" +
+      "SYN023 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Accesses inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getBrowser() -> string {\n" +
+        "  return navigator.userAgent\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn getBrowser(userAgent: string) -> string {\n" +
+        "  return userAgent\n" +
         "}\n",
     },
   },

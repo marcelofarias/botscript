@@ -123,6 +123,16 @@
  *           `fn`/`function` declarations named `indexedDB` and bare references are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN017  A `new Notification(title)`, `Notification(title)`, `Notification?.(title)`, or
+ *           TypeScript instantiation form `new Notification<T>(title)` was detected in a fn body (?bs 0.7+).
+ *           `Notification` fires a user-visible browser notification at runtime — a UI side
+ *           effect invisible to botscript's capability model: no `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers notification dispatch. Callers cannot observe,
+ *           audit, or suppress the effect from the fn's declared surface.
+ *           Excluded: member calls (`obj.Notification`), `function`/`fn` declarations named
+ *           `Notification`, object/class method shorthands, and TypeScript method signatures.
+ *           The `:` exclusion is guarded against ternary consequents.
+ *
  *   SYN018  A `Math.random()`, `Math?.random()`, or `Math.random?.()` call was detected in a fn body (?bs 0.7+).
  *           `Math.random` generates a random float at runtime but is invisible to botscript's
  *           capability model: `uses { random }` covers `random.*` stdlib calls, not the
@@ -133,6 +143,17 @@
  *           `random`, followed by `(` or `?.(` (call confirmation). Bare `Math.random`
  *           references (without `()`) are excluded. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
+ *
+ *   SYN019  A `crypto.getRandomValues(...)` or `crypto.randomUUID()` call was detected in a
+ *           fn body (?bs 0.7+). These calls generate cryptographic randomness at runtime but
+ *           are invisible to botscript's capability model: `uses { random }` covers `random.*`
+ *           stdlib calls, not the `crypto` global. A fn that calls `crypto.getRandomValues()`
+ *           or `crypto.randomUUID()` has an undeclared randomness dependency — tests cannot
+ *           control the output and callers cannot see the dependency in the fn header.
+ *           Detection: `crypto` ident not preceded by `.`/`?.`, followed by `.` or `?.`,
+ *           followed by `getRandomValues` or `randomUUID`, followed by `(` or `?.(`.
+ *           `fn`/`function` declarations named `crypto` and non-randomness members are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
  *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
@@ -145,6 +166,29 @@
  *           Note: `process.env` is covered by SYN005; `process.exit` is covered by SYN006.
  *           Excluded: member calls on a local binding (`obj.process.*`), fn/function declarations
  *           named `process`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN023  A `navigator.<member>` access was detected in a fn body (?bs 0.7+), where the
+ *           member is one of the ambient browser capability surfaces:
+ *             geolocation     — requests user location; a real capability concern
+ *             clipboard       — clipboard read/write (sensitive data access)
+ *             mediaDevices    — camera/microphone access
+ *             serviceWorker   — background worker registration
+ *             permissions     — browser permission queries
+ *             onLine          — ambient network connectivity state
+ *             userAgent       — ambient browser fingerprint
+ *             language / languages — ambient locale
+ *             platform        — ambient device/OS type
+ *             hardwareConcurrency — CPU core count
+ *             deviceMemory    — RAM available
+ *             connection      — NetworkInformation API (ambient connectivity detail)
+ *             wakeLock        — screen wake lock requests
+ *           These are invisible to botscript's capability model: `uses {}`, `reads {}`, and
+ *           `writes {}` declarations cover declared stdlib namespaces and resource labels, not
+ *           the `navigator` global. A fn that accesses these members has undeclared browser
+ *           capability dependencies — callers cannot see them and tests cannot control or mock them.
+ *           Excluded: `obj.navigator.*` (member on a local binding), fn/function declarations
+ *           named `navigator`, member accesses not in the high-concern list above.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
@@ -187,6 +231,12 @@ const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
   "version", "versions", "hrtime", "uptime", "memoryUsage", "cpuUsage", "resourceUsage",
 ]);
+// navigator.* members covered by SYN023 (high-concern ambient browser capability surfaces)
+const SYN023_NAVIGATOR_MEMBERS = new Set([
+  "geolocation", "clipboard", "mediaDevices", "serviceWorker", "permissions",
+  "onLine", "userAgent", "language", "languages", "platform",
+  "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -209,8 +259,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn013 = getErrorCode("SYN013")!;
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
+  const syn017 = getErrorCode("SYN017")!;
   const syn018 = getErrorCode("SYN018")!;
+  const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
+  const syn023 = getErrorCode("SYN023")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1295,6 +1348,177 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
+        // ── SYN017: new Notification() / Notification() call ─────────────────
+        case "Notification": {
+          // Exclude: `obj.Notification(...)` — preceded by `.` or `?.`
+          const prevIdx17 = prevSignificant(tokens, i - 1);
+          const prev17 = tokens[prevIdx17];
+          if (prev17 && ((prev17.kind === "punct" && prev17.text === ".") || prev17.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named Notification
+          if (prev17 && prev17.kind === "ident" && prev17.text === "function") continue;
+          if (prev17 && prev17.kind === "keyword" && prev17.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx17)) continue;
+
+          const hasNew17 = prev17 && prev17.kind === "ident" && prev17.text === "new";
+          // Ternary guard: `cond ? Notification(title) : other`, `cond ? new Notification(title) : other`,
+          // `cond ? await Notification(title) : other`, `cond ? await new Notification(title) : other`
+          const prevBeforeNew17 = hasNew17
+            ? tokens[prevSignificant(tokens, prevIdx17 - 1)]
+            : undefined;
+          // Look through `await` between ternary `?` and the call/construction
+          const awaitIdx17 = (!hasNew17 && prev17 && prev17.kind === "ident" && prev17.text === "await")
+            ? prevIdx17
+            : (prevBeforeNew17 && prevBeforeNew17.kind === "ident" && prevBeforeNew17.text === "await")
+              ? prevSignificant(tokens, prevIdx17 - 1)
+              : -1;
+          const prevBeforeAwait17 = awaitIdx17 >= 0 ? tokens[prevSignificant(tokens, awaitIdx17 - 1)] : undefined;
+          const isTernaryConsequent17 =
+            (prev17 !== undefined && prev17 !== null && prev17.kind === "question") ||
+            (prevBeforeNew17 !== undefined && prevBeforeNew17 !== null && prevBeforeNew17.kind === "question") ||
+            (prevBeforeAwait17 !== undefined && prevBeforeAwait17 !== null && prevBeforeAwait17.kind === "question");
+
+          const nextIdx17 = nextSignificant(tokens, i + 1);
+          const next17 = tokens[nextIdx17];
+
+          let isOpt17 = false;
+          let callIdx17 = nextIdx17;
+
+          if (next17 && next17.kind === "questionDot") {
+            // Notification?.( — optional call
+            isOpt17 = true;
+            callIdx17 = nextSignificant(tokens, nextIdx17 + 1);
+          } else if (hasNew17 && next17 && next17.kind === "operator" && next17.text === "<") {
+            // new Notification<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx17 + 1;
+            while (j < decl.tokenEnd && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx17 = nextSignificant(tokens, j);
+          }
+
+          const callTok17 = tokens[callIdx17];
+          if (!callTok17 || !(callTok17.kind === "open" && callTok17.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures.
+          if (callTok17.matchedAt !== undefined) {
+            const afterCloseIdx17 = nextSignificant(tokens, callTok17.matchedAt + 1);
+            const afterClose17 = tokens[afterCloseIdx17];
+            if (afterClose17 && (
+              (afterClose17.kind === "open" && afterClose17.text === "{") ||
+              afterClose17.kind === "fatArrow" ||
+              (!isTernaryConsequent17 && afterClose17.kind === "punct" && afterClose17.text === ":")
+            )) continue;
+            // Exclude TS method signatures with omitted return type or optional params:
+            // `{ Notification(title: string) }` / `{ Notification(title?: string) }`.
+            let hasTypeAnnotation17 = false;
+            let depth17 = 0;
+            let ternaryDepth17 = 0;
+            for (let k17 = callIdx17 + 1; k17 < callTok17.matchedAt; k17++) {
+              const at17 = tokens[k17];
+              if (!at17) continue;
+              if (at17.kind === "open") { depth17++; continue; }
+              if (at17.kind === "close") { depth17--; continue; }
+              if (depth17 !== 0) continue;
+              if (at17.kind === "question") {
+                const nextAfterQ17 = nextSignificant(tokens, k17 + 1);
+                const nextTokQ17 = tokens[nextAfterQ17];
+                if (nextTokQ17 && nextTokQ17.kind === "punct" && nextTokQ17.text === ":") {
+                  hasTypeAnnotation17 = true;
+                  break;
+                }
+                ternaryDepth17++;
+                continue;
+              }
+              if (at17.kind === "punct" && at17.text === ":") {
+                if (ternaryDepth17 > 0) { ternaryDepth17--; continue; }
+                hasTypeAnnotation17 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation17) continue;
+
+            // Exclude TS type-literal method signatures with no annotations at all:
+            // `{ Notification() }`, `{ x: string; Notification() }`, `{ Notification(); }` etc.
+            // Only applies to empty-parens forms — annotated params are handled by hasTypeAnnotation17
+            // above. The token after `)` may be `}` directly, or a separator then `}`.
+            // Conditions: (a) parens are empty (no significant tokens between `(` and `)`),
+            //             (b) enclosing `{` is in a type context (preceded by `=` or `:`),
+            //             (c) `Notification` is at a method-signature position: either the first
+            //                 significant token inside the `{`, or preceded by `;` / `,`
+            //                 (subsequent type member, e.g. `{ x: string; Notification() }`).
+            {
+              const isEmptyParens17 = nextSignificant(tokens, callIdx17 + 1) >= (callTok17.matchedAt as number);
+              if (isEmptyParens17) {
+                let closeBrace17 = afterClose17;
+                if (closeBrace17 &&
+                    closeBrace17.kind === "punct" &&
+                    (closeBrace17.text === ";" || closeBrace17.text === ",")) {
+                  const nextAfterSepIdx17 = nextSignificant(tokens, afterCloseIdx17 + 1);
+                  closeBrace17 = tokens[nextAfterSepIdx17];
+                }
+                if (closeBrace17 && closeBrace17.kind === "close" && closeBrace17.text === "}" &&
+                    closeBrace17.matchedAt !== undefined) {
+                  const openBraceIdx17 = closeBrace17.matchedAt;
+                  const prevOpenIdx17 = prevSignificant(tokens, openBraceIdx17 - 1);
+                  const prevOpen17 = tokens[prevOpenIdx17];
+                  const firstInsideBraceIdx17 = nextSignificant(tokens, openBraceIdx17 + 1);
+                  // Method-signature position: first token in the type literal, or preceded by
+                  // a member separator (handles `{ x: string; Notification() }` etc.)
+                  const isAtMemberPos17 =
+                    firstInsideBraceIdx17 === i ||
+                    (prev17 && prev17.kind === "punct" && (prev17.text === ";" || prev17.text === ","));
+                  if (isAtMemberPos17 && prevOpen17 && (
+                    prevOpen17.kind === "eq" ||                                       // type T = { ... }
+                    (prevOpen17.kind === "punct" && prevOpen17.text === ":") ||       // x: { ... }
+                    (prevOpen17.kind === "operator" && (                              // intersection / union / generic
+                      prevOpen17.text === "&" ||                                     //   Foo & { ... }
+                      prevOpen17.text === "|" ||                                     //   Foo | { ... }
+                      prevOpen17.text === "<"                                        //   Foo<{ ... }>
+                    )) ||
+                    (prevOpen17.kind === "punct" && prevOpen17.text === ",") ||      //   Foo<Bar, { ... }> — non-first type arg
+                    (prevOpen17.kind === "ident" && (                                // keyword-led type positions
+                      prevOpen17.text === "as" ||                                    //   x as { ... }
+                      prevOpen17.text === "extends" ||                               //   T extends { ... }
+                      prevOpen17.text === "satisfies"                               //   x satisfies { ... }
+                    ))
+                  )) continue;
+                }
+              }
+            }
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep17 = isOpt17 ? "?." : "";
+          const warnStart17 = hasNew17 ? prev17!.start : tok.start;
+          const loc17 = locationOf(src, warnStart17);
+          warnings.push({
+            code: "SYN017",
+            severity: "warning",
+            file: null,
+            line: loc17.line,
+            column: loc17.column,
+            start: warnStart17,
+            end: callTok17.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew17 ? "constructs new " : "calls "}Notification${callSep17}() — ` +
+              `Notification fires a user-visible browser notification invisible to the capability model; ` +
+              `wrap in unsafe "sends browser notification for <reason>" { ${hasNew17 ? "new " : ""}Notification${callSep17}(...) }`,
+            rule: syn017.rule,
+            idiom: syn017.idiom,
+            rewrite: syn017.rewrite,
+          });
+          break;
+        }
+
         // ── SYN018: Math.random() ────────────────────────────────────────────
         case "Math": {
           // Exclude: `obj.Math.random(...)` — Math preceded by `.` or `?.`
@@ -1346,6 +1570,124 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn018.rule,
             idiom: syn018.idiom,
             rewrite: syn018.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN019: crypto.getRandomValues() / crypto.randomUUID() ───────────
+        case "crypto": {
+          // Exclude: `obj.crypto` — preceded by `.` or `?.`
+          const prevIdx19 = prevSignificant(tokens, i - 1);
+          const prev19 = tokens[prevIdx19];
+          if (prev19 && ((prev19.kind === "punct" && prev19.text === ".") || prev19.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named crypto
+          if (prev19 && prev19.kind === "keyword" && prev19.text === "fn") continue;
+          if (prev19 && prev19.kind === "ident" && prev19.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx19)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx19 = nextSignificant(tokens, i + 1);
+          const next19 = tokens[nextIdx19];
+          const isDot19 = next19 && next19.kind === "punct" && next19.text === ".";
+          const isOptChain19 = next19 && next19.kind === "questionDot";
+          if (!isDot19 && !isOptChain19) continue;
+
+          // Next token after the dot must be `getRandomValues` or `randomUUID`
+          const methodIdx19 = nextSignificant(tokens, nextIdx19 + 1);
+          const method19 = tokens[methodIdx19];
+          if (!method19 || method19.kind !== "ident") continue;
+          if (method19.text !== "getRandomValues" && method19.text !== "randomUUID") continue;
+
+          // Confirm it's a call: next token is `(` or `?.(`
+          let callIdx19 = nextSignificant(tokens, methodIdx19 + 1);
+          let callTok19 = tokens[callIdx19];
+          let isOptCall19 = false;
+          if (callTok19 && callTok19.kind === "questionDot") {
+            isOptCall19 = true;
+            callIdx19 = nextSignificant(tokens, callIdx19 + 1);
+            callTok19 = tokens[callIdx19];
+          }
+          if (!callTok19 || !(callTok19.kind === "open" && callTok19.text === "(")) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep19 = isOptChain19 ? "?." : ".";
+          const callSep19 = isOptCall19 ? "?." : "";
+          const methodName19 = method19.text;
+          const argSuffix19 = methodName19 === "getRandomValues" ? "(buf)" : "()";
+          const callForm19 = `crypto${sep19}${methodName19}${callSep19}${argSuffix19}`;
+          const loc19 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN019",
+            severity: "warning",
+            file: null,
+            line: loc19.line,
+            column: loc19.column,
+            start: tok.start,
+            end: callTok19.start + 1,
+            message:
+              `fn '${decl.name}' calls ${callForm19} — ` +
+              `crypto.getRandomValues and crypto.randomUUID generate cryptographic randomness invisible to the capability model; ` +
+              `uses { random } does not cover the crypto global; ` +
+              `use random.next() or random.int() from the random stdlib with uses { random } so callers see the dependency and tests can control the output; ` +
+              `for crypto-specific needs (cryptographic randomness, UUIDs) wrap in unsafe "uses crypto for <reason>" { ${callForm19} }`,
+            rule: syn019.rule,
+            idiom: syn019.idiom,
+            rewrite: syn019.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN023: navigator.* ambient browser capability ───────────────────
+        case "navigator": {
+          // Exclude: `obj.navigator.*` — navigator preceded by `.` or `?.`
+          const prevIdx23 = prevSignificant(tokens, i - 1);
+          const prev23 = tokens[prevIdx23];
+          if (prev23 && ((prev23.kind === "punct" && prev23.text === ".") || prev23.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named navigator
+          if (prev23 && prev23.kind === "keyword" && prev23.text === "fn") continue;
+          if (prev23 && prev23.kind === "ident" && prev23.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx23)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx23 = nextSignificant(tokens, i + 1);
+          const next23 = tokens[nextIdx23];
+          const isDot23 = next23 && next23.kind === "punct" && next23.text === ".";
+          const isOptChain23 = next23 && next23.kind === "questionDot";
+          if (!isDot23 && !isOptChain23) continue;
+
+          // Member must be in the high-concern navigator capability set
+          const memberIdx23 = nextSignificant(tokens, nextIdx23 + 1);
+          const memberTok23 = tokens[memberIdx23];
+          if (!memberTok23 || memberTok23.kind !== "ident") continue;
+          if (!SYN023_NAVIGATOR_MEMBERS.has(memberTok23.text)) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep23 = isOptChain23 ? "?." : ".";
+          const memberName23 = memberTok23.text;
+          const loc23 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN023",
+            severity: "warning",
+            file: null,
+            line: loc23.line,
+            column: loc23.column,
+            start: tok.start,
+            end: memberTok23.end,
+            message:
+              `fn '${decl.name}' accesses navigator${sep23}${memberName23} — ` +
+              `navigator.${memberName23} reads ambient browser capability state invisible to the capability model; ` +
+              `no uses {} / reads {} / writes {} declaration covers navigator; ` +
+              `pass the required value as a parameter so callers can see the dependency and tests can inject a mock, ` +
+              `or wrap in unsafe "accesses navigator.${memberName23} for <reason>" { navigator${sep23}${memberName23} }`,
+            rule: syn023.rule,
+            idiom: syn023.idiom,
+            rewrite: syn023.rewrite,
           });
           break;
         }
