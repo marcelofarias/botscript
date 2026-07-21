@@ -57,6 +57,14 @@
  *           `cond ? new WebSocket(url) : other`). Generic `<T>` detection only when
  *           preceded by `new` (avoids false-positives on `WebSocket < x > (y)` comparisons).
  *
+ *   SYN009  A `new XMLHttpRequest()`, `XMLHttpRequest()`, `new XMLHttpRequest<T>()`,
+ *           `new XMLHttpRequest<T>` (no-parens generic), or bare `new XMLHttpRequest`
+ *           was detected in a fn body (?bs 0.7+).
+ *           XMLHttpRequest constructs an XHR object that can open HTTP connections, invisible to CAP001 (which checks
+ *           `http.*` member calls). A fn that constructs an XHR has an undeclared `net`
+ *           dependency. Excluded: member calls (`obj.XMLHttpRequest`), object/class method
+ *           shorthands, and TypeScript method signatures.
+ *
  *   SYN010  A `setTimeout(...)`, `setInterval(...)`, or `queueMicrotask(...)`
  *           call was detected in a fn body (?bs 0.7+). These globals schedule
  *           callbacks to run after the current fn returns — any effects inside
@@ -244,6 +252,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn006 = getErrorCode("SYN006")!;
   const syn007 = getErrorCode("SYN007")!;
   const syn008 = getErrorCode("SYN008")!;
+  const syn009 = getErrorCode("SYN009")!;
   const syn010 = getErrorCode("SYN010")!;
   const syn011 = getErrorCode("SYN011")!;
   const syn012 = getErrorCode("SYN012")!;
@@ -1738,6 +1747,232 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn010.rule,
             idiom: syn010.idiom,
             rewrite: syn010.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN009: new XMLHttpRequest() / XMLHttpRequest() call ─────────────
+        case "XMLHttpRequest": {
+          // Exclude: `obj.XMLHttpRequest(...)` — preceded by `.` or `?.`
+          const prevIdx9 = prevSignificant(tokens, i - 1);
+          const prev9 = tokens[prevIdx9];
+          if (prev9 && ((prev9.kind === "punct" && prev9.text === ".") || prev9.kind === "questionDot"))
+            continue;
+
+          // Exclude: `function XMLHttpRequest(...)` / `fn XMLHttpRequest(...)` / `function* XMLHttpRequest(...)` declarations
+          if (prev9 && prev9.kind === "ident" && prev9.text === "function") continue;
+          if (prev9 && prev9.kind === "keyword" && prev9.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx9)) continue;
+
+          // `new XMLHttpRequest` without parens is valid JS/TS construction — fire on it too.
+          const isNewExpr9 = prev9 && prev9.kind === "ident" && prev9.text === "new";
+
+          // Ternary guard: `cond ? XMLHttpRequest(url) : other` / `cond ? new XMLHttpRequest(url) : other`.
+          // Also guard `cond ? await XMLHttpRequest() : other` / `cond ? await new XMLHttpRequest() : other`.
+          const isAwaitBefore9 = !isNewExpr9 && prev9 && prev9.kind === "ident" && prev9.text === "await";
+          const prevBeforeNew9Idx = isNewExpr9 ? prevSignificant(tokens, prevIdx9 - 1) : -1;
+          const prevBeforeNew9 = prevBeforeNew9Idx >= 0 ? tokens[prevBeforeNew9Idx] : undefined;
+          const isAwaitBeforeNew9 = isNewExpr9 && prevBeforeNew9 && prevBeforeNew9.kind === "ident" && prevBeforeNew9.text === "await";
+          const prevBeforeAwait9 = isAwaitBefore9
+            ? tokens[prevSignificant(tokens, prevIdx9 - 1)]
+            : isAwaitBeforeNew9
+            ? tokens[prevSignificant(tokens, prevBeforeNew9Idx - 1)]
+            : undefined;
+          const isTernaryConsequent9 =
+            (prev9 !== undefined && prev9 !== null && prev9.kind === "question") ||
+            (prevBeforeNew9 !== undefined && prevBeforeNew9 !== null && prevBeforeNew9.kind === "question") ||
+            (prevBeforeAwait9 !== undefined && prevBeforeAwait9 !== null && prevBeforeAwait9.kind === "question");
+
+          // Must be followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`).
+          const afterXhrFirstIdx = nextSignificant(tokens, i + 1);
+          const afterXhr = tokens[afterXhrFirstIdx];
+          // Tracks `new XMLHttpRequest<T>` with no parens after the generic — set in the generic branch.
+          let isGenericNoParens9 = false;
+          let genericCloseTokEnd9 = tok.end; // end of `>` for warnEnd in that form
+
+          if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
+            // TypeScript instantiation form: `XMLHttpRequest<T>(...)` or `new XMLHttpRequest<T>`.
+            // Gate on `new` to avoid false-positives on `XMLHttpRequest < x > (y)` comparison
+            // expressions (same guard as SYN008 WebSocket).
+            if (!isNewExpr9) continue;
+            let anglDepth = 1;
+            let j = afterXhrFirstIdx + 1;
+            while (j < decl.tokenEnd && anglDepth > 0) {
+              const at = tokens[j];
+              if (!at) { j++; continue; }
+              if (at.kind === "operator" && at.text === "<") anglDepth++;
+              else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+                anglDepth = Math.max(0, anglDepth - at.text.length);
+              j++;
+            }
+            // If the angle-bracket scan never found the closing `>`, the source is malformed;
+            // bail out to avoid false-positives on unterminated generics (matches SYN008 behavior).
+            if (anglDepth > 0) continue;
+            const closingAngleTok9 = tokens[j - 1]; // the `>` that closed the generic scan
+            const afterAngleIdx = nextSignificant(tokens, j);
+            const afterAngle9 = tokens[afterAngleIdx];
+            if (afterAngle9 && afterAngle9.kind === "open" && afterAngle9.text === "(") {
+              // has parens — exclude method shorthands and TS method signatures
+              if (afterAngle9.matchedAt !== undefined) {
+                const afterCloseIdx9 = nextSignificant(tokens, afterAngle9.matchedAt + 1);
+                const afterClose9 = tokens[afterCloseIdx9];
+                if (afterClose9 && (
+                  (afterClose9.kind === "open" && afterClose9.text === "{") ||
+                  afterClose9.kind === "fatArrow" ||
+                  (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
+                )) continue;
+                // Exclude TS method signatures with omitted return type: `{ XMLHttpRequest<T>(url: string) }`
+                let hasTypeAnnotation9g = false;
+                let depth9g = 0;
+                let ternaryDepth9g = 0;
+                for (let k9 = afterXhrFirstIdx + 1; k9 < afterAngle9.matchedAt; k9++) {
+                  const at9 = tokens[k9];
+                  if (!at9) continue;
+                  if (at9.kind === "open") { depth9g++; continue; }
+                  if (at9.kind === "close") { depth9g--; continue; }
+                  if (depth9g !== 0) continue;
+                  if (at9.kind === "question") {
+                    const nextAfterQ9 = nextSignificant(tokens, k9 + 1);
+                    const nextTokQ9 = tokens[nextAfterQ9];
+                    if (nextTokQ9 && nextTokQ9.kind === "punct" && nextTokQ9.text === ":") {
+                      hasTypeAnnotation9g = true; break;
+                    }
+                    ternaryDepth9g++; continue;
+                  }
+                  if (at9.kind === "punct" && at9.text === ":") {
+                    if (ternaryDepth9g > 0) { ternaryDepth9g--; continue; }
+                    hasTypeAnnotation9g = true; break;
+                  }
+                }
+                if (hasTypeAnnotation9g) continue;
+              }
+            } else {
+              // new XMLHttpRequest<T> — no parens after generic; fire as a no-parens construction.
+              isGenericNoParens9 = true;
+              genericCloseTokEnd9 = closingAngleTok9?.end ?? tok.end;
+            }
+          } else if (afterXhr && afterXhr.kind === "questionDot") {
+            // `XMLHttpRequest?.(...)` — optional call
+            const afterQD9 = nextSignificant(tokens, afterXhrFirstIdx + 1);
+            const afterQDTok9 = tokens[afterQD9];
+            if (!afterQDTok9 || !(afterQDTok9.kind === "open" && afterQDTok9.text === "(")) continue;
+          } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
+            // Direct call — exclude method shorthands and TS method signatures
+            if (afterXhr.matchedAt !== undefined) {
+              const afterCloseIdx9 = nextSignificant(tokens, afterXhr.matchedAt + 1);
+              const afterClose9 = tokens[afterCloseIdx9];
+              if (afterClose9 && (
+                (afterClose9.kind === "open" && afterClose9.text === "{") ||
+                afterClose9.kind === "fatArrow" ||
+                (!isTernaryConsequent9 && afterClose9.kind === "punct" && afterClose9.text === ":")
+              )) continue;
+              // Exclude TS method signatures with omitted return type: `{ XMLHttpRequest(url: string) }`
+              let hasTypeAnnotation9 = false;
+              let depth9 = 0;
+              let ternaryDepth9 = 0;
+              for (let k9 = afterXhrFirstIdx + 1; k9 < afterXhr.matchedAt; k9++) {
+                const at9 = tokens[k9];
+                if (!at9) continue;
+                if (at9.kind === "open") { depth9++; continue; }
+                if (at9.kind === "close") { depth9--; continue; }
+                if (depth9 !== 0) continue;
+                if (at9.kind === "question") {
+                  const nextAfterQ9 = nextSignificant(tokens, k9 + 1);
+                  const nextTokQ9 = tokens[nextAfterQ9];
+                  if (nextTokQ9 && nextTokQ9.kind === "punct" && nextTokQ9.text === ":") {
+                    hasTypeAnnotation9 = true; break;
+                  }
+                  ternaryDepth9++; continue;
+                }
+                if (at9.kind === "punct" && at9.text === ":") {
+                  if (ternaryDepth9 > 0) { ternaryDepth9--; continue; }
+                  hasTypeAnnotation9 = true; break;
+                }
+              }
+              if (hasTypeAnnotation9) continue;
+              // Exclude TS type-literal method signatures with empty parens:
+              // `type X = { XMLHttpRequest() }` / `{ XMLHttpRequest(); }` — empty parens, no return type.
+              {
+                let closeBrace9 = afterClose9;
+                if (closeBrace9 && closeBrace9.kind === "punct" &&
+                    (closeBrace9.text === ";" || closeBrace9.text === ",")) {
+                  const nextAfterSepIdx9 = nextSignificant(tokens, afterCloseIdx9 + 1);
+                  closeBrace9 = tokens[nextAfterSepIdx9];
+                }
+                if (closeBrace9 && closeBrace9.kind === "close" && closeBrace9.text === "}" &&
+                    closeBrace9.matchedAt !== undefined) {
+                  const openBraceIdx9 = closeBrace9.matchedAt;
+                  const prevOpenIdx9 = prevSignificant(tokens, openBraceIdx9 - 1);
+                  const prevOpen9 = tokens[prevOpenIdx9];
+                  if (prevOpen9 && (
+                    prevOpen9.kind === "eq" ||
+                    (prevOpen9.kind === "punct" && prevOpen9.text === ":")
+                  )) continue;
+                }
+              }
+            }
+          } else {
+            // Member access on the constructor itself — not a construction
+            if (afterXhr && afterXhr.kind === "punct" && afterXhr.text === ".") continue;
+            // No parens — only fire if preceded by `new` (bare construction: `new XMLHttpRequest`)
+            if (!isNewExpr9) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const isOpt9 = afterXhr && afterXhr.kind === "questionDot";
+          // `new XMLHttpRequest` without parens: bare construction OR generic with no parens after `>`.
+          const isNoParens9 = isGenericNoParens9 ||
+            (isNewExpr9 && afterXhr && afterXhr.kind !== "open" && !isOpt9 && afterXhr.kind !== "operator");
+          const detectedForm9 = isNewExpr9
+            ? (isNoParens9 ? "new XMLHttpRequest" : "new XMLHttpRequest()")
+            : (isOpt9 ? "XMLHttpRequest?.()" : "XMLHttpRequest()");
+          const warnStart9 = isNewExpr9 ? prev9!.start : tok.start;
+          // end: cover through the opening `(` (matching SYN007/SYN008/SYN011 convention).
+          // For bare `new XMLHttpRequest` (no parens), fall back to tok.end.
+          // For `new XMLHttpRequest<T>` (generic, no parens), end at the closing `>`.
+          let warnEnd9 = isGenericNoParens9 ? genericCloseTokEnd9 : tok.end;
+          if (!isNoParens9) {
+            if (isOpt9) {
+              const afterQD9end = nextSignificant(tokens, afterXhrFirstIdx + 1);
+              const afterQDTokEnd9 = tokens[afterQD9end];
+              if (afterQDTokEnd9 && afterQDTokEnd9.kind === "open" && afterQDTokEnd9.text === "(")
+                warnEnd9 = afterQDTokEnd9.start + 1;
+            } else if (afterXhr && afterXhr.kind === "open" && afterXhr.text === "(") {
+              warnEnd9 = afterXhr.start + 1;
+            } else if (afterXhr && afterXhr.kind === "operator" && afterXhr.text === "<") {
+              // generic form with parens: find the `(` after the `>` for warnEnd
+              let anglDepth2 = 1;
+              let j2 = afterXhrFirstIdx + 1;
+              while (j2 < decl.tokenEnd && anglDepth2 > 0) {
+                const at = tokens[j2];
+                if (!at) { j2++; continue; }
+                if (at.kind === "operator" && at.text === "<") anglDepth2++;
+                else if (at.kind === "operator" && (at.text === ">" || at.text === ">>" || at.text === ">>>"))
+                  anglDepth2 = Math.max(0, anglDepth2 - at.text.length);
+                j2++;
+              }
+              const afterAngle9end = tokens[nextSignificant(tokens, j2)];
+              if (afterAngle9end && afterAngle9end.kind === "open" && afterAngle9end.text === "(")
+                warnEnd9 = afterAngle9end.start + 1;
+            }
+          }
+          const loc9 = locationOf(src, warnStart9);
+          warnings.push({
+            code: syn009.code,
+            severity: "warning",
+            file: null,
+            line: loc9.line,
+            column: loc9.column,
+            start: warnStart9,
+            end: warnEnd9,
+            message:
+              `fn '${decl.name}' uses ${detectedForm9} — bypasses the net capability model; ` +
+              `switch to http.get(url)/http.post(url, { body }) and declare uses { net } on the fn header, ` +
+              `or wrap in unsafe "wraps XHR directly" { ${detectedForm9} }`,
+            rule: syn009.rule,
+            idiom: syn009.idiom,
+            rewrite: syn009.rewrite,
           });
           break;
         }

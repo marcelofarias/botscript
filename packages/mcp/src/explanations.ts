@@ -913,6 +913,51 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN009: {
+    code: "SYN009",
+    title: "XMLHttpRequest construction bypasses the net capability model — use http.get() / http.post() instead",
+    body:
+      "SYN009 fires when a fn body constructs an `XMLHttpRequest` via `new XMLHttpRequest()`, " +
+      "bare `XMLHttpRequest()`, `new XMLHttpRequest` (no-parens), or TypeScript instantiation forms like `new XMLHttpRequest<T>()`. " +
+      "XMLHttpRequest is the predecessor to `fetch` in the browser HTTP API. Like direct `fetch()` " +
+      "calls and `WebSocket` constructions, it makes real network calls at runtime but is invisible to " +
+      "botscript's capability model: CAP001 checks for `http.*` member calls, not the XHR global. " +
+      "A fn that constructs an XHR has an undeclared `net` dependency — `uses { net }` is never " +
+      "triggered, callers cannot see the network dependency in the fn header, and the capability " +
+      "manifest does not reflect it.\n\n" +
+      "The risk class is the same as direct `fetch()` or `WebSocket` usage: static analysis cannot " +
+      "reason about the blast radius of a fn that quietly opens HTTP connections. Code-generation " +
+      "models still produce XHR patterns, especially in browser-targeting code.\n\n" +
+      "**Fix:** replace `new XMLHttpRequest()` with `http.get(url)` or `http.post(url, { body })` " +
+      "and add `uses { net }` to the fn header. The stdlib `http.*` methods return " +
+      "`Promise<Result<Response, Error>>` — `await` them to get a `Result`, making the error path " +
+      "explicit and the net dependency visible to callers. " +
+      "If the raw XHR API is genuinely required (e.g. a thin adapter or a progress-reporting " +
+      "upload), wrap in `unsafe \"wraps XHR directly\" { new XMLHttpRequest() }` to make the " +
+      "escape hatch visible in the diff.\n\n" +
+      "SYN009 fires at `?bs 0.7+` as a non-blocking warning. Detection is token-based: " +
+      "`XMLHttpRequest` not preceded by `.`/`?.` followed by `(`, `?.(`, `<T>(`, or nothing (bare `new XMLHttpRequest`); " +
+      "TypeScript instantiation forms `new XMLHttpRequest<T>()` and `new XMLHttpRequest<T>` (no-parens) are also detected. " +
+      "`obj.XMLHttpRequest(...)` (method call on a local object) is excluded. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn getData(url: string) -> void {\n" +
+        "  const xhr = new XMLHttpRequest()\n" +
+        "  xhr.open('GET', url)\n" +
+        "  xhr.send()\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "async fn getData(url: string) uses { net } -> Promise<Result<string, string>> {\n" +
+        "  match await http.get(url) {\n" +
+        "    ok { res } -> ok(await res.text())\n" +
+        "    err { e } -> err(e.message)\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
   SYN010: {
     code: "SYN010",
     title: "setTimeout / setInterval / queueMicrotask defers side effects outside the fn's capability surface",
