@@ -935,6 +935,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
       "}",
   },
+  SYN017: {
+    code: "SYN017",
+    title: "new Notification() / Notification() call bypasses the capability model",
+    rule:
+      "`new Notification(title)`, bare `Notification(title)`, optional-call `Notification?.(title)`, " +
+      "and TypeScript generic form `new Notification<T>(title)` calls create user-visible browser " +
+      "notifications at runtime — a side effect entirely invisible to botscript's capability model. " +
+      "No `uses {}`, `reads {}`, or `writes {}` declaration covers notification dispatch: callers " +
+      "cannot observe, audit, or suppress the UI effect from the fn's declared surface.",
+    idiom:
+      "accept a notification-dispatch callback as an explicit fn parameter so callers control " +
+      "whether a notification is shown and tests can capture or suppress it; " +
+      "if direct `Notification` access is required, wrap in " +
+      "`unsafe \"sends browser notification for <reason>\" { new Notification(title, options) }`",
+    rewrite:
+      "// before — notification dispatch invisible to the capability model\n" +
+      "fn alertUser(msg: string) -> void {\n" +
+      "  new Notification(msg)  // SYN017\n" +
+      "}\n\n" +
+      "// after — dispatch function passed as parameter; callers control UI side effect\n" +
+      "fn alertUser(notify: (msg: string) => void, msg: string) -> void {\n" +
+      "  notify(msg)\n" +
+      "}",
+    example:
+      "// SYN017: Notification dispatch bypasses the capability model\n" +
+      "fn warnUser(title: string, body: string) -> void {\n" +
+      "  new Notification(title, { body })  // SYN017\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason\n" +
+      "fn warnUser(title: string, body: string) -> void {\n" +
+      "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title, { body }) }\n" +
+      "}",
+  },
   SYN018: {
     code: "SYN018",
     title: "Math.random() call bypasses the random capability model",

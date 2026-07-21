@@ -1174,6 +1174,46 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN017: {
+    code: "SYN017",
+    title: "new Notification() / Notification() call bypasses the capability model",
+    body:
+      "SYN017 fires when a fn body constructs a `Notification` via `new Notification(title)`, " +
+      "bare `Notification(title)`, `Notification?.(title)`, or TypeScript instantiation " +
+      "`new Notification<T>(title)`.\n\n" +
+      "**Why it matters:** `Notification` dispatches a user-visible browser notification at " +
+      "runtime — a UI side effect that is entirely invisible to botscript's capability model. " +
+      "No `uses {}`, `reads {}`, or `writes {}` declaration covers notification dispatch. " +
+      "Callers reading the fn header see no indication that the fn can create system-level " +
+      "notifications; tests cannot intercept or suppress the effect without global mocking. " +
+      "In agent / bot contexts this is especially hazardous: an autonomously-running bot that " +
+      "calls `new Notification()` creates user-visible interruptions with no observable " +
+      "capability surface for callers to audit or gate.\n\n" +
+      "**Detection:** the check looks for an identifier token `Notification` not preceded by " +
+      "`.`/`?.` (member-call exclusion), followed by `(` or `?.(` — or `<T>(` when preceded " +
+      "by `new` (generic scan gated on `new` to avoid `<`/`>` comparison false-positives). " +
+      "Object/class method shorthands, TypeScript method signatures (including optional-param " +
+      "forms like `{ Notification(title?: string) }`), and `fn`/`function` declarations " +
+      "named `Notification` are excluded. The `:` check is guarded against ternary " +
+      "consequents (`cond ? new Notification(a) : ...`).\n\n" +
+      "**Fix:** pass a notification-dispatch callback as an explicit fn parameter so callers " +
+      "control whether a notification fires and tests can capture or suppress it. If direct " +
+      "access is required, wrap in `unsafe \"sends notification for <reason>\" { new Notification(title, options) }`.\n\n" +
+      "SYN017 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  new Notification(title)\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn warnUser(title: string) -> void {\n" +
+        "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title) }\n" +
+        "}\n",
+    },
+  },
   SYN018: {
     code: "SYN018",
     title: "Math.random() call bypasses the random capability model",
