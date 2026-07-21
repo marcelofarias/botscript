@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { $enter, $reset, CapabilityViolation } from "../src/capabilities.js";
-import { http } from "../src/effects.js";
+import { clock, http } from "../src/effects.js";
 import { fs } from "../src/fs.js";
 import { isErr, isOk } from "../src/result.js";
 
@@ -141,5 +141,19 @@ describe("fs wrappers", () => {
         fs.exists(join(tmp, "x"));
       }),
     ).toThrow(CapabilityViolation);
+  });
+});
+
+describe("clock.sequence()", () => {
+  it("does not throw inside $enter([])", () => {
+    expect(() => $enter([], () => clock.sequence())).not.toThrow();
+  });
+
+  it("successive calls are strictly increasing", () => {
+    const a = $enter([], () => clock.sequence());
+    const b = $enter([], () => clock.sequence());
+    const c = $enter([], () => clock.sequence());
+    expect(b).toBeGreaterThan(a);
+    expect(c).toBeGreaterThan(b);
   });
 });

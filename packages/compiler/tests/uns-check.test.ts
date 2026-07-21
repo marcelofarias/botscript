@@ -436,3 +436,21 @@ describe("UNS005: scan scope (body only)", () => {
     expect(() => compile(src)).toThrow("UNS005");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Free namespaces (clock: "" — no capability required)
+// ---------------------------------------------------------------------------
+
+describe("UNS005: free namespace (clock)", () => {
+  it("does not fire for clock.sequence() — free namespace needs no capability or result contract", () => {
+    // clock is registered with an empty capability ("") so CAP001/CAP002 never fire for it.
+    // UNS005 must likewise skip free namespaces — clock.sequence() is process-local and
+    // has no external contract to enforce.
+    const src =
+      "?bs 0.9\n" +
+      "fn stamp() -> any {\n" +
+      "  clock.sequence()\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+});

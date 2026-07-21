@@ -75,6 +75,31 @@ export const http = {
   },
 };
 
+/**
+ * MonotonicTimestamp — an opaque, process-local, ordered counter value.
+ * Provides ordering guarantees (A happened before B) without wallclock access.
+ * Not serializable as real time; not comparable across processes or restarts.
+ */
+export type MonotonicTimestamp = number & { readonly __brand: "MonotonicTimestamp" };
+
+// Process-local monotonic sequence counter. Starts at 0, increments by 1.
+// Does not require a capability declaration — no external state, no wallclock.
+let _clockSeq = 0;
+
+export const clock = {
+  /**
+   * Returns the next MonotonicTimestamp for the current process execution.
+   * Each call returns a value strictly greater than the previous call's value.
+   * Suitable for ordering events in structured logs without declaring `uses { time }`.
+   */
+  sequence: (): MonotonicTimestamp => {
+    if (_clockSeq >= Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("clock.sequence: monotonic counter overflow — MAX_SAFE_INTEGER reached");
+    }
+    return _clockSeq++ as MonotonicTimestamp;
+  },
+};
+
 // Mockable sources. `with mocks { time, random }` swaps these in tests; in
 // app code they default to the real wallclock and Math.random.
 let timeSource: () => number = () => Date.now();

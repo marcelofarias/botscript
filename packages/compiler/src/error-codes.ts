@@ -280,17 +280,21 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   INT002: {
     code: "INT002",
-    title: "intent declares 'pure' but function body uses a capability",
+    title: "intent declares 'pure' but function body uses a capability or stateful-free namespace",
     rule:
       "a function declaring intent: \"pure\" must not directly reference any stdlib capability " +
-      "in its body — the pure claim means deterministic and side-effect-free",
+      "in its body — the pure claim means deterministic and side-effect-free; " +
+      "this also covers stateful-free namespaces like clock.sequence() that require no capability declaration " +
+      "but are non-deterministic (each call returns a different value)",
     idiom:
-      "move the capability usage out of the pure fn, or change the intent to reflect the actual behaviour",
+      "move the capability or stateful-free call out of the pure fn, or change the intent to reflect the actual behaviour",
     rewrite:
-      "// option A — remove the capability call from the body:\n" +
+      "// option A — remove the non-pure call from the body:\n" +
       "fn name(args) intent: \"pure\" -> type = pure { ... }\n\n" +
-      "// option B — remove the pure intent claim:\n" +
-      "fn name(args) uses { cap } -> type = ...",
+      "// option B (capability) — remove the pure intent claim and declare the capability:\n" +
+      "fn name(args) uses { cap } -> type = ...\n\n" +
+      "// option B (stateful-free, e.g. clock.sequence) — remove the pure intent claim:\n" +
+      "fn name(args) -> type = ...",
     example:
       "// before — fn says pure but body calls http.get\n" +
       "?bs 0.7\n" +
@@ -301,7 +305,14 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.7\n" +
       "fn fetchUser(id: string) uses { net } -> string {\n" +
       "  return http.get(\"/users/\" + id);\n" +
-      "}",
+      "}\n\n" +
+      "// also fires for stateful-free namespaces (no uses {} required but non-deterministic):\n" +
+      "// before\n" +
+      "?bs 0.7\n" +
+      "fn tag() intent: \"pure\" -> number = clock.sequence()\n" +
+      "// after — remove the pure claim\n" +
+      "?bs 0.7\n" +
+      "fn tag() -> number = clock.sequence()",
   },
   INT003: {
     code: "INT003",
@@ -328,25 +339,35 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   INT004: {
     code: "INT004",
-    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability",
+    title: "intent declares 'idempotent' but function body directly calls a non-idempotent capability or stateful-free namespace",
     rule:
       "a function declaring intent: \"idempotent\" must not directly reference `random` or `time` in its body — " +
-      "these stdlib namespaces produce different values on each invocation, making any function that uses them non-idempotent",
+      "these stdlib namespaces produce different values on each invocation, making any function that uses them non-idempotent; " +
+      "this also covers stateful-free namespaces like clock.sequence() that require no capability declaration " +
+      "but produce a different value on each call",
     idiom:
       "move the non-idempotent call out of the idempotent fn, or change the intent to reflect the actual behaviour",
     rewrite:
       "// option A — remove the non-idempotent call from the body:\n" +
       "fn name(args) intent: \"idempotent\" -> type = ...\n\n" +
-      "// option B — declare the capability and remove the idempotent intent claim\n" +
-      "// (preserve any other existing capabilities alongside the non-idempotent one):\n" +
-      "fn name(args) uses { …other-caps, random } -> type = ...   // or `uses { …other-caps, time }`",
+      "// option B (capability) — declare the capability and remove the idempotent intent claim:\n" +
+      "fn name(args) uses { …other-caps, random } -> type = ...   // or `uses { …other-caps, time }`\n\n" +
+      "// option B (stateful-free, e.g. clock.sequence) — remove the idempotent intent claim:\n" +
+      "fn name(args) -> type = ...",
     example:
       "// before — fn claims idempotent but body calls random.next; INT004 fires\n" +
       "?bs 0.7\n" +
       "fn generateId(prefix: string) intent: \"idempotent\" -> string = prefix + random.next()\n\n" +
       "// after — remove the idempotent claim and declare the capability\n" +
       "?bs 0.7\n" +
-      "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()",
+      "fn generateId(prefix: string) uses { random } -> string = prefix + random.next()\n\n" +
+      "// also fires for stateful-free namespaces (no uses {} required but non-deterministic):\n" +
+      "// before\n" +
+      "?bs 0.7\n" +
+      "fn tag() intent: \"idempotent\" -> number = clock.sequence()\n" +
+      "// after — remove the idempotent claim\n" +
+      "?bs 0.7\n" +
+      "fn tag() -> number = clock.sequence()",
   },
   INT005: {
     code: "INT005",

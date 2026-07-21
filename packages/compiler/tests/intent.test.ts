@@ -318,6 +318,51 @@ describe("INT002 — optional-chaining bypass (?bs 0.8)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// INT002 — stateful-free namespace (clock.sequence) variant
+// ---------------------------------------------------------------------------
+
+describe("INT002 — pure intent vs clock.sequence() (stateful-free namespace)", () => {
+  it("fires INT002 when pure fn body calls clock.sequence()", () => {
+    const src = `?bs 0.7\nfn makeSeq() intent: "pure" -> number = clock.sequence()\n`;
+    expect(() => t(src)).toThrow(/INT002/);
+  });
+
+  it("INT002 message mentions 'stateful' for clock.sequence()", () => {
+    const src = `?bs 0.7\nfn makeSeq() intent: "pure" -> number = clock.sequence()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT002");
+      expect(d.message).toContain("clock.sequence");
+      expect(d.message).toContain("stateful");
+    }
+  });
+
+  it("does NOT fire INT002 for clock.sequence() in a non-pure fn", () => {
+    const src = `?bs 0.7\nfn logStep() intent: "logging" -> number = clock.sequence()\n`;
+    expect(() => t(src)).not.toThrow(/INT002/);
+  });
+
+  it("does NOT fire INT002 for bare 'clock' reference without member call", () => {
+    const src = `?bs 0.7\nfn noop(clock: number) intent: "pure" -> number = clock\n`;
+    expect(() => t(src)).not.toThrow(/INT002/);
+  });
+
+  it("does NOT fire INT002 for clock.sequence member read without invocation", () => {
+    const src = `?bs 0.7\nfn getRef() intent: "pure" -> any = clock.sequence\n`;
+    expect(() => t(src)).not.toThrow(/INT002/);
+  });
+
+  it("does NOT fire INT002 for clock.sequence?.length (optional-chain property, not a call)", () => {
+    const src = `?bs 0.7\nfn getLen() intent: "pure" -> any = clock.sequence?.length\n`;
+    expect(() => t(src)).not.toThrow(/INT002/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // INT003 — idempotent intent vs non-idempotent capability in uses {}
 // ---------------------------------------------------------------------------
 
@@ -481,6 +526,46 @@ describe("INT004 — idempotent intent vs non-idempotent call in body (?bs 0.7+)
       expect(d.code).toBe("INT004");
       expect(d.message).toContain("time?.now");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INT004 — idempotent intent vs clock.sequence() (stateful-free namespace)
+// ---------------------------------------------------------------------------
+
+describe("INT004 — idempotent intent vs clock.sequence() (stateful-free namespace)", () => {
+  it("fires INT004 when idempotent fn body calls clock.sequence()", () => {
+    const src = `?bs 0.7\nfn step() intent: "idempotent" -> number = clock.sequence()\n`;
+    expect(() => t(src)).toThrow(/INT004/);
+  });
+
+  it("INT004 message mentions 'returns a different value' for clock.sequence()", () => {
+    const src = `?bs 0.7\nfn step() intent: "idempotent" -> number = clock.sequence()\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics[0]!;
+      expect(d.code).toBe("INT004");
+      expect(d.message).toContain("clock.sequence");
+      expect(d.message).toContain("different value");
+    }
+  });
+
+  it("does NOT fire INT004 for clock.sequence() in a non-idempotent fn", () => {
+    const src = `?bs 0.7\nfn step() intent: "writes" -> number = clock.sequence()\n`;
+    expect(() => t(src)).not.toThrow(/INT004/);
+  });
+
+  it("does NOT fire INT004 for clock.sequence member read without invocation", () => {
+    const src = `?bs 0.7\nfn getRef() intent: "idempotent" -> any = clock.sequence\n`;
+    expect(() => t(src)).not.toThrow(/INT004/);
+  });
+
+  it("does NOT fire INT004 for clock.sequence?.length (optional-chain property, not a call)", () => {
+    const src = `?bs 0.7\nfn getLen() intent: "idempotent" -> any = clock.sequence?.length\n`;
+    expect(() => t(src)).not.toThrow(/INT004/);
   });
 });
 

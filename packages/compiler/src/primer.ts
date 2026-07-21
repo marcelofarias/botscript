@@ -149,6 +149,7 @@ additions below are the entire language surface.
   http.post(url) -> Promise<Result<Response, Error>>  requires uses { net }
   time.now() / time.iso()              requires uses { time }
   random.next() / random.int(a, b)     requires uses { random }
+  clock.sequence() -> MonotonicTimestamp  no capability required; stateful (non-deterministic) — violates intent: "pure"/"idempotent"
   // import { fs } from "@mbfarias/botscript-runtime/fs"; (Node only)
   fs.exists(path)                      requires uses { fs }
   fs.readText(path) -> Result          requires uses { fs }

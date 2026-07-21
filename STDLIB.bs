@@ -7,7 +7,7 @@
 // feature you want is not in this file, it does not exist yet — propose it
 // before using it. Keep this file *small*: every form here is load-bearing.
 
-import { ok, err, some, none, http, time, type Option, type Result } from "@mbfarias/botscript-runtime";
+import { ok, err, some, none, http, time, clock, type Option, type Result } from "@mbfarias/botscript-runtime";
 
 // ─── 1. Tagged union (0.2+) ────────────────────────────────────────────────
 // `type Name = Tag { fields } | Tag2 { fields } | …` desugars to a TS
@@ -30,6 +30,14 @@ fn now() uses { time } -> number = time.now()
 
 fn lookupCache(id: string) reads { cache } -> Option<string> = none
 fn writeCache(id: string, value: string) writes { cache } -> void { }
+
+// ─── 2c. clock.sequence() — free monotonic counter (0.8+) ───────────────────
+// `clock.sequence()` returns a monotonically increasing integer with no
+// capability required. Use it for ordering, correlation IDs, and cache busting
+// when wall-clock time is not needed. Unlike `time.now()`, it carries no
+// external-dependency declaration and cannot be mocked via `with mocks {}`.
+
+fn nextId() -> number = clock.sequence()
 
 // ─── 3. fn pure shorthand ───────────────────────────────────────────────────
 // `= pure { expr }` is equivalent to `uses { } { return expr; }`.
@@ -147,9 +155,7 @@ fn castShape(raw: unknown) -> Shape = unsafe "trust caller-validated payload" {
 // fn. The reason is preserved as a `/* unsafe: "…" */` comment in the emitted
 // TypeScript. Works with async: `unsafe "reason" async fn`.
 
-unsafe "raw API response shape validated by schema" fn parseShape(raw: unknown) -> Shape {
-  return raw as Shape;
-}
+unsafe "raw API response shape validated by schema" fn parseShape(raw: unknown) -> Shape = raw as Shape
 
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)

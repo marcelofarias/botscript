@@ -65,6 +65,7 @@ const STDLIB_VALUE_SYMBOLS = [
   "unwrapOption",
   "unwrapOr",
   // Effects
+  "clock",
   "http",
   "random",
   "stderr",
@@ -73,7 +74,7 @@ const STDLIB_VALUE_SYMBOLS = [
 ] as const;
 
 /** Stdlib namespace names (member-access objects, not standalone call targets). */
-const STDLIB_NAMESPACE_NAMES = new Set(["http", "random", "stderr", "stdout", "time"]);
+const STDLIB_NAMESPACE_NAMES = new Set(["clock", "http", "random", "stderr", "stdout", "time"]);
 
 /**
  * Stdlib value helpers that appear as bare `ident(` call sites in function bodies
@@ -99,6 +100,8 @@ const STDLIB_TYPE_SYMBOLS = [
   "None",
   "Option",
   "Some",
+  // clock.sequence() return type — free namespace, no capability required
+  "MonotonicTimestamp",
 ] as const;
 
 /**
