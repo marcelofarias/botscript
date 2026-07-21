@@ -234,9 +234,55 @@ goes behind a new pin.
   INT001 fires when an intent contains "pure" but the function also
   declares a non-empty `uses { ... }` clause.
 
+- **Capability-bypass warning suite (SYN002–SYN023).** Non-blocking warnings
+  that fire when a fn body uses a browser or Node.js global that sidesteps the
+  botscript capability model. Grouped by category:
+
+  - **Error contract** — SYN002: native `throw` bypasses the Result contract;
+    SYN003: `console.*` bypasses `stdout`/`stderr`.
+
+  - **Code execution** — SYN004: `eval()` / `Function()` / `new Function()`
+    execute strings at runtime, bypassing all static checks; SYN011: dynamic
+    `import()` loads a module with an unbounded capability surface.
+
+  - **Process / environment** — SYN005: `process.env` hides a deployment
+    dependency from callers; SYN006: `process.exit()` terminates the host
+    process and bypasses all recovery paths; SYN022: any other `process.*`
+    access is an undeclared ambient dependency.
+
+  - **Network** — SYN007: `fetch()` bypasses `http.*`; SYN008: `WebSocket()`
+    opens a persistent connection invisible to CAP001; SYN012: `EventSource()`
+    opens a server-sent-events connection; SYN013: `Worker()` /
+    `SharedWorker()` spawns an unbounded execution context.
+
+  - **Scheduling** — SYN010: `setTimeout` / `setInterval` /
+    `queueMicrotask` defers side effects outside the fn's declared capability
+    surface.
+
+  - **Messaging** — SYN014: `BroadcastChannel()` opens a cross-context
+    channel invisible to the messaging capability model.
+
+  - **Storage** — SYN016: `indexedDB` access bypasses the storage capability
+    model.
+
+  - **Randomness** — SYN018: `Math.random()` bypasses `random.*`; SYN019:
+    `crypto.getRandomValues()` / `crypto.randomUUID()` bypass the same model.
+
+  - **Browser ambient state** — SYN017: `Notification()` construction;
+    SYN023: `navigator.<member>` access for the high-concern set
+    (geolocation, clipboard, mediaDevices, serviceWorker, permissions, onLine,
+    userAgent, language, languages, platform, hardwareConcurrency, deviceMemory,
+    connection, wakeLock).
+
+  All SYN checks fire at `?bs 0.7+` as non-blocking warnings. Each diagnostic
+  carries a rule, idiom, and rewrite snippet (visible via
+  `botscript explain <CODE>`). Calls inside `unsafe { }` blocks or
+  `unsafe "reason" fn` bodies are suppressed. SYN001 (duplicate/invalid
+  fn header clause) is a parser-level error and is version-independent.
+
 ### Compat
 - Files pinned to `?bs 0.6` (or earlier) compile to byte-identical output.
-  INT001 only runs under `?bs 0.7+`.
+  INT001 and all SYN capability-bypass warnings only run under `?bs 0.7+`.
 
 ## ?bs 0.6 — unreleased
 
