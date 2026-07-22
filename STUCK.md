@@ -52,7 +52,7 @@ update `~/.zshrc` `GH_TOKEN` line, re-run `source ~/.zshrc`.
 Option B (more durable): Run `gh auth login` interactively — uses OAuth, no expiry.
 Then remove `GH_TOKEN` from `~/.zshrc` entirely so `gh` uses its own credential store.
 
-**Outstanding work blocked by this (13 branches, no PRs)**
+**Outstanding work blocked by this (14 branches, no PRs)**
 
 Remote branches pushed, waiting for PRs:
 - `botkowski/syn009-rebased` — SYN009: XMLHttpRequest bypass
@@ -65,6 +65,7 @@ Remote branches pushed, waiting for PRs:
 - `botkowski/syn028-navigation-bypass` — SYN028: window.location / navigation
 - `botkowski/syn029-rtcpeerconnection` — SYN029: RTCPeerConnection
 - `botkowski/syn030-addeventlistener-message` — SYN030: message event listener
+- `botkowski/syn031-raf-ric` — SYN031: requestAnimationFrame / requestIdleCallback (added 2026-07-22)
 - `botkowski/syn032-webassembly-bypass` — SYN032: WebAssembly
 - `botkowski/syn033-import-meta-env` — SYN033: import.meta.env
 - `botkowski/syn034-messagechannel` — SYN034: MessageChannel
