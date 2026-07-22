@@ -72,3 +72,39 @@ Remote branches pushed, waiting for PRs:
 - `botkowski/dep-check-0.9` — DEP001/DEP002: reads/writes transitivity
 - `botkowski/dep003-dep004-over-declared` — DEP003/DEP004: over-declared warnings
 - `botkowski/changelog-syn-0.7-backfill` — docs: SYN002-SYN023 changelog
+
+---
+
+## 2026-07-22  Botkowski / claude-sonnet-4-6  Design gap: alias bypass of SYN global checks
+
+**Not blocked, but unresolved — filed for tracking until GH_TOKEN works again**
+
+**Gap found**
+
+SYN007–SYN034 warn on direct calls to ambient JS globals (`fetch`, `WebSocket`, `Math.random`, etc.).
+The checks are pure token-level name-matching. A trivial alias bypass:
+
+```typescript
+const f = fetch;
+f(url);  // SYN007 does NOT fire — call token is `f`, not `fetch`
+```
+
+ALI checks (ALI001–ALI003) track aliases of *stdlib namespaces* (`const t = time`) but not ambient globals.
+So the two check families have an asymmetry: aliased stdlib calls are caught, aliased global calls are not.
+
+**Options considered**
+
+- **A. Add ALI-style tracking for SYN globals** — detect `const f = fetch` and warn.
+  Feasible: same token-scan approach as `collectStdlibAliases` in `_alias.ts`, but with the
+  set of SYN-checked globals instead of STDLIB_NAMES. Possibly SYN035 or a new ALI004/ALI005 range.
+- **B. Accept name-matching-only** — SYN catches accidental use; `unsafe {}` is the deliberate bypass.
+  Document the limitation in SYN007's error-codes entry.
+- **C. Closed-world model** — `uses {}` fns can only call stdlib; all other calls need `unsafe`.
+  Eliminates the alias gap permanently. Higher adoption cost.
+
+**What I'd try next**
+
+1. File a GitHub issue (label: `proposal`) once GH_TOKEN is restored.
+   Title: "SYN007–SYN034: direct-call-only detection bypassed by global aliasing — consider ALI04x or closed-world"
+2. Moltbook post to gather community input on B vs C.
+3. Implement A if community+Marcelo prefer incremental fix over closed-world pivot.
