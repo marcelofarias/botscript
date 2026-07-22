@@ -182,6 +182,16 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN031  A `requestAnimationFrame(callback)` or `requestIdleCallback(callback)` call was
+ *           detected in a fn body (?bs 0.7+). These globals schedule callbacks to run after the
+ *           current fn returns — before the next browser repaint or during idle time respectively.
+ *           Any effects inside those callbacks are invisible to callers: no `uses {}`, `writes {}`,
+ *           or `throws {}` declaration in the calling fn's header covers them. Callers see a clean
+ *           surface while deferred side effects happen out-of-band.
+ *           Excluded: member calls (`obj.requestAnimationFrame`), function/fn/function* declarations
+ *           named `requestAnimationFrame` or `requestIdleCallback`, and object/class method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -218,6 +228,7 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+const RAF_RIC_GLOBALS = new Set(["requestAnimationFrame", "requestIdleCallback"]);
 // process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
 const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
@@ -255,6 +266,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn031 = getErrorCode("SYN031")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1691,64 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN031: requestAnimationFrame / requestIdleCallback ──────────────
+        case "requestAnimationFrame":
+        case "requestIdleCallback": {
+          // Exclude property accesses: obj.requestAnimationFrame(...)
+          const prevIdx31 = prevSignificant(tokens, i - 1);
+          const prev31 = tokens[prevIdx31];
+          if (prev31 && ((prev31.kind === "punct" && prev31.text === ".") || prev31.kind === "questionDot"))
+            break;
+
+          // Exclude function/fn/function* declarations named requestAnimationFrame/requestIdleCallback
+          if (prev31 && prev31.kind === "ident" && prev31.text === "function") break;
+          if (prev31 && prev31.kind === "keyword" && prev31.text === "fn") break;
+          if (isFunctionStarDecl(tokens, prevIdx31)) break;
+
+          // Must be followed by `(` or `?.(` — confirming this is a call, not a reference.
+          let afterIdx31 = nextSignificant(tokens, i + 1);
+          let afterTok31 = tokens[afterIdx31];
+          if (afterTok31 && afterTok31.kind === "questionDot") {
+            afterIdx31 = nextSignificant(tokens, afterIdx31 + 1);
+            afterTok31 = tokens[afterIdx31];
+          }
+          if (!afterTok31 || !(afterTok31.kind === "open" && afterTok31.text === "(")) break;
+
+          // Exclude method shorthands and class methods: { requestAnimationFrame(cb) { ... } }
+          const closeParenIdx31 = afterTok31.matchedAt;
+          if (closeParenIdx31 !== undefined) {
+            const afterParenIdx31 = nextSignificant(tokens, closeParenIdx31 + 1);
+            const afterParen31 = tokens[afterParenIdx31];
+            if (
+              afterParen31 &&
+              ((afterParen31.kind === "open" && afterParen31.text === "{") ||
+                (afterParen31.kind === "punct" && afterParen31.text === ":"))
+            ) break;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) break;
+
+          const loc31 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN031",
+            severity: "warning",
+            file: null,
+            line: loc31.line,
+            column: loc31.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' calls ${tok.text}() — ` +
+              `${tok.text} schedules a callback that runs after the fn returns; ` +
+              `any effects inside that callback are invisible to callers and cannot be declared in the fn header; ` +
+              `wrap in unsafe "schedules deferred render effect" { ${tok.text}(...) }`,
+            rule: syn031.rule,
+            idiom: syn031.idiom,
+            rewrite: syn031.rewrite,
           });
           break;
         }

@@ -1085,6 +1085,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN031: {
+    code: "SYN031",
+    title: "requestAnimationFrame / requestIdleCallback schedules a deferred callback invisible to the capability model",
+    rule:
+      "`requestAnimationFrame(callback)` and `requestIdleCallback(callback)` schedule callbacks " +
+      "to execute after the current fn returns — before the next browser repaint or during idle " +
+      "time respectively. Any effects inside those callbacks (capability access, writes, throws) " +
+      "are invisible to callers: no `uses {}`, `writes {}`, or `throws {}` declaration in the " +
+      "calling fn's header covers them. Callers see a clean surface while deferred side effects " +
+      "happen out-of-band.",
+    idiom:
+      "return the rAF/rIC handle so the caller can cancel it and observe the dependency explicitly; " +
+      "if the deferred effect is intentional, wrap in " +
+      "`unsafe \"schedules deferred render effect\" { requestAnimationFrame(...) }`",
+    rewrite:
+      "// before — deferred effect invisible to callers\n" +
+      "fn scheduleRender(update: () -> void) -> void {\n" +
+      "  requestAnimationFrame(update)  // SYN031\n" +
+      "}\n\n" +
+      "// after — handle returned so callers can cancel and observe the dependency\n" +
+      "fn scheduleRender(update: () -> void) -> number {\n" +
+      "  return requestAnimationFrame(update)\n" +
+      "}",
+    example:
+      "// SYN031: requestAnimationFrame callback effects are invisible to callers\n" +
+      "fn scheduleRender(update: () -> void) -> void {\n" +
+      "  requestAnimationFrame(update)  // SYN031\n" +
+      "}\n\n" +
+      "// fix: return the handle so the caller controls the lifecycle\n" +
+      "fn scheduleRender(update: () -> void) -> number {\n" +
+      "  return requestAnimationFrame(update)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
