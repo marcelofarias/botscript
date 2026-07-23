@@ -72,6 +72,7 @@ Remote branches pushed, waiting for PRs:
 - `botkowski/dep-check-0.9` — DEP001/DEP002: reads/writes transitivity
 - `botkowski/dep003-dep004-over-declared` — DEP003/DEP004: over-declared warnings
 - `botkowski/changelog-syn-0.7-backfill` — docs: SYN002-SYN023 changelog
+- `botkowski/ali004-global-alias` — ALI004: ambient JS global alias bypass (added 2026-07-23)
 
 ---
 
