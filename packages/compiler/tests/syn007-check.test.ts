@@ -180,4 +180,44 @@ describe("SYN007: fetch() call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
   });
+
+  it("fires on window.fetch(url) — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getUser(url: string) -> any {\n" +
+      "  return window.fetch(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(true);
+  });
+
+  it("fires on globalThis.fetch(url) — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getUser(url: string) -> any {\n" +
+      "  return globalThis.fetch(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(true);
+  });
+
+  it("fires on self.fetch(url) — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getUser(url: string) -> any {\n" +
+      "  return self.fetch(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(true);
+  });
+
+  it("does NOT fire on client.fetch(url) — non-global receiver is excluded", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getUser(client: any, url: string) -> any {\n" +
+      "  return client.fetch(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN007")).toBe(false);
+  });
 });

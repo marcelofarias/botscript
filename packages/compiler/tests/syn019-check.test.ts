@@ -190,4 +190,34 @@ describe("SYN019: crypto.getRandomValues() / crypto.randomUUID() detection", () 
     const w = result.warnings.find((w) => w.code === "SYN019");
     expect(w?.message).toContain("crypto.randomUUID");
   });
+
+  it("fires on window.crypto.randomUUID() — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeId() -> string {\n" +
+      "  return window.crypto.randomUUID()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+
+  it("fires on globalThis.crypto.getRandomValues() — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeRandom(buf: any) -> any {\n" +
+      "  return globalThis.crypto.getRandomValues(buf)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+
+  it("does NOT fire on client.crypto.randomUUID() — non-global receiver is excluded", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn makeId(client: any) -> string {\n" +
+      "  return client.crypto.randomUUID()\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN019")).toBe(false);
+  });
 });

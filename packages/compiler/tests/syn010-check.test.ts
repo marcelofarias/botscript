@@ -176,4 +176,34 @@ describe("SYN010: timer / microtask global call detection", () => {
     const result = compile(src);
     expect(result.warnings.some((w) => w.code === "SYN010")).toBe(false);
   });
+
+  it("fires on window.setTimeout() — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn scheduleRetry(fn: () -> void) -> void {\n" +
+      "  window.setTimeout(fn, 1000)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN010")).toBe(true);
+  });
+
+  it("fires on globalThis.setInterval() — global receiver bypass must be detected", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn poll(fn: () -> void) -> void {\n" +
+      "  globalThis.setInterval(fn, 5000)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN010")).toBe(true);
+  });
+
+  it("does NOT fire on scheduler.setTimeout() — non-global receiver is excluded", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn test(scheduler: any, fn: () -> void) -> void {\n" +
+      "  scheduler.setTimeout(fn, 0)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN010")).toBe(false);
+  });
 });

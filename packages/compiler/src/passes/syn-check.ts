@@ -196,6 +196,25 @@ import { computeNesting, prevSignificant, nextSignificant } from "./_callgraph.j
 import { atLeast, type VersionInfo } from "./version.js";
 import { collectUnsafeBlockRanges, isInsideRange } from "./_unsafe-ranges.js";
 
+// Global-receiver names: `window.fetch(...)` is semantically identical to `fetch(...)`.
+// When one of these precedes a guarded identifier via `.` or `?.`, the member-access
+// exclusion should NOT apply — the call bypasses the SYN check just as the bare global call would.
+const GLOBAL_RECEIVERS = new Set(["window", "globalThis", "self", "global"]);
+
+// Returns true when the token at `dotIdx` is `.` or `?.` AND the receiver immediately
+// before it is NOT a known global object — meaning this occurrence should be excluded
+// (it is an ordinary member call, not a global-bypass).
+// When dotIdx points to a global receiver's dot (e.g. `window.fetch`), returns false
+// so the SYN check fires.
+function isNonGlobalMemberAccess(tokens: Token[], dotIdx: number): boolean {
+  const dot = tokens[dotIdx];
+  if (!dot) return false;
+  if (!((dot.kind === "punct" && dot.text === ".") || dot.kind === "questionDot")) return false;
+  const receiverIdx = prevSignificant(tokens, dotIdx - 1);
+  const receiver = tokens[receiverIdx];
+  return !receiver || !GLOBAL_RECEIVERS.has(receiver.text);
+}
+
 // Returns true when the token at `starIdx` is a `*` operator preceded by `function`,
 // i.e. this ident is the name in a `function* name(...)` generator declaration.
 function isFunctionStarDecl(tokens: Token[], starIdx: number): boolean {
@@ -389,11 +408,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN003: console.* call ───────────────────────────────────────────
         case "console": {
-          // Exclude: `obj.console` — preceded by `.` or `?.`
+          // Exclude: `obj.console` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.console.*` is identical to `console.*` and must still fire.
           const prevIdx = prevSignificant(tokens, i - 1);
-          const prev = tokens[prevIdx];
-          if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
-            continue;
+          if (isNonGlobalMemberAccess(tokens, prevIdx)) continue;
 
           // Must be followed by `.` or `?.` (member access).
           const nextIdx = nextSignificant(tokens, i + 1);
@@ -444,11 +462,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN004: eval(...) ────────────────────────────────────────────────
         case "eval": {
-          // Exclude: `obj.eval(...)` — preceded by `.` or `?.`
+          // Exclude: `obj.eval(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.eval(...)` / `globalThis.eval(...)` must still fire.
           const prevIdx4 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx4)) continue;
+
           const prev4 = tokens[prevIdx4];
-          if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
-            continue;
 
           // Must be followed by `(`, `?.(`, or `<T>(`.
           const nextIdx4 = nextSignificant(tokens, i + 1);
@@ -515,11 +534,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         // ── SYN004: new Function(...) / Function(...) ────────────────────────
         case "Function": {
           const prevIdx4 = prevSignificant(tokens, i - 1);
-          const prev4 = tokens[prevIdx4];
 
-          // Exclude: `obj.Function(...)` — preceded by `.` or `?.`
-          if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
-            continue;
+          // Exclude: `obj.Function(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.Function(...)` / `globalThis.Function(...)` must still fire.
+          if (isNonGlobalMemberAccess(tokens, prevIdx4)) continue;
+
+          const prev4 = tokens[prevIdx4];
 
           // Must be followed by `(`, `?.(`, or `<T>(`.
           const nextIdx4 = nextSignificant(tokens, i + 1);
@@ -591,11 +611,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN005 + SYN006: process.env / process.exit ──────────────────────
         case "process": {
-          // Exclude: `obj.process` — preceded by `.` or `?.`
+          // Exclude: `obj.process` — preceded by `.` or `?.` by a non-global receiver.
+          // `globalThis.process.*` / `global.process.*` must still fire.
           const prevIdx5 = prevSignificant(tokens, i - 1);
-          const prev5 = tokens[prevIdx5];
-          if (prev5 && ((prev5.kind === "punct" && prev5.text === ".") || prev5.kind === "questionDot"))
-            continue;
+          if (isNonGlobalMemberAccess(tokens, prevIdx5)) continue;
 
           // Must be followed by `.` or `?.`
           const nextIdx5 = nextSignificant(tokens, i + 1);
@@ -717,9 +736,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const prevIdx7 = prevSignificant(tokens, i - 1);
           const prev7 = tokens[prevIdx7];
 
-          // Exclude: `obj.fetch(...)` — preceded by `.` or `?.`
-          if (prev7 && ((prev7.kind === "punct" && prev7.text === ".") || prev7.kind === "questionDot"))
-            continue;
+          // Exclude: `obj.fetch(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.fetch(...)` / `globalThis.fetch(...)` / `self.fetch(...)` must still fire.
+          if (isNonGlobalMemberAccess(tokens, prevIdx7)) continue;
 
           // Exclude: function/fn/function* declarations named fetch
           if (prev7 && prev7.kind === "ident" && prev7.text === "function") continue;
@@ -786,9 +805,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const prevIdx8 = prevSignificant(tokens, i - 1);
           const prev8 = tokens[prevIdx8];
 
-          // Exclude: `obj.WebSocket(...)` — preceded by `.` or `?.`
-          if (prev8 && ((prev8.kind === "punct" && prev8.text === ".") || prev8.kind === "questionDot"))
-            continue;
+          // Exclude: `obj.WebSocket(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.WebSocket(...)` / `globalThis.WebSocket(...)` must still fire.
+          if (isNonGlobalMemberAccess(tokens, prevIdx8)) continue;
 
           // Exclude: function/fn/function* declarations named WebSocket
           if (prev8 && prev8.kind === "ident" && prev8.text === "function") continue;
@@ -934,11 +953,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN012: new EventSource() / EventSource() call ──────────────────
         case "EventSource": {
-          // Exclude: `obj.EventSource(...)` — preceded by `.` or `?.`
+          // Exclude: `obj.EventSource(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.EventSource(...)` / `globalThis.EventSource(...)` must still fire.
           const prevIdx12 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx12)) continue;
+
           const prev12 = tokens[prevIdx12];
-          if (prev12 && ((prev12.kind === "punct" && prev12.text === ".") || prev12.kind === "questionDot"))
-            continue;
 
           // Exclude: function/fn/function* declarations named EventSource
           if (prev12 && prev12.kind === "ident" && prev12.text === "function") continue;
@@ -1055,11 +1075,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         // ── SYN013: new Worker() / new SharedWorker() ───────────────────────
         case "Worker":
         case "SharedWorker": {
-          // Exclude: `obj.Worker(...)` — preceded by `.` or `?.`
+          // Exclude: `obj.Worker(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.Worker(...)` / `globalThis.Worker(...)` must still fire.
           const prevIdx13 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx13)) continue;
+
           const prev13 = tokens[prevIdx13];
-          if (prev13 && ((prev13.kind === "punct" && prev13.text === ".") || prev13.kind === "questionDot"))
-            continue;
 
           // Exclude: function/fn/function* declarations named Worker/SharedWorker
           if (prev13 && prev13.kind === "ident" && prev13.text === "function") continue;
@@ -1176,11 +1197,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         // ── SYN014: new BroadcastChannel() / BroadcastChannel() ─────────────
         case "BroadcastChannel": {
           const prevIdx14 = prevSignificant(tokens, i - 1);
-          const prev14 = tokens[prevIdx14];
 
-          // Exclude: `obj.BroadcastChannel(...)` — preceded by `.` or `?.`
-          if (prev14 && ((prev14.kind === "punct" && prev14.text === ".") || prev14.kind === "questionDot"))
-            continue;
+          // Exclude: `obj.BroadcastChannel(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.BroadcastChannel(...)` / `globalThis.BroadcastChannel(...)` must still fire.
+          if (isNonGlobalMemberAccess(tokens, prevIdx14)) continue;
+
+          const prev14 = tokens[prevIdx14];
 
           // Exclude: function/fn/function* declarations named BroadcastChannel
           if (prev14 && prev14.kind === "ident" && prev14.text === "function") continue;
@@ -1297,11 +1319,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN016: indexedDB.* access ───────────────────────────────────────
         case "indexedDB": {
-          // Exclude: `obj.indexedDB` — preceded by `.` or `?.`
+          // Exclude: `obj.indexedDB` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.indexedDB.*` / `globalThis.indexedDB.*` must still fire.
           const prevIdx16 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx16)) continue;
+
           const prev16 = tokens[prevIdx16];
-          if (prev16 && ((prev16.kind === "punct" && prev16.text === ".") || prev16.kind === "questionDot"))
-            continue;
 
           // Exclude: fn/function/function* declarations named indexedDB
           if (prev16 && prev16.kind === "keyword" && prev16.text === "fn") continue;
@@ -1341,11 +1364,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN017: new Notification() / Notification() call ─────────────────
         case "Notification": {
-          // Exclude: `obj.Notification(...)` — preceded by `.` or `?.`
+          // Exclude: `obj.Notification(...)` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.Notification(...)` / `globalThis.Notification(...)` must still fire.
           const prevIdx17 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx17)) continue;
+
           const prev17 = tokens[prevIdx17];
-          if (prev17 && ((prev17.kind === "punct" && prev17.text === ".") || prev17.kind === "questionDot"))
-            continue;
 
           // Exclude: function/fn/function* declarations named Notification
           if (prev17 && prev17.kind === "ident" && prev17.text === "function") continue;
@@ -1512,11 +1536,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN018: Math.random() ────────────────────────────────────────────
         case "Math": {
-          // Exclude: `obj.Math.random(...)` — Math preceded by `.` or `?.`
+          // Exclude: `obj.Math.random(...)` — Math preceded by `.` or `?.` by a non-global receiver.
+          // `window.Math.random()` / `globalThis.Math.random()` must still fire.
           const prevIdx18 = prevSignificant(tokens, i - 1);
-          const prev18 = tokens[prevIdx18];
-          if (prev18 && ((prev18.kind === "punct" && prev18.text === ".") || prev18.kind === "questionDot"))
-            continue;
+          if (isNonGlobalMemberAccess(tokens, prevIdx18)) continue;
 
           // Must be followed by `.` or `?.`
           const nextIdx18 = nextSignificant(tokens, i + 1);
@@ -1567,11 +1590,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN019: crypto.getRandomValues() / crypto.randomUUID() ───────────
         case "crypto": {
-          // Exclude: `obj.crypto` — preceded by `.` or `?.`
+          // Exclude: `obj.crypto` — preceded by `.` or `?.` by a non-global receiver.
+          // `window.crypto.getRandomValues()` / `globalThis.crypto.randomUUID()` must still fire.
           const prevIdx19 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx19)) continue;
+
           const prev19 = tokens[prevIdx19];
-          if (prev19 && ((prev19.kind === "punct" && prev19.text === ".") || prev19.kind === "questionDot"))
-            continue;
 
           // Exclude: fn/function/function* declarations named crypto
           if (prev19 && prev19.kind === "keyword" && prev19.text === "fn") continue;
@@ -1633,11 +1657,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN023: navigator.* ambient browser capability ───────────────────
         case "navigator": {
-          // Exclude: `obj.navigator.*` — navigator preceded by `.` or `?.`
+          // Exclude: `obj.navigator.*` — navigator preceded by `.` or `?.` by a non-global receiver.
+          // `window.navigator.geolocation` / `globalThis.navigator.clipboard` must still fire.
           const prevIdx23 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx23)) continue;
+
           const prev23 = tokens[prevIdx23];
-          if (prev23 && ((prev23.kind === "punct" && prev23.text === ".") || prev23.kind === "questionDot"))
-            continue;
 
           // Exclude: fn/function/function* declarations named navigator
           if (prev23 && prev23.kind === "keyword" && prev23.text === "fn") continue;
@@ -1687,11 +1712,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         default: {
           if (!TIMER_GLOBALS.has(tok.text)) continue;
 
-          // Exclude property accesses: obj.setTimeout(...)
+          // Exclude property accesses: obj.setTimeout(...), but NOT window.setTimeout(...)
+          // `window.setTimeout` / `globalThis.setTimeout` must still fire.
           const prevIdx10 = prevSignificant(tokens, i - 1);
+          if (isNonGlobalMemberAccess(tokens, prevIdx10)) continue;
+
           const prev10 = tokens[prevIdx10];
-          if (prev10 && ((prev10.kind === "punct" && prev10.text === ".") || prev10.kind === "questionDot"))
-            continue;
 
           // Exclude function/fn/function* declarations named setTimeout/setInterval/queueMicrotask
           if (prev10 && prev10.kind === "ident" && prev10.text === "function") continue;
