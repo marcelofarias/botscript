@@ -220,11 +220,72 @@ describe("SYN023: navigator.* ambient browser capability detection", () => {
     expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(false);
   });
 
-  it("does NOT fire on navigator.sendBeacon — not in the high-concern set", () => {
+  it("fires on navigator.sendBeacon — fire-and-forget network POST request", () => {
     const src =
       "?bs 0.7\n" +
       "fn beacon(url: string) -> void {\n" +
       "  navigator.sendBeacon(url)\n" +
+      "}\n";
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "SYN023");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("navigator.sendBeacon");
+  });
+
+  it("fires on navigator.credentials — Credential Management API", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn getCredentials() -> any {\n" +
+      "  return navigator.credentials\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
+  });
+
+  it("fires on navigator.storage — StorageManager API", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn checkStorage() -> any {\n" +
+      "  return navigator.storage\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
+  });
+
+  it("fires on navigator.locks — Web Locks API (cross-tab synchronization)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn acquireLock() -> any {\n" +
+      "  return navigator.locks\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
+  });
+
+  it("fires on navigator.share — Web Share API", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn shareContent(title: string) -> any {\n" +
+      "  return navigator.share({ title })\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
+  });
+
+  it("sendBeacon message includes 'navigator.sendBeacon' and fn name", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn sendAnalytics(url: string) -> void {\n" +
+      "  navigator.sendBeacon(url)\n" +
+      "}\n";
+    const result = transform(src);
+    const w = result.warnings.find((w) => w.code === "SYN023")!;
+    expect(w).toBeDefined();
+    expect(w.message).toContain("sendAnalytics");
+    expect(w.message).toContain("navigator.sendBeacon");
+  });
+
+  it("sendBeacon inside unsafe block is suppressed", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn track(url: string) -> void {\n" +
+      '  unsafe "intentional telemetry beacon" { navigator.sendBeacon(url) }\n' +
       "}\n";
     expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(false);
   });

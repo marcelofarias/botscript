@@ -1345,15 +1345,20 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "SYN023 fires when a fn body accesses a high-concern `navigator.*` member in `?bs 0.7+`. " +
       "The covered members are: `geolocation`, `clipboard`, `mediaDevices`, `serviceWorker`, " +
       "`permissions`, `onLine`, `userAgent`, `language`, `languages`, `platform`, " +
-      "`hardwareConcurrency`, `deviceMemory`, `connection`, and `wakeLock`.\n\n" +
-      "**Why it matters:** These properties expose ambient browser capability state — the " +
-      "device's physical location, the clipboard contents, media input devices, background " +
-      "service workers, network connectivity, browser identity, hardware specs, and display " +
-      "wake locks. None of these are covered by botscript's capability model: no `uses {}`, " +
-      "`reads {}`, or `writes {}` declaration captures a `navigator.*` access. A fn that " +
-      "reads them has an undeclared browser-environment dependency — callers cannot see it " +
-      "in the header, and tests cannot inject a controlled value without monkey-patching the " +
-      "global `navigator` object.\n\n" +
+      "`hardwareConcurrency`, `deviceMemory`, `connection`, `wakeLock`, `sendBeacon`, " +
+      "`credentials`, `storage`, `locks`, and `share`.\n\n" +
+      "**Why it matters:** These members expose ambient browser capability state or perform " +
+      "side-effecting operations — physical location, clipboard contents, media devices, " +
+      "background service workers, network connectivity, browser identity, hardware specs, " +
+      "display wake locks, fire-and-forget network POST requests (`sendBeacon`), user " +
+      "credential management, persistent storage quotas, cross-tab lock synchronization, " +
+      "and OS-level share dialogs. None of these are covered by botscript's capability model: " +
+      "no `uses {}`, `reads {}`, or `writes {}` declaration captures a `navigator.*` access. " +
+      "A fn that accesses these members has an undeclared browser-environment dependency — " +
+      "callers cannot see it in the header, and tests cannot inject a controlled value " +
+      "without monkey-patching the global `navigator` object. `navigator.sendBeacon` is " +
+      "particularly important: it makes a real network POST request and bypasses the same " +
+      "capability gap as `fetch`, but through a different global that SYN007 does not cover.\n\n" +
       "**Detected forms:** `navigator.<member>` or `navigator?.<member>` where `<member>` " +
       "is in the high-concern set above. Member calls on local bindings (`obj.navigator.*`) " +
       "and `fn navigator(...)` / `function navigator(...)` / `function* navigator(...)` " +

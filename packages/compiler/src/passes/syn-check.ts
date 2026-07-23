@@ -174,6 +174,11 @@
  *             deviceMemory    — RAM available
  *             connection      — NetworkInformation API (ambient connectivity detail)
  *             wakeLock        — screen wake lock requests
+ *             sendBeacon      — fire-and-forget POST request; makes a real network call
+ *             credentials     — Credential Management API; reads/stores user credentials
+ *             storage         — StorageManager API; queries/manages persistent storage quota
+ *             locks           — Web Locks API; cross-tab/worker synchronization
+ *             share           — Web Share API; shares data via OS share dialog
  *           These are invisible to botscript's capability model: `uses {}`, `reads {}`, and
  *           `writes {}` declarations cover declared stdlib namespaces and resource labels, not
  *           the `navigator` global. A fn that accesses these members has undeclared browser
@@ -228,6 +233,7 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "geolocation", "clipboard", "mediaDevices", "serviceWorker", "permissions",
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
+  "sendBeacon", "credentials", "storage", "locks", "share",
 ]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {

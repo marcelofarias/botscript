@@ -1057,11 +1057,15 @@ const E: Record<string, ErrorCodeEntry> = {
       "`navigator.serviceWorker`, `navigator.permissions`, `navigator.onLine`, " +
       "`navigator.userAgent`, `navigator.language`, `navigator.languages`, " +
       "`navigator.platform`, `navigator.hardwareConcurrency`, `navigator.deviceMemory`, " +
-      "`navigator.connection`, and `navigator.wakeLock` read ambient browser capability " +
-      "state at runtime but are invisible to botscript's capability model: no `uses {}`, " +
-      "`reads {}`, or `writes {}` declaration covers them. A fn that reads these values " +
+      "`navigator.connection`, `navigator.wakeLock`, `navigator.sendBeacon`, " +
+      "`navigator.credentials`, `navigator.storage`, `navigator.locks`, and " +
+      "`navigator.share` read ambient browser capability state or perform network/storage " +
+      "operations at runtime but are invisible to botscript's capability model: no `uses {}`, " +
+      "`reads {}`, or `writes {}` declaration covers them. A fn that accesses these members " +
       "has an undeclared browser-environment dependency — callers cannot see it in the " +
-      "header, and tests cannot inject a controlled value.",
+      "header, and tests cannot inject a controlled value. Note: `navigator.sendBeacon` " +
+      "makes a real network POST request and is particularly important to flag since it " +
+      "bypasses the same capability gap as `fetch` but through a different global.",
     idiom:
       "pass the required value as an explicit parameter so callers and tests can control it (preferred); " +
       "if the ambient access is intentional, wrap in " +
