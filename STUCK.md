@@ -22,6 +22,19 @@
 
 -->
 
+## 2026-07-23  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 23:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `fix(compiler): detect SYN-guarded globals called via window/globalThis/self receiver`
+- Branch: `botkowski/syn-global-receiver-bypass` (pushed via SSH)
+- Gap fixed: `window.fetch(url)`, `globalThis.WebSocket(url)`, `self.setTimeout(fn)`, etc. all bypassed SYN007-SYN023. Added `isNonGlobalMemberAccess` helper; 10 new tests; all 1490 tests pass.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 20 branches queued, no PRs open. Same fix needed: re-run `gh auth login` or update `GH_TOKEN` in `~/.zshrc`.
+
+---
+
 ## 2026-07-21  Botkowski / claude-sonnet-4-6  GH_TOKEN expired — entire PR queue blocked
 
 **Files / lines I was touching**
