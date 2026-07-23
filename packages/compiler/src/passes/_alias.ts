@@ -17,6 +17,33 @@ import { nextSignificant } from "./_callgraph.js";
 const STDLIB_NAMES = new Set(Object.keys(STDLIB_TO_CAP));
 
 /**
+ * Ambient JS globals monitored by SYN checks (SYN007–SYN023).
+ * Direct-call globals: aliasing these means `alias(...)` bypasses the SYN check
+ * that matches the canonical name only.
+ * Member-access globals: aliasing means `alias.member(...)` bypasses the SYN check.
+ */
+export const SYN_MONITORED_GLOBALS = new Set([
+  // Direct-call / constructor globals (SYN007–SYN014, SYN017)
+  "fetch",           // SYN007
+  "WebSocket",       // SYN008
+  "setTimeout",      // SYN010
+  "setInterval",     // SYN010
+  "queueMicrotask",  // SYN010
+  "EventSource",     // SYN012
+  "Worker",          // SYN013
+  "SharedWorker",    // SYN013
+  "BroadcastChannel", // SYN014
+  "Notification",    // SYN017
+  // Member-access namespace globals (SYN018, SYN019, SYN022, SYN023, and SYN003/SYN005/SYN006/SYN016)
+  "Math",            // SYN018 (Math.random)
+  "crypto",          // SYN019 (crypto.getRandomValues/randomUUID)
+  "console",         // SYN003 (console.log etc.)
+  "process",         // SYN005/SYN006/SYN022 (process.env/exit/argv etc.)
+  "navigator",       // SYN023 (navigator.geolocation etc.)
+  "indexedDB",       // SYN016
+]);
+
+/**
  * Collect module-level `const <alias> = <stdlib_namespace>` bindings.
  *
  * Returns a map from alias name → canonical stdlib namespace (e.g. `"t" → "time"`).
@@ -1301,3 +1328,100 @@ function leadingStdlibAfterParens(tokens: Token[], openIdx: number): string | nu
   return null;
 }
 
+/**
+ * Collect module-level `const <name> = <SYN_global>` bindings where `<SYN_global>`
+ * is an ambient JS global monitored by a SYN check (e.g. `fetch`, `WebSocket`,
+ * `Math`, `crypto`).
+ *
+ * Only trivial direct bindings are flagged (`const f = fetch`). Non-trivial forms
+ * (member access, calls, ternaries) are ignored — the canonical-name tripwire
+ * remains active for those.
+ *
+ * Returns one candidate per detected binding. ALI004 fires on each.
+ */
+export function collectGlobalAliasWarningCandidates(
+  tokens: Token[],
+): Array<{ name: string; globalName: string; start: number; end: number }> {
+  const candidates: Array<{ name: string; globalName: string; start: number; end: number }> = [];
+  let depth = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.kind === "open" && tok.text === "{") { depth++; continue; }
+    if (tok.kind === "close" && tok.text === "}") { if (depth > 0) depth--; continue; }
+    if (depth !== 0) continue;
+    if (tok.kind !== "ident" || tok.text !== "const") continue;
+
+    const constStart = tok.start;
+
+    // const <name>[: <type>] = <rhs>
+    const nameIdx = nextSignificant(tokens, i + 1);
+    const nameTok = tokens[nameIdx];
+    if (!nameTok || nameTok.kind !== "ident") continue;
+
+    // Skip if the binding name is itself a canonical stdlib namespace.
+    if (STDLIB_NAMES.has(nameTok.text)) continue;
+    // Skip if the binding name IS the SYN global itself (trivial self-reference).
+    if (SYN_MONITORED_GLOBALS.has(nameTok.text)) continue;
+
+    // Find `=`, skipping optional type annotation.
+    const afterNameIdx = nextSignificant(tokens, nameIdx + 1);
+    const afterNameTok = tokens[afterNameIdx];
+    let eqIdx = -1;
+    if (afterNameTok && afterNameTok.kind === "punct" && afterNameTok.text === ":") {
+      let typeDepth = 0;
+      for (let j = afterNameIdx + 1; j < tokens.length; j++) {
+        const t = tokens[j];
+        if (!t) break;
+        if (t.kind === "newline" || t.kind === "eof") break;
+        if (
+          (t.kind === "open" && t.text === "(") ||
+          (t.kind === "operator" && t.text === "<")
+        ) { typeDepth++; }
+        else if (
+          (t.kind === "close" && t.text === ")") ||
+          (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+        ) { typeDepth = Math.max(0, typeDepth - t.text.length); }
+        else if (t.kind === "eq" && typeDepth === 0) { eqIdx = j; break; }
+      }
+    } else if (afterNameTok && afterNameTok.kind === "eq") {
+      eqIdx = afterNameIdx;
+    }
+    if (eqIdx === -1) continue;
+
+    // RHS must be a bare SYN-monitored global ident (direct binding only).
+    const rhsIdx = nextSignificant(tokens, eqIdx + 1);
+    const rhsTok = tokens[rhsIdx];
+    if (!rhsTok || rhsTok.kind !== "ident") continue;
+    if (!SYN_MONITORED_GLOBALS.has(rhsTok.text)) continue;
+
+    // Accept only a clean end-of-statement — reject member access, calls, operators.
+    let afterIdx = rhsIdx + 1;
+    while (
+      afterIdx < tokens.length &&
+      (tokens[afterIdx]?.kind === "whitespace" || tokens[afterIdx]?.kind === "blockComment")
+    ) {
+      afterIdx++;
+    }
+    const afterRhs = tokens[afterIdx];
+    if (
+      afterRhs &&
+      afterRhs.kind !== "newline" &&
+      afterRhs.kind !== "lineComment" &&
+      afterRhs.kind !== "eof" &&
+      !(afterRhs.kind === "punct" && afterRhs.text === ";")
+    ) {
+      continue;
+    }
+
+    candidates.push({
+      name: nameTok.text,
+      globalName: rhsTok.text,
+      start: constStart,
+      end: rhsTok.end,
+    });
+  }
+
+  return candidates;
+}

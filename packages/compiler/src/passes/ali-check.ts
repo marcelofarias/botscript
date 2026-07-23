@@ -29,6 +29,7 @@ import {
   collectAliasWarningCandidates,
   collectChainAliasWarningCandidates,
   collectDestructuringWarningCandidates,
+  collectGlobalAliasWarningCandidates,
 } from "./_alias.js";
 
 export function passAliCheck(src: string, version: VersionInfo): { code: string; warnings: Diagnostic[] } {
@@ -123,6 +124,32 @@ export function passAliCheck(src: string, version: VersionInfo): { code: string;
       throw new BotscriptError(ali003Diagnostics);
     }
     warnings.push(...ali003Diagnostics);
+  }
+
+  // ALI004: module-level alias of an ambient JS global monitored by a SYN check.
+  // `const f = fetch` → calls via `f` bypass SYN007 (and similarly for other globals).
+  const ali004Candidates = collectGlobalAliasWarningCandidates(tokens);
+  if (ali004Candidates.length > 0) {
+    const entry = getErrorCode("ALI004")!;
+    for (const c of ali004Candidates) {
+      const loc = locationOf(src, c.start);
+      warnings.push({
+        code: "ALI004",
+        severity: "warning" as const,
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: c.start,
+        end: c.end,
+        message:
+          `'${c.name}' aliases ambient global '${c.globalName}' — calls via '${c.name}' bypass ` +
+          `the SYN check that guards '${c.globalName}'; use '${c.globalName}' directly or ` +
+          `wrap in \`unsafe "reason" {}\` to acknowledge the bypass`,
+        rule: entry.rule,
+        idiom: entry.idiom,
+        rewrite: entry.rewrite,
+      });
+    }
   }
 
   return { code: src, warnings };

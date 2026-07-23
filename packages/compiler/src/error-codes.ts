@@ -79,6 +79,26 @@ const E: Record<string, ErrorCodeEntry> = {
       "// after — direct binding; t.now() is tracked\n" +
       "const t = time\n",
   },
+  ALI004: {
+    code: "ALI004",
+    title: "ambient JS global aliased — calls via the alias bypass SYN checks",
+    rule:
+      "a module-level `const <name> = <global>` binding where `<global>` is an ambient JS global monitored " +
+      "by a SYN check (e.g. `fetch`, `WebSocket`, `setTimeout`, `Math`, `crypto`) means that calls via the " +
+      "alias (`name(...)`, `name.member()`) are invisible to syn-check: SYN007–SYN023 match the canonical " +
+      "global name only — the alias bypasses detection; warning at ?bs 0.8+",
+    idiom:
+      "reference the ambient global directly (e.g. `fetch(url)`) so SYN checks fire, " +
+      "or wrap the call in `unsafe \"reason\" {}` to acknowledge the bypass explicitly",
+    rewrite:
+      "// option A — use the canonical global name directly:\nfetch(url)  // SYN007 fires as expected\n\n" +
+      "// option B — wrap in unsafe to acknowledge the bypass:\nunsafe \"adapter for fetch\" { f(url) }",
+    example:
+      "// before — alias at module scope; f(url) bypasses SYN007; ALI004 fires\n" +
+      "const f = fetch\n\n" +
+      "// after — use fetch directly; SYN007 catches it\n" +
+      "// fetch(url)\n",
+  },
   CAP001: {
     code: "CAP001",
     title: "function calls a stdlib namespace whose capability is not declared",

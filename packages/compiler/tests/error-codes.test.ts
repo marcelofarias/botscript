@@ -7,7 +7,7 @@ describe("error-code registry", () => {
     const codes = listErrorCodes().map((e) => e.code);
     // Exhaustive allowlist — add here AND to error-codes.ts when introducing a new diagnostic.
     const expected = [
-      "ALI001", "ALI002", "ALI003",
+      "ALI001", "ALI002", "ALI003", "ALI004",
       "CAP001", "CAP002", "CAP003",
       "DEP001", "DEP002", "DEP003", "DEP004",
       "EFF002", "EFF003", "EFF004",
