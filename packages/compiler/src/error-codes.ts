@@ -1085,6 +1085,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN037: {
+    code: "SYN037",
+    title: "SYN-guarded global called via .call() / .apply() / .bind() bypasses name-token detection",
+    rule:
+      "`fetch.call(...)`, `fetch.apply(...)`, `WebSocket.call(...)`, and similar " +
+      "`.call()` / `.apply()` / `.bind()` invocations on SYN-guarded globals bypass " +
+      "SYN007–SYN036 name-token detection: the call-site token is `call`, `apply`, or " +
+      "`bind` — not `fetch` or `WebSocket` — so the guarded global can be invoked without " +
+      "triggering the corresponding SYN warning. A fn that calls `fetch.call(null, url)` " +
+      "has the same undeclared network dependency as one that calls `fetch(url)` directly.",
+    idiom:
+      "call the global directly (`fetch(url)`) so SYN007–SYN036 fire on the canonical name, " +
+      "then add the required capability declaration; if the indirect call is intentional, " +
+      "wrap in `unsafe \"calls <global>.call for <reason>\" { <global>.call(...) }`",
+    rewrite:
+      "// before — fetch.call bypasses SYN007 name-token detection\n" +
+      "fn load(url: string) uses { net } -> string {\n" +
+      "  return fetch.call(null, url)  // SYN037\n" +
+      "}\n\n" +
+      "// after — direct call; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> string {\n" +
+      "  return fetch(url)\n" +
+      "}",
+    example:
+      "// SYN037: fetch.apply bypasses the capability model\n" +
+      "fn request(url: string) uses { net } -> string {\n" +
+      "  return fetch.apply(null, [url])  // SYN037\n" +
+      "}\n\n" +
+      "// fix: call fetch directly\n" +
+      "fn request(url: string) uses { net } -> string {\n" +
+      "  return fetch(url)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

@@ -182,6 +182,19 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN037  A SYN-guarded global is invoked via `.call()`, `.apply()`, or `.bind()` in
+ *           a fn body (?bs 0.7+). Expressions like `fetch.call(null, url)`,
+ *           `WebSocket.apply(null, [url])`, or `setTimeout.bind(null)(fn, ms)` invoke
+ *           the guarded global without using its name as the call-site token —
+ *           SYN007–SYN036 switch on the callee name and therefore cannot fire. The
+ *           same undeclared capability (network, timer, etc.) is exercised at runtime.
+ *           Detection: when token is `call`/`apply`/`bind`, look back through `.`/`?.`
+ *           to the receiver; if the receiver is a SYN-guarded global name not itself
+ *           preceded by `.`/`?.`, and the method is followed by `(`/`?.(`, warn SYN037.
+ *           Excluded: `obj.fetch.call(...)` (receiver is a member, not a bare global),
+ *           fn/function declarations named `call`/`apply`/`bind`.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -218,6 +231,32 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 ]);
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
+// SYN-guarded globals whose direct-call-bypass via .call()/.apply()/.bind() is caught by SYN037.
+// Includes every single-token global that SYN007–SYN036 protect (member-access globals like
+// Math.random or process.* are excluded — their bypass path is aliasing the member, not .call).
+const SYN037_GUARDED_GLOBALS = new Set([
+  "fetch",              // SYN007
+  "WebSocket",          // SYN008
+  "EventSource",        // SYN012
+  "Worker",             // SYN013
+  "SharedWorker",       // SYN013
+  "BroadcastChannel",   // SYN014
+  "Notification",       // SYN017
+  "XMLHttpRequest",     // SYN009 (in queued branches)
+  "RTCPeerConnection",  // SYN029
+  "requestAnimationFrame",  // SYN031
+  "requestIdleCallback",    // SYN031
+  "WebAssembly",        // SYN032
+  "MessageChannel",     // SYN034
+  "Proxy",              // SYN035
+  "Reflect",            // SYN036 — Reflect.apply itself; also covers Reflect.apply.call(null, ...)
+  "eval",               // SYN004
+  "postMessage",        // SYN027
+  "addEventListener",   // SYN030
+  "setTimeout",         // SYN010
+  "setInterval",        // SYN010
+  "queueMicrotask",     // SYN010
+]);
 // process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
 const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
@@ -255,6 +294,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn037 = getErrorCode("SYN037")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1719,74 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN037: <SYN-guarded-global>.call() / .apply() / .bind() ────────
+        case "call":
+        case "apply":
+        case "bind": {
+          // Must be preceded by `.` or `?.` — confirming this is a method access.
+          const prevIdx37 = prevSignificant(tokens, i - 1);
+          const prev37 = tokens[prevIdx37];
+          if (!prev37 || !((prev37.kind === "punct" && prev37.text === ".") || prev37.kind === "questionDot"))
+            continue;
+
+          // Look back to the receiver — must be a SYN-guarded global name.
+          const receiverIdx37 = prevSignificant(tokens, prevIdx37 - 1);
+          const receiver37 = tokens[receiverIdx37];
+          if (!receiver37 || receiver37.kind !== "ident") continue;
+          if (!SYN037_GUARDED_GLOBALS.has(receiver37.text)) continue;
+
+          // Receiver must not itself be a member access: `obj.fetch.call(...)` — not a guarded global.
+          const beforeReceiverIdx37 = prevSignificant(tokens, receiverIdx37 - 1);
+          const beforeReceiver37 = tokens[beforeReceiverIdx37];
+          if (beforeReceiver37 && ((beforeReceiver37.kind === "punct" && beforeReceiver37.text === ".") || beforeReceiver37.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named call/apply/bind
+          if (prev37.kind !== "questionDot") {
+            if (beforeReceiver37 && beforeReceiver37.kind === "keyword" && beforeReceiver37.text === "fn") continue;
+            if (beforeReceiver37 && beforeReceiver37.kind === "ident" && beforeReceiver37.text === "function") continue;
+            if (isFunctionStarDecl(tokens, beforeReceiverIdx37)) continue;
+          }
+
+          // Must be followed by `(` or `?.(`
+          const nextIdx37 = nextSignificant(tokens, i + 1);
+          const next37 = tokens[nextIdx37];
+          let callIdx37 = nextIdx37;
+          let isOpt37 = false;
+          if (next37 && next37.kind === "questionDot") {
+            isOpt37 = true;
+            callIdx37 = nextSignificant(tokens, nextIdx37 + 1);
+          }
+          const callTok37 = tokens[callIdx37];
+          if (!callTok37 || !(callTok37.kind === "open" && callTok37.text === "(")) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const methodName37 = tok.text;
+          const globalName37 = receiver37.text;
+          const dot37 = prev37.kind === "questionDot" ? "?." : ".";
+          const callSep37 = isOpt37 ? "?." : "";
+          const loc37 = locationOf(src, receiver37.start);
+          warnings.push({
+            code: "SYN037",
+            severity: "warning",
+            file: null,
+            line: loc37.line,
+            column: loc37.column,
+            start: receiver37.start,
+            end: callTok37.start + 1,
+            message:
+              `fn '${decl.name}' calls ${globalName37}${dot37}${methodName37}${callSep37}() — ` +
+              `${globalName37}.${methodName37} invokes ${globalName37} without using its name as the call token, ` +
+              `bypassing SYN007–SYN036 name-token detection; ` +
+              `call ${globalName37}(...) directly or wrap in unsafe "${globalName37}.${methodName37} for <reason>" { ${globalName37}.${methodName37}(...) }`,
+            rule: syn037.rule,
+            idiom: syn037.idiom,
+            rewrite: syn037.rewrite,
           });
           break;
         }
