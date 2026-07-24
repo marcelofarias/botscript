@@ -182,6 +182,17 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN036  A `Reflect.apply(...)` or `Reflect.construct(...)` call was detected in a fn body
+ *           (?bs 0.7+). `Reflect.apply(target, thisArg, args)` invokes any callable by reference
+ *           — including `fetch`, `WebSocket`, `eval`, and every SYN-guarded global — without
+ *           using the callee's name as a token at the call site. SYN007–SYN035 name-token
+ *           detection cannot fire. The capability surface of the invoked function is completely
+ *           invisible to callers and cannot be captured by `uses {}` / `reads {}` / `writes {}`.
+ *           Detection: `Reflect` ident not preceded by `.`/`?.`, followed by `.` or `?.`,
+ *           then `apply` or `construct`, then `(` or `?.(`.
+ *           Excluded: `obj.Reflect` (member on local binding), fn/function declarations
+ *           named `Reflect`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +266,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn036 = getErrorCode("SYN036")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1738,6 +1750,65 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn010.rule,
             idiom: syn010.idiom,
             rewrite: syn010.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN036: Reflect.apply() / Reflect.construct() ────────────────────
+        case "Reflect": {
+          // Exclude: `obj.Reflect` — preceded by `.` or `?.`
+          const prevIdx36 = prevSignificant(tokens, i - 1);
+          const prev36 = tokens[prevIdx36];
+          if (prev36 && ((prev36.kind === "punct" && prev36.text === ".") || prev36.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Reflect
+          if (prev36 && prev36.kind === "keyword" && prev36.text === "fn") continue;
+          if (prev36 && prev36.kind === "ident" && prev36.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx36)) continue;
+
+          // Must be followed by `.` or `?.` — confirming member access, not bare `Reflect`
+          const nextIdx36 = nextSignificant(tokens, i + 1);
+          const next36 = tokens[nextIdx36];
+          const isDot36 = next36 && next36.kind === "punct" && next36.text === ".";
+          const isOptChain36 = next36 && next36.kind === "questionDot";
+          if (!isDot36 && !isOptChain36) continue;
+
+          // The member must be `apply` or `construct`
+          const memberIdx36 = nextSignificant(tokens, nextIdx36 + 1);
+          const member36 = tokens[memberIdx36];
+          if (!member36 || member36.kind !== "ident") continue;
+          if (member36.text !== "apply" && member36.text !== "construct") continue;
+
+          // Must be followed by `(` or `?.(` — confirming a call, not property access
+          const afterMemberIdx36 = nextSignificant(tokens, memberIdx36 + 1);
+          const afterMember36 = tokens[afterMemberIdx36];
+          const isCall36 =
+            (afterMember36 && afterMember36.kind === "open" && afterMember36.text === "(") ||
+            (afterMember36 && afterMember36.kind === "questionDot");
+          if (!isCall36) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep36 = isOptChain36 ? "?." : ".";
+          const callSep36 = afterMember36 && afterMember36.kind === "questionDot" ? "?." : "";
+          const loc36 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN036",
+            severity: "warning",
+            file: null,
+            line: loc36.line,
+            column: loc36.column,
+            start: tok.start,
+            end: afterMember36!.end,
+            message:
+              `fn '${decl.name}' calls Reflect${sep36}${member36.text}${callSep36}() — ` +
+              `Reflect.${member36.text} invokes a callable by reference, bypassing SYN007–SYN035 name-token detection; ` +
+              `the capability surface of the target function is invisible to callers and cannot be declared in the fn header; ` +
+              `call the target function directly or wrap in unsafe "Reflect.${member36.text} for <reason>" { Reflect.${member36.text}(...) }`,
+            rule: syn036.rule,
+            idiom: syn036.idiom,
+            rewrite: syn036.rewrite,
           });
           break;
         }

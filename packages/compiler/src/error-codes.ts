@@ -1085,6 +1085,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN036: {
+    code: "SYN036",
+    title: "Reflect.apply() or Reflect.construct() call bypasses the capability model",
+    rule:
+      "`Reflect.apply(target, thisArg, args)` and `Reflect.construct(target, args)` invoke " +
+      "any callable by reference — including `fetch`, `WebSocket`, `eval`, and every other " +
+      "SYN-guarded global — without using the callee's name as a token at the call site. " +
+      "SYN007–SYN035 name-token detection cannot fire when the actual function is only " +
+      "referenced as the first argument; callers cannot see which capability surface is invoked, " +
+      "and no `uses {}` / `reads {}` / `writes {}` declaration can cover it",
+    idiom:
+      "call the target function directly so botscript can statically verify the capability surface; " +
+      "if Reflect is genuinely needed (e.g. a meta-programming or testing harness), " +
+      "wrap in `unsafe \"Reflect.apply for <reason>\" { Reflect.apply(...) }`",
+    rewrite:
+      "// before — Reflect.apply hides which fn is invoked; SYN007 cannot fire\n" +
+      "fn fetchData(url: string) -> Promise<Response> {\n" +
+      "  return Reflect.apply(fetch, null, [url])  // SYN036\n" +
+      "}\n\n" +
+      "// after — direct call; SYN007 fires and capability model applies\n" +
+      "fn fetchData(url: string) uses { net } -> Promise<Response> {\n" +
+      "  return unsafe \"net.get wraps fetch\" { fetch(url) }\n" +
+      "}",
+    example:
+      "// SYN036: Reflect.apply bypasses capability detection\n" +
+      "fn sendRequest(url: string) -> Promise<Response> {\n" +
+      "  return Reflect.apply(fetch, null, [url])  // SYN036\n" +
+      "}\n\n" +
+      "// fix: call fetch directly (SYN007 will guide the fix)\n" +
+      "fn sendRequest(url: string) uses { net } -> Promise<Response> {\n" +
+      "  return unsafe \"net.get wraps fetch\" { fetch(url) }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
