@@ -1085,6 +1085,44 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN035: {
+    code: "SYN035",
+    title: "new Proxy() / Proxy() construction bypasses the capability model",
+    rule:
+      "`new Proxy(target, handler)` and `Proxy(target, handler)` create an object that " +
+      "intercepts fundamental operations (get, set, apply, construct, deleteProperty, etc.) " +
+      "through a handler. The handler's traps can perform arbitrary side effects — network " +
+      "calls, storage writes, logging, mutations — while every call site that touches the " +
+      "proxy looks like a benign property access or function call. No `uses {}`, `reads {}`, " +
+      "or `writes {}` declaration covers effects inside a Proxy trap. A fn that constructs a " +
+      "Proxy has a hidden, unbounded capability surface invisible to callers.",
+    idiom:
+      "prefer an explicit wrapper type with declared methods so the effect surface is visible; " +
+      "if a Proxy is genuinely required, wrap in " +
+      "`unsafe \"uses Proxy for <reason>\" { new Proxy(target, handler) }`",
+    rewrite:
+      "// before — handler side-effects invisible to the capability model\n" +
+      "fn trackedTarget(raw: object) -> object {\n" +
+      "  return new Proxy(raw, { get(t, k) { log(k); return t[k] } })  // SYN035\n" +
+      "}\n\n" +
+      "// after — wrap in unsafe with a stated reason\n" +
+      "fn trackedTarget(raw: object) -> object {\n" +
+      '  return unsafe "uses Proxy to trace property access for debugging" {\n' +
+      "    new Proxy(raw, { get(t, k) { log(k); return t[k] } })\n" +
+      "  }\n" +
+      "}",
+    example:
+      "// SYN035: Proxy construction bypasses the capability model\n" +
+      "fn wrap(obj: object) -> object {\n" +
+      "  return new Proxy(obj, { get(t, k) { return t[k] } })  // SYN035\n" +
+      "}\n\n" +
+      "// fix: explicit unsafe acknowledgment\n" +
+      "fn wrap(obj: object) -> object {\n" +
+      '  return unsafe "Proxy used for transparent property forwarding" {\n' +
+      "    new Proxy(obj, { get(t, k) { return t[k] } })\n" +
+      "  }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

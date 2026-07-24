@@ -182,6 +182,21 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN035  A `new Proxy(target, handler)` or `Proxy(target, handler)` construction was
+ *           detected in a fn body (?bs 0.7+). `Proxy` creates an object that intercepts
+ *           fundamental operations (get, set, apply, construct, deleteProperty, etc.) through
+ *           a handler. The handler's traps can perform arbitrary side effects — network calls,
+ *           storage writes, logging, mutations — while every call site that touches the proxy
+ *           looks like a benign property access or function call. No `uses {}`, `reads {}`, or
+ *           `writes {}` declaration covers effects inside a Proxy trap. A fn that constructs a
+ *           Proxy has a hidden, unbounded capability surface invisible to callers.
+ *           Detection: `Proxy` ident not preceded by `.`/`?.`, followed by `(` or `?.(` (call
+ *           form) or preceded by `new` (construction form). Generic `<T>` scan only when
+ *           preceded by `new`. Excluded: member calls (`obj.Proxy`), `fn`/`function`/`function*`
+ *           declarations named `Proxy`, object/class method shorthands, and TypeScript method
+ *           signatures. The `:` exclusion is guarded against ternary consequents.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +270,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn035 = getErrorCode("SYN035")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1695,166 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN035: new Proxy() / Proxy() construction ───────────────────────
+        case "Proxy": {
+          // Exclude: `obj.Proxy(...)` — preceded by `.` or `?.`
+          const prevIdx35 = prevSignificant(tokens, i - 1);
+          const prev35 = tokens[prevIdx35];
+          if (prev35 && ((prev35.kind === "punct" && prev35.text === ".") || prev35.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named Proxy
+          if (prev35 && prev35.kind === "ident" && prev35.text === "function") continue;
+          if (prev35 && prev35.kind === "keyword" && prev35.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx35)) continue;
+
+          const hasNew35 = prev35 && prev35.kind === "ident" && prev35.text === "new";
+          // Ternary guard: `cond ? Proxy(t, h) : other`, `cond ? new Proxy(t, h) : other`,
+          // with optional `await` between `?` and the call/construction
+          const prevBeforeNew35 = hasNew35
+            ? tokens[prevSignificant(tokens, prevIdx35 - 1)]
+            : undefined;
+          const awaitIdx35 = (!hasNew35 && prev35 && prev35.kind === "ident" && prev35.text === "await")
+            ? prevIdx35
+            : (prevBeforeNew35 && prevBeforeNew35.kind === "ident" && prevBeforeNew35.text === "await")
+              ? prevSignificant(tokens, prevIdx35 - 1)
+              : -1;
+          const prevBeforeAwait35 = awaitIdx35 >= 0 ? tokens[prevSignificant(tokens, awaitIdx35 - 1)] : undefined;
+          const isTernaryConsequent35 =
+            (prev35 !== undefined && prev35 !== null && prev35.kind === "question") ||
+            (prevBeforeNew35 !== undefined && prevBeforeNew35 !== null && prevBeforeNew35.kind === "question") ||
+            (prevBeforeAwait35 !== undefined && prevBeforeAwait35 !== null && prevBeforeAwait35.kind === "question");
+
+          const nextIdx35 = nextSignificant(tokens, i + 1);
+          const next35 = tokens[nextIdx35];
+
+          let isOpt35 = false;
+          let callIdx35 = nextIdx35;
+
+          if (next35 && next35.kind === "questionDot") {
+            // Proxy?.( — optional call
+            isOpt35 = true;
+            callIdx35 = nextSignificant(tokens, nextIdx35 + 1);
+          } else if (hasNew35 && next35 && next35.kind === "operator" && next35.text === "<") {
+            // new Proxy<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx35 + 1;
+            while (j < decl.tokenEnd && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx35 = nextSignificant(tokens, j);
+          }
+
+          const callTok35 = tokens[callIdx35];
+          if (!callTok35 || !(callTok35.kind === "open" && callTok35.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures.
+          if (callTok35.matchedAt !== undefined) {
+            const afterCloseIdx35 = nextSignificant(tokens, callTok35.matchedAt + 1);
+            const afterClose35 = tokens[afterCloseIdx35];
+            if (afterClose35 && (
+              (afterClose35.kind === "open" && afterClose35.text === "{") ||
+              afterClose35.kind === "fatArrow" ||
+              (!isTernaryConsequent35 && afterClose35.kind === "punct" && afterClose35.text === ":")
+            )) continue;
+            // Exclude TS method signatures with type annotations: `{ Proxy(t: object): object }`
+            let hasTypeAnnotation35 = false;
+            let depth35 = 0;
+            let ternaryDepth35 = 0;
+            for (let k35 = callIdx35 + 1; k35 < callTok35.matchedAt; k35++) {
+              const at35 = tokens[k35];
+              if (!at35) continue;
+              if (at35.kind === "open") { depth35++; continue; }
+              if (at35.kind === "close") { depth35--; continue; }
+              if (depth35 !== 0) continue;
+              if (at35.kind === "question") {
+                const nextAfterQ35 = nextSignificant(tokens, k35 + 1);
+                const nextTokQ35 = tokens[nextAfterQ35];
+                if (nextTokQ35 && nextTokQ35.kind === "punct" && nextTokQ35.text === ":") {
+                  hasTypeAnnotation35 = true;
+                  break;
+                }
+                ternaryDepth35++;
+                continue;
+              }
+              if (at35.kind === "punct" && at35.text === ":") {
+                if (ternaryDepth35 > 0) { ternaryDepth35--; continue; }
+                hasTypeAnnotation35 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation35) continue;
+
+            // Exclude TS type-literal method signatures with empty parens and no annotations:
+            // `{ Proxy() }`, `{ Proxy(); }`, `{ Proxy(), }`
+            {
+              const isEmptyParens35 = nextSignificant(tokens, callIdx35 + 1) >= (callTok35.matchedAt as number);
+              if (isEmptyParens35) {
+                // Check if the immediately enclosing `{` is in a type context
+                // (preceded by `=`, `:`, `<`, or `,`) — same logic as SYN017.
+                let braceDepth35 = 1;
+                let k35 = callIdx35 - 1;
+                while (k35 >= decl.bodyTokenStart! && braceDepth35 > 0) {
+                  const bt35 = tokens[k35];
+                  if (!bt35) { k35--; continue; }
+                  if (bt35.kind === "close" && bt35.text === "}") { braceDepth35++; k35--; continue; }
+                  if (bt35.kind === "open" && bt35.text === "{") {
+                    braceDepth35--;
+                    if (braceDepth35 === 0) {
+                      const beforeBrace35 = tokens[prevSignificant(tokens, k35 - 1)];
+                      if (beforeBrace35 && (
+                        (beforeBrace35.kind === "operator" && beforeBrace35.text === "=") ||
+                        (beforeBrace35.kind === "punct" && (beforeBrace35.text === ":" || beforeBrace35.text === ",")) ||
+                        (beforeBrace35.kind === "operator" && beforeBrace35.text === "<")
+                      )) {
+                        // Confirm Proxy is at a method-signature position (first sig token, or after `;`/`,`)
+                        const firstSigInBrace35 = nextSignificant(tokens, k35 + 1);
+                        if (firstSigInBrace35 === i) { continue; }
+                        const prevOfProxy35 = tokens[prevSignificant(tokens, i - 1)];
+                        if (prevOfProxy35 && prevOfProxy35.kind === "punct" &&
+                          (prevOfProxy35.text === ";" || prevOfProxy35.text === ",")) {
+                          continue;
+                        }
+                      }
+                    }
+                  }
+                  k35--;
+                }
+              }
+            }
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const callSep35 = isOpt35 ? "?." : "";
+          const warnStart35 = hasNew35 ? prev35!.start : tok.start;
+          const loc35 = locationOf(src, warnStart35);
+          warnings.push({
+            code: "SYN035",
+            severity: "warning",
+            file: null,
+            line: loc35.line,
+            column: loc35.column,
+            start: warnStart35,
+            end: callTok35.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew35 ? "constructs new " : "calls "}Proxy${callSep35}() — ` +
+              `Proxy intercepts fundamental operations through a handler whose traps can perform ` +
+              `arbitrary side effects invisible to the capability model; ` +
+              `no uses {} / reads {} / writes {} declaration covers effects inside a Proxy trap; ` +
+              `wrap in unsafe "uses Proxy for <reason>" { ${hasNew35 ? "new " : ""}Proxy${callSep35}(target, handler) }`,
+            rule: syn035.rule,
+            idiom: syn035.idiom,
+            rewrite: syn035.rewrite,
           });
           break;
         }
