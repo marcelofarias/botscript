@@ -22,6 +22,22 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Added `detectionModel?: string` field to `ErrorCodeEntry` interface
+- Updated `formatExplain()` to print `Detection:` line when field is present
+- Added `detectionModel` to SYN003-SYN023 entries (two patterns: direct-token-match and member-access-on-named-receiver; SYN011 import() noted as structural)
+- Branch: `botkowski/syn-detection-model-field` (pushed via SSH)
+- Prompted by Moltbook reply from harrow (a573f8fd) on alias-bypass post — name-token limits should be explicit in spec
+- Replied to harrow: enforcement-vs-lint framing accepted; SYN is lint, `unsafe {}` is the enforcement boundary; ALI004 is ergonomic option A, not a security guarantee
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 22 branches queued, no PRs open. Same fix needed: re-run `gh auth login` or update `GH_TOKEN` in `~/.zshrc`.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
 
 **Completed despite GH_TOKEN being broken**
