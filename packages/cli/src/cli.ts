@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { exit, stderr, stdout } from "node:process";
+import { cwd, exit, stderr, stdout } from "node:process";
 
 import {
   BotscriptError,
@@ -11,6 +12,7 @@ import {
   formatSource,
   getErrorCode,
   listErrorCodes,
+  parseProgram,
   transform,
 } from "@mbfarias/botscript-compiler";
 import type { Diagnostic, ModuleEffects } from "@mbfarias/botscript-compiler";
@@ -38,6 +40,9 @@ async function main(): Promise<void> {
     case "fmt":
       await fmtCmd(argv.slice(1));
       return;
+    case "manifest":
+      await manifestCmd(argv.slice(1));
+      return;
     case "explain":
       explainCmd(argv.slice(1));
       return;
@@ -62,6 +67,9 @@ function printUsage(): void {
       `                                          With no flag and a single file, prints to stdout.\n` +
       `                                          With a directory, --write is the default.\n` +
       `                                          --check exits 1 if any file differs from canonical.\n` +
+      `  botscript manifest <input> [--format json]\n` +
+      `                                          Emit a machine-readable capability manifest\n` +
+      `                                          (per-file, per-function uses/reads/writes/throws).\n` +
       `  botscript explain <CODE>                Print rule/idiom/rewrite for an error code.\n` +
       `  botscript explain --list                List every diagnostic code.\n` +
       `  botscript primer                        Print the language primer.\n` +
@@ -395,6 +403,126 @@ async function fmtCmd(args: string[]): Promise<void> {
     );
   }
 }
+
+// ── manifest ────────────────────────────────────────────────────────────────
+
+interface ManifestFn {
+  name: string;
+  capabilities: string[];
+  reads: string[];
+  writes: string[];
+  throws: string[];
+}
+
+interface ManifestFile {
+  file: string;
+  sha256: string;
+  functions: ManifestFn[];
+}
+
+interface Manifest {
+  schema: "botscript-manifest-v0";
+  files: ManifestFile[];
+}
+
+interface ManifestArgs {
+  input: string;
+  format: "text" | "json";
+}
+
+function parseManifestArgs(args: string[]): ManifestArgs {
+  let input: string | undefined;
+  let format: "text" | "json" = "json";
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--format" || a === "-f") {
+      const v = args[++i];
+      if (v !== "text" && v !== "json") {
+        throw new Error(`unknown --format: ${v} (expected text|json)`);
+      }
+      format = v;
+    } else if (input === undefined) {
+      input = a;
+    } else {
+      throw new Error(`unexpected argument: ${a}`);
+    }
+  }
+  if (input === undefined) throw new Error("missing input path");
+  return { input, format };
+}
+
+async function manifestCmd(args: string[]): Promise<void> {
+  const { input, format } = parseManifestArgs(args);
+  const inputAbs = resolve(input);
+  const inputStat = await stat(inputAbs);
+  const files = inputStat.isDirectory()
+    ? await collectBs(inputAbs, true)
+    : [inputAbs];
+
+  if (files.length === 0) {
+    const empty: Manifest = { schema: "botscript-manifest-v0", files: [] };
+    stdout.write(JSON.stringify(empty, null, 2) + "\n");
+    return;
+  }
+
+  const manifestFiles: ManifestFile[] = [];
+
+  for (const f of files) {
+    const src = await readFile(f, "utf8");
+    const sha256 = createHash("sha256").update(src).digest("hex");
+    const fns: ManifestFn[] = [];
+
+    let program;
+    try {
+      program = parseProgram(src, { allowGenerics: true });
+    } catch {
+      // Malformed source — include file with empty function list.
+      const errPath = inputStat.isDirectory() ? relative(inputAbs, f) : relative(cwd(), f);
+      manifestFiles.push({ file: errPath, sha256, functions: [] });
+      continue;
+    }
+
+    for (const stmt of program.fns) {
+      const { decl } = stmt;
+      fns.push({
+        name: decl.name,
+        capabilities: [...decl.capabilities],
+        reads: [...(decl.reads ?? [])],
+        writes: [...(decl.writes ?? [])],
+        throws: [...(decl.throws ?? [])],
+      });
+    }
+
+    const relPath = inputStat.isDirectory() ? relative(inputAbs, f) : relative(cwd(), f);
+    manifestFiles.push({ file: relPath, sha256, functions: fns });
+  }
+
+  const manifest: Manifest = { schema: "botscript-manifest-v0", files: manifestFiles };
+
+  if (format === "json") {
+    stdout.write(JSON.stringify(manifest, null, 2) + "\n");
+  } else {
+    // text mode: a human-readable summary
+    for (const mf of manifest.files) {
+      stdout.write(`${mf.file}  (sha256:${mf.sha256.slice(0, 12)}…)\n`);
+      if (mf.functions.length === 0) {
+        stdout.write(`  (no fn declarations)\n`);
+        continue;
+      }
+      for (const fn of mf.functions) {
+        const parts: string[] = [];
+        if (fn.capabilities.length) parts.push(`uses { ${fn.capabilities.join(", ")} }`);
+        if (fn.reads.length) parts.push(`reads { ${fn.reads.join(", ")} }`);
+        if (fn.writes.length) parts.push(`writes { ${fn.writes.join(", ")} }`);
+        if (fn.throws.length) parts.push(`throws { ${fn.throws.join(", ")} }`);
+        const surface = parts.length ? `  ${parts.join("  ")}` : "  (pure)";
+        stdout.write(`  fn ${fn.name}${surface}\n`);
+      }
+    }
+  }
+}
+
+// ── explain ──────────────────────────────────────────────────────────────────
 
 function explainCmd(args: string[]): void {
   if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
