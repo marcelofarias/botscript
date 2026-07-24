@@ -1085,6 +1085,38 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN038: {
+    code: "SYN038",
+    title: "writing to globalThis / window / self property mutates global scope invisible to the capability model",
+    rule:
+      "writing to `globalThis.<member>`, `window.<member>`, or `self.<member>` adds or modifies " +
+      "a property on the global object — a side effect invisible to botscript's capability model: " +
+      "no `uses {}`, `reads {}`, or `writes {}` declaration covers global scope mutations. " +
+      "Any code in the runtime can observe the written value; callers cannot see the dependency " +
+      "from the fn header, and tests cannot isolate it without patching the global namespace.",
+    idiom:
+      "pass state through explicit parameters and return values so callers and tests can observe and control all data flow; " +
+      "if the global write is intentional (e.g. a polyfill or initializer), wrap in " +
+      "`unsafe \"writes globalThis.<member> for <reason>\" { globalThis.<member> = ... }`",
+    rewrite:
+      "// before — silent global write invisible to callers\n" +
+      "fn register(handler: Handler) {\n" +
+      "  globalThis.myHandler = handler  // SYN038\n" +
+      "}\n\n" +
+      "// after — state returned explicitly; caller owns the binding\n" +
+      "fn register(handler: Handler) -> { myHandler: Handler } {\n" +
+      "  return { myHandler: handler }\n" +
+      "}",
+    example:
+      "// SYN038: globalThis.config write bypasses the capability model\n" +
+      "fn initConfig(cfg: Config) {\n" +
+      "  globalThis.config = cfg  // SYN038\n" +
+      "}\n\n" +
+      "// fix: accept and return config explicitly\n" +
+      "fn initConfig(cfg: Config) -> Config {\n" +
+      "  return cfg\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
