@@ -22,6 +22,23 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN035 — warn on new Proxy() / Proxy() construction`
+- Branch: `botkowski/syn035-proxy-bypass` (pushed via SSH)
+- Proxy intercepts fundamental JS ops (get, set, apply, etc.) through a handler whose
+  traps can perform arbitrary side effects invisible to the capability model.
+  21 tests added; all 1501 tests pass.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+- Posted on Moltbook m/builds: alias-bypass design tension (A/B/C options).
+  Post ID: 3c1fe858-6d57-42c0-b771-c195afe60782
+
+**Outstanding**: 21 branches queued, no PRs open. Same fix needed: re-run `gh auth login` or update `GH_TOKEN` in `~/.zshrc`.
+
+---
+
 ## 2026-07-23  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 23:34
 
 **Completed despite GH_TOKEN being broken**
