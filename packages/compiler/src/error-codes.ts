@@ -23,6 +23,13 @@ export interface ErrorCodeEntry {
   rewrite: string;
   /** A short before/after example block, plain text. */
   example: string;
+  /**
+   * How the check detects the pattern and what it does NOT catch.
+   * Present on checks whose detection surface is bounded (e.g. name-token
+   * matches). Absent on structural checks (e.g. SYN002 `throw` statement)
+   * where JS syntax leaves no practical alias path.
+   */
+  detectionModel?: string;
 }
 
 const E: Record<string, ErrorCodeEntry> = {
@@ -543,6 +550,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn greet(name: string) uses { stdout } -> void {\n" +
       "  unsafe \"stdout.write returns void\" { stdout.write(`Hello, ${name}`) }\n" +
       "}",
+    detectionModel:
+      "member-access on console receiver — `const c = console; c.log()` is not detected",
   },
   SYN004: {
     code: "SYN004",
@@ -574,6 +583,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn run(code: string) -> string {\n" +
       '  return unsafe "evaluates user-provided script in sandbox" { eval(code) }\n' +
       "}",
+    detectionModel:
+      "direct token match on eval, Function, and new Function — `const e = eval; e(code)` is not detected",
   },
   SYN005: {
     code: "SYN005",
@@ -605,6 +616,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn getSecret(apiKey: string) -> string {\n" +
       "  return apiKey\n" +
       "}",
+    detectionModel:
+      "member-access on process receiver — `const p = process; p.env.KEY` is not detected",
   },
   SYN006: {
     code: "SYN006",
@@ -641,6 +654,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  if (!cfg.valid) return err('invalid config')\n" +
       "  return ok(undefined)\n" +
       "}",
+    detectionModel:
+      "member-access on process receiver — `const p = process; p.exit(1)` is not detected",
   },
   SYN007: {
     code: "SYN007",
@@ -673,6 +688,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn getUser(id: string) uses { net } -> Promise<User> {\n" +
       "  return http.get(`/api/users/${id}`)\n" +
       "}",
+    detectionModel:
+      "direct token match on fetch identifier — `const f = fetch; f(url)` is not detected",
   },
   SYN008: {
     code: "SYN008",
@@ -706,6 +723,8 @@ const E: Record<string, ErrorCodeEntry> = {
       '  const ws = unsafe "wraps WebSocket for live updates" { new WebSocket(url) }\n' +
       "  ws.onmessage = (e) => handle(e.data)\n" +
       "}",
+    detectionModel:
+      "direct token match on WebSocket identifier — `const WS = WebSocket; new WS(url)` is not detected",
   },
   SYN010: {
     code: "SYN010",
@@ -740,6 +759,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  const id = setInterval(() => http.get(url), 5000)\n" +
       "  return () => clearInterval(id)\n" +
       "}",
+    detectionModel:
+      "direct token match on setTimeout, setInterval, queueMicrotask identifiers — aliased references are not detected",
   },
   SYN011: {
     code: "SYN011",
@@ -776,6 +797,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  const m = await unsafe \"adapter type validated by registry\" { import(`./adapters/${type}`) }\n" +
       "  return m.default\n" +
       "}",
+    detectionModel:
+      "import() expression syntax — not an identifier; cannot be aliased without eval (SYN004)",
   },
   SYN012: {
     code: "SYN012",
@@ -807,6 +830,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn openFeed(url: string) -> any {\n" +
       '  return unsafe "wraps EventSource for streaming feed" { new EventSource(url) }\n' +
       "}",
+    detectionModel:
+      "direct token match on EventSource identifier — `const ES = EventSource; new ES(url)` is not detected",
   },
   SYN013: {
     code: "SYN013",
@@ -840,6 +865,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn compute(url: string) -> Worker {\n" +
       '  return unsafe "spawns computation worker with no net access" { new Worker(url) }\n' +
       "}",
+    detectionModel:
+      "direct token match on Worker and SharedWorker identifiers — `const W = Worker; new W(url)` is not detected",
   },
   SYN014: {
     code: "SYN014",
@@ -875,6 +902,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  bc.onmessage = (e) => handle(e.data)\n" +
       "  return bc\n" +
       "}",
+    detectionModel:
+      "direct token match on BroadcastChannel identifier — `const BC = BroadcastChannel; new BC(name)` is not detected",
   },
   SYN016: {
     code: "SYN016",
@@ -913,6 +942,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "  const req = unsafe \"opens app-db for settings read\" { indexedDB.open('app-db', 1) }\n" +
       "  return new Promise((resolve) => { req.onsuccess = (e) => resolve(e.target.result) })\n" +
       "}",
+    detectionModel:
+      "member-access on indexedDB receiver — `const db = indexedDB; db.open(name)` is not detected",
   },
   SYN017: {
     code: "SYN017",
@@ -946,6 +977,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn warnUser(title: string, body: string) -> void {\n" +
       "  unsafe \"shows alert notification for user-triggered warning\" { new Notification(title, { body }) }\n" +
       "}",
+    detectionModel:
+      "direct token match on Notification identifier — `const N = Notification; new N(title)` is not detected",
   },
   SYN018: {
     code: "SYN018",
@@ -977,6 +1010,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn roll(sides: number) uses { random } -> number {\n" +
       "  return Math.floor(random.next() * sides) + 1\n" +
       "}",
+    detectionModel:
+      "member-access Math.random — `const m = Math; m.random()` is not detected",
   },
   SYN019: {
     code: "SYN019",
@@ -1013,6 +1048,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn rollDice() uses { random } -> number {\n" +
       "  return random.int(1, 7)\n" +
       "}",
+    detectionModel:
+      "member-access on crypto receiver — `const c = crypto; c.getRandomValues(buf)` is not detected",
   },
   SYN022: {
     code: "SYN022",
@@ -1048,6 +1085,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn getFlag(argv: string[]) -> string {\n" +
       "  return argv[2]\n" +
       "}",
+    detectionModel:
+      "member-access on process receiver — `const p = process; p.argv` is not detected",
   },
   SYN023: {
     code: "SYN023",
@@ -1084,6 +1123,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn getBrowser(userAgent: string) -> string {\n" +
       "  return userAgent\n" +
       "}",
+    detectionModel:
+      "member-access on navigator receiver — `const nav = navigator; nav.onLine` is not detected",
   },
   DEP001: {
     code: "DEP001",
@@ -1460,16 +1501,18 @@ export function listErrorCodes(): ErrorCodeEntry[] {
 
 /** Format an entry as the multi-line text shown by `bs explain`. */
 export function formatExplain(entry: ErrorCodeEntry): string {
-  return [
+  const lines = [
     `botscript[${entry.code}]: ${entry.title}`,
     "",
     `  Rule:    ${entry.rule}`,
     `  Idiom:   ${entry.idiom}`,
     `  Rewrite: ${entry.rewrite}`,
-    "",
-    "Example:",
-    indent(entry.example, 2),
-  ].join("\n");
+  ];
+  if (entry.detectionModel) {
+    lines.push(`  Detection: ${entry.detectionModel}`);
+  }
+  lines.push("", "Example:", indent(entry.example, 2));
+  return lines.join("\n");
 }
 
 function indent(s: string, n: number): string {
