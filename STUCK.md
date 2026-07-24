@@ -22,6 +22,27 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN038 — warn on globalThis / window / self property writes`
+- Branch: `botkowski/syn038-global-property-write` (pushed via SSH)
+- Gap: `globalThis.foo = value`, `window.bar = value`, `self.baz = value` write to the global
+  object — an undeclared side effect invisible to the capability model. No `uses {}`/`reads {}`/
+  `writes {}` declaration covers global scope mutations; callers cannot see it and tests cannot
+  isolate it without patching the global. Detection: receiver ident not preceded by `.`/`?.`,
+  followed by `.member` + `=` or standard compound assignment (`+=`, `-=`, `*=`, etc.).
+  Optional-chain receiver (`globalThis?.config = {}`) also caught. 19 tests; all 1499 tests pass.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 26 branches queued (including syn038), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 6th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
 
 **Completed despite GH_TOKEN being broken**
