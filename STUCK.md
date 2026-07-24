@@ -22,6 +22,26 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN037 — warn on SYN-guarded globals called via .call()/.apply()/.bind()`
+- Branch: `botkowski/syn037-call-apply-bind-bypass` (pushed via SSH)
+- Gap: `fetch.call(null, url)`, `WebSocket.apply(null, [url])`, `setTimeout.bind(null)(fn)` all bypass
+  SYN007–SYN036 because the call-site token is `call`/`apply`/`bind`, not the guarded global name.
+  SYN037 detects this by looking BACK from the method token to the receiver and checking against
+  `SYN037_GUARDED_GLOBALS`. 17 tests added; all 1497 tests pass.
+- Complements SYN036 (Reflect.apply bypass) with the symmetric .call/.apply/.bind bypass.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 25 branches queued (including syn037), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 5th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
 
 **Completed despite GH_TOKEN being broken**
