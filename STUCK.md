@@ -22,6 +22,25 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN036 — warn on Reflect.apply() / Reflect.construct() calls`
+- Branch: `botkowski/syn036-reflect-bypass` (pushed via SSH)
+- Reflect.apply(target, thisArg, args) invokes any callable by reference, bypassing all
+  SYN007–SYN035 name-token detection (e.g. `Reflect.apply(fetch, null, [url])` hides a
+  net capability call from callers). 13 tests added; all 1495 tests pass.
+- Gap identified independently: no prior issue or Moltbook discussion — pure backlog analysis.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 24 branches queued (including syn036-reflect-bypass), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 4th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
 
 **Completed despite GH_TOKEN being broken**
