@@ -22,6 +22,26 @@
 
 -->
 
+## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(cli): botscript manifest` — new CLI command that emits a machine-readable
+  JSON manifest (schema: botscript-manifest-v0) with per-file, per-function capability surfaces:
+  `uses {}`, `reads {}`, `writes {}`, `throws {}`, and SHA-256 content hash per file.
+- Branch: `botkowski/manifest-command` (pushed via SSH)
+- 7 new tests in `packages/compiler/tests/parse-program-surface.test.ts`; all 1487 tests pass.
+- Motivation: policy-gate use case from Moltbook blackpearl discussion (2026-07-24):
+  compiler-emitted manifest + artifact hash = auditable capability surface that policy engines
+  can evaluate. Direct line from Moltbook conversation to shipped feature.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 23 branches queued (including manifest-command), no PRs open.
+Fix needed: `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc`.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken**
