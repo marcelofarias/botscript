@@ -1085,6 +1085,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN039: {
+    code: "SYN039",
+    title: "Object.defineProperty() / Object.defineProperties() mutates property descriptors invisibly",
+    rule:
+      "`Object.defineProperty(target, key, descriptor)` and `Object.defineProperties(target, descriptors)` " +
+      "redefine property attributes (value, writable, enumerable, configurable, get, set) at runtime. " +
+      "When called on a global receiver (`globalThis`, `window`, `self`) or any shared object, they " +
+      "install side effects — hidden getters/setters, non-writable locks, non-configurable seals — that " +
+      "are invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` declaration " +
+      "covers property-descriptor mutations. Callers cannot audit or reverse the change from the fn's " +
+      "declared surface, and tests cannot isolate the effect without patching the global.",
+    idiom:
+      "avoid redefining properties on shared or global objects; " +
+      "if descriptor mutation is intentional (polyfill, sealed config object), wrap in " +
+      "`unsafe \"redefines <target>.<key> for <reason>\" { Object.defineProperty(...) }`",
+    rewrite:
+      "// before — installs a hidden getter on globalThis, invisible to callers\n" +
+      "fn exposeConfig(cfg: Config) -> void {\n" +
+      "  Object.defineProperty(globalThis, 'config', { get: () => cfg })  // SYN039\n" +
+      "}\n\n" +
+      "// after — pass config explicitly; no global mutation\n" +
+      "fn getConfig(cfg: Config) -> Config {\n" +
+      "  return cfg\n" +
+      "}",
+    example:
+      "// SYN039: Object.defineProperty installs a hidden getter\n" +
+      "fn exposeConfig(cfg: Config) -> void {\n" +
+      "  Object.defineProperty(globalThis, 'config', { get: () => cfg })  // SYN039\n" +
+      "}\n\n" +
+      "// SYN039: Object.defineProperties mutates multiple descriptors at once\n" +
+      "fn sealApi(api: Api) -> void {\n" +
+      "  Object.defineProperties(api, { fetch: { value: myFetch, writable: false } })  // SYN039\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

@@ -159,6 +159,21 @@
  *           Excluded: member calls on a local binding (`obj.process.*`), fn/function declarations
  *           named `process`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN039  An `Object.defineProperty(...)` or `Object.defineProperties(...)` call was detected
+ *           in a fn body (?bs 0.7+). These calls redefine property descriptors — value, writable,
+ *           enumerable, configurable, get, set — at runtime, with permanent or stealthy effects
+ *           invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}`
+ *           declaration covers property-descriptor mutations. When the target is a shared or global
+ *           object (`globalThis`, `window`, `self`, or any exported binding), the mutation affects
+ *           all callers in the runtime, cannot be reversed without another `defineProperty` call,
+ *           and is invisible in the fn's declared surface. Particularly dangerous: it can silently
+ *           override capability-gated globals (`fetch`, `WebSocket`, `setTimeout`) in ways that
+ *           bypass SYN007–SYN038 at runtime even when source-level checks passed.
+ *           Detection: `Object` not preceded by `.`/`?.`, followed by `.` or `?.`, method token
+ *           is `defineProperty` or `defineProperties`, followed by `(` or `?.(`.
+ *           `fn`/`function` declarations named `Object` are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN023  A `navigator.<member>` access was detected in a fn body (?bs 0.7+), where the
  *           member is one of the ambient browser capability surfaces:
  *             geolocation     — requests user location; a real capability concern
@@ -255,6 +270,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn039 = getErrorCode("SYN039")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1695,70 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN039: Object.defineProperty() / Object.defineProperties() ─────
+        case "Object": {
+          // Exclude: `obj.Object.defineProperty(...)` — Object preceded by `.` or `?.`
+          const prevIdx39 = prevSignificant(tokens, i - 1);
+          const prev39 = tokens[prevIdx39];
+          if (prev39 && ((prev39.kind === "punct" && prev39.text === ".") || prev39.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Object
+          if (prev39 && prev39.kind === "keyword" && prev39.text === "fn") continue;
+          if (prev39 && prev39.kind === "ident" && prev39.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx39)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx39 = nextSignificant(tokens, i + 1);
+          const next39 = tokens[nextIdx39];
+          const isDot39 = next39 && next39.kind === "punct" && next39.text === ".";
+          const isOptChain39 = next39 && next39.kind === "questionDot";
+          if (!isDot39 && !isOptChain39) continue;
+
+          // Method must be `defineProperty` or `defineProperties`
+          const methodIdx39 = nextSignificant(tokens, nextIdx39 + 1);
+          const method39 = tokens[methodIdx39];
+          if (!method39 || method39.kind !== "ident") continue;
+          if (method39.text !== "defineProperty" && method39.text !== "defineProperties") continue;
+
+          // Confirm it's a call: next token is `(` or `?.(`
+          let callIdx39 = nextSignificant(tokens, methodIdx39 + 1);
+          let callTok39 = tokens[callIdx39];
+          let isOptCall39 = false;
+          if (callTok39 && callTok39.kind === "questionDot") {
+            isOptCall39 = true;
+            callIdx39 = nextSignificant(tokens, callIdx39 + 1);
+            callTok39 = tokens[callIdx39];
+          }
+          if (!callTok39 || !(callTok39.kind === "open" && callTok39.text === "(")) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep39 = isOptChain39 ? "?." : ".";
+          const callSep39 = isOptCall39 ? "?." : "";
+          const methodName39 = method39.text;
+          const loc39 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN039",
+            severity: "warning",
+            file: null,
+            line: loc39.line,
+            column: loc39.column,
+            start: tok.start,
+            end: callTok39.start + 1,
+            message:
+              `fn '${decl.name}' calls Object${sep39}${methodName39}${callSep39}() — ` +
+              `Object.${methodName39} redefines property descriptors at runtime; ` +
+              `effects (hidden getters/setters, non-writable locks) are invisible to the capability model and cannot be declared in the fn header; ` +
+              `avoid mutating shared or global objects; ` +
+              `wrap in unsafe "redefines <target>.<key> for <reason>" { Object.${methodName39}(...) } if intentional`,
+            rule: syn039.rule,
+            idiom: syn039.idiom,
+            rewrite: syn039.rewrite,
           });
           break;
         }
