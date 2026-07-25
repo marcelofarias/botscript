@@ -182,6 +182,22 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN040  An `Object.setPrototypeOf(target, proto)`, `Object?.setPrototypeOf(...)`,
+ *           `Object.setPrototypeOf?.(...)`, or `target.__proto__ = proto` was detected in a fn body
+ *           (?bs 0.7+). These replace the prototype chain of `target` at runtime — silently
+ *           redirecting all property lookups (including capability-gated globals such as `fetch`,
+ *           `WebSocket`, `setTimeout`) through a new prototype chain invisible to the static
+ *           capability model. SYN007–SYN039 checks fire on source-level tokens of guarded globals;
+ *           a prior prototype mutation defeats those checks at runtime even though the source
+ *           appeared safe. A fn that mutates a prototype has a hidden side effect with no `uses {}`,
+ *           `reads {}`, or `writes {}` counterpart in its header.
+ *           Detection:
+ *             `Object` — not preceded by `.`/`?.`, not a fn/function declaration, followed by `.`
+ *             or `?.`, followed by `setPrototypeOf`, followed by `(` or `?.(`.
+ *             `__proto__` — preceded by `.` or `?.` (confirming member access), followed by `=`
+ *             (plain assignment, `eq` token), not by `==`/`===`/compound-assignment operators.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -255,6 +271,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn040 = getErrorCode("SYN040")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1679,6 +1696,104 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN040: Object.setPrototypeOf() ──────────────────────────────────
+        case "Object": {
+          // Exclude: `obj.Object` — preceded by `.` or `?.`
+          const prevIdx40a = prevSignificant(tokens, i - 1);
+          const prev40a = tokens[prevIdx40a];
+          if (prev40a && ((prev40a.kind === "punct" && prev40a.text === ".") || prev40a.kind === "questionDot"))
+            break;
+
+          // Exclude: fn/function/function* declarations named Object
+          if (prev40a && prev40a.kind === "keyword" && prev40a.text === "fn") break;
+          if (prev40a && prev40a.kind === "ident" && prev40a.text === "function") break;
+          if (isFunctionStarDecl(tokens, prevIdx40a)) break;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx40a = nextSignificant(tokens, i + 1);
+          const next40a = tokens[nextIdx40a];
+          const isDot40a = next40a && next40a.kind === "punct" && next40a.text === ".";
+          const isOptChain40a = next40a && next40a.kind === "questionDot";
+          if (!isDot40a && !isOptChain40a) break;
+
+          // Method must be `setPrototypeOf`
+          const methodIdx40a = nextSignificant(tokens, nextIdx40a + 1);
+          const methodTok40a = tokens[methodIdx40a];
+          if (!methodTok40a || methodTok40a.kind !== "ident" || methodTok40a.text !== "setPrototypeOf") break;
+
+          // Followed by `(` or `?.(` — confirming this is a call
+          let callIdx40a = nextSignificant(tokens, methodIdx40a + 1);
+          let callTok40a = tokens[callIdx40a];
+          if (callTok40a && callTok40a.kind === "questionDot") {
+            callIdx40a = nextSignificant(tokens, callIdx40a + 1);
+            callTok40a = tokens[callIdx40a];
+          }
+          if (!callTok40a || !(callTok40a.kind === "open" && callTok40a.text === "(")) break;
+
+          if (isInsideRange(tok.start, unsafeRanges)) break;
+
+          const sep40a = isOptChain40a ? "?." : ".";
+          const loc40a = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN040",
+            severity: "warning",
+            file: null,
+            line: loc40a.line,
+            column: loc40a.column,
+            start: tok.start,
+            end: methodTok40a.end,
+            message:
+              `fn '${decl.name}' calls Object${sep40a}setPrototypeOf() — ` +
+              `Object.setPrototypeOf() replaces the prototype chain of a target at runtime, ` +
+              `silently redirecting property lookups (including capability-gated globals such as fetch, WebSocket, setTimeout) ` +
+              `through a new chain invisible to the static capability model; ` +
+              `SYN007–SYN039 source-level checks are defeated at runtime if a prototype mutation occurs first; ` +
+              `model shape changes as explicit data structures, or wrap in unsafe "mutates prototype of <target> for <reason>" { Object${sep40a}setPrototypeOf(...) }`,
+            rule: syn040.rule,
+            idiom: syn040.idiom,
+            rewrite: syn040.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN040: __proto__ assignment ──────────────────────────────────────
+        case "__proto__": {
+          // Must be preceded by `.` or `?.` — confirming this is a member access
+          const prevIdx40b = prevSignificant(tokens, i - 1);
+          const prev40b = tokens[prevIdx40b];
+          if (!prev40b || !((prev40b.kind === "punct" && prev40b.text === ".") || prev40b.kind === "questionDot"))
+            break;
+
+          // Must be followed by `=` (plain assignment, `eq` token — not `==`, `===`, `+=`, etc.)
+          const nextIdx40b = nextSignificant(tokens, i + 1);
+          const next40b = tokens[nextIdx40b];
+          if (!next40b || next40b.kind !== "eq") break;
+
+          if (isInsideRange(tok.start, unsafeRanges)) break;
+
+          const loc40b = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN040",
+            severity: "warning",
+            file: null,
+            line: loc40b.line,
+            column: loc40b.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' assigns to .__proto__ — ` +
+              `.__proto__ = proto replaces the prototype chain of the target at runtime, ` +
+              `silently redirecting property lookups (including capability-gated globals) ` +
+              `through a new chain invisible to the static capability model; ` +
+              `use Object.create() to build objects with explicit prototypes instead, ` +
+              `or wrap in unsafe "mutates prototype for <reason>" { target.__proto__ = proto }`,
+            rule: syn040.rule,
+            idiom: syn040.idiom,
+            rewrite: syn040.rewrite,
           });
           break;
         }

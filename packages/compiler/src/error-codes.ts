@@ -1085,6 +1085,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN040: {
+    code: "SYN040",
+    title: "Object.setPrototypeOf() / __proto__ assignment mutates the prototype chain at runtime, bypassing the capability model",
+    rule:
+      "`Object.setPrototypeOf(target, proto)` and `target.__proto__ = proto` replace the prototype " +
+      "of `target` at runtime — silently redirecting all property lookups (including capability-gated " +
+      "globals such as `fetch`, `WebSocket`, `setTimeout`) through a new prototype chain that is " +
+      "invisible to the static capability model. SYN007–SYN039 checks fire on the source-level token " +
+      "of the guarded global; if a prototype mutation happens first, those checks are defeated at " +
+      "runtime even though the source appeared safe. A fn that mutates a prototype has a hidden " +
+      "side effect with no `uses {}`, `reads {}`, or `writes {}` counterpart in its header.",
+    idiom:
+      "avoid prototype mutation inside fn bodies; if the shape change is truly intentional, " +
+      "model it as an explicit data structure transformation or wrap in " +
+      "`unsafe \"mutates prototype of <target> for <reason>\" { Object.setPrototypeOf(...) }`",
+    rewrite:
+      "// before — prototype mutation is a hidden, undeclared side effect\n" +
+      "fn patchGlobal(proto: object) -> void {\n" +
+      "  Object.setPrototypeOf(globalThis, proto)  // SYN040\n" +
+      "}\n\n" +
+      "// after — model the shape change as an explicit data structure\n" +
+      "fn withProto<T extends object>(target: T, proto: object) -> T {\n" +
+      "  return Object.create(proto, Object.getOwnPropertyDescriptors(target)) as T\n" +
+      "}",
+    example:
+      "// SYN040: Object.setPrototypeOf() bypasses the capability model\n" +
+      "fn shimFetch(proto: object) -> void {\n" +
+      "  Object.setPrototypeOf(globalThis, proto)  // SYN040\n" +
+      "}\n\n" +
+      "// SYN040: __proto__ assignment equivalent\n" +
+      "fn shimProto(obj: object, proto: object) -> void {\n" +
+      "  obj.__proto__ = proto  // SYN040\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
