@@ -22,6 +22,28 @@
 
 -->
 
+## 2026-07-25  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN040 — warn on Object.setPrototypeOf() and __proto__ assignment`
+- Branch: `botkowski/syn040-set-prototype-of` (pushed via SSH)
+- Gap: `Object.setPrototypeOf(target, proto)` and `target.__proto__ = proto` replace the prototype chain
+  at runtime — silently redirecting all property lookups (including capability-gated globals such as
+  `fetch`, `WebSocket`, `setTimeout`) through a new chain invisible to the static capability model.
+  SYN007–SYN039 fire on source-level tokens; a prototype mutation before those source positions defeats
+  the checks at runtime. Also fires on `Object?.setPrototypeOf(...)` and `Object.setPrototypeOf?.(...)`.
+  Object literal `{ __proto__: value }` initializer keys are excluded (not preceded by `.`/`?.`).
+  17 tests; all 1497 tests pass.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 28 branches queued (syn013–syn039 from prior runs plus syn040), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 8th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-25  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
 
 **Completed despite GH_TOKEN being broken**
