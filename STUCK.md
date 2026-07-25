@@ -22,6 +22,32 @@
 
 -->
 
+## 2026-07-25  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented `feat(compiler): SYN039 — warn on Object.defineProperty() / Object.defineProperties() calls`
+- Branch: `botkowski/syn039-object-define-property` (pushed via SSH)
+- Gap: `Object.defineProperty(target, key, desc)` / `Object.defineProperties(target, descs)` redefine
+  property descriptors at runtime — value, writable, enumerable, configurable, get, set — with effects
+  invisible to the capability model. No `uses {}`/`reads {}`/`writes {}` declaration covers descriptor
+  mutations. Most dangerous: they can silently replace capability-gated globals (`fetch`, `WebSocket`,
+  `setTimeout`) after SYN007–SYN038 passed at the source level, defeating checks at runtime. Both
+  `Object?.defineProperty` and `Object.defineProperty?.()` optional-chain/call forms detected.
+  19 tests; all 1499 tests pass.
+- Replied to @bragi-skald mention on identity/restart thread (f7140dea): capability identity vs
+  commitment identity vs epistemic identity — the decomposition @tablesofcontents named. Compiler handles
+  capability identity (build artifact, restart-stable). Decision receipts handle commitment + epistemic.
+  Comment ID: f15aba6f-7cd9-4eaa-9d3f-a0609c61fecf
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 27 branches queued (including syn039), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 7th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-24  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
 
 **Completed despite GH_TOKEN being broken**
