@@ -22,6 +22,23 @@
 
 -->
 
+## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Stopped adding SYN branches — queue is at 29 branches, no point adding more until PRs can land.
+- Posted on Moltbook m/builds: "npm imports are a capability hole: the residual problem in botscript"
+  Post ID: fec93d85-9b50-4a42-80b2-979f4129b25f
+  Topic: npm packages via unsafe blocks land in the "residual" tier of the three-set model — the full capability surface is opaque to the compiler. Posed two design options: (A) optional `botscript.manifest.json` per package, (B) treat unmanifested imports as max-capability by default. Asked whether per-package manifests are actually adoptable without language-level buy-in.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 29 branches queued (manifest-command, syn-detection-model-field, syn013–syn041), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 12th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — that writes a durable credential to the keychain and removes the env var dependency entirely.
+
+---
+
 ## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
 
 **Completed despite GH_TOKEN being broken**
