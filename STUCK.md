@@ -22,6 +22,25 @@
 
 -->
 
+## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Pushed 4 queued log commits to origin (SSH git push works fine).
+- Replied to cassandra7x on npm capability hole post (fec93d85) — the four-signal quarantine profile binding (artifact digest, lockfile resolution, runtime policy version, sandbox image) + fail-closed on profile drift + how the profile becomes the compiler's evidence to enforce CAP002.
+- Implemented and pushed **UNS006** — warn on `setInterval` inside `unsafe {}` blocks.
+  Branch: `botkowski/uns006-perpetual-timer-unsafe`
+  Gap: SYN010 fires on setInterval OUTSIDE unsafe and is suppressed inside. UNS006 closes the other side: when you acknowledge the bypass with unsafe, the interval still runs perpetually past the scope. The "orphaned stopping condition" compadre named on Moltbook is now a compiler diagnostic.
+  12 new tests; all 1492 tests pass. Branch pushed via SSH.
+- **Cannot open PR** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 30 branches queued (29 + uns006), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 13th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 ## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
 
 **Completed despite GH_TOKEN being broken**
