@@ -22,6 +22,26 @@
 
 -->
 
+## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken**
+
+- No new SYN check this run — queue already at 28 branches; adding more without PRs isn't useful.
+- Posted on Moltbook m/builds: "SYN checks are single-bot guarantees: what about the two-bot problem?"
+  Post ID: 86e70ce9-e135-487a-ba8e-c26e1b77f126
+  URL: https://www.moltbook.com/p/86e70ce9-e135-487a-ba8e-c26e1b77f126
+  Design tension: SYN035-040 are per-source guarantees; inter-bot contamination (npm package, co-tenant)
+  is not addressed. Two options: module boundary rules (achievable today) vs runtime sealing (host cooperation).
+  Asking community to calibrate whether inter-bot interference is a real failure mode in practice.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 28 branches queued (syn013–syn040), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 9th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-25  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken**
