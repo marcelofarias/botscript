@@ -37,7 +37,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
-import { computeNesting, nextSignificant } from "./_callgraph.js";
+import { computeNesting, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { collectUnsafeBlockRanges, isInsideRange, type CharRange } from "./_unsafe-ranges.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases } from "./_alias.js";
 
@@ -168,6 +168,95 @@ export function passUnsCheck(src: string, version: VersionInfo): string {
   // already indicates a structural problem that invalidates further analysis.
   if (diagnostics.length > 0) {
     throw new BotscriptError(diagnostics);
+  }
+
+  // ── UNS006: setInterval inside unsafe block ────────────────────────────────
+  // SYN010 fires on setInterval OUTSIDE unsafe blocks (suppressed inside).
+  // UNS006 fires specifically INSIDE unsafe blocks — the author acknowledged
+  // the SYN010 bypass, but setInterval is a perpetual side effect: the interval
+  // runs indefinitely unless clearInterval is called, and the stopping condition
+  // is orphaned when unsafe block scope exits.
+  //
+  // Scans every fn body for setInterval calls that are:
+  //   1. Inside an unsafe block range (char-offset based).
+  //   2. A bare call (not a property access, not a declaration).
+  // Excludes method-shorthand / class-method forms (same guards as SYN010).
+  const uns006Warnings: Diagnostic[] = [];
+  const uns006 = getErrorCode("UNS006")!;
+
+  for (const decl of decls) {
+    const inner = innerByDecl.get(decl) ?? [];
+    let nextInner006 = 0;
+    const open006: FnDecl[] = [];
+
+    for (let i = decl.bodyTokenStart ?? decl.tokenStart; i < decl.tokenEnd; i++) {
+      while (open006.length > 0 && open006[open006.length - 1]!.tokenEnd <= i) open006.pop();
+      while (nextInner006 < inner.length && inner[nextInner006]!.tokenStart <= i) {
+        open006.push(inner[nextInner006]!);
+        nextInner006++;
+      }
+      if (open006.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "setInterval") continue;
+
+      // Must be inside an unsafe block range.
+      if (!isInsideRange(tok.start, unsafeRanges)) continue;
+
+      // Exclude property accesses: obj.setInterval(...)
+      const prevIdx = prevSignificant(tokens, i - 1);
+      const prevTok = tokens[prevIdx];
+      if (prevTok && ((prevTok.kind === "punct" && prevTok.text === ".") || prevTok.kind === "questionDot"))
+        continue;
+
+      // Exclude fn/function declarations named setInterval.
+      if (prevTok && prevTok.kind === "keyword" && prevTok.text === "fn") continue;
+      if (prevTok && prevTok.kind === "ident" && prevTok.text === "function") continue;
+
+      // Must be followed by `(` — confirming this is a call.
+      let afterIdx = nextSignificant(tokens, i + 1);
+      let afterTok = tokens[afterIdx];
+      if (afterTok && afterTok.kind === "questionDot") {
+        afterIdx = nextSignificant(tokens, afterIdx + 1);
+        afterTok = tokens[afterIdx];
+      }
+      if (!afterTok || !(afterTok.kind === "open" && afterTok.text === "(")) continue;
+
+      // Exclude method shorthands / class methods: `{ setInterval(fn) { ... } }`.
+      const closeParenIdx = afterTok.matchedAt;
+      if (closeParenIdx !== undefined) {
+        const afterParenIdx = nextSignificant(tokens, closeParenIdx + 1);
+        const afterParen = tokens[afterParenIdx];
+        if (
+          afterParen &&
+          ((afterParen.kind === "open" && afterParen.text === "{") ||
+            (afterParen.kind === "punct" && afterParen.text === ":"))
+        ) continue;
+      }
+
+      const loc6 = locationOf(src, tok.start);
+      uns006Warnings.push({
+        code: "UNS006",
+        severity: "warning",
+        file: null,
+        line: loc6.line,
+        column: loc6.column,
+        start: tok.start,
+        end: tok.end,
+        message:
+          `fn '${decl.name}': setInterval inside unsafe block — ` +
+          `the interval runs indefinitely past this scope; ` +
+          `capture the return value and ensure clearInterval is reachable, ` +
+          `or return a stop fn that calls clearInterval`,
+        rule: uns006.rule,
+        idiom: uns006.idiom,
+        rewrite: uns006.rewrite,
+      });
+    }
+  }
+
+  if (uns006Warnings.length > 0) {
+    throw new BotscriptError(uns006Warnings);
   }
 
   return src;

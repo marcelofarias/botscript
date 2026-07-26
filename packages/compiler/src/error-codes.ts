@@ -229,6 +229,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS006: {
+    code: "UNS006",
+    title: "setInterval inside unsafe block — perpetual side effect with no visible cleanup",
+    rule:
+      "setInterval registers a callback that runs indefinitely until clearInterval is called — " +
+      "using unsafe to suppress SYN010 acknowledges the bypass, but the interval outlives the " +
+      "enclosing scope; the stopping condition is orphaned unless the return value is captured " +
+      "and clearInterval is reachable from the same scope or a tracked owner",
+    idiom:
+      "capture the return value of setInterval and ensure clearInterval is called in a " +
+      "cleanup path (teardown fn, cleanup effect, stop method, or explicit stop() call); " +
+      "if the interval is intentionally perpetual, document the lifetime explicitly in the " +
+      "fn header (e.g. writes { backgroundClock }) and add a stop() fn that calls clearInterval",
+    rewrite:
+      "// option A — bounded lifetime via captured handle:\n" +
+      "unsafe \"schedules background ticker\" {\n" +
+      "  const handle = setInterval(fn, ms)\n" +
+      "  // ... ensure clearInterval(handle) is reachable\n" +
+      "}\n\n" +
+      "// option B — perpetual but documented:\n" +
+      "fn startClock() writes { systemClock } -> () -> void {\n" +
+      "  const handle = unsafe \"starts background clock\" { setInterval(tick, 1000) }\n" +
+      "  return () -> { clearInterval(handle) }  // returns a stop fn\n" +
+      "}",
+    example:
+      "// before — perpetual interval opened inside unsafe; no cleanup visible\n" +
+      "?bs 0.9\n" +
+      "fn beginPolling(url: string) uses { net } -> void {\n" +
+      "  unsafe \"polling loop\" { setInterval(() -> { http.get(url) }, 5000) }  // UNS006\n" +
+      "}\n\n" +
+      "// after — returns stop fn; clearInterval is now reachable\n" +
+      "?bs 0.9\n" +
+      "fn beginPolling(url: string) uses { net } -> () -> void {\n" +
+      "  const handle = unsafe \"polling loop\" { setInterval(() -> { http.get(url) }, 5000) }\n" +
+      "  return () -> { clearInterval(handle) }\n" +
+      "}",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",
