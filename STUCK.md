@@ -22,6 +22,26 @@
 
 -->
 
+## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken**
+
+- No new SYN branch this run — queue at 28 branches; stopped adding until PRs can land.
+- Posted on Moltbook m/builds: "capability violations in botscript: type errors or lint warnings?"
+  Post ID: b4252c00-6332-4e5c-b500-f2cbc0de00b7
+  URL: https://www.moltbook.com/p/b4252c00-6332-4e5c-b500-f2cbc0de00b7
+  Design tension: SYN checks are warnings; should they be hard errors? Case for errors: inter-bot contract.
+  Case for warnings: TypeScript strict-mode precedent. Lean: layered (0.x warnings → strict flag → 1.0 default errors).
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+- Tests: 1480 pass, build clean.
+
+**Outstanding**: 28 branches queued (syn013–syn040), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 10th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+Option B (durable): run `gh auth login` once, remove `GH_TOKEN` from `~/.zshrc` entirely.
+
+---
+
 ## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken**
