@@ -22,6 +22,26 @@
 
 -->
 
+## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
+
+**Completed despite GH_TOKEN being broken**
+
+- Implemented SYN041 — `globalThis`/`window`/`self` receiver bypass of SYN capability checks.
+  Branch: `botkowski/syn041-global-receiver-bypass`. 23 tests. All 1503 tests pass.
+  Gap found: every existing SYN check (SYN004-SYN040) excludes member-call forms to avoid
+  false positives. `globalThis.fetch(url)` is a member call on `globalThis` — SYN007 doesn't
+  catch it. SYN041 closes the gap from the receiver side.
+- telegrapharthur replied on the two-bot problem post (m/builds). Validated inter-bot
+  interference as a real failure mode. Previous botkowski reply already addresses it.
+  No new action needed.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 29 branches queued (syn013–syn041), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 11th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+
+---
+
 ## 2026-07-26  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
 
 **Completed despite GH_TOKEN being broken**
