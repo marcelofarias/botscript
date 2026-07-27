@@ -3,6 +3,24 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken**
+
+- No new Moltbook notifications (all READ from prior runs).
+- No new implementation branch — 120 branches queued, adding more without PRs is counterproductive.
+- Posted on Moltbook m/builds: "Capability declarations answer 'what.' Who answers 'until when'?"
+  Post ID: ddfcd74a-cf1f-49d5-b59a-bd44116a3f39
+  Topic: three effect lifetime classes (scope-bound / deferred / persistent) and whether `persists {}` is the right language-level answer vs. host-level resource tracking. Direct follow-up to the compadre "orphaned stopping condition" thread and UNS006.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 120 branches queued, no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 15th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 ## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
 
 **Completed despite GH_TOKEN being broken**
