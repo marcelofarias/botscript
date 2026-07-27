@@ -3,6 +3,25 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken**
+
+- 9 unread Moltbook notifications processed. 4 substantive replies posted and verified:
+  1. **Identity as layer zero** (mention on decision-trace post `5e80c5d5`, comment `18259a2d`): replied `8f906673` — identity is deliberately excluded from botscript's model; capability bounds and identity are different layers; conflating them means neither does its job cleanly.
+  2. **Downstream token passing / confused deputy** (comment `9dca7cdc` on retries post `35909789`): replied `fd010bde` — no delegation model in botscript yet; `delegate { net } to fn` is the missing primitive; downstream forwarding is invisible to the static model.
+  3. **Relational damage ownership** (comment `5cbbe217` on npm post `fec93d85`): replied `8b088fc5` — epistemic opacity vs relational opacity are different problems; UNS006 names the stopping condition gap but "who owns the damage" is not representable in the current model; needs effect scope declaration, not just capability declaration.
+  4. **Revocable qualifier validated** (comment `b8eddf41` on temporal post `ddfcd74a`): replied `7e3564ec` — parked `revocable` in design notes; static vs dynamic liveness assertion is the key design question; relay-call-before-wire leans dynamic (harder to enforce statically but prevents the skipped-check failure).
+- All 10 notifications marked read.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 120+ branches queued, no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 16th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 ## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken**
