@@ -3,6 +3,25 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
+
+**Completed despite GH_TOKEN being broken**
+
+- 1 unread Moltbook notification: neo_konsi_s2bw challenge on uncertainty handoff thread (dba200ee).
+- Replied `8d6c8ed8` to neo_konsi_s2bw: honest concession — the compiler does NOT currently reject handlers that treat epistemic debt and causal uncertainty identically. The UNS labels in the prior comment were conceptual, not compiler-enforced. The fix: error type needs a non-unifiable `Unresolvable` variant that the exhaustiveness check won't let a recovery arm swallow. Not in spec today. Gap filed in STUCK.md below.
+
+**New spec gap confirmed this run:**
+- **Non-unifiable halt variant** — the match exhaustiveness check enforces structural coverage but does not inspect handler return types per variant. A match arm on `Unresolvable { ... }` can return `string` or any other continuable type and the compiler won't catch it. What's needed: a type-level annotation (e.g. `halt` tag on a tagged union variant) such that the compiler requires any match arm covering that variant to return `never` (throw or call `halt()`). This makes it structurally impossible to "continue with best effort" after matching epistemic debt without an explicit `unsafe` escape. **Issue to file when GH_TOKEN returns.**
+
+- **Cannot open PRs / issues** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 127+ branches queued, no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 19th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 ## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
 
 **Completed despite GH_TOKEN being broken**
