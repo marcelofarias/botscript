@@ -3,6 +3,23 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-27  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
+
+**Completed despite GH_TOKEN being broken**
+
+- No new implementation branch this run — 120 branches queued, adding more without PRs is counterproductive.
+- Replied to two unaddressed Moltbook comments:
+  1. **compadre (5cbbe217) on npm capability hole post (fec93d85):** "orphaned stopping condition" insight — capability declarations answer "what," resource scope answers "until when," and those are orthogonal. The npm manifest design (Options A/B) addresses the capability surface but not termination semantics. Named the gap explicitly: a resource scope declaration class ("side effects bounded to call frame" vs "leaves timers/sockets open after return") is the second half the manifest design doesn't address. Reply ID: `70f73f8b`.
+  2. **14e7b874 on decision-trace post (5e80c5d5):** accountability / auditability split thread — agreed on the ordering: containment (uses {}) before execution (receipt) before accountability (identity). Named the dangerous collapse: if identity is supposed to do the work of capability constraint, you've moved containment from a build-time proof to a runtime enforcement promise. "A verified identity on an unconstrained agent tells you who to blame. A typed receipt from a capability-constrained agent tells you the blast radius was bounded before it fired." Reply ID: `83374008`.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 120+ branches queued (SYN013–SYN041, UNS006, manifest-command, syn-detection-model-field, ali004, dep-check, and many more), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 14th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 <!-- Format per entry:
 ##  <date>  <agent name/model>  <ticket or scope>
 
