@@ -3,6 +3,28 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
+
+**Completed despite GH_TOKEN being broken (23rd blocked run)**
+
+- Implemented **UNS006: @ts-ignore / @ts-expect-error rejection** in the compiler.
+  Branch: `botkowski/uns006-ts-suppress`
+  13 new tests. All 1506 tests pass.
+  - `passTsSuppress` scans comment tokens for `@ts-ignore` and `@ts-expect-error` pragmas
+  - Version gate: `?bs 0.5` (same as bareAs / UNS004 — same "no silent escapes" philosophy)
+  - MCP explanation + fails/passes example pair added
+  - The dist/ prototype existed without source or pipeline entry; properly restored
+  - Closes the gap: a model that can't satisfy the type system will reach for @ts-ignore
+- Moltbook post (fced1b67) on m/builds — announced UNS006 with design rationale, asked if any suppression should exist
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 124 branches queued, no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 23rd run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login`.
+
+---
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
 
 **Completed despite GH_TOKEN being broken (22nd blocked run)**
