@@ -10,7 +10,12 @@ import {
   type Provenance,
 } from "../src/observed.js";
 
-const makeProvenance = (snapshotHash: string, observedAt = 1000): Provenance => ({
+const makeProvenance = <S extends string = "test-sha256">(
+  snapshotHash: string,
+  observedAt = 1000,
+  scheme: S = "test-sha256" as S,
+): Provenance<S> => ({
+  scheme,
   source: "test-agent",
   version: "1.0.0",
   snapshotHash,
@@ -47,6 +52,12 @@ describe("Observed<T>", () => {
     expect(obs2.value).toBeUndefined();
   });
 
+  it("observe() records the scheme in provenance", () => {
+    const prov = makeProvenance("abc123", 1000, "sha256-v1");
+    const obs = observe("x", prov);
+    expect(obs.provenance.scheme).toBe("sha256-v1");
+  });
+
   // ── sameSnapshot() ─────────────────────────────────────────────────────────
 
   it("sameSnapshot() returns true when hashes match", () => {
@@ -63,12 +74,14 @@ describe("Observed<T>", () => {
 
   it("sameSnapshot() ignores source, version, and observedAt", () => {
     const a = observe(1, {
+      scheme: "sha256-v1" as const,
       source: "agent-a",
       version: "1.0.0",
       snapshotHash: "shared-hash",
       observedAt: 1000,
     });
     const b = observe(2, {
+      scheme: "sha256-v1" as const,
       source: "agent-b",
       version: "2.5.1",
       snapshotHash: "shared-hash",
@@ -81,6 +94,57 @@ describe("Observed<T>", () => {
     const a: Observed<string> = observe("text", makeProvenance("h"));
     const b: Observed<number> = observe(42, makeProvenance("h"));
     expect(sameSnapshot(a, b)).toBe(true);
+  });
+
+  // ── sameSnapshot() scheme enforcement ──────────────────────────────────────
+
+  it("sameSnapshot() throws on runtime scheme mismatch (generic erasure defense)", () => {
+    const sha1 = observe("x", {
+      scheme: "sha256-v1",
+      source: "a",
+      version: "1",
+      snapshotHash: "abc",
+      observedAt: 1000,
+    }) as unknown as Observed<string>; // erase generic
+
+    const sha2 = observe("y", {
+      scheme: "sha256-v2",
+      source: "b",
+      version: "1",
+      snapshotHash: "abc",
+      observedAt: 1000,
+    }) as unknown as Observed<string>; // erase generic
+
+    expect(() => sameSnapshot(sha1, sha2)).toThrow(
+      /incompatible schemes.*sha256-v1.*sha256-v2/,
+    );
+  });
+
+  it("sameSnapshot() does not throw when schemes are the same at runtime", () => {
+    const a = observe("x", makeProvenance("abc", 1000, "etag-v1"));
+    const b = observe("y", makeProvenance("def", 1000, "etag-v1"));
+    expect(() => sameSnapshot(a, b)).not.toThrow();
+    expect(sameSnapshot(a, b)).toBe(false); // different hashes
+  });
+
+  it("sameSnapshot() same hash different scheme throws — not a false positive", () => {
+    const a = observe("x", {
+      scheme: "sha1",
+      source: "a",
+      version: "1",
+      snapshotHash: "deadbeef",
+      observedAt: 1000,
+    }) as unknown as Observed<string>;
+
+    const b = observe("y", {
+      scheme: "sha256",
+      source: "b",
+      version: "1",
+      snapshotHash: "deadbeef", // same bytes, different domain
+      observedAt: 1000,
+    }) as unknown as Observed<string>;
+
+    expect(() => sameSnapshot(a, b)).toThrow(/incompatible schemes/);
   });
 
   // ── expired() ──────────────────────────────────────────────────────────────
@@ -122,6 +186,20 @@ describe("Observed<T>", () => {
     expect(original.provenance.snapshotHash).toBe("old-hash");
   });
 
+  it("freshen() can change the scheme (explicit re-provenance)", () => {
+    const original = observe("data", makeProvenance("old-hash", 1000, "sha1"));
+    const newProv: Provenance<"sha256-v1"> = {
+      scheme: "sha256-v1",
+      source: "validator",
+      version: "2.0.0",
+      snapshotHash: "new-hash",
+      observedAt: 2000,
+    };
+    const refreshed = freshen(original, newProv);
+    expect(refreshed.provenance.scheme).toBe("sha256-v1");
+    expect(refreshed.value).toBe("data");
+  });
+
   // ── mapObserved() ──────────────────────────────────────────────────────────
 
   it("mapObserved() transforms the value, preserves provenance", () => {
@@ -137,6 +215,12 @@ describe("Observed<T>", () => {
     const mapped = mapObserved(obs, Number);
     expect(mapped.value).toBe(42);
     expect(mapped.provenance.snapshotHash).toBe("h");
+  });
+
+  it("mapObserved() preserves scheme through the transform", () => {
+    const obs = observe("hello", makeProvenance("h", 1000, "etag-v1"));
+    const mapped = mapObserved(obs, (s) => s.length);
+    expect(mapped.provenance.scheme).toBe("etag-v1");
   });
 
   it("mapObserved() does not mutate the original", () => {
@@ -162,5 +246,25 @@ describe("Observed<T>", () => {
     const isValid = sameSnapshot(cached, reference);
     expect(isValid).toBe(true);
     expect(cached.value.score).toBe(0.91);
+  });
+
+  it("scheme-typed sameSnapshot: same scheme compares correctly", () => {
+    const prov1: Provenance<"sha256-v1"> = {
+      scheme: "sha256-v1",
+      source: "model-a",
+      version: "1.0",
+      snapshotHash: "abc",
+      observedAt: 1000,
+    };
+    const prov2: Provenance<"sha256-v1"> = {
+      scheme: "sha256-v1",
+      source: "model-b",
+      version: "2.0",
+      snapshotHash: "abc",
+      observedAt: 2000,
+    };
+    const a = observe(0.91, prov1);
+    const b = observe(0.85, prov2);
+    expect(sameSnapshot(a, b)).toBe(true); // same hash, same scheme
   });
 });

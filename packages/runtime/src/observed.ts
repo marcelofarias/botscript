@@ -16,15 +16,19 @@
  * treating the value as current.
  *
  * Design:
- *   - `Observed<T>` is a struct, not a phantom brand. Provenance must be
- *     accessible at runtime for comparison — a bare cast (like `Fetched<T>`)
- *     would lose the metadata.
+ *   - `Observed<T, Scheme>` is a struct, not a phantom brand. Provenance must
+ *     be accessible at runtime for comparison.
  *   - `.value` is the explicit downgrade path. Accessing it is always safe;
  *     the question `sameSnapshot` answers is whether the computation is still
  *     current relative to a reference observation.
  *   - `snapshotHash` is the staleness key, not a TTL. "Stale" means the input
  *     snapshot changed, not that time has passed. Use `observedAt` (epoch ms)
  *     for TTL-style expiry only as a fallback when the snapshot is unavailable.
+ *   - `scheme` identifies the canonicalization domain of the hash (e.g.
+ *     "sha256-v1", "etag-v1", "model-weights-sha"). Two hashes computed under
+ *     different schemes are not comparable — `sameSnapshot` enforces this at
+ *     both the type level (same Scheme generic) and runtime (hard throw on
+ *     scheme mismatch, guarding against generic erasure).
  *
  * Composition with Fetched/Trusted:
  *   `Observed<Fetched<T>>` — an externally-sourced value at a specific snapshot.
@@ -33,26 +37,32 @@
  */
 
 /**
- * Provenance metadata attached to every `Observed<T>` value.
+ * Provenance metadata attached to every `Observed<T, Scheme>` value.
  *
- * `snapshotHash` is the primary staleness key: two observations are "same
- * snapshot" iff their hashes match. What counts as the snapshot is up to the
- * producer — it might be a model version hash, an input document hash, a
- * database row etag, or a cache key. The string must be deterministic given
- * the same inputs and change whenever the relevant inputs change.
+ * `scheme` names the canonicalization domain used to compute `snapshotHash`.
+ * Two provenances are only comparable when their schemes match — attempting
+ * to call `sameSnapshot` on observations with different Scheme types is a
+ * compile error; passing mismatched schemes through `unknown` is a runtime
+ * throw.
  *
- * `source` is the identifier for the agent/service/tool that made the
- * observation. Opaque to the runtime; used only for audit/logging.
+ * `snapshotHash` is the primary staleness key within a scheme: two observations
+ * are "same snapshot" iff their schemes match AND their hashes match. The hash
+ * must be deterministic given the same inputs and change whenever the relevant
+ * inputs change. What counts as the snapshot is up to the producer — it might
+ * be a model version hash, an input document hash, a database row etag, or a
+ * cache key.
  *
- * `version` is the version of the producer at observation time (e.g. semver,
- * commit SHA, model tag). Paired with `source` to identify "which version of
- * this producer produced this observation."
+ * `source` identifies the agent/service/tool that made the observation.
+ * `version` is the producer version at observation time (semver, commit SHA,
+ * model tag). Together they identify "which version of this producer produced
+ * this observation."
  *
- * `observedAt` is the Unix timestamp (ms) of the observation. For TTL-style
- * expiry when a snapshotHash is unavailable or when wall-clock recency
- * matters regardless of snapshot identity.
+ * `observedAt` is Unix timestamp (ms). Used for TTL-style expiry when a
+ * snapshotHash is unavailable or when wall-clock recency matters regardless
+ * of snapshot identity.
  */
-export interface Provenance {
+export interface Provenance<Scheme extends string = string> {
+  readonly scheme: Scheme;
   readonly source: string;
   readonly version: string;
   readonly snapshotHash: string;
@@ -62,46 +72,69 @@ export interface Provenance {
 /**
  * A value observed at a specific point in time with provenance metadata.
  *
- * `value` carries the observation result. `provenance` carries the metadata
- * needed to evaluate whether the observation is still current.
+ * The `Scheme` parameter tracks the canonicalization domain of the snapshot
+ * hash. `sameSnapshot` requires both observations to share the same `Scheme`,
+ * preventing silent false-positive equality across incompatible hash schemes.
+ *
+ * `Observed<T>` (Scheme defaults to `string`) is the escape hatch for callers
+ * that don't yet carry a typed scheme — they lose compile-time scheme checking
+ * but still get the runtime throw in `sameSnapshot`.
  *
  * `Observed<T>` is NOT assignable to `T` — the receiver must explicitly
  * access `.value` to use the underlying data. This forces the question
  * "am I using stale data?" to be visible at every use site.
  */
-export interface Observed<T> {
+export interface Observed<T, Scheme extends string = string> {
   readonly value: T;
-  readonly provenance: Provenance;
+  readonly provenance: Provenance<Scheme>;
 }
 
 /**
- * Wrap a value with provenance metadata, producing an `Observed<T>`.
+ * Wrap a value with provenance metadata, producing an `Observed<T, Scheme>`.
  *
  * Call at every observation boundary: the output of a model call, the result
  * of a cache lookup, or any value whose validity depends on a specific input
  * snapshot or source version.
  */
-export const observe = <T>(value: T, provenance: Provenance): Observed<T> => ({
+export const observe = <T, Scheme extends string = string>(
+  value: T,
+  provenance: Provenance<Scheme>,
+): Observed<T, Scheme> => ({
   value,
   provenance,
 });
 
 /**
- * Returns true iff two observations share the same snapshot hash.
+ * Returns true iff two observations share the same snapshot hash within the
+ * same canonicalization scheme.
  *
- * Use to check whether a downstream consumer's reference snapshot matches
- * the observation's snapshot before treating the observation as current:
+ * Requires both observations to share the same `Scheme` type parameter —
+ * passing observations with different Scheme types is a compile error.
+ *
+ * Runtime hard failure: if the scheme strings differ at runtime (e.g. due to
+ * generic erasure with `as unknown as Observed<T>`), `sameSnapshot` throws
+ * rather than returning a misleading false positive or false negative.
  *
  *   if (!sameSnapshot(cached, current)) {
  *     return err("stale observation — recompute");
  *   }
  *
- * Two observations with equal `snapshotHash` are "from the same snapshot"
- * regardless of `source`, `version`, or `observedAt`. Producers must
- * guarantee that `snapshotHash` changes whenever the relevant inputs change.
+ * Producers must guarantee that `snapshotHash` changes whenever the relevant
+ * inputs change. Scheme mismatches always throw — there is no "compatible"
+ * cross-scheme comparison.
  */
-export const sameSnapshot = <T, U>(a: Observed<T>, b: Observed<U>): boolean =>
-  a.provenance.snapshotHash === b.provenance.snapshotHash;
+export const sameSnapshot = <T, U, Scheme extends string>(
+  a: Observed<T, Scheme>,
+  b: Observed<U, Scheme>,
+): boolean => {
+  if (a.provenance.scheme !== b.provenance.scheme) {
+    throw new Error(
+      `sameSnapshot: incompatible schemes — '${a.provenance.scheme}' vs '${b.provenance.scheme}'. ` +
+        `Cross-scheme hash comparison is never valid.`,
+    );
+  }
+  return a.provenance.snapshotHash === b.provenance.snapshotHash;
+};
 
 /**
  * Returns true iff the observation is older than `maxAgeMs` milliseconds.
@@ -115,39 +148,52 @@ export const sameSnapshot = <T, U>(a: Observed<T>, b: Observed<U>): boolean =>
  *     return err("observation expired");
  *   }
  */
-export const expired = <T>(obs: Observed<T>, nowMs: number, maxAgeMs: number): boolean =>
-  nowMs - obs.provenance.observedAt > maxAgeMs;
+export const expired = <T, Scheme extends string = string>(
+  obs: Observed<T, Scheme>,
+  nowMs: number,
+  maxAgeMs: number,
+): boolean => nowMs - obs.provenance.observedAt > maxAgeMs;
 
 /**
- * Refresh an observation: produce a new `Observed<T>` with updated provenance
- * while keeping the same value. Use when a downstream agent re-validates or
- * re-confirms a value without recomputing it.
+ * Refresh an observation: produce a new `Observed<T, NewScheme>` with updated
+ * provenance while keeping the same value. Use when a downstream agent re-
+ * validates or re-confirms a value without recomputing it.
+ *
+ * The new provenance may carry a different Scheme — freshening is the explicit
+ * re-provenance operation, so a scheme change is intentional and permitted.
  *
  *   const confirmed = freshen(obs, {
+ *     scheme: "sha256-v1",
  *     source: "validator-agent",
  *     version: "1.2.0",
  *     snapshotHash: currentHash,
  *     observedAt: time.now(),
  *   });
  */
-export const freshen = <T>(obs: Observed<T>, newProvenance: Provenance): Observed<T> => ({
+export const freshen = <T, OldScheme extends string, NewScheme extends string = OldScheme>(
+  obs: Observed<T, OldScheme>,
+  newProvenance: Provenance<NewScheme>,
+): Observed<T, NewScheme> => ({
   value: obs.value,
   provenance: newProvenance,
 });
 
 /**
- * Map the value inside an `Observed<T>` without changing its provenance.
+ * Map the value inside an `Observed<T, Scheme>` without changing its provenance.
  *
  * Use when transforming an observed value in a way that does not invalidate
  * the observation's provenance — e.g. deserializing a raw string into a typed
- * struct. The resulting observation has the same `snapshotHash` and
+ * struct. The resulting observation has the same `scheme`, `snapshotHash`, and
  * `observedAt` as the source.
  *
  * If the transform changes the snapshot identity (e.g. aggregating multiple
- * inputs), create a new `Observed<U>` with `observe()` and a new provenance
- * instead.
+ * inputs), create a new `Observed<U, Scheme>` with `observe()` and a fresh
+ * provenance instead.
  */
-export const mapObserved = <T, U>(obs: Observed<T>, fn: (value: T) => U): Observed<U> => ({
+export const mapObserved = <T, U, Scheme extends string = string>(
+  obs: Observed<T, Scheme>,
+  fn: (value: T) => U,
+): Observed<U, Scheme> => ({
   value: fn(obs.value),
   provenance: obs.provenance,
 });

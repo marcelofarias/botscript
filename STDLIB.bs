@@ -210,9 +210,9 @@ async fn doFetch(url: string) uses { net } -> Promise<Result<string, string>> {
   return Result.tryAsync { await getRes.value.text() }
 }
 
-// ─── 12. Observed<T> provenance type (0.8+) ──────────────────────────────────
-// `Observed<T>` wraps a value with provenance metadata: who produced it,
-// at what version, from what snapshot, and when. Complementary to
+// ─── 12. Observed<T, Scheme> provenance type (0.8+) ───────────────────────────
+// `Observed<T, Scheme>` wraps a value with provenance metadata: who produced
+// it, at what version, from what snapshot, and when. Complementary to
 // Fetched/Trusted which track the trust boundary; Observed tracks the
 // temporal/source boundary.
 //
@@ -221,10 +221,16 @@ async fn doFetch(url: string) uses { net } -> Promise<Result<string, string>> {
 // the staleness information — the receiver cannot distinguish "fresh 0.91"
 // from "stale 0.91 computed from yesterday's model weights."
 //
+// The `Scheme` parameter names the canonicalization domain of the snapshot
+// hash (e.g. "sha256-v1", "etag-v1"). sameSnapshot() enforces scheme
+// identity at both the type level and at runtime (throws on scheme mismatch
+// even after generic erasure). Two hashes computed under different schemes
+// are never comparable — there is no "compatible" cross-scheme comparison.
+//
 // `sameSnapshot(a, b)` is the primary staleness check: returns true iff
-// a.provenance.snapshotHash === b.provenance.snapshotHash.
+// schemes match and hashes match; throws if schemes differ.
 // `expired(obs, nowMs, maxAgeMs)` is TTL-style fallback.
-// `freshen(obs, newProv)` re-provences a value after re-validation.
+// `freshen(obs, newProv)` re-provenances a value after re-validation.
 // `mapObserved(obs, fn)` transforms the value without changing provenance.
 
 import {
@@ -239,12 +245,13 @@ import {
 
 type ScoreResult = { score: number; label: string };
 
-fn scoreText(text: string) uses { net } -> Observed<ScoreResult> {
-  // Caller computes a snapshotHash from inputs to identify "which input did
-  // this result come from?" — not a wall-clock TTL but an identity check.
+fn scoreText(text: string) uses { net } -> Observed<ScoreResult, "sha256-v1"> {
+  // `scheme` names the canonicalization domain — the receiver and producer
+  // must agree on how the hash was computed, or sameSnapshot throws.
   let hash = simpleHash(text)
   let result = callModel(text)  // hypothetical model call
   return observe(result, {
+    scheme: "sha256-v1",
     source: "score-agent",
     version: "1.0.0",
     snapshotHash: hash,
@@ -252,8 +259,12 @@ fn scoreText(text: string) uses { net } -> Observed<ScoreResult> {
   });
 }
 
-fn useScore(obs: Observed<ScoreResult>, ref: Observed<unknown>) -> Result<string, string> {
-  // Reject stale observations — input snapshot changed since this was computed.
+fn useScore(
+  obs: Observed<ScoreResult, "sha256-v1">,
+  ref: Observed<unknown, "sha256-v1">,
+) -> Result<string, string> {
+  // sameSnapshot enforces scheme at type level; the call below would not
+  // compile if obs and ref had different Scheme type parameters.
   if (!sameSnapshot(obs, ref)) return err("stale score: recompute against current input");
   return ok(`${obs.value.label}: ${obs.value.score}`);
 }
