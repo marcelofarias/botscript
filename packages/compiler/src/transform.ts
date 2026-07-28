@@ -26,6 +26,7 @@ import { passTestMocks } from "./passes/test-mocks.js";
 import { passBareAs } from "./passes/bare-as.js";
 import { passUnsafe } from "./passes/unsafe.js";
 import { passUnwrap } from "./passes/unwrap.js";
+import { passTsSuppress } from "./passes/ts-suppress.js";
 import { atLeast, passVersion, type VersionInfo } from "./passes/version.js";
 import type { ModuleEffects } from "./module-effects.js";
 
@@ -116,6 +117,11 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // contract (no match, no unsafe block). Must run before passUnsafe, which
   // rewrites the source and erases unsafe keywords used as suppression markers.
   { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
+  // tsSuppress: fires UNS006 on `// @ts-ignore` / `// @ts-expect-error` pragma comments.
+  // Runs on the original source (before any rewriting passes) so comment tokens are
+  // still present. Version gate is 0.5 — same as bareAs which enforces the same
+  // "no silent escapes" philosophy.
+  { name: "tsSuppress", fn: passTsSuppress, minVersion: "0.5" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
   // to build skip ranges) AND before testMocks (passTestMocks generates

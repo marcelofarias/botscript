@@ -229,6 +229,29 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS006: {
+    code: "UNS006",
+    title: "`// @ts-ignore` or `// @ts-expect-error` suppression comment in botscript file",
+    rule:
+      "TypeScript suppression pragmas (`// @ts-ignore`, `// @ts-expect-error`) silence type " +
+      "errors on the next line without a written justification or an explicit escape-hatch " +
+      "annotation visible in diff review — a model that cannot satisfy the type system will " +
+      "reach for them rather than fixing the underlying problem, defeating botscript's safety net",
+    idiom:
+      "fix the underlying type error; if you genuinely need to bypass the type system, wrap the " +
+      "offending expression in `unsafe \"<reason>\" { ... }` — the written reason appears in the " +
+      "diff and signals to reviewers that the bypass was deliberate",
+    rewrite:
+      'unsafe "<why the type is wrong here>" { <offending expression> }',
+    example:
+      "// before — UNS006: suppression hides the real type mismatch\n" +
+      "?bs 0.5\n" +
+      "// @ts-ignore\n" +
+      "const result = processResponse(data);\n\n" +
+      "// after — explicit escape hatch with written reason\n" +
+      "?bs 0.5\n" +
+      'const result = unsafe "processResponse accepts any JSON shape here" { processResponse(data as ResponseShape) };',
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

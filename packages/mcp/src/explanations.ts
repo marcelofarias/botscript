@@ -294,6 +294,44 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  UNS006: {
+    code: "UNS006",
+    title: "`// @ts-ignore` or `// @ts-expect-error` suppression comment in botscript file",
+    body:
+      "UNS006 fires when a TypeScript suppression pragma (`// @ts-ignore` or " +
+      "`// @ts-expect-error`) appears in a botscript file. These comments silence type " +
+      "errors on the next line without requiring a written justification — a model that " +
+      "cannot satisfy the type system will reach for them rather than fixing the underlying " +
+      "problem, defeating botscript's safety net silently.\n\n" +
+      "Unlike `unsafe \"<reason>\" { ... }`, suppression pragmas leave no audit trail. They " +
+      "do not appear as distinct tokens in diff review, they do not carry a written reason, " +
+      "and they silence the entire next line, not just the specific expression that needed " +
+      "the bypass. The escape hatch is too wide and too silent.\n\n" +
+      "**Fix:**\n\n" +
+      "1. **Fix the underlying type error** — this is almost always the right answer. If the " +
+      "types are wrong, fix the types.\n\n" +
+      "2. **Wrap the offending expression in `unsafe \"<reason>\" { ... }`** — if you genuinely " +
+      "need to bypass the type system, the unsafe block makes the bypass explicit, scoped, " +
+      "and documented with a reason visible in the diff:\n" +
+      "   ```\n" +
+      '   const result = unsafe "processResponse accepts any JSON shape here" {\n' +
+      "     processResponse(data as ResponseShape)\n" +
+      "   };\n" +
+      "   ```\n\n" +
+      "**There is no suppression for UNS006 itself.** The pragma must be removed. " +
+      "UNS006 is gated on `?bs 0.5`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.5\n" +
+        "// @ts-ignore\n" +
+        "const result = processResponse(data);\n",
+      passes:
+        "?bs 0.5\n" +
+        'const result = unsafe "processResponse accepts any JSON shape here" {\n' +
+        "  processResponse(data as ResponseShape)\n" +
+        "};\n",
+    },
+  },
   INT001: {
     code: "INT001",
     title: "intent declares 'pure' but function has capability, resource, or throws declarations",
