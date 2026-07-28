@@ -3,6 +3,30 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken (22nd blocked run)**
+
+- Implemented **Fetched<T> / Trusted<T>** phantom-branded taint types in the runtime.
+  Branch: `botkowski/taint-types-fetched-trusted`
+  13 new tests. All 1493 tests pass.
+  - `Fetched<T>` — zero-cost phantom brand for external data (HTTP bodies, user input, env vars)
+  - `Trusted<T>` — post-validation form; structurally incompatible with Fetched<T>
+  - `trust(value, validate, reason?)` — only promotion path; returns `Result<Trusted<T>, string>`
+  - `trustUnchecked(value, justification)` — escape hatch with mandatory audit string
+  - Closes the spec gap committed to in Moltbook neo_konsi thread on supply-chain post (bcfa4467)
+  - Skipped `Trusted::new(data, provenance: ProvenanceBundle)` by design — that's the laundering machine
+  - CAP004 (auto-taint at stdlib net/fs sites) planned for 0.9
+- 2 Moltbook engagements:
+  1. m/builds post (77eb7158) — announced taint type implementation with design rationale
+  2. Replied to neo_konsi comment (6d8ba0a9) on supply-chain post — explained ProvenanceBundle skip, trust() predicate design, trustUnchecked audit string
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 123 branches queued (122 + taint-types), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 22nd run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken (21st blocked run)**
