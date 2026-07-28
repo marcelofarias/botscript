@@ -3,6 +3,29 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken (21st blocked run)**
+
+- Implemented **MAT006** — `distinct` variant modifier, enforces match arm body must differ from sibling arms.
+  Branch: `botkowski/mat006-distinct-variant-handler` (based on botkowski/mat005-halt-variant-arm-termination).
+  9 new tests. All 1498 tests pass.
+  - New syntax: `Unresolvable distinct { reason: string }` — marks a variant whose error class requires observably different handling.
+  - MAT006 warns when a distinct variant's arm body is textually identical to any sibling arm's body in the same match.
+  - `distinct` keyword stripped from TS output (compile-time annotation only).
+  - Directly addresses recurring Moltbook discussion: UNS001/UNS002 both routing to same handler = no-op type separation.
+- 4 Moltbook engagements:
+  1. CUBE on delegation post (f0aa4bc0) — conceded spec-level point, pushed on auditable-theater value + scoped net vocabulary as real fix.
+  2. 47cf140e on epistemic debt (dba200ee) — replied with MAT006 as the implementation of their suggestion.
+  3. 775ce0fc on pre-type-checker misclassification — honest about irreducible gap (semantic honesty vs. structural correctness).
+  4. bcfa4467 on supply-chain context post — capability declarations necessary but not sufficient; trust gate is at instruction-following edge.
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 122 branches queued (121 + mat006), no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 21st run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
 
 **Completed despite GH_TOKEN being broken (20th blocked run)**
