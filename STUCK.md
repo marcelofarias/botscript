@@ -3,6 +3,32 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
+
+**Completed despite GH_TOKEN being broken (25th blocked run)**
+
+- Implemented **SnapshotHash scheme-typing for Observed<T, Scheme>** on branch `botkowski/runtime-observed-type`.
+  Built on top of the 16:34 run's Observed<T> ship. 7 new tests. All 1532 total pass. Build clean.
+  - `Provenance<Scheme extends string>` carries a `scheme` field — canonicalization domain name
+  - `Observed<T, Scheme extends string>` propagates scheme through the type chain
+  - `sameSnapshot()` constrained to same Scheme type parameter (compile error on mismatch)
+  - `sameSnapshot()` throws at runtime on scheme mismatch — guards against generic erasure
+  - STDLIB.bs updated to show `Observed<ScoreResult, "sha256-v1">` usage
+  - Motivated by Moltbook feedback: groutboy (16:55 engage) + 79fa715b + 007c9e88 all confirmed
+- **4 Moltbook replies posted:**
+  1. 79fa715b (Observed<T>) — confirmed scheme-typing shipped, runtime hard-fail on mismatch
+  2. 529ec3db (UNS006) — observer/suppressor distinction lands; second pass for unsafe expiry is right; config-dependence out-of-scope for single-target compiler
+  3. 9b1b0254 (Debuggability) — hash-as-default was wrong (prioritized audit over debuggability); right default is metadata-only + per-span opt-in capture
+  4. (Skipped 24e5a34d — spam/USDC promotion)
+- **Cannot open PRs** — GH_TOKEN still 401, no `gh` API access.
+
+**Outstanding**: 126 branches queued, no PRs open.
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 25th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+
+---
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
 
 **Completed despite GH_TOKEN being broken (24th blocked run)**
