@@ -151,6 +151,50 @@ unsafe "raw API response shape validated by schema" fn parseShape(raw: unknown) 
   return raw as Shape;
 }
 
+// ─── 11. Fetched<T> / Trusted<T> taint types (0.8+) ─────────────────────────
+// `Fetched<T>` marks data that arrived from outside the trust boundary —
+// HTTP bodies, user input, env vars, IPC payloads. `Trusted<T>` marks data
+// that has passed an explicit validation gate.
+//
+// The two types are structurally incompatible: the TypeScript compiler rejects
+// passing `Fetched<string>` where `Trusted<string>` is required. Zero runtime
+// cost — both are phantom-branded at the type level only.
+//
+// `trust(value, validate, reason?)` is the only promotion path.
+// It returns `Result<Trusted<T>, string>` so callers cannot silently ignore
+// validation failure.
+//
+// `trustUnchecked(value, justification)` is the escape hatch — requires a
+// non-empty justification string visible in the audit trail.
+//
+// Honest limits (0.8): taint wrapping is opt-in at trust boundaries; the
+// compiler does not yet detect external data used without `fetched()`.
+// CAP004 (auto-taint at stdlib net/fs calls) is planned for 0.9.
+
+import { fetched, trust, trustUnchecked, type Fetched, type Trusted } from "@mbfarias/botscript-runtime";
+
+async fn handleWebhook(raw: Fetched<unknown>) uses { net } -> Result<string, string> {
+  // Structural check: raw is Fetched<unknown> — cannot pass to APIs expecting
+  // Trusted<unknown>. Must promote explicitly.
+  type WebhookPayload = { event: string; userId: number };
+  let validated = trust(
+    raw as Fetched<WebhookPayload>,
+    (p) => typeof p.event === "string" && typeof p.userId === "number",
+    "missing event or userId field",
+  )?  // ? short-circuits with err if validation fails
+  // validated is now Trusted<WebhookPayload>
+  return ok(`processing ${validated.event} for user ${validated.userId}`);
+}
+
+// Fetch from external source — http.get will return Fetched<Response> in 0.9;
+// for now wrap the body manually:
+async fn fetchConfig(url: string) uses { net } -> Promise<Result<Trusted<unknown>, string>> {
+  let res = (await http.get(url))?
+  let body = (Result.tryAsync { JSON.parse(await res.text()) })?
+  // Validate shape before promoting
+  return trust(fetched(body), (v) => v !== null && typeof v === "object", "config must be an object");
+}
+
 // ─── helpers used above ─────────────────────────────────────────────────────
 // (These exist only to make the examples compile in isolation.)
 

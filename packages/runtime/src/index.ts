@@ -5,3 +5,4 @@ export * from "./capabilities.js";
 export * from "./effects.js";
 export * from "./mocks.js";
 export * from "./test.js";
+export * from "./taint.js";
