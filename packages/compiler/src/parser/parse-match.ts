@@ -17,6 +17,8 @@ export interface MatchArm {
   pattern: Pattern;
   /** Verbatim arm body (single expression). */
   body: string;
+  /** Token index of the first token in the arm body (after `->` and whitespace). */
+  bodyStartToken: number;
 }
 
 /**
@@ -98,7 +100,7 @@ function parseArms(tokens: Token[], scrutinee: string, scrutEnd: number, startId
       cursor++;
     }
     const body = sliceText(tokens, bodyStart, cursor).trim();
-    arms.push({ pattern: pat.pattern, body });
+    arms.push({ pattern: pat.pattern, body, bodyStartToken: bodyStart });
     if (tokens[cursor]?.kind === "punct" && tokens[cursor]?.text === ";") cursor++;
     cursor = skipTrivia(tokens, cursor);
   }

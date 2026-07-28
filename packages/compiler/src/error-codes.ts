@@ -1343,6 +1343,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  MAT005: {
+    code: "MAT005",
+    title: "match arm on halt-annotated variant must call halt() or throw",
+    rule:
+      "a match arm covering a variant declared with the `halt` modifier must terminate by " +
+      "calling `halt()` or using a `throw` expression — returning a continuable value is not allowed; " +
+      "use `unsafe \"<reason>\" { ... }` to explicitly override the constraint when a recovery path is truly safe",
+    idiom:
+      "halt-annotated variants represent states that cannot be safely continued from (epistemic debt, " +
+      "unresolvable errors, etc.); the compiler enforces that these arms cannot silently produce a value " +
+      "that lets execution continue as if nothing happened",
+    rewrite:
+      "change the arm body to call `halt(<message>)` or `throw new Error(<message>)` " +
+      "instead of returning a continuable value",
+    example:
+      "// before — Unresolvable halt arm returns a string (MAT005)\n" +
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> \"best effort\"  // MAT005\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after — arm terminates with halt()\n" +
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> halt(`unresolvable: ${reason}`)\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",
