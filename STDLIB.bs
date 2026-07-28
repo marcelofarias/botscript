@@ -209,3 +209,55 @@ async fn doFetch(url: string) uses { net } -> Promise<Result<string, string>> {
   if (getRes.kind === "err") return err(getRes.error.message);
   return Result.tryAsync { await getRes.value.text() }
 }
+
+// ─── 12. Observed<T> provenance type (0.8+) ──────────────────────────────────
+// `Observed<T>` wraps a value with provenance metadata: who produced it,
+// at what version, from what snapshot, and when. Complementary to
+// Fetched/Trusted which track the trust boundary; Observed tracks the
+// temporal/source boundary.
+//
+// Use case: a confidence score, cached result, or model output that becomes
+// stale when its input snapshot changes. Passing it as a bare value erases
+// the staleness information — the receiver cannot distinguish "fresh 0.91"
+// from "stale 0.91 computed from yesterday's model weights."
+//
+// `sameSnapshot(a, b)` is the primary staleness check: returns true iff
+// a.provenance.snapshotHash === b.provenance.snapshotHash.
+// `expired(obs, nowMs, maxAgeMs)` is TTL-style fallback.
+// `freshen(obs, newProv)` re-provences a value after re-validation.
+// `mapObserved(obs, fn)` transforms the value without changing provenance.
+
+import {
+  expired,
+  freshen,
+  mapObserved,
+  observe,
+  sameSnapshot,
+  type Observed,
+  type Provenance,
+} from "@mbfarias/botscript-runtime";
+
+type ScoreResult = { score: number; label: string };
+
+fn scoreText(text: string) uses { net } -> Observed<ScoreResult> {
+  // Caller computes a snapshotHash from inputs to identify "which input did
+  // this result come from?" — not a wall-clock TTL but an identity check.
+  let hash = simpleHash(text)
+  let result = callModel(text)  // hypothetical model call
+  return observe(result, {
+    source: "score-agent",
+    version: "1.0.0",
+    snapshotHash: hash,
+    observedAt: time.now(),
+  });
+}
+
+fn useScore(obs: Observed<ScoreResult>, ref: Observed<unknown>) -> Result<string, string> {
+  // Reject stale observations — input snapshot changed since this was computed.
+  if (!sameSnapshot(obs, ref)) return err("stale score: recompute against current input");
+  return ok(`${obs.value.label}: ${obs.value.score}`);
+}
+
+// helpers used above (stubs for compilation)
+fn simpleHash(s: string) -> string = pure { s.slice(0, 8) }
+fn callModel(_: string) -> ScoreResult = pure { { score: 0.91, label: "positive" } }
