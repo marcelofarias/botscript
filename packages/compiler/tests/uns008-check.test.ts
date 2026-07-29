@@ -152,12 +152,12 @@ describe("UNS008: decay-stale unsafe block (?bs 0.9+)", () => {
     ).not.toThrow("UNS008");
   });
 
-  it("does NOT fire on pure literal body (no idents — UNS008 only targets bodies with idents)", () => {
+  it("does NOT fire on pure literal body (no idents — UNS007 handles that case instead)", () => {
     // A body of pure literals has no idents; UNS008 classifies it as "no-ident"
-    // and skips it. UNS007 (on its own branch) would catch this case.
+    // and skips it. UNS007 fires on this case — verify UNS007 fires, not UNS008.
     expect(() =>
       transform("?bs 0.9\nfn run() -> void { unsafe \"stale\" { 42 } }\n"),
-    ).not.toThrow("UNS008");
+    ).toThrow("UNS007");
   });
 
   it("does NOT fire on unsafe fn declarations", () => {

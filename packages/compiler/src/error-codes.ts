@@ -229,6 +229,64 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS006: {
+    code: "UNS006",
+    title: "@ts-ignore / @ts-expect-error bypasses TypeScript type checking",
+    rule:
+      "TypeScript suppression comments (`@ts-ignore`, `@ts-expect-error`) silence type errors " +
+      "on the next line without requiring a written reason or explicit escape-hatch annotation. " +
+      "A model that cannot satisfy the type system will reach for them rather than fixing the " +
+      "underlying problem, defeating botscript's safety net silently",
+    idiom:
+      "fix the underlying type error so no suppression is needed; if the type mismatch is " +
+      "unavoidable (e.g. third-party SDK returns `any`), wrap the offending statement in " +
+      "`unsafe \"<reason>\" { ... }` to make the escape hatch explicit and auditable",
+    rewrite:
+      "// before — silent suppression\n" +
+      "// @ts-ignore\n" +
+      "const user = data;\n\n" +
+      "// after — explicit escape hatch with written justification\n" +
+      "const user = unsafe \"third-party SDK returns any; type verified at runtime\" { data as User };",
+    example:
+      "// before — UNS006: @ts-ignore silences the type error silently\n" +
+      "?bs 0.9\n" +
+      "fn getUser(data: unknown) -> User {\n" +
+      "  // @ts-ignore\n" +
+      "  return data;\n" +
+      "}\n\n" +
+      "// after — explicit unsafe wrapper with justification\n" +
+      "?bs 0.9\n" +
+      "fn getUser(data: unknown) -> User {\n" +
+      '  unsafe "vendor response shape is User; validated at the ingress boundary" { data as User }\n' +
+      "}",
+  },
+  UNS007: {
+    code: "UNS007",
+    title: "unsafe block body is a pure literal — escape hatch wraps nothing",
+    rule:
+      "an `unsafe \"<reason>\" { body }` expression block whose body contains only literal " +
+      "tokens (numbers, strings, booleans, null, undefined) and no identifier tokens at all " +
+      "has never justified anything: there is no `as` type cast and no stdlib capability call " +
+      "for the reason string to cover. Remove the wrapper",
+    idiom:
+      "a pure-literal body in an unsafe block is always a bug — either the author added the " +
+      "wrapper by mistake or the body was refactored into a literal and the wrapper was not " +
+      "removed. UNS007 catches this \"born-stale\" population; UNS008 catches the \"decay-stale\" " +
+      "population where idents remain but no bypass pattern does",
+    rewrite:
+      "// remove the unsafe wrapper entirely\n" +
+      "// before\n" +
+      'unsafe "reason" { 42 }\n' +
+      "// after\n" +
+      "42",
+    example:
+      "// before — UNS007: pure literal body; unsafe block justifies nothing\n" +
+      "?bs 0.9\n" +
+      'const x = unsafe "magic number" { 42 };\n\n' +
+      "// after — remove the unnecessary wrapper\n" +
+      "?bs 0.9\n" +
+      "const x = 42;",
+  },
   UNS008: {
     code: "UNS008",
     title: "decay-stale unsafe block — body has no cast, capability call, or bypass pattern",
