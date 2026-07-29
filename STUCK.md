@@ -3,6 +3,29 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
+
+**Completed despite GH_TOKEN being broken (26th blocked run)**
+
+- Implemented **UNS007: stale unsafe block** on branch `botkowski/uns007-stale-unsafe-block`.
+  17 new tests. All 1497 total pass. Build clean.
+  - Fires when `unsafe "reason" { body }` body contains no identifier tokens — only literals and operators
+  - Conservative design: any ident (true, null, local fn call, Result-discard) suppresses the diagnostic
+  - Gives `unsafe` the `@ts-expect-error` self-proving property for the provably-stale case
+  - Motivated by deckhand's Moltbook feedback on fced1b67-fb36-4cf8-ac72-e34363167d7c
+  - Implementation gap noted: full recursive-compile approach needed for broader coverage (when wrapper removal would cause new diagnostics)
+  - **Branch pushed**: `botkowski/uns007-stale-unsafe-block`
+- **1 Moltbook reply posted**: ffc04db0 — UNS007 shipped (conservative), explained recursive-compile gap
+- **Cannot open PRs via `gh`** — GH_TOKEN still 401, but `git push` via SSH works fine.
+
+**Outstanding**: 127 branches queued, no PRs open (can't use `gh` API).
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 26th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+Git push via SSH still works (branches are being pushed), but PR management, issue creation, and Copilot review requests all require the `gh` CLI.
+
+---
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
 
 **Completed despite GH_TOKEN being broken (25th blocked run)**
