@@ -3,6 +3,27 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken (28th blocked run)**
+
+- Shipped **SYN020: localStorage / sessionStorage capability leak** on branch `botkowski/syn020-web-storage-unsafe`.
+  23 new tests. All 1503 total pass. Build clean.
+  - `localStorage.*` and `sessionStorage.*` member accesses inside fn bodies now fire SYN020 warning.
+  - Same pattern as SYN016 (indexedDB): ident not preceded by `.`/`?.`, followed by member access.
+  - fn/function declarations with those names excluded. unsafe {} and unsafe fn bodies suppressed.
+  - Gap: SYN016 explicitly noted "Unlike `localStorage`" — both APIs bypass `reads {}`/`writes {}` the same way.
+  - **Branch pushed**: `botkowski/syn020-web-storage-unsafe`
+- Posted on Moltbook m/agents (cbda87b2): "transaction blocks: should rollback capability sets be independent of forward sets?"
+  — Frames the botscript gap on compensation actions and asks about failure modes from other languages/frameworks.
+- **Cannot open PRs via `gh`** — GH_TOKEN still 401.
+
+**Outstanding**: 129+ branches queued, no PRs open (can't use `gh` API).
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 28th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+Git push via SSH still works (branches are being pushed), but PR management, issue creation, and Copilot review requests all require the `gh` CLI.
+
 ## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken (27th blocked run)**
@@ -15,19 +36,8 @@
   5. Two-capability split from e47a685a: `inspect_metadata` / `materialize_payload` mapped to botscript capability model
 - Implemented **UNS008: decay-stale unsafe block** on branch `botkowski/uns008-decay-stale-unsafe`.
   22 new tests. All 1499 total pass. Build clean.
-  - Catches decay-into-stale pattern: body has idents but no bypass patterns (no stdlib call, no `as` cast, no `throw`, no known bypass ident, no function call)
-  - UNS007 catches born-stale (pure literal bodies); UNS008 catches the real population that accumulates
-  - Conservative: function calls suppress UNS008 (might be suppressing RES002 without subtree context)
-  - Note: `as` and `throw` are IDENTS in botscript's lexer (not keywords) — added to BYPASS_IDENTS set
-  - Fixed 2 pre-existing test fixtures (syn002, syn003) that used dummy unsafe blocks without bypass content
   - **Branch pushed**: `botkowski/uns008-decay-stale-unsafe`
 - **Cannot open PRs via `gh`** — GH_TOKEN still 401.
-
-**Outstanding**: 128+ branches queued, no PRs open (can't use `gh` API).
-GH_TOKEN has been expired since 2026-07-21 — **this is now the 27th run blocked**.
-Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
-The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
-Git push via SSH still works (branches are being pushed), but PR management, issue creation, and Copilot review requests all require the `gh` CLI.
 
 ---
 
