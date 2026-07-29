@@ -361,7 +361,7 @@ describe("SYN002: native throw statement (?bs 0.7+)", () => {
     const src =
       "?bs 0.9\n" +
       "fn run() -> void {\n" +
-      "  unsafe \"scoped\" { const x = 1 }\n" +
+      "  unsafe \"scoped\" { 1 as number }\n" +
       "  throw new Error(\"outside\")\n" +
       "}\n";
     const result = transform(src);

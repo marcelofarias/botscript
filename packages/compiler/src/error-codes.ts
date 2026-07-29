@@ -229,6 +229,35 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS008: {
+    code: "UNS008",
+    title: "decay-stale unsafe block — body has no cast, capability call, or bypass pattern",
+    rule:
+      "an `unsafe \"<reason>\" { ... }` block must be necessary: its body must contain " +
+      "a pattern that the botscript checker suite would flag — an `as` type cast (UNS004), " +
+      "a stdlib capability call (UNS005), a `throw` statement (SYN002), a `console.*` call (SYN003), " +
+      "or any other bypass that requires the escape hatch. " +
+      "A block whose body has identifiers but none of the flagged patterns is decay-stale: " +
+      "it accumulates justification for a problem that no longer exists in the code",
+    idiom:
+      "an unsafe block decays when the code around it improves — the stdlib call gets wrapped " +
+      "in `match`, the cast moves upstream, the throw becomes a Result return. " +
+      "The body keeps its variable references but loses the actual bypass; " +
+      "UNS008 catches this population that UNS007 (pure literals) misses",
+    rewrite:
+      "// remove the unsafe wrapper; the body no longer triggers any botscript diagnostic\n" +
+      "// before\n" +
+      'unsafe "reason" { variable }\n' +
+      "// after\n" +
+      "variable",
+    example:
+      "// before — UNS008: body has idents but no cast or capability call\n" +
+      "?bs 0.9\n" +
+      'const value = unsafe "data is string" { payload };\n\n' +
+      "// after — remove the now-unnecessary unsafe wrapper\n" +
+      "?bs 0.9\n" +
+      "const value = payload;",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

@@ -202,7 +202,7 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
     const src =
       "?bs 0.9\n" +
       "fn greet(name: string) -> void {\n" +
-      "  unsafe \"scoped\" { const x = 1 }\n" +
+      "  unsafe \"scoped\" { 1 as number }\n" +
       "  console.log(name)\n" +
       "}\n";
     const result = transform(src);
