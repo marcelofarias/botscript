@@ -1014,6 +1014,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return random.int(1, 7)\n" +
       "}",
   },
+  SYN020: {
+    code: "SYN020",
+    title: "localStorage / sessionStorage access bypasses the capability model",
+    rule:
+      "`localStorage` and `sessionStorage` are ambient Web Storage API globals that persist and share state " +
+      "across the page session or page loads — completely invisible to botscript's `reads {}` / `writes {}` " +
+      "resource model. A fn that accesses them has undeclared persistent or session-scoped state dependencies: " +
+      "callers cannot see the dependency from the fn's declared surface, and tests cannot mock or isolate " +
+      "the storage without global manipulation",
+    idiom:
+      "pass a storage handle or key-value abstraction as a parameter so callers can see the dependency and " +
+      "tests can inject an in-memory substitute; " +
+      "or wrap in `unsafe \"reads/writes localStorage for <reason>\" { ... }` when passing a handle is not practical",
+    rewrite:
+      "// option A — pass the value as a parameter:\n" +
+      "fn getTheme(storage: { getItem(k: string): string | null }) -> string | null {\n" +
+      "  return storage.getItem('theme')\n" +
+      "}\n\n" +
+      "// option B — unsafe block with a justification:\n" +
+      "fn getTheme() -> string | null {\n" +
+      "  return unsafe \"reads localStorage for user theme preference\" { localStorage.getItem('theme') }\n" +
+      "}",
+    example:
+      "// before — SYN020 fires\n" +
+      "?bs 0.7\n" +
+      "fn getTheme() -> string | null {\n" +
+      "  return localStorage.getItem('theme')  // SYN020\n" +
+      "}\n\n" +
+      "// after — pass a handle so callers see the dependency\n" +
+      "?bs 0.7\n" +
+      "fn getTheme(storage: { getItem(k: string): string | null }) -> string | null {\n" +
+      "  return storage.getItem('theme')\n" +
+      "}",
+  },
   SYN022: {
     code: "SYN022",
     title: "process.* ambient state access bypasses the capability model",

@@ -147,6 +147,17 @@
  *           `fn`/`function` declarations named `crypto` and non-randomness members are excluded.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN020  A `localStorage.*` or `sessionStorage.*` access was detected in a fn body
+ *           (?bs 0.7+). Both are ambient Web Storage API globals — `localStorage` persists
+ *           across page loads; `sessionStorage` persists for the tab session — neither is
+ *           visible to botscript's `reads {}` / `writes {}` resource model. A fn that accesses
+ *           them has undeclared persistent or session-scoped state dependencies: callers cannot
+ *           see the dependency and tests cannot mock or isolate storage without global state
+ *           manipulation. Detection: `localStorage` / `sessionStorage` ident not preceded by
+ *           `.`/`?.`, followed by `.` or `?.` (member access confirmation).
+ *           `fn`/`function` declarations with those names are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  *   SYN022  A `process.argv`, `process.cwd`, `process.platform`, `process.arch`,
  *           `process.pid`, `process.ppid`, `process.version`, `process.versions`,
  *           `process.hrtime`, `process.uptime`, `process.memoryUsage`,
@@ -251,6 +262,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn014 = getErrorCode("SYN014")!;
   const syn016 = getErrorCode("SYN016")!;
   const syn017 = getErrorCode("SYN017")!;
+  const syn020 = getErrorCode("SYN020")!;
   const syn018 = getErrorCode("SYN018")!;
   const syn019 = getErrorCode("SYN019")!;
   const syn022 = getErrorCode("SYN022")!;
@@ -1335,6 +1347,52 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn016.rule,
             idiom: syn016.idiom,
             rewrite: syn016.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN020: localStorage.* / sessionStorage.* access ─────────────────
+        case "localStorage":
+        case "sessionStorage": {
+          // Exclude: `obj.localStorage.*` — preceded by `.` or `?.`
+          const prevIdx20 = prevSignificant(tokens, i - 1);
+          const prev20 = tokens[prevIdx20];
+          if (prev20 && ((prev20.kind === "punct" && prev20.text === ".") || prev20.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named localStorage or sessionStorage
+          if (prev20 && prev20.kind === "keyword" && prev20.text === "fn") continue;
+          if (prev20 && prev20.kind === "ident" && prev20.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx20)) continue;
+
+          // Must be followed by `.` or `?.` — confirming this is a member access on the global, not a bare reference
+          const nextIdx20 = nextSignificant(tokens, i + 1);
+          const next20 = tokens[nextIdx20];
+          const isDot20 = next20 && next20.kind === "punct" && next20.text === ".";
+          const isOptChain20 = next20 && next20.kind === "questionDot";
+          if (!isDot20 && !isOptChain20) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep20 = isOptChain20 ? "?." : ".";
+          const storeName20 = tok.text;
+          const loc20 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN020",
+            severity: "warning",
+            file: null,
+            line: loc20.line,
+            column: loc20.column,
+            start: tok.start,
+            end: next20!.end,
+            message:
+              `fn '${decl.name}' accesses ${storeName20}${sep20} — ` +
+              `${storeName20} is ambient Web Storage invisible to the capability model; ` +
+              `no reads {} / writes {} label covers it; ` +
+              `pass a storage handle as a parameter or wrap in unsafe "reads/writes ${storeName20} for <reason>" { ${storeName20}${sep20}... }`,
+            rule: syn020.rule,
+            idiom: syn020.idiom,
+            rewrite: syn020.rewrite,
           });
           break;
         }
