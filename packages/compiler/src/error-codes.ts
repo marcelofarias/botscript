@@ -258,6 +258,34 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "const value = payload;",
   },
+  UNS009: {
+    code: "UNS009",
+    title: "unsafe reason string is too weak to justify the escape hatch",
+    rule:
+      "the `unsafe \"<reason>\"` justification string must be informative: it must describe " +
+      "why the escape hatch is needed, what it bypasses, and ideally who owns the risk. " +
+      "Empty strings, whitespace-only strings, and known-weak single-word deferrals " +
+      "(\"TODO\", \"legacy\", \"temp\", \"temporary\", \"workaround\", \"fixme\", \"hack\", \"ignore\", \"wip\") " +
+      "do not meet this bar — they record that someone pressed through the gate, not why",
+    idiom:
+      "write a reason that names the bypass and its owner: " +
+      "\"third-party SDK returns `any`; upstream issue #42\" > \"TODO\". " +
+      "The reason string is the audit trail — a reviewer who reads it six months later " +
+      "should be able to decide whether the bypass is still warranted",
+    rewrite:
+      "// replace the weak reason with a specific justification\n" +
+      "// before\n" +
+      "unsafe \"TODO\" { http.get(url) }\n" +
+      "// after\n" +
+      "unsafe \"http.get returns untyped Response; match below handles ok/err\" { http.get(url) }",
+    example:
+      "// before — UNS009: reason string is too weak\n" +
+      "?bs 0.9\n" +
+      "const resp = unsafe \"TODO\" { http.get(url) };\n\n" +
+      "// after — specific justification\n" +
+      "?bs 0.9\n" +
+      "const resp = unsafe \"http.get returns untyped Response; caller match-handles\" { http.get(url) };",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

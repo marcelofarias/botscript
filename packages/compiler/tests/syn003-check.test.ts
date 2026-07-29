@@ -214,7 +214,7 @@ describe("SYN003: console.* call bypasses capability model (?bs 0.7+)", () => {
     // (matches uns-check's range-based suppression pattern).
     const src =
       "?bs 0.9\n" +
-      "unsafe \"legacy\" fn outer() -> void {\n" +
+      "unsafe \"nested fn isolation test\" fn outer() -> void {\n" +
       "  fn inner() -> void {\n" +
       "    console.log(\"x\")\n" +
       "  }\n" +

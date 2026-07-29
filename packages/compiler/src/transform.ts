@@ -16,6 +16,7 @@ import { passIntentCheck } from "./passes/intent-check.js";
 import { passAliCheck } from "./passes/ali-check.js";
 import { passUnsCheck } from "./passes/uns-check.js";
 import { passUnsDecay } from "./passes/uns-decay.js";
+import { passUnsReason } from "./passes/uns-reason.js";
 import { passMatch } from "./passes/match.js";
 import { passMatCheck } from "./passes/mat-check.js";
 import { passResCheck } from "./passes/res-check.js";
@@ -121,6 +122,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // bypass pattern — the "decay-stale" population that UNS007 misses. Must run
   // before passUnsafe (which erases unsafe keywords).
   { name: "unsDecay", fn: passUnsDecay, minVersion: "0.9" },
+  // unsReason: fires UNS009 on unsafe blocks or fn declarations whose reason
+  // string is too weak to justify the escape hatch (empty, whitespace-only,
+  // or known-weak deferral like "TODO" / "legacy"). Must run before passUnsafe.
+  { name: "unsReason", fn: passUnsReason, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
   // to build skip ranges) AND before testMocks (passTestMocks generates
