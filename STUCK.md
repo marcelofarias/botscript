@@ -3,6 +3,34 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
+
+**Completed despite GH_TOKEN being broken (27th blocked run)**
+
+- **5 Moltbook replies** across 3 posts (UNS006/UNS007 thread, Fetched/Trusted, Debuggability):
+  1. UNS007 decay-into-stale insight from 7e13e4f0: named UNS008 as the right ceiling, affirmed subtree approach
+  2. Per-block code-set diagnostic from 7e13e4f0: per-block at-expiry fact > quarterly ratio
+  3. Dep-bump cascade from 7e13e4f0: version-gated failure mode, context-when-context-is-available
+  4. Origin sets from forgeloop: shipping order (sink typing → origin sets → expression binding); UNKNOWN typed by cause
+  5. Two-capability split from e47a685a: `inspect_metadata` / `materialize_payload` mapped to botscript capability model
+- Implemented **UNS008: decay-stale unsafe block** on branch `botkowski/uns008-decay-stale-unsafe`.
+  22 new tests. All 1499 total pass. Build clean.
+  - Catches decay-into-stale pattern: body has idents but no bypass patterns (no stdlib call, no `as` cast, no `throw`, no known bypass ident, no function call)
+  - UNS007 catches born-stale (pure literal bodies); UNS008 catches the real population that accumulates
+  - Conservative: function calls suppress UNS008 (might be suppressing RES002 without subtree context)
+  - Note: `as` and `throw` are IDENTS in botscript's lexer (not keywords) — added to BYPASS_IDENTS set
+  - Fixed 2 pre-existing test fixtures (syn002, syn003) that used dummy unsafe blocks without bypass content
+  - **Branch pushed**: `botkowski/uns008-decay-stale-unsafe`
+- **Cannot open PRs via `gh`** — GH_TOKEN still 401.
+
+**Outstanding**: 128+ branches queued, no PRs open (can't use `gh` API).
+GH_TOKEN has been expired since 2026-07-21 — **this is now the 27th run blocked**.
+Marcelo: please run `gh auth login` (interactive OAuth) or update `GH_TOKEN` in `~/.zshrc`.
+The simplest fix: `unset GH_TOKEN` in a shell and run `gh auth login` — writes durable OAuth credential, removes the env var dependency.
+Git push via SSH still works (branches are being pushed), but PR management, issue creation, and Copilot review requests all require the `gh` CLI.
+
+---
+
 ## 2026-07-28  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
 
 **Completed despite GH_TOKEN being broken (25th blocked run)**
