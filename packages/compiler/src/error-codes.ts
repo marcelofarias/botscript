@@ -229,6 +229,32 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  UNS007: {
+    code: "UNS007",
+    title: "stale unsafe block — body contains no cast or capability call",
+    rule:
+      "an `unsafe \"<reason>\" { ... }` block must be necessary: its body must contain " +
+      "at least one `as` type cast (UNS004) or one stdlib capability call (UNS005); " +
+      "a block whose body needs neither escape hatch is dead justification — the reason " +
+      "string makes a claim the body no longer supports",
+    idiom:
+      "an unsafe block earns its keep the same way `@ts-expect-error` does — " +
+      "it proves the escape hatch is still required; " +
+      "if the body type-checks clean without any cast or capability call, remove the block",
+    rewrite:
+      "// remove the unsafe wrapper; the body already type-checks clean\n" +
+      "// before\n" +
+      'unsafe "reason" { expr }\n' +
+      "// after\n" +
+      "expr",
+    example:
+      "// before — UNS007: body has no as cast or stdlib call\n" +
+      "?bs 0.9\n" +
+      'const x = unsafe "this was needed once" { someLocalFn(42) };\n\n' +
+      "// after — remove the now-unnecessary unsafe wrapper\n" +
+      "?bs 0.9\n" +
+      "const x = someLocalFn(42);",
+  },
   FMT001: {
     code: "FMT001",
     title: "source is not in canonical form",

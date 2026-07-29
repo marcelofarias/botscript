@@ -15,6 +15,7 @@ import { passEffCheck } from "./passes/eff-check.js";
 import { passIntentCheck } from "./passes/intent-check.js";
 import { passAliCheck } from "./passes/ali-check.js";
 import { passUnsCheck } from "./passes/uns-check.js";
+import { passUnsStale } from "./passes/uns-stale.js";
 import { passMatch } from "./passes/match.js";
 import { passMatCheck } from "./passes/mat-check.js";
 import { passResCheck } from "./passes/res-check.js";
@@ -116,6 +117,11 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // contract (no match, no unsafe block). Must run before passUnsafe, which
   // rewrites the source and erases unsafe keywords used as suppression markers.
   { name: "unsCheck", fn: passUnsCheck, minVersion: "0.9" },
+  // unsStale: fires UNS007 on unsafe blocks whose body contains neither an
+  // `as` cast nor a stdlib capability call — the block's escape hatch is dead
+  // justification. Runs after unsCheck (same pre-rewrite source) and before
+  // bareAs/unsafe (both of which erase unsafe keywords).
+  { name: "unsStale", fn: passUnsStale, minVersion: "0.9" },
   { name: "capCheck", fn: passCapCheck, minVersion: "0.2" },
   // bareAs MUST run before unsafe (passUnsafe erases unsafe keywords needed
   // to build skip ranges) AND before testMocks (passTestMocks generates

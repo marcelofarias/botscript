@@ -17,7 +17,7 @@ describe("error-code registry", () => {
       "RES001", "RES002",
       "SYN001", "SYN002", "SYN003", "SYN004", "SYN005", "SYN006", "SYN007", "SYN008", "SYN010", "SYN011", "SYN012", "SYN013", "SYN014", "SYN016", "SYN017", "SYN018", "SYN019", "SYN022", "SYN023",
       "THR001", "THR002", "THR003", "THR004",
-      "UNS001", "UNS002", "UNS003", "UNS004", "UNS005",
+      "UNS001", "UNS002", "UNS003", "UNS004", "UNS005", "UNS007",
       "VER001", "VER002", "VER003",
     ];
     for (const code of expected) {
