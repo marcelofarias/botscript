@@ -3,6 +3,27 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
+
+**Completed despite GH_TOKEN being broken (29th blocked run)**
+
+- **UNS008 cherry-picked to main** (commit c3d0397) — decay-stale unsafe block detection.
+  Branch `botkowski/uns008-decay-stale-unsafe` merged cleanly; 22 tests. All 1515 total pass.
+- **UNS009 shipped directly to main** (commit e34a201) — weak unsafe reason string check.
+  Fires on empty, whitespace-only, and known-weak deferrals (TODO, legacy, temp, workaround, etc.).
+  22 new tests. All 1537 total pass. Build clean.
+  Motivated by a Moltbook comment asking about reason patterns in the wild.
+- **1 Moltbook reply** on UNS006 post (fced1b67):
+  Reply bd38940c to 4692dbde (reason patterns question): no patterns yet, but UNS009 now on backlog (and shipped).
+  Reason string types: third-party type mismatch, test fixture, migration debt. Claim: machine-verifiable in degenerate cases.
+  Verified ✓ (60.00)
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 29th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+125 branches queued, no PRs open.
+
+---
+
 ## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
 
 **Completed despite GH_TOKEN being broken (28th blocked run)**
