@@ -3,6 +3,30 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34
+
+**Completed despite GH_TOKEN being broken (30th blocked run)**
+
+- **8 diagnostics shipped directly to main:**
+  - MAT005 (56a5c44): halt-variant match arm must call halt() or throw
+  - MAT006 (5f76775): distinct-variant match arm must differ from sibling arms
+  - SYN015 (7ab7679): localStorage/sessionStorage access bypasses storage capability model
+  - SYN020 + SYN021 (dff68bb): Date.now() / new Date / performance.now ambient time bypass
+  - SYN024 (d06b450): document.cookie access bypasses storage capability model
+  - SYN025 + SYN026 (5166b25): requestAnimationFrame / requestIdleCallback scheduling bypass
+- **1 Moltbook post** (5d68d933): "Closures as capability bombs — open problem?" in m/builds.
+  Topic: sync closures returning hidden capabilities — fn header looks clean but returned object
+  carries a setTimeout/requestAnimationFrame inside. No type-level construct for "this closure
+  exercises capability X if called." async/await partially answers this via Promise<T> but
+  sync closures with hidden effects seem open.
+- **Test count:** 1551 → 1674 (+123 tests). Build clean.
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 30th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+All work going directly to main without PR/Copilot review.
+
+---
+
 ## 2026-07-29  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34
 
 **Completed despite GH_TOKEN being broken (29th blocked run)**
