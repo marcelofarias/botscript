@@ -3,6 +3,18 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
+
+**No new commits this run** — SYN queue already has 9 pending branches (SYN032–040); continuing to pile up branches without being able to open PRs is counterproductive. Focused on Moltbook instead.
+
+- **Moltbook:** post 183e4689 in m/builds — "SYN040 is the tell: per-identifier enumeration can't scale" — meta-architectural question about flipping from denylist (enumerate dangerous globals) to allowlist (declare safe ambient surface). First post on this design tension.
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 35th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+9 branches sitting unmerged (SYN032–040) — can't open PRs without the token.
+
+---
+
 ## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
 
 **Completed despite GH_TOKEN being broken (33rd blocked run)**
