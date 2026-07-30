@@ -25,11 +25,24 @@
  *  - MAT005 enforces that any match arm covering a halt variant must call halt() or throw
  *    rather than returning a continuable value.
  *
- *   type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }
+ * distinct modifier (botscript 0.9+):
+ *  - `TagIdent distinct` or `TagIdent distinct { fields }` marks a variant as requiring
+ *    observably different handling from all sibling arms in the same match expression.
+ *  - The `distinct` keyword is stripped from the TypeScript output (compile-time annotation only).
+ *  - MAT006 fires when a distinct variant's arm body is textually identical to any other
+ *    non-wildcard arm body in the same match, indicating the type-level distinction is a no-op.
+ *
+ *   type QueryResult =
+ *     | Confirmed { value: string }
+ *     | Recoverable { reason: string }
+ *     | Unresolvable distinct { reason: string }
  *
  * desugars to:
  *
- *   type QueryResult = { kind: "Confirmed"; value: string } | { kind: "Unresolvable"; reason: string }
+ *   type QueryResult =
+ *     | { kind: "Confirmed"; value: string }
+ *     | { kind: "Recoverable"; reason: string }
+ *     | { kind: "Unresolvable"; reason: string }
  */
 
 import { lex, type Token } from "../parser/lex.js";
@@ -58,6 +71,13 @@ export interface Alt {
    * return a continuable value (MAT005).
    */
   halt: boolean;
+  /**
+   * True when the variant is declared with the `distinct` modifier
+   * (e.g. `Unresolvable distinct { reason: string }`).  A match arm
+   * covering this variant must have a body that differs from all other
+   * non-wildcard arms in the same match (MAT006).
+   */
+  distinct: boolean;
 }
 
 export function passTaggedUnion(src: string): string {
@@ -182,10 +202,14 @@ function parseAlts(tokens: Token[], from: number, to: number): Alt[] | null {
     i = skipTrivia(tokens, i + 1);
     let body: string | null = null;
     let isHalt = false;
-    // Optional `halt` modifier between tag name and optional body block.
-    const maybeHalt = tokens[i];
-    if (maybeHalt?.kind === "ident" && maybeHalt.text === "halt") {
+    let isDistinct = false;
+    // Optional `halt` or `distinct` modifier between tag name and optional body block.
+    const maybeModifier = tokens[i];
+    if (maybeModifier?.kind === "ident" && maybeModifier.text === "halt") {
       isHalt = true;
+      i = skipTrivia(tokens, i + 1);
+    } else if (maybeModifier?.kind === "ident" && maybeModifier.text === "distinct") {
+      isDistinct = true;
       i = skipTrivia(tokens, i + 1);
     }
     const maybeBrace = tokens[i];
@@ -197,7 +221,7 @@ function parseAlts(tokens: Token[], from: number, to: number): Alt[] | null {
       body = sliceText(tokens, i + 1, maybeBrace.matchedAt);
       i = maybeBrace.matchedAt + 1;
     }
-    alts.push({ tag, body, halt: isHalt });
+    alts.push({ tag, body, halt: isHalt, distinct: isDistinct });
     i = skipTrivia(tokens, i);
     if (i >= to) break;
     const sep = tokens[i];
@@ -212,7 +236,9 @@ function parseAlts(tokens: Token[], from: number, to: number): Alt[] | null {
 
 function shouldRewrite(alts: Alt[]): boolean {
   if (alts.length === 0) return false;
-  return alts.some((a) => a.body !== null);
+  // Rewrite when any alt has a body block (normal case) OR carries a modifier
+  // keyword (halt/distinct) that must be stripped from the TypeScript output.
+  return alts.some((a) => a.body !== null || a.halt || a.distinct);
 }
 
 function skipTrivia(tokens: Token[], i: number): number {

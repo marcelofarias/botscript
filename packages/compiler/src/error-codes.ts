@@ -1539,6 +1539,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  MAT006: {
+    code: "MAT006",
+    title: "distinct-annotated variant handled identically to a sibling arm",
+    rule:
+      "a variant declared with the `distinct` modifier requires its match arm body to differ " +
+      "from all other non-wildcard arms in the same match expression — identical arm bodies " +
+      "indicate the epistemic distinction between variants is being silently collapsed",
+    idiom:
+      "`distinct` marks a variant whose error class is fundamentally different from its siblings " +
+      "(e.g. operational failure vs. epistemic debt); the compiler enforces that these arms have " +
+      "observably different handling so that the type-level separation is not a no-op at runtime",
+    rewrite:
+      "give the arm for the `distinct` variant a body that differs from its sibling arms — " +
+      "at minimum, call a different function or emit a different diagnostic to preserve the distinction",
+    example:
+      "// before — Unresolvable distinct arm uses same body as Recoverable arm (MAT006)\n" +
+      "?bs 0.9\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Recoverable { reason: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Recoverable { reason } -> continueWithDefault(reason)\n" +
+      "    Unresolvable { reason } -> continueWithDefault(reason)  // MAT006\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// after — distinct arm has observably different handling\n" +
+      "?bs 0.9\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Recoverable { reason: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Recoverable { reason } -> continueWithDefault(reason)\n" +
+      "    Unresolvable { reason } -> halt(`unresolvable query: ${reason}`)\n" +
+      "  }\n" +
+      "}",
+  },
   THR001: {
     code: "THR001",
     title: "fn transitively throws an exception type not declared in its header",

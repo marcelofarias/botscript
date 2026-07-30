@@ -29,6 +29,13 @@
  *           cannot safely continue; the compiler enforces this structurally so
  *           an author cannot accidentally write a best-effort handler that swallows
  *           the halt signal.  Use `unsafe "reason" { … }` to explicitly override.
+ *
+ *   MAT006  match arm on a distinct-annotated variant has a body identical to
+ *           another non-wildcard arm in the same match.  A variant declared as
+ *           `Tag distinct { … }` represents an error class that requires
+ *           observably different handling from its siblings.  When two arms share
+ *           the same body, the type-level separation is a no-op at runtime —
+ *           the `distinct` annotation declares an intent the match does not satisfy.
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
@@ -78,6 +85,7 @@ export function passMatCheck(
   const mat003 = getErrorCode("MAT003")!;
   const mat004 = getErrorCode("MAT004")!;
   const mat005 = getErrorCode("MAT005")!;
+  const mat006 = getErrorCode("MAT006")!;
 
   // Pre-collect all user-defined tagged union declarations in this file.
   // Pass the already-lexed tokens to avoid lexing the source a second time.
@@ -230,6 +238,42 @@ export function passMatCheck(
             idiom: mat005.idiom,
             rewrite: mat005.rewrite,
           }]);
+        }
+      }
+    }
+
+    // MAT006: distinct-variant arms must have a body different from all sibling arms.
+    const distinctTags = new Set(union.alts.filter((a) => a.distinct).map((a) => a.tag));
+    if (distinctTags.size > 0) {
+      // Collect all non-wildcard arm bodies (excluding the arm under check) for comparison.
+      const tagArms = expr.arms.filter((arm) => arm.pattern.kind === "tag");
+      for (const arm of tagArms) {
+        if (!distinctTags.has((arm.pattern as { kind: "tag"; tag: string }).tag)) continue;
+        const tag = (arm.pattern as { kind: "tag"; tag: string }).tag;
+        const siblingsWithSameBody = tagArms.filter(
+          (other) => other !== arm && other.body === arm.body,
+        );
+        if (siblingsWithSameBody.length > 0) {
+          const bodyTok = tokens[arm.bodyStartToken];
+          const diagStart = bodyTok ? bodyTok.start : matchStart;
+          const { line, column } = locationOf(src, diagStart);
+          warnings.push({
+            code: "MAT006",
+            severity: "warning",
+            file: null,
+            line,
+            column,
+            start: diagStart,
+            end: bodyTok ? bodyTok.end : matchStart,
+            message:
+              `match arm for distinct-variant '${tag}' has the same body as ` +
+              `${siblingsWithSameBody.length === 1 ? "another arm" : `${siblingsWithSameBody.length} other arms`} — ` +
+              `'${tag}' is declared \`distinct\` to signal its error class requires ` +
+              `different handling; identical bodies collapse the distinction at runtime`,
+            rule: mat006.rule,
+            idiom: mat006.idiom,
+            rewrite: mat006.rewrite,
+          });
         }
       }
     }

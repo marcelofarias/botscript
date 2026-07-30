@@ -1,11 +1,12 @@
 /**
- * Tests for MAT001/MAT002/MAT003/MAT004/MAT005: non-exhaustive/over-exhaustive match (?bs 0.9+).
+ * Tests for MAT001/MAT002/MAT003/MAT004/MAT005/MAT006: non-exhaustive/over-exhaustive match (?bs 0.9+).
  *
  * MAT001: fires when a Result match has an ok arm but no err arm (or vice versa) and no wildcard.
  * MAT002: fires when an Option match has a some arm but no none arm (or vice versa) and no wildcard.
  * MAT003: fires when a match on a user-defined tagged union is missing at least one variant arm.
  * MAT004: warns when a match on a user-defined tagged union covers all variants AND has a wildcard.
  * MAT005: fires when a match arm on a halt-annotated variant returns a continuable value.
+ * MAT006: warns when a match arm on a distinct-annotated variant has a body identical to a sibling arm.
  */
 
 import { describe, expect, it } from "vitest";
@@ -797,5 +798,158 @@ describe("MAT005: halt-variant arm must terminate", () => {
       "  }\n" +
       "}\n";
     expect(() => compile(src)).toThrow("MAT003");
+  });
+});
+
+// ─── MAT006: distinct-variant handler parity ─────────────────────────────────
+
+describe("MAT006 — distinct-variant arm must differ from sibling arms", () => {
+  it("warns when distinct-variant arm has the same body as a sibling arm", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Recoverable { reason: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Recoverable { reason } -> continueWithDefault(reason)\n" +
+      "    Unresolvable { reason } -> continueWithDefault(reason)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(1);
+  });
+
+  it("does not warn when distinct-variant arm has a different body", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Recoverable { reason: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Recoverable { reason } -> continueWithDefault(reason)\n" +
+      "    Unresolvable { reason } -> halt(`unresolvable: ${reason}`)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not warn for non-distinct variants with identical bodies", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Bar { msg: string } | Foo { msg: string }\n\n" +
+      "fn handle(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Bar { msg } -> logAndReturn(msg)\n" +
+      "    Foo { msg } -> logAndReturn(msg)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("warns when distinct bare-tag variant arm body equals a sibling arm body", () => {
+    // Epistemic distinct (bare tag) arm has same body as Recoverable arm
+    const src =
+      "?bs 0.9\n" +
+      "type ErrKind = Epistemic distinct | Recoverable { msg: string }\n\n" +
+      "fn handle(e: ErrKind) -> string {\n" +
+      "  match e {\n" +
+      "    Epistemic -> retry(\"default\")\n" +
+      "    Recoverable { msg } -> retry(\"default\")\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(1);
+  });
+
+  it("distinct modifier is stripped from TS output", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export type QueryResult = Confirmed { value: string } | Unresolvable distinct { reason: string }\n";
+    const result = compile(src);
+    expect(result).toContain('kind: "Confirmed"');
+    expect(result).toContain('kind: "Unresolvable"');
+    expect(result).not.toContain(" distinct ");
+    expect(result).not.toContain(" distinct\n");
+  });
+
+  it("MAT003 still fires when a distinct-variant arm is missing entirely", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("MAT003");
+  });
+
+  it("does not warn below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "type QueryResult =\n" +
+      "  | Confirmed { value: string }\n" +
+      "  | Unresolvable distinct { reason: string }\n\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> continueWithDefault(reason)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("does not warn when all distinct-variant arms have unique bodies", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status =\n" +
+      "  | Done { value: string }\n" +
+      "  | Degraded distinct { reason: string }\n" +
+      "  | Failed distinct { reason: string }\n\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Degraded { reason } -> logDegraded(reason)\n" +
+      "    Failed { reason } -> halt(`failed: ${reason}`)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(0);
+  });
+
+  it("warns once per distinct arm that matches a sibling, not per sibling", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status =\n" +
+      "  | HardFail distinct { reason: string }\n" +
+      "  | Ok { value: string }\n" +
+      "  | SoftFail distinct { reason: string }\n\n" +
+      "fn handle(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    HardFail { reason } -> fallback(reason)\n" +
+      "    Ok { value } -> value\n" +
+      "    SoftFail { reason } -> fallback(reason)\n" +
+      "  }\n" +
+      "}\n";
+    const result = compileWithWarnings(src);
+    const warns = result.warnings.filter((w) => w.code === "MAT006");
+    expect(warns).toHaveLength(2);
   });
 });
