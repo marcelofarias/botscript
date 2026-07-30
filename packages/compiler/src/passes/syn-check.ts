@@ -269,6 +269,30 @@
  *           Note: SYN023 now also covers `navigator.sendBeacon` — fire-and-forget network requests
  *           through navigator that bypass the net capability model.
  *
+ *   SYN028  A `new Proxy(target, handler)` constructor call was detected in a fn body (?bs 0.7+).
+ *           `Proxy` creates a virtualized object that intercepts all property access and method
+ *           calls on `target` via `handler` traps. If `target` is a capability-bearing object,
+ *           the Proxy launders its capability surface: callers see an innocent object while
+ *           operations route through the underlying capability without a matching `uses {}`
+ *           declaration. If `handler` closes over capabilities, trap bodies perform arbitrary
+ *           effects invisible to the fn header. The compiler cannot see through a Proxy —
+ *           the capability surface appears narrower than it actually is.
+ *           Bare `Proxy(...)` calls (without `new`) and optional calls are also detected.
+ *           Excluded: member calls (`obj.Proxy`), `fn`/`function`/`function*` declarations
+ *           named `Proxy`, and object/class method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN029  A `document.write(...)` or `document.writeln(...)` call was detected in a fn body
+ *           (?bs 0.7+). These methods inject a raw HTML string directly into the document parse
+ *           stream — after page load they clear the entire document before writing. Both are
+ *           invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}`
+ *           declaration covers document mutation via these globals. The injected string may
+ *           contain `<script>` tags or inline event handlers that static analysis cannot see.
+ *           Callers cannot observe, audit, or suppress the DOM side effect from the fn's header.
+ *           Excluded: `obj.document.write(...)` (member on a local binding), `fn`/`function`/
+ *           `function*` declarations named `document`, and TS method signatures.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -353,6 +377,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn025 = getErrorCode("SYN025")!;
   const syn026 = getErrorCode("SYN026")!;
   const syn027 = getErrorCode("SYN027")!;
+  const syn028 = getErrorCode("SYN028")!;
+  const syn029 = getErrorCode("SYN029")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2241,9 +2267,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN024: document.cookie ──────────────────────────────────────────
+        // ── SYN024: document.cookie / SYN029: document.write / document.writeln ──
         case "document": {
-          // Exclude: `obj.document.cookie` — document preceded by `.` or `?.`
+          // Exclude: `obj.document.*` — document preceded by `.` or `?.`
           const prevIdx24 = prevSignificant(tokens, i - 1);
           const prev24 = tokens[prevIdx24];
           if (prev24 && ((prev24.kind === "punct" && prev24.text === ".") || prev24.kind === "questionDot"))
@@ -2261,33 +2287,84 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const isOptChain24 = next24 && next24.kind === "questionDot";
           if (!isDot24 && !isOptChain24) continue;
 
-          // Member must be `cookie`
+          // Read the member name
           const memberIdx24 = nextSignificant(tokens, nextIdx24 + 1);
           const memberTok24 = tokens[memberIdx24];
-          if (!memberTok24 || memberTok24.kind !== "ident" || memberTok24.text !== "cookie") continue;
-
-          if (isInsideRange(tok.start, unsafeRanges)) continue;
+          if (!memberTok24 || memberTok24.kind !== "ident") continue;
 
           const sep24 = isOptChain24 ? "?." : ".";
-          const loc24 = locationOf(src, tok.start);
-          warnings.push({
-            code: "SYN024",
-            severity: "warning",
-            file: null,
-            line: loc24.line,
-            column: loc24.column,
-            start: tok.start,
-            end: memberTok24.end,
-            message:
-              `fn '${decl.name}' accesses document${sep24}cookie — ` +
-              `document.cookie is persistent storage that is also transmitted with every matching HTTP request, ` +
-              `invisible to the capability model; no reads {} / writes {} label covers it; ` +
-              `pass cookies as a parameter or wrap in unsafe "accesses document.cookie for <reason>" { document${sep24}cookie }`,
-            rule: syn024.rule,
-            idiom: syn024.idiom,
-            rewrite: syn024.rewrite,
-          });
-          break;
+
+          // ── SYN024: .cookie ──────────────────────────────────────────────────
+          if (memberTok24.text === "cookie") {
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            const loc24 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN024",
+              severity: "warning",
+              file: null,
+              line: loc24.line,
+              column: loc24.column,
+              start: tok.start,
+              end: memberTok24.end,
+              message:
+                `fn '${decl.name}' accesses document${sep24}cookie — ` +
+                `document.cookie is persistent storage that is also transmitted with every matching HTTP request, ` +
+                `invisible to the capability model; no reads {} / writes {} label covers it; ` +
+                `pass cookies as a parameter or wrap in unsafe "accesses document.cookie for <reason>" { document${sep24}cookie }`,
+              rule: syn024.rule,
+              idiom: syn024.idiom,
+              rewrite: syn024.rewrite,
+            });
+            break;
+          }
+
+          // ── SYN029: .write() / .writeln() ────────────────────────────────────
+          if (memberTok24.text === "write" || memberTok24.text === "writeln") {
+            // Must be followed by `(` or `?.(` — confirming this is a call, not a reference
+            let afterMemberIdx29 = nextSignificant(tokens, memberIdx24 + 1);
+            let afterMember29 = tokens[afterMemberIdx29];
+            let isOpt29 = false;
+            if (afterMember29 && afterMember29.kind === "questionDot") {
+              isOpt29 = true;
+              afterMemberIdx29 = nextSignificant(tokens, afterMemberIdx29 + 1);
+              afterMember29 = tokens[afterMemberIdx29];
+            }
+            if (!afterMember29 || !(afterMember29.kind === "open" && afterMember29.text === "(")) continue;
+
+            // Exclude TS method signatures: { write(html: string): void; }
+            if (afterMember29.matchedAt !== undefined) {
+              const afterCloseIdx29 = nextSignificant(tokens, afterMember29.matchedAt + 1);
+              const afterClose29 = tokens[afterCloseIdx29];
+              if (afterClose29 && (afterClose29.kind === "punct" && afterClose29.text === ":")) continue;
+            }
+
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            const methodStr29 = `${sep24}${memberTok24.text}${isOpt29 ? "?." : ""}`;
+            const loc29 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN029",
+              severity: "warning",
+              file: null,
+              line: loc29.line,
+              column: loc29.column,
+              start: tok.start,
+              end: afterMember29.start + 1,
+              message:
+                `fn '${decl.name}' calls document${methodStr29}() — ` +
+                `document.write / document.writeln inject raw HTML into the document parse stream ` +
+                `and are invisible to botscript's capability model; ` +
+                `after page load they clear the entire document before writing; ` +
+                `use explicit DOM construction instead, or wrap in unsafe "writes to document for <reason>" { document.${memberTok24.text}(html) }`,
+              rule: syn029.rule,
+              idiom: syn029.idiom,
+              rewrite: syn029.rewrite,
+            });
+            break;
+          }
+
+          continue; // not a member we care about
         }
 
         // ── SYN025/SYN026: requestAnimationFrame / requestIdleCallback ──────────
@@ -2455,6 +2532,84 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn027.rule,
             idiom: syn027.idiom,
             rewrite: syn027.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN028: new Proxy() / Proxy() ────────────────────────────────────
+        case "Proxy": {
+          // Exclude: `obj.Proxy(...)` — preceded by `.` or `?.`
+          const prevIdx28 = prevSignificant(tokens, i - 1);
+          const prev28 = tokens[prevIdx28];
+          if (prev28 && ((prev28.kind === "punct" && prev28.text === ".") || prev28.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named Proxy
+          if (prev28 && prev28.kind === "ident" && prev28.text === "function") continue;
+          if (prev28 && prev28.kind === "keyword" && prev28.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx28)) continue;
+
+          const hasNew28 = prev28 && prev28.kind === "ident" && prev28.text === "new";
+
+          const nextIdx28 = nextSignificant(tokens, i + 1);
+          const next28 = tokens[nextIdx28];
+
+          let isOpt28 = false;
+          let callIdx28 = nextIdx28;
+
+          if (next28 && next28.kind === "questionDot") {
+            isOpt28 = true;
+            callIdx28 = nextSignificant(tokens, nextIdx28 + 1);
+          } else if (hasNew28 && next28 && next28.kind === "operator" && next28.text === "<") {
+            // new Proxy<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx28 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx28 = nextSignificant(tokens, j);
+          }
+
+          const callTok28 = tokens[callIdx28];
+          if (!callTok28 || !(callTok28.kind === "open" && callTok28.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { Proxy(t, h) { } } / { Proxy(t, h): T; }
+          if (callTok28.matchedAt !== undefined) {
+            const afterCloseIdx28 = nextSignificant(tokens, callTok28.matchedAt + 1);
+            const afterClose28 = tokens[afterCloseIdx28];
+            if (afterClose28 && (
+              (afterClose28.kind === "open" && afterClose28.text === "{") ||
+              afterClose28.kind === "fatArrow" ||
+              (afterClose28.kind === "punct" && afterClose28.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart28 = hasNew28 ? prev28!.start : tok.start;
+          const loc28 = locationOf(src, warnStart28);
+          warnings.push({
+            code: "SYN028",
+            severity: "warning",
+            file: null,
+            line: loc28.line,
+            column: loc28.column,
+            start: warnStart28,
+            end: callTok28.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew28 ? "constructs new " : "calls "}Proxy${isOpt28 ? "?." : ""}() — ` +
+              `Proxy wraps an object with handler traps that intercept all property access; ` +
+              `if the target or handler closes over capability-bearing objects, those capabilities ` +
+              `are laundered through the Proxy and become invisible to the fn's declared surface; ` +
+              `wrap in unsafe "proxies <target> for <reason>" { ${hasNew28 ? "new " : ""}Proxy${isOpt28 ? "?." : ""}(target, handler) }`,
+            rule: syn028.rule,
+            idiom: syn028.idiom,
+            rewrite: syn028.rewrite,
           });
           break;
         }

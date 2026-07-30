@@ -1481,6 +1481,85 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return unsafe \"observes intersection for analytics\" { new IntersectionObserver(() => http.get('/viewed')) }\n" +
       "}",
   },
+  SYN028: {
+    code: "SYN028",
+    title: "new Proxy() wraps an object and launders its capability surface from static analysis",
+    rule:
+      "`new Proxy(target, handler)` creates a virtualized object that intercepts all property access, " +
+      "method calls, and mutations on `target` via `handler` traps. " +
+      "If `target` is a capability-bearing object (e.g. an `http` or `fs` namespace), " +
+      "the Proxy becomes an opaque wrapper: callers see an innocent object, " +
+      "but every operation routes through the underlying capability without a matching `uses {}` declaration. " +
+      "If `handler` closes over capabilities, the trap body can perform arbitrary effects " +
+      "with no declaration visible in the fn header. " +
+      "In both cases the compiler cannot see through the Proxy — " +
+      "the capability surface appears narrower than it actually is.",
+    idiom:
+      "avoid using Proxy to wrap capability-bearing objects; " +
+      "if Proxy is genuinely needed (e.g. mock injection, transparent logging), " +
+      "wrap in `unsafe \"proxies <target> for <reason>\" { new Proxy(target, handler) }` " +
+      "so the escape hatch is visible in the diff and auditable by reviewers",
+    rewrite:
+      "// before — Proxy wraps http capability, hiding it from callers\n" +
+      "fn makeClient(http: HttpCap) -> object {\n" +
+      "  return new Proxy({}, {\n" +
+      "    get: (_, key) => http.get(`/api/${key}`)  // SYN028\n" +
+      "  })\n" +
+      "}\n\n" +
+      "// after — wrap in unsafe with a reason; callers can audit the escape\n" +
+      "fn makeClient(http: HttpCap) uses { net } -> object {\n" +
+      "  return unsafe \"proxies http capability for transparent API client\" {\n" +
+      "    new Proxy({}, { get: (_, key) => http.get(`/api/${key}`) })\n" +
+      "  }\n" +
+      "}",
+    example:
+      "// SYN028: Proxy hides capability surface from callers\n" +
+      "fn wrapFs(fs: FsCap) -> object {\n" +
+      "  return new Proxy(fs, {})  // SYN028 — fs capability laundered through Proxy\n" +
+      "}\n\n" +
+      "// fix: declare intent with unsafe\n" +
+      "fn wrapFs(fs: FsCap) -> object {\n" +
+      "  return unsafe \"proxies fs capability for transparent delegation\" { new Proxy(fs, {}) }\n" +
+      "}",
+  },
+  SYN029: {
+    code: "SYN029",
+    title: "document.write() / document.writeln() injects raw HTML and bypasses the DOM capability model",
+    rule:
+      "`document.write(html)` and `document.writeln(html)` inject a raw HTML string directly into the document " +
+      "parse stream. After the initial page load, calling either method clears the entire document before writing. " +
+      "Both are invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}` declaration " +
+      "covers document mutation via these globals. " +
+      "The injected string may contain `<script>` tags, inline event handlers, or other executable content " +
+      "that the static analysis cannot see. " +
+      "Callers cannot observe, audit, or suppress the DOM side effect from the fn's declared surface.",
+    idiom:
+      "replace `document.write(html)` with explicit DOM construction (`document.createElement`, `innerHTML` on a " +
+      "scoped element, or a templating system) so the DOM mutation is visible and auditable; " +
+      "if `document.write` is genuinely required (e.g. polyfill injection, legacy embed), " +
+      "wrap in `unsafe \"writes to document for <reason>\" { document.write(html) }`",
+    rewrite:
+      "// before — document.write injects HTML invisibly\n" +
+      "fn renderBanner(html: string) -> void {\n" +
+      "  document.write(`<div class='banner'>${html}</div>`)  // SYN029\n" +
+      "}\n\n" +
+      "// after — explicit DOM construction; effect is visible and scoped\n" +
+      "fn renderBanner(html: string) -> void {\n" +
+      "  const div = document.createElement('div')\n" +
+      "  div.className = 'banner'\n" +
+      "  div.innerHTML = html\n" +
+      "  document.body.appendChild(div)\n" +
+      "}",
+    example:
+      "// SYN029: document.write injects raw HTML bypassing capability model\n" +
+      "fn injectScript(src: string) -> void {\n" +
+      "  document.write(`<script src='${src}'><\\/script>`)  // SYN029\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason\n" +
+      "fn injectScript(src: string) -> void {\n" +
+      "  unsafe \"injects legacy script tag for polyfill\" { document.write(`<script src='${src}'><\\/script>`) }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
