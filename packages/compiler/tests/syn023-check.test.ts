@@ -220,13 +220,13 @@ describe("SYN023: navigator.* ambient browser capability detection", () => {
     expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(false);
   });
 
-  it("does NOT fire on navigator.sendBeacon — not in the high-concern set", () => {
+  it("fires on navigator.sendBeacon — fire-and-forget network request bypasses capability model", () => {
     const src =
       "?bs 0.7\n" +
       "fn beacon(url: string) -> void {\n" +
       "  navigator.sendBeacon(url)\n" +
       "}\n";
-    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(false);
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
   });
 
   it("does NOT fire on fn navigator(...) declaration", () => {

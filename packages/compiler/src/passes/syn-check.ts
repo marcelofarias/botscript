@@ -256,6 +256,19 @@
  *           declarations named `requestIdleCallback`, and object/class method shorthands.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN027  A `new MutationObserver(cb)`, `new IntersectionObserver(cb)`, `new ResizeObserver(cb)`,
+ *           or `new PerformanceObserver(cb)` constructor call was detected in a fn body (?bs 0.7+).
+ *           Observer constructors register `cb` to fire when the browser observes a condition —
+ *           after the current fn has returned, at an indeterminate future time. Any effects inside
+ *           `cb` are invisible to callers: no capability declaration, no `writes {}` label, no
+ *           `throws {}` entry reflects them. Bare calls (without `new`) and optional calls are
+ *           also detected.
+ *           Excluded: member calls (`obj.MutationObserver`), `fn`/`function`/`function*`
+ *           declarations named any of the four observer names, and object/class method shorthands.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *           Note: SYN023 now also covers `navigator.sendBeacon` — fire-and-forget network requests
+ *           through navigator that bypass the net capability model.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -293,6 +306,7 @@ const CONSOLE_OUTPUT_METHODS = new Set([
 
 const TIMER_GLOBALS = new Set(["setTimeout", "setInterval", "queueMicrotask"]);
 const SCHEDULING_GLOBALS = new Set(["requestAnimationFrame", "requestIdleCallback"]);
+const OBSERVER_CONSTRUCTORS = new Set(["MutationObserver", "IntersectionObserver", "ResizeObserver", "PerformanceObserver"]);
 // process.* members covered by SYN022 (env → SYN005, exit → SYN006 are handled separately)
 const SYN022_PROCESS_MEMBERS = new Set([
   "argv", "cwd", "platform", "arch", "pid", "ppid",
@@ -303,6 +317,7 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "geolocation", "clipboard", "mediaDevices", "serviceWorker", "permissions",
   "onLine", "userAgent", "language", "languages", "platform",
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
+  "sendBeacon",
 ]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
@@ -337,6 +352,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn024 = getErrorCode("SYN024")!;
   const syn025 = getErrorCode("SYN025")!;
   const syn026 = getErrorCode("SYN026")!;
+  const syn027 = getErrorCode("SYN027")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2330,6 +2346,115 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: synRaf.rule,
             idiom: synRaf.idiom,
             rewrite: synRaf.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN027: Observer constructors (MutationObserver / IntersectionObserver / ResizeObserver / PerformanceObserver)
+        case "MutationObserver":
+        case "IntersectionObserver":
+        case "ResizeObserver":
+        case "PerformanceObserver": {
+          // Exclude: `obj.MutationObserver(...)` — preceded by `.` or `?.`
+          const prevIdx27 = prevSignificant(tokens, i - 1);
+          const prev27 = tokens[prevIdx27];
+          if (prev27 && ((prev27.kind === "punct" && prev27.text === ".") || prev27.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named one of the observer constructors
+          if (prev27 && prev27.kind === "ident" && prev27.text === "function") continue;
+          if (prev27 && prev27.kind === "keyword" && prev27.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx27)) continue;
+
+          const hasNew27 = prev27 && prev27.kind === "ident" && prev27.text === "new";
+
+          const nextIdx27 = nextSignificant(tokens, i + 1);
+          const next27 = tokens[nextIdx27];
+
+          let isOpt27 = false;
+          let callIdx27 = nextIdx27;
+
+          if (next27 && next27.kind === "questionDot") {
+            // Observer?.( — optional call
+            isOpt27 = true;
+            callIdx27 = nextSignificant(tokens, nextIdx27 + 1);
+          } else if (hasNew27 && next27 && next27.kind === "operator" && next27.text === "<") {
+            // new MutationObserver<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx27 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx27 = nextSignificant(tokens, j);
+          }
+
+          const callTok27 = tokens[callIdx27];
+          if (!callTok27 || !(callTok27.kind === "open" && callTok27.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { MutationObserver(cb) { } } / { MutationObserver(cb): T; }
+          if (callTok27.matchedAt !== undefined) {
+            const afterCloseIdx27 = nextSignificant(tokens, callTok27.matchedAt + 1);
+            const afterClose27 = tokens[afterCloseIdx27];
+            if (afterClose27 && (
+              (afterClose27.kind === "open" && afterClose27.text === "{") ||
+              afterClose27.kind === "fatArrow" ||
+              (afterClose27.kind === "punct" && afterClose27.text === ":")
+            )) continue;
+            // Also exclude TS method signatures with type annotations inside parens
+            let hasTypeAnnotation27 = false;
+            let depth27 = 0;
+            let ternaryDepth27 = 0;
+            for (let k27 = callIdx27 + 1; k27 < callTok27.matchedAt; k27++) {
+              const at27 = tokens[k27];
+              if (!at27) continue;
+              if (at27.kind === "open") { depth27++; continue; }
+              if (at27.kind === "close") { depth27--; continue; }
+              if (depth27 !== 0) continue;
+              if (at27.kind === "question") {
+                const nextAfterQ27 = nextSignificant(tokens, k27 + 1);
+                const nextTokQ27 = tokens[nextAfterQ27];
+                if (nextTokQ27 && nextTokQ27.kind === "punct" && nextTokQ27.text === ":") {
+                  hasTypeAnnotation27 = true;
+                  break;
+                }
+                ternaryDepth27++;
+                continue;
+              }
+              if (at27.kind === "punct" && at27.text === ":") {
+                if (ternaryDepth27 > 0) { ternaryDepth27--; continue; }
+                hasTypeAnnotation27 = true;
+                break;
+              }
+            }
+            if (hasTypeAnnotation27) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const obsName27 = tok.text;
+          const warnStart27 = hasNew27 ? prev27!.start : tok.start;
+          const loc27 = locationOf(src, warnStart27);
+          warnings.push({
+            code: "SYN027",
+            severity: "warning",
+            file: null,
+            line: loc27.line,
+            column: loc27.column,
+            start: warnStart27,
+            end: callTok27.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew27 ? "constructs new " : "calls "}${obsName27}${isOpt27 ? "?." : ""}() — ` +
+              `${obsName27} registers a callback that fires after the fn returns when the browser observes a condition; ` +
+              `any effects inside that callback are invisible to callers and cannot be declared in the fn header; ` +
+              `wrap in unsafe "observes <target> for <reason>" { ${hasNew27 ? "new " : ""}${obsName27}${isOpt27 ? "?." : ""}(cb) }`,
+            rule: syn027.rule,
+            idiom: syn027.idiom,
+            rewrite: syn027.rewrite,
           });
           break;
         }

@@ -1324,11 +1324,12 @@ const E: Record<string, ErrorCodeEntry> = {
       "`navigator.serviceWorker`, `navigator.permissions`, `navigator.onLine`, " +
       "`navigator.userAgent`, `navigator.language`, `navigator.languages`, " +
       "`navigator.platform`, `navigator.hardwareConcurrency`, `navigator.deviceMemory`, " +
-      "`navigator.connection`, and `navigator.wakeLock` read ambient browser capability " +
-      "state at runtime but are invisible to botscript's capability model: no `uses {}`, " +
-      "`reads {}`, or `writes {}` declaration covers them. A fn that reads these values " +
-      "has an undeclared browser-environment dependency — callers cannot see it in the " +
-      "header, and tests cannot inject a controlled value.",
+      "`navigator.connection`, `navigator.wakeLock`, and `navigator.sendBeacon` read or exercise " +
+      "ambient browser capabilities at runtime but are invisible to botscript's capability model: " +
+      "no `uses {}`, `reads {}`, or `writes {}` declaration covers them. A fn that accesses these " +
+      "has an undeclared browser-environment dependency — callers cannot see it in the header, " +
+      "and tests cannot inject a controlled value. `sendBeacon` is especially high-impact: it makes " +
+      "a fire-and-forget network request with no declared `uses { net }` surface.",
     idiom:
       "pass the required value as an explicit parameter so callers and tests can control it (preferred); " +
       "if the ambient access is intentional, wrap in " +
@@ -1442,6 +1443,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: extract the work into a separate fn\n" +
       "fn cleanup() uses { fs } -> void {\n" +
       "  fs.delete(\"/tmp/cache\")\n" +
+      "}",
+  },
+  SYN027: {
+    code: "SYN027",
+    title: "Observer constructor (MutationObserver / IntersectionObserver / ResizeObserver / PerformanceObserver) schedules a callback outside the fn's capability surface",
+    rule:
+      "`new MutationObserver(cb)`, `new IntersectionObserver(cb)`, `new ResizeObserver(cb)`, and `new PerformanceObserver(cb)` " +
+      "register `cb` to fire when the browser observes a condition — after the current fn has returned, at an indeterminate future time. " +
+      "Any effects inside `cb` are invisible to callers: no capability declaration, no `writes {}` label, no `throws {}` entry reflects them. " +
+      "The fn appears to return an observer handle; all the real work executes later in the callback, " +
+      "with an undeclared capability surface that callers cannot audit from the fn header.",
+    idiom:
+      "extract the callback body into a separately declared fn and pass it as a parameter so callers see the capability surface; " +
+      "if the observer construction is genuinely required at this level, wrap in " +
+      "`unsafe \"observes <target> for <reason>\" { new MutationObserver(cb) }`",
+    rewrite:
+      "// before — observer callback hides effects from callers\n" +
+      "fn watchNode(node: Element) uses { net } -> MutationObserver {\n" +
+      "  const obs = new MutationObserver(() => http.get('/log'))  // SYN027\n" +
+      "  obs.observe(node, { childList: true })\n" +
+      "  return obs\n" +
+      "}\n\n" +
+      "// after — callback passed in; callers control the effect surface\n" +
+      "fn watchNode(node: Element, onChange: () -> void) -> MutationObserver {\n" +
+      "  const obs = unsafe \"observes node mutations for caller-provided callback\" { new MutationObserver(onChange) }\n" +
+      "  obs.observe(node, { childList: true })\n" +
+      "  return obs\n" +
+      "}",
+    example:
+      "// SYN027: observer callback hides a network effect from callers\n" +
+      "fn trackViewport(el: Element) uses { net } -> IntersectionObserver {\n" +
+      "  return new IntersectionObserver(() => http.get('/viewed'))  // SYN027\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason\n" +
+      "fn trackViewport(el: Element) uses { net } -> IntersectionObserver {\n" +
+      "  return unsafe \"observes intersection for analytics\" { new IntersectionObserver(() => http.get('/viewed')) }\n" +
       "}",
   },
   DEP001: {
