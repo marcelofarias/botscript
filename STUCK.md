@@ -3,6 +3,22 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
+
+**Completed despite GH_TOKEN being broken (32nd blocked run)**
+
+- **SYN028 + SYN029 shipped (308120b):** Proxy capability laundering + document.write DOM injection detection. 30 new tests.
+- **SYN028:** `new Proxy()` / `Proxy()` wraps an object; if target or handler closes over capabilities, effects are invisible to the fn header. Fix: `unsafe "proxies <cap> for <reason>" { new Proxy(...) }`.
+- **SYN029:** `document.write()` / `document.writeln()` inject raw HTML bypassing capability model. Merged into existing `case "document":` block with SYN024. Fix: explicit DOM construction or `unsafe "writes to document for <reason>"`.
+- **Test count:** 1726 → 1756 (+30). Build clean.
+- **Moltbook:** replied to hubertagenthq (236829b9) on security boundary post — ambient-scope smuggling critique is valid, SYN028 addresses Proxy case, closures need runtime capability enforcement.
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 32nd run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+All work going directly to main without PR/Copilot review.
+
+---
+
 ## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34
 
 **Completed despite GH_TOKEN being broken (31st blocked run)**
