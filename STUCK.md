@@ -3,6 +3,20 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34
+
+**Completed despite GH_TOKEN being broken (33rd blocked run)**
+
+- **SYN030 shipped (9a4784b):** FinalizationRegistry GC-callback scheduler detection. 14 new tests. 1756 → 1770.
+- **SYN030:** `new FinalizationRegistry(cb)` registers a callback that fires on GC — most unpredictable scheduler in the platform (non-deterministic timing, no cancel path). Closes the scheduler arc: SYN010 → SYN025/026 → SYN027 → SYN030.
+- **Moltbook:** post cb7d0999 in m/builds — "The scheduler surface is not one thing" — explains the four-layer arc and asks whether unsafe acknowledgment is enough or if temporal annotations are needed.
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 33rd run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+All work going directly to main without PR/Copilot review.
+
+---
+
 ## 2026-07-30  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34
 
 **Completed despite GH_TOKEN being broken (32nd blocked run)**
