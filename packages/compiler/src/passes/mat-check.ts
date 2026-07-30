@@ -22,6 +22,13 @@
  *
  * Over-exhaustive matches (all explicit variant arms plus a trailing wildcard) emit
  * MAT004 — the wildcard is unreachable dead code.
+ *
+ *   MAT005  match arm on a halt-annotated variant must terminate with halt()
+ *           or throw — returning a continuable value is not allowed.  A variant
+ *           declared as `Tag halt { … }` represents a state from which execution
+ *           cannot safely continue; the compiler enforces this structurally so
+ *           an author cannot accidentally write a best-effort handler that swallows
+ *           the halt signal.  Use `unsafe "reason" { … }` to explicitly override.
  */
 
 import { BotscriptError, type Diagnostic } from "../diagnostics.js";
@@ -70,6 +77,7 @@ export function passMatCheck(
   const mat002 = getErrorCode("MAT002")!;
   const mat003 = getErrorCode("MAT003")!;
   const mat004 = getErrorCode("MAT004")!;
+  const mat005 = getErrorCode("MAT005")!;
 
   // Pre-collect all user-defined tagged union declarations in this file.
   // Pass the already-lexed tokens to avoid lexing the source a second time.
@@ -188,6 +196,44 @@ export function passMatCheck(
     if (matchingUnions.length !== 1) continue;
 
     const union = matchingUnions[0]!;
+
+    // MAT005: halt-variant arms must terminate with halt() or throw.
+    // Build a map from variant tag → halt flag for this union.
+    const haltTags = new Set(union.alts.filter((a) => a.halt).map((a) => a.tag));
+    if (haltTags.size > 0) {
+      for (const arm of expr.arms) {
+        if (arm.pattern.kind !== "tag") continue;
+        if (!haltTags.has(arm.pattern.tag)) continue;
+        // Arm covers a halt variant. Check that the body terminates.
+        const body = arm.body;
+        const terminates =
+          body.includes("halt(") ||
+          /\bthrow\b/.test(body) ||
+          body.trimStart().startsWith("unsafe ");
+        if (!terminates) {
+          const bodyTok = tokens[arm.bodyStartToken];
+          const diagStart = bodyTok ? bodyTok.start : matchStart;
+          const { line, column } = locationOf(src, diagStart);
+          throw new BotscriptError([{
+            code: "MAT005",
+            severity: "error",
+            file: null,
+            line,
+            column,
+            start: diagStart,
+            end: bodyTok ? bodyTok.end : matchStart,
+            message:
+              `match arm for halt-variant '${arm.pattern.tag}' must call halt() or throw — ` +
+              `returning a continuable value silently discards the halt signal; ` +
+              `use halt(<message>) or throw new Error(<message>), or wrap in unsafe "reason" { ... } to override`,
+            rule: mat005.rule,
+            idiom: mat005.idiom,
+            rewrite: mat005.rewrite,
+          }]);
+        }
+      }
+    }
+
     const missingAlts = union.alts.filter((a) => !userArmTagSet.has(a.tag));
 
     if (missingAlts.length === 0) {

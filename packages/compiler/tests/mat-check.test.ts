@@ -1,10 +1,11 @@
 /**
- * Tests for MAT001/MAT002/MAT003/MAT004: non-exhaustive/over-exhaustive match (?bs 0.9+).
+ * Tests for MAT001/MAT002/MAT003/MAT004/MAT005: non-exhaustive/over-exhaustive match (?bs 0.9+).
  *
  * MAT001: fires when a Result match has an ok arm but no err arm (or vice versa) and no wildcard.
  * MAT002: fires when an Option match has a some arm but no none arm (or vice versa) and no wildcard.
  * MAT003: fires when a match on a user-defined tagged union is missing at least one variant arm.
  * MAT004: warns when a match on a user-defined tagged union covers all variants AND has a wildcard.
+ * MAT005: fires when a match arm on a halt-annotated variant returns a continuable value.
  */
 
 import { describe, expect, it } from "vitest";
@@ -675,5 +676,126 @@ describe("MAT004: suppressed when not applicable", () => {
     const result = compileWithWarnings(src);
     const warns = result.warnings.filter((w) => w.code === "MAT004");
     expect(warns).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MAT005: halt-variant arm must call halt() or throw
+// ---------------------------------------------------------------------------
+
+describe("MAT005: halt-variant arm must terminate", () => {
+  it("fires when a halt-variant arm returns a continuable value", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> \"best effort\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("MAT005");
+  });
+
+  it("does not fire when halt-variant arm calls halt()", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> halt(`unresolvable: ${reason}`)\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when halt-variant arm throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type ErrKind = Recoverable { msg: string } | Fatal halt\n" +
+      "fn handle(e: ErrKind) -> string {\n" +
+      "  match e {\n" +
+      "    Recoverable { msg } -> msg\n" +
+      "    Fatal -> throw new Error(\"fatal\")\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire when halt-variant arm is wrapped in unsafe", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> unsafe \"intentional best-effort\" { bestEffort(reason) }\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("fires on bare-tag halt variant when arm returns continuable value", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type ErrKind = Recoverable { msg: string } | Fatal halt\n" +
+      "fn handle(e: ErrKind) -> string {\n" +
+      "  match e {\n" +
+      "    Recoverable { msg } -> msg\n" +
+      "    Fatal -> \"continuing anyway\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("MAT005");
+  });
+
+  it("non-halt variants in the same union are not affected", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type Status = Done { value: string } | Failed { code: number } | Unresolvable halt { reason: string }\n" +
+      "fn describe(s: Status) -> string {\n" +
+      "  match s {\n" +
+      "    Done { value } -> value\n" +
+      "    Failed { code } -> `error ${code}`\n" +
+      "    Unresolvable { reason } -> halt(`unresolvable: ${reason}`)\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("does not fire below ?bs 0.9", () => {
+    const src =
+      "?bs 0.8\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "    Unresolvable { reason } -> \"best effort\"\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).not.toThrow();
+  });
+
+  it("halt modifier is stripped from TS output — type decl compiles cleanly", () => {
+    const src =
+      "?bs 0.9\n" +
+      "export type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n";
+    const out = compile(src);
+    expect(out).toContain('kind: "Confirmed"');
+    expect(out).toContain('kind: "Unresolvable"');
+    expect(out).not.toContain(" halt ");
+    expect(out).not.toContain(" halt\n");
+  });
+
+  it("MAT003 still fires when a halt-variant arm is missing entirely", () => {
+    const src =
+      "?bs 0.9\n" +
+      "type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }\n" +
+      "fn handleQuery(r: QueryResult) -> string {\n" +
+      "  match r {\n" +
+      "    Confirmed { value } -> value\n" +
+      "  }\n" +
+      "}\n";
+    expect(() => compile(src)).toThrow("MAT003");
   });
 });

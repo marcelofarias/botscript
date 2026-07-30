@@ -18,6 +18,18 @@
  *
  * Plain TS unions like `type X = Foo | Bar`, `type X = number | string`, and
  * `type X = { a: number }` are left untouched.
+ *
+ * halt modifier (botscript 0.9+):
+ *  - `TagIdent halt` or `TagIdent halt { fields }` marks a variant as non-continuable.
+ *  - The `halt` keyword is stripped from the TypeScript output (compile-time annotation only).
+ *  - MAT005 enforces that any match arm covering a halt variant must call halt() or throw
+ *    rather than returning a continuable value.
+ *
+ *   type QueryResult = Confirmed { value: string } | Unresolvable halt { reason: string }
+ *
+ * desugars to:
+ *
+ *   type QueryResult = { kind: "Confirmed"; value: string } | { kind: "Unresolvable"; reason: string }
  */
 
 import { lex, type Token } from "../parser/lex.js";
@@ -39,6 +51,13 @@ export interface Alt {
   tag: string;
   /** Body text inside the `{ … }`, or null for bare tag. */
   body: string | null;
+  /**
+   * True when the variant is declared with the `halt` modifier
+   * (e.g. `Unresolvable halt { reason: string }`).  A match arm
+   * covering this variant must call `halt()` or `throw` — it may not
+   * return a continuable value (MAT005).
+   */
+  halt: boolean;
 }
 
 export function passTaggedUnion(src: string): string {
@@ -162,6 +181,13 @@ function parseAlts(tokens: Token[], from: number, to: number): Alt[] | null {
     const tag = tagTok.text;
     i = skipTrivia(tokens, i + 1);
     let body: string | null = null;
+    let isHalt = false;
+    // Optional `halt` modifier between tag name and optional body block.
+    const maybeHalt = tokens[i];
+    if (maybeHalt?.kind === "ident" && maybeHalt.text === "halt") {
+      isHalt = true;
+      i = skipTrivia(tokens, i + 1);
+    }
     const maybeBrace = tokens[i];
     if (
       maybeBrace?.kind === "open" &&
@@ -171,7 +197,7 @@ function parseAlts(tokens: Token[], from: number, to: number): Alt[] | null {
       body = sliceText(tokens, i + 1, maybeBrace.matchedAt);
       i = maybeBrace.matchedAt + 1;
     }
-    alts.push({ tag, body });
+    alts.push({ tag, body, halt: isHalt });
     i = skipTrivia(tokens, i);
     if (i >= to) break;
     const sep = tokens[i];
