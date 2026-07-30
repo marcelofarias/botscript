@@ -304,6 +304,21 @@
  *           declarations named `FinalizationRegistry`, object/class method shorthands, and
  *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
  *
+ *   SYN031  A `new MessageChannel()`, `MessageChannel()`, or `MessageChannel?.()` call was detected
+ *           in a fn body (?bs 0.7+). `MessageChannel` creates two paired `MessagePort` objects
+ *           (`port1`, `port2`). Messages sent via `port.postMessage(data)` are delivered
+ *           asynchronously to the other port's `.onmessage` handler — after the current fn has
+ *           returned, in a separate task. Any effects inside the handler (network calls, storage
+ *           writes, stdout) are invisible to botscript's static analysis and cannot be declared
+ *           in the fn's `uses {}`, `reads {}`, or `writes {}` clause. Unlike `BroadcastChannel`
+ *           (same-origin broadcast to all listeners), a `MessageChannel` enables direct
+ *           point-to-point async communication between any two contexts (windows, workers,
+ *           iframes) — the capability surface of the receiving handler is entirely invisible
+ *           to the fn that creates the channel.
+ *           Excluded: member calls (`obj.MessageChannel`), `fn`/`function`/`function*`
+ *           declarations named `MessageChannel`, object/class method shorthands, and
+ *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -391,6 +406,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn028 = getErrorCode("SYN028")!;
   const syn029 = getErrorCode("SYN029")!;
   const syn030 = getErrorCode("SYN030")!;
+  const syn031 = getErrorCode("SYN031")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2700,6 +2716,84 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn030.rule,
             idiom: syn030.idiom,
             rewrite: syn030.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN031: new MessageChannel() ─────────────────────────────────────
+        case "MessageChannel": {
+          // Exclude: `obj.MessageChannel(...)` — preceded by `.` or `?.`
+          const prevIdx31 = prevSignificant(tokens, i - 1);
+          const prev31 = tokens[prevIdx31];
+          if (prev31 && ((prev31.kind === "punct" && prev31.text === ".") || prev31.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named MessageChannel
+          if (prev31 && prev31.kind === "ident" && prev31.text === "function") continue;
+          if (prev31 && prev31.kind === "keyword" && prev31.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx31)) continue;
+
+          const hasNew31 = prev31 && prev31.kind === "ident" && prev31.text === "new";
+
+          const nextIdx31 = nextSignificant(tokens, i + 1);
+          const next31 = tokens[nextIdx31];
+
+          let isOpt31 = false;
+          let callIdx31 = nextIdx31;
+
+          if (next31 && next31.kind === "questionDot") {
+            isOpt31 = true;
+            callIdx31 = nextSignificant(tokens, nextIdx31 + 1);
+          } else if (hasNew31 && next31 && next31.kind === "operator" && next31.text === "<") {
+            // new MessageChannel<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx31 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx31 = nextSignificant(tokens, j);
+          }
+
+          const callTok31 = tokens[callIdx31];
+          if (!callTok31 || !(callTok31.kind === "open" && callTok31.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { MessageChannel() { } } / { MessageChannel(): T; }
+          if (callTok31.matchedAt !== undefined) {
+            const afterCloseIdx31 = nextSignificant(tokens, callTok31.matchedAt + 1);
+            const afterClose31 = tokens[afterCloseIdx31];
+            if (afterClose31 && (
+              (afterClose31.kind === "open" && afterClose31.text === "{") ||
+              afterClose31.kind === "fatArrow" ||
+              (afterClose31.kind === "punct" && afterClose31.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart31 = hasNew31 ? prev31!.start : tok.start;
+          const loc31 = locationOf(src, warnStart31);
+          warnings.push({
+            code: "SYN031",
+            severity: "warning",
+            file: null,
+            line: loc31.line,
+            column: loc31.column,
+            start: warnStart31,
+            end: callTok31.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew31 ? "constructs new " : "calls "}MessageChannel${isOpt31 ? "?." : ""}() — ` +
+              `MessageChannel creates two paired MessagePort objects; messages sent via port.postMessage() ` +
+              `are delivered asynchronously to the other port's .onmessage handler after the fn returns — ` +
+              `any handler effects are invisible to callers and cannot be declared in the fn header; ` +
+              `wrap in unsafe "creates message channel for <reason>" { ${hasNew31 ? "new " : ""}MessageChannel${isOpt31 ? "?." : ""}() }`,
+            rule: syn031.rule,
+            idiom: syn031.idiom,
+            rewrite: syn031.rewrite,
           });
           break;
         }

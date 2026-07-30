@@ -1608,6 +1608,55 @@ const E: Record<string, ErrorCodeEntry> = {
       "  registry.register(obj, id)\n" +
       "}",
   },
+  SYN031: {
+    code: "SYN031",
+    title: "MessageChannel creates a paired async message channel with hidden delivery effects",
+    rule:
+      "`new MessageChannel()` creates two paired `MessagePort` objects (`port1`, `port2`). " +
+      "Messages sent via `port.postMessage(data)` are delivered asynchronously to the other " +
+      "port's `.onmessage` handler — after the current fn has returned, in a separate task. " +
+      "Any effects inside the `.onmessage` handler (network calls, storage writes, stdout) " +
+      "are invisible to botscript's static analysis: they cannot appear in the fn's `uses {}`, " +
+      "`reads {}`, or `writes {}` clause. Unlike `BroadcastChannel` (same-origin broadcast), " +
+      "a `MessageChannel` enables direct point-to-point async communication between any two " +
+      "contexts (windows, workers, iframes) — the capability surface of the receiving end is " +
+      "entirely invisible to the fn that creates the channel.",
+    idiom:
+      "wrap `new MessageChannel()` in `unsafe \"creates message channel for <reason>\" { ... }` " +
+      "to make the async channel creation visible and acknowledged in the fn's source; " +
+      "prefer explicit capability-declared interfaces over async message passing when callers " +
+      "need to reason about effects at compile time",
+    rewrite:
+      "// before — MessageChannel hides async delivery effects from fn header\n" +
+      "fn bridge(worker: Worker) -> void {\n" +
+      "  const { port1, port2 } = new MessageChannel()  // SYN031\n" +
+      "  port1.onmessage = (e) => { http.post('/log', e.data) }  // invisible to fn header\n" +
+      "  worker.postMessage('init', [port2])\n" +
+      "}\n\n" +
+      "// after — channel creation explicitly acknowledged\n" +
+      "fn bridge(worker: Worker) -> void {\n" +
+      "  const { port1, port2 } = unsafe \"creates message channel for worker bridge\" {\n" +
+      "    new MessageChannel()\n" +
+      "  }\n" +
+      "  port1.onmessage = (e) => { http.post('/log', e.data) }\n" +
+      "  worker.postMessage('init', [port2])\n" +
+      "}",
+    example:
+      "// SYN031: MessageChannel creates a channel whose async message delivery is invisible\n" +
+      "fn setupChannel() -> MessagePort {\n" +
+      "  const channel = new MessageChannel()\n" +
+      "  channel.port1.onmessage = (e) => { storage.set('last', e.data) }  // invisible\n" +
+      "  return channel.port2\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe\n" +
+      "fn setupChannel() -> MessagePort {\n" +
+      "  const channel = unsafe \"creates message channel for port2 consumer\" {\n" +
+      "    new MessageChannel()\n" +
+      "  }\n" +
+      "  channel.port1.onmessage = (e) => { storage.set('last', e.data) }\n" +
+      "  return channel.port2\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
