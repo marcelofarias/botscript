@@ -1578,6 +1578,89 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN025: {
+    code: "SYN025",
+    title: "requestAnimationFrame schedules a callback outside the fn's capability surface",
+    body:
+      "SYN025 fires when a fn body calls `requestAnimationFrame(cb)` or `requestAnimationFrame?.(cb)` in `?bs 0.7+`.\n\n" +
+      "**Why it matters:** `requestAnimationFrame` schedules `cb` to run before the next browser repaint — after the current fn has returned. " +
+      "Any effects inside that callback (network requests, storage writes, console output) are invisible to callers: " +
+      "no `uses {}`, `reads {}`, `writes {}`, or `throws {}` declaration in the fn header covers them. " +
+      "A fn that appears to return `void` may actually schedule network requests or state mutations that fire later.\n\n" +
+      "**Detected forms:** `requestAnimationFrame(cb)`, `requestAnimationFrame?.(cb)`.\n\n" +
+      "**Not detected:** `obj.requestAnimationFrame(cb)` (member call on a local binding), " +
+      "`function requestAnimationFrame(...) {}` / `fn requestAnimationFrame(...)` declarations, " +
+      "and method shorthands inside object literals or classes.\n\n" +
+      "**Fix (preferred):** extract the deferred work into a separate fn the caller can schedule:\n\n" +
+      "```\n" +
+      "// SYN025 — before\n" +
+      "fn scheduleRender(frame: number) uses { net } -> void {\n" +
+      "  requestAnimationFrame(() => http.get(\"/render/\" + frame))  // SYN025\n" +
+      "}\n\n" +
+      "// after — extract the work; caller controls scheduling\n" +
+      "fn render(frame: number) uses { net } -> void {\n" +
+      "  http.get(\"/render/\" + frame)\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if animation frame scheduling is required at this layer:\n" +
+      "`unsafe \"schedules animation frame callback\" { requestAnimationFrame(cb) }`\n\n" +
+      "SYN025 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn scheduleRender(frame: number) uses { net } -> void {\n" +
+        "  requestAnimationFrame(() => http.get(\"/render/\" + frame))\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn render(frame: number) uses { net } -> void {\n" +
+        "  http.get(\"/render/\" + frame)\n" +
+        "}\n",
+    },
+  },
+  SYN026: {
+    code: "SYN026",
+    title: "requestIdleCallback schedules a callback outside the fn's capability surface",
+    body:
+      "SYN026 fires when a fn body calls `requestIdleCallback(cb)` or `requestIdleCallback?.(cb)` in `?bs 0.7+`.\n\n" +
+      "**Why it matters:** `requestIdleCallback` schedules `cb` to run during a browser idle period — after the current fn has returned. " +
+      "Any effects inside that callback (network requests, storage writes, console output) are invisible to callers: " +
+      "no `uses {}`, `reads {}`, `writes {}`, or `throws {}` declaration in the fn header covers them. " +
+      "The callback timing is non-deterministic (it fires when the browser decides it is idle), " +
+      "making the side effects even harder to reason about than `setTimeout`.\n\n" +
+      "**Detected forms:** `requestIdleCallback(cb)`, `requestIdleCallback?.(cb)`.\n\n" +
+      "**Not detected:** `obj.requestIdleCallback(cb)` (member call on a local binding), " +
+      "`function requestIdleCallback(...) {}` / `fn requestIdleCallback(...)` declarations, " +
+      "and method shorthands inside object literals or classes.\n\n" +
+      "**Fix (preferred):** extract the deferred work into a separate fn the caller can schedule:\n\n" +
+      "```\n" +
+      "// SYN026 — before\n" +
+      "fn deferCleanup() uses { fs } -> void {\n" +
+      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
+      "}\n\n" +
+      "// after — extract the work; caller controls scheduling\n" +
+      "fn cleanup() uses { fs } -> void {\n" +
+      "  fs.delete(\"/tmp/cache\")\n" +
+      "}\n" +
+      "```\n\n" +
+      "**Fix (escape hatch):** if idle-period scheduling is required at this layer:\n" +
+      "`unsafe \"schedules idle callback\" { requestIdleCallback(cb) }`\n\n" +
+      "SYN026 fires at `?bs 0.7+` as a non-blocking warning. " +
+      "Calls inside `unsafe { }` blocks or `unsafe \"reason\" fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn deferCleanup() uses { fs } -> void {\n" +
+        "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn cleanup() uses { fs } -> void {\n" +
+        "  fs.delete(\"/tmp/cache\")\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
