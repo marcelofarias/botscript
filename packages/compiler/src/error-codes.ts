@@ -1038,6 +1038,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return bc\n" +
       "}",
   },
+  SYN015: {
+    code: "SYN015",
+    title: "localStorage / sessionStorage access bypasses the storage capability model",
+    rule:
+      "`localStorage.*` and `sessionStorage.*` accesses are synchronous Web Storage API operations " +
+      "invisible to botscript's capability model: `reads {}` / `writes {}` labels cover declared " +
+      "resource identifiers, not the Web Storage API globals. A fn that accesses `localStorage` or " +
+      "`sessionStorage` has undeclared persistent state dependencies — no `reads {}` / `writes {}` " +
+      "declaration in the fn header covers the access, and callers cannot observe or audit the " +
+      "dependency from the fn's declared surface. `localStorage` persists across browser sessions; " +
+      "`sessionStorage` scopes to the current tab — both are synchronous and invisible to CAP001.",
+    idiom:
+      "pass a storage abstraction or explicit key-value callbacks as fn parameters so callers " +
+      "control what storage is accessed, the dependency is visible in the signature, and tests can " +
+      "inject a mock (e.g. `new Map()` or an in-memory object); " +
+      "if direct access is genuinely required, wrap in " +
+      "`unsafe \"reads/writes localStorage for <reason>\" { localStorage.getItem(key) }`",
+    rewrite:
+      "// before — localStorage access invisible to the capability model\n" +
+      "fn getTheme() -> string {\n" +
+      "  return localStorage.getItem('theme') ?? 'light'  // SYN015\n" +
+      "}\n\n" +
+      "// after — storage abstraction passed as parameter; dependency visible in signature\n" +
+      "fn getTheme(store: { getItem: (key: string) => string | null }) -> string {\n" +
+      "  return store.getItem('theme') ?? 'light'\n" +
+      "}",
+    example:
+      "// SYN015: localStorage access invisible to capability model\n" +
+      "fn savePrefs(prefs: Prefs) -> void {\n" +
+      "  localStorage.setItem('prefs', JSON.stringify(prefs))  // SYN015\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe with a reason, or pass a storage abstraction\n" +
+      "fn savePrefs(prefs: Prefs) -> void {\n" +
+      "  unsafe \"persists user prefs to localStorage\" { localStorage.setItem('prefs', JSON.stringify(prefs)) }\n" +
+      "}",
+  },
   SYN016: {
     code: "SYN016",
     title: "indexedDB access bypasses the storage capability model",
