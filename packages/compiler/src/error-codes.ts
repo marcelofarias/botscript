@@ -1560,6 +1560,54 @@ const E: Record<string, ErrorCodeEntry> = {
       "  unsafe \"injects legacy script tag for polyfill\" { document.write(`<script src='${src}'><\\/script>`) }\n" +
       "}",
   },
+  SYN030: {
+    code: "SYN030",
+    title: "FinalizationRegistry registers a GC-triggered callback with hidden effects",
+    rule:
+      "`new FinalizationRegistry(callback)` registers a cleanup callback that fires when the registered " +
+      "target is garbage-collected. GC timing is non-deterministic and implementation-specific — the callback " +
+      "can fire at any point after the target becomes unreachable, in any micro-task checkpoint, with no " +
+      "guaranteed ordering relative to other code. Any capability use inside the callback (network calls, " +
+      "storage writes, stdout output) is invisible to botscript's static analysis: it cannot appear in the " +
+      "fn's `uses {}`, `reads {}`, or `writes {}` clause. Unlike timers, there is no cancel path — once " +
+      "registered, the callback fires whenever the GC decides. This is the most unpredictable scheduler " +
+      "in the platform and belongs behind an explicit unsafe acknowledgment.",
+    idiom:
+      "wrap `new FinalizationRegistry(cb)` in `unsafe \"registers GC callback for <reason>\" { ... }` " +
+      "to make the GC-callback registration visible and acknowledged in the fn's source; " +
+      "move any capability-bearing code out of the callback into an explicitly scheduled path " +
+      "(e.g. `queueMicrotask`, `setTimeout`) that callers can reason about",
+    rewrite:
+      "// before — GC callback hides capability use from fn header\n" +
+      "fn withCleanup(target: object, key: string) -> void {\n" +
+      "  const registry = new FinalizationRegistry((k) => {  // SYN030\n" +
+      "    http.delete(`/cache/${k}`)\n" +
+      "  })\n" +
+      "  registry.register(target, key)\n" +
+      "}\n\n" +
+      "// after — GC callback explicitly acknowledged\n" +
+      "fn withCleanup(target: object, key: string) -> void {\n" +
+      "  const registry = unsafe \"registers GC callback for cache eviction\" {\n" +
+      "    new FinalizationRegistry((k) => { http.delete(`/cache/${k}`) })\n" +
+      "  }\n" +
+      "  registry.register(target, key)\n" +
+      "}",
+    example:
+      "// SYN030: FinalizationRegistry fires a GC callback with invisible effects\n" +
+      "fn trackObject(obj: object, id: string) -> void {\n" +
+      "  const registry = new FinalizationRegistry((heldId) => {\n" +
+      "    storage.delete(heldId)  // invisible to fn header — GC timing is undefined\n" +
+      "  })\n" +
+      "  registry.register(obj, id)\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe\n" +
+      "fn trackObject(obj: object, id: string) -> void {\n" +
+      "  const registry = unsafe \"registers GC callback for object lifecycle tracking\" {\n" +
+      "    new FinalizationRegistry((heldId) => { storage.delete(heldId) })\n" +
+      "  }\n" +
+      "  registry.register(obj, id)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

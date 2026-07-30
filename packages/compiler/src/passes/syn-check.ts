@@ -293,6 +293,17 @@
  *           `function*` declarations named `document`, and TS method signatures.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN030  A `new FinalizationRegistry(callback)` or `FinalizationRegistry(callback)` call was
+ *           detected in a fn body (?bs 0.7+). `FinalizationRegistry` registers a cleanup callback
+ *           that fires when a registered target is garbage-collected — the most unpredictable
+ *           scheduler in the platform: GC timing is non-deterministic, implementation-specific,
+ *           and not tied to any observable event in the fn's execution. Any effects inside the
+ *           callback (network calls, storage writes, etc.) are invisible to callers and cannot
+ *           be declared in the fn header. Unlike timers or observers, there is no cancel path.
+ *           Excluded: member calls (`obj.FinalizationRegistry`), `fn`/`function`/`function*`
+ *           declarations named `FinalizationRegistry`, object/class method shorthands, and
+ *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -379,6 +390,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn027 = getErrorCode("SYN027")!;
   const syn028 = getErrorCode("SYN028")!;
   const syn029 = getErrorCode("SYN029")!;
+  const syn030 = getErrorCode("SYN030")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2610,6 +2622,84 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn028.rule,
             idiom: syn028.idiom,
             rewrite: syn028.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN030: new FinalizationRegistry(callback) ───────────────────────
+        case "FinalizationRegistry": {
+          // Exclude: `obj.FinalizationRegistry(...)` — preceded by `.` or `?.`
+          const prevIdx30 = prevSignificant(tokens, i - 1);
+          const prev30 = tokens[prevIdx30];
+          if (prev30 && ((prev30.kind === "punct" && prev30.text === ".") || prev30.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named FinalizationRegistry
+          if (prev30 && prev30.kind === "ident" && prev30.text === "function") continue;
+          if (prev30 && prev30.kind === "keyword" && prev30.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx30)) continue;
+
+          const hasNew30 = prev30 && prev30.kind === "ident" && prev30.text === "new";
+
+          const nextIdx30 = nextSignificant(tokens, i + 1);
+          const next30 = tokens[nextIdx30];
+
+          let isOpt30 = false;
+          let callIdx30 = nextIdx30;
+
+          if (next30 && next30.kind === "questionDot") {
+            isOpt30 = true;
+            callIdx30 = nextSignificant(tokens, nextIdx30 + 1);
+          } else if (hasNew30 && next30 && next30.kind === "operator" && next30.text === "<") {
+            // new FinalizationRegistry<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx30 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx30 = nextSignificant(tokens, j);
+          }
+
+          const callTok30 = tokens[callIdx30];
+          if (!callTok30 || !(callTok30.kind === "open" && callTok30.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { FinalizationRegistry(cb) { } } / { FinalizationRegistry(cb): T; }
+          if (callTok30.matchedAt !== undefined) {
+            const afterCloseIdx30 = nextSignificant(tokens, callTok30.matchedAt + 1);
+            const afterClose30 = tokens[afterCloseIdx30];
+            if (afterClose30 && (
+              (afterClose30.kind === "open" && afterClose30.text === "{") ||
+              afterClose30.kind === "fatArrow" ||
+              (afterClose30.kind === "punct" && afterClose30.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart30 = hasNew30 ? prev30!.start : tok.start;
+          const loc30 = locationOf(src, warnStart30);
+          warnings.push({
+            code: "SYN030",
+            severity: "warning",
+            file: null,
+            line: loc30.line,
+            column: loc30.column,
+            start: warnStart30,
+            end: callTok30.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew30 ? "constructs new " : "calls "}FinalizationRegistry${isOpt30 ? "?." : ""}() — ` +
+              `FinalizationRegistry registers a cleanup callback that fires when a target is garbage-collected; ` +
+              `GC timing is non-deterministic and implementation-specific — any effects inside the callback ` +
+              `are invisible to callers and cannot be declared in the fn header; ` +
+              `wrap in unsafe "registers GC callback for <reason>" { ${hasNew30 ? "new " : ""}FinalizationRegistry${isOpt30 ? "?." : ""}(cb) }`,
+            rule: syn030.rule,
+            idiom: syn030.idiom,
+            rewrite: syn030.rewrite,
           });
           break;
         }
