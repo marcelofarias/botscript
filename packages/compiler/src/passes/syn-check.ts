@@ -234,6 +234,24 @@
  *           named `navigator`, member accesses not in the high-concern list above.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN024  A `document.cookie` access was detected in a fn body (?bs 0.7+).
+ *           `document.cookie` is a read/write persistent storage mechanism — it serialises all
+ *           cookies for the current document origin as a single concatenated string on read, and
+ *           appends a cookie on assignment (`document.cookie = "key=value;..."`). It is invisible
+ *           to botscript's capability model: `reads {}` / `writes {}` labels cover declared
+ *           resource identifiers, not the `document` global. Unlike `localStorage` (SYN015),
+ *           cookies are also transmitted with every matching HTTP request, meaning they have an
+ *           implicit network-side effect as well. A fn that reads or writes `document.cookie`
+ *           has undeclared storage (and indirect network) dependencies that callers cannot observe
+ *           and tests cannot intercept without global mocking.
+ *           Detection: `document` not preceded by `.`/`?.`, followed by `.`/`?.`, member is
+ *           `cookie`. Both read access (`const c = document.cookie`) and assignment
+ *           (`document.cookie = "k=v"`) are detected. The ternary-consequent `:` guard is applied
+ *           before the member check to avoid false-positives from ternary expressions.
+ *           Excluded: `obj.document.cookie` (member on a local binding), fn/function/function*
+ *           declarations named `document`.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -311,6 +329,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn021 = getErrorCode("SYN021")!;
   const syn022 = getErrorCode("SYN022")!;
   const syn023 = getErrorCode("SYN023")!;
+  const syn024 = getErrorCode("SYN024")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2195,6 +2214,55 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn023.rule,
             idiom: syn023.idiom,
             rewrite: syn023.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN024: document.cookie ──────────────────────────────────────────
+        case "document": {
+          // Exclude: `obj.document.cookie` — document preceded by `.` or `?.`
+          const prevIdx24 = prevSignificant(tokens, i - 1);
+          const prev24 = tokens[prevIdx24];
+          if (prev24 && ((prev24.kind === "punct" && prev24.text === ".") || prev24.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named document
+          if (prev24 && prev24.kind === "keyword" && prev24.text === "fn") continue;
+          if (prev24 && prev24.kind === "ident" && prev24.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx24)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx24 = nextSignificant(tokens, i + 1);
+          const next24 = tokens[nextIdx24];
+          const isDot24 = next24 && next24.kind === "punct" && next24.text === ".";
+          const isOptChain24 = next24 && next24.kind === "questionDot";
+          if (!isDot24 && !isOptChain24) continue;
+
+          // Member must be `cookie`
+          const memberIdx24 = nextSignificant(tokens, nextIdx24 + 1);
+          const memberTok24 = tokens[memberIdx24];
+          if (!memberTok24 || memberTok24.kind !== "ident" || memberTok24.text !== "cookie") continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep24 = isOptChain24 ? "?." : ".";
+          const loc24 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN024",
+            severity: "warning",
+            file: null,
+            line: loc24.line,
+            column: loc24.column,
+            start: tok.start,
+            end: memberTok24.end,
+            message:
+              `fn '${decl.name}' accesses document${sep24}cookie — ` +
+              `document.cookie is persistent storage that is also transmitted with every matching HTTP request, ` +
+              `invisible to the capability model; no reads {} / writes {} label covers it; ` +
+              `pass cookies as a parameter or wrap in unsafe "accesses document.cookie for <reason>" { document${sep24}cookie }`,
+            rule: syn024.rule,
+            idiom: syn024.idiom,
+            rewrite: syn024.rewrite,
           });
           break;
         }

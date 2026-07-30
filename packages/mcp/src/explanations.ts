@@ -1544,6 +1544,40 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  SYN024: {
+    code: "SYN024",
+    title: "document.cookie access bypasses the storage capability model",
+    body:
+      "SYN024 fires when a fn body reads or writes `document.cookie` in `?bs 0.7+`. " +
+      "`document.cookie` is a persistent storage mechanism that is also transmitted with every " +
+      "matching HTTP request — unlike `localStorage` (SYN015) or `indexedDB` (SYN016), cookies " +
+      "have implicit network-side effects. Neither `reads {}` / `writes {}` labels nor `uses { net }` " +
+      "cover `document.cookie`; it is entirely outside the botscript capability model.\n\n" +
+      "**Why it matters:** A fn that reads `document.cookie` has an undeclared persistent-state " +
+      "dependency. A fn that writes it (`document.cookie = 'key=value; ...'`) has an undeclared " +
+      "write side effect that also affects future HTTP requests. Callers cannot see either " +
+      "dependency from the fn header, and tests cannot intercept the access without global mocking.\n\n" +
+      "**Fix:** pass the cookie value (or a cookie-jar abstraction) as an explicit parameter so " +
+      "callers and tests can control it. If direct `document.cookie` access is genuinely required " +
+      "(e.g. in a thin cookie adapter), wrap in " +
+      "`unsafe \"accesses document.cookie for <reason>\" { document.cookie }`.\n\n" +
+      "SYN024 fires at `?bs 0.7+` as a non-blocking warning. Detection: `document` not preceded by " +
+      "`.`/`?.`, followed by `.`/`?.`, member is `cookie`. Both read access and assignment are detected. " +
+      "`obj.document.cookie` (member on a local binding), fn/function/function* declarations named " +
+      "`document`, and calls inside `unsafe {}` blocks or `unsafe fn` bodies are suppressed.",
+    example: {
+      fails:
+        "?bs 0.7\n" +
+        "fn isLoggedIn() -> boolean {\n" +
+        "  return document.cookie.includes('session=')\n" +
+        "}\n",
+      passes:
+        "?bs 0.7\n" +
+        "fn isLoggedIn(cookieHeader: string) -> boolean {\n" +
+        "  return cookieHeader.includes('session=')\n" +
+        "}\n",
+    },
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

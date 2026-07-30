@@ -1352,6 +1352,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return userAgent\n" +
       "}",
   },
+  SYN024: {
+    code: "SYN024",
+    title: "document.cookie access bypasses the storage capability model",
+    rule:
+      "`document.cookie` is a persistent read/write storage mechanism invisible to botscript's " +
+      "capability model: `reads {}` / `writes {}` labels cover declared resource identifiers, not the " +
+      "`document` global. Unlike `localStorage` (SYN015), cookies are also transmitted with every " +
+      "matching HTTP request — so `document.cookie` access has implicit network-side effects as well. " +
+      "A fn that reads or writes `document.cookie` has undeclared storage and indirect network " +
+      "dependencies that callers cannot see and tests cannot intercept without global mocking.",
+    idiom:
+      "pass cookies as an explicit parameter so callers and tests can control the value; " +
+      "or accept a cookie-jar abstraction so the dependency is visible at the call site; " +
+      "if direct `document.cookie` access is genuinely required (e.g. a thin cookie adapter), " +
+      "wrap in `unsafe \"accesses document.cookie for <reason>\" { document.cookie }`",
+    rewrite:
+      "// before — cookie access invisible to the capability model\n" +
+      "fn getSession() -> string {\n" +
+      "  return document.cookie  // SYN024\n" +
+      "}\n\n" +
+      "// after — cookie value passed as a parameter; tests can control it\n" +
+      "fn getSession(cookieHeader: string) -> string {\n" +
+      "  return cookieHeader\n" +
+      "}",
+    example:
+      "// SYN024: document.cookie bypasses the storage capability model\n" +
+      "fn isLoggedIn() -> boolean {\n" +
+      "  return document.cookie.includes('session=')  // SYN024\n" +
+      "}\n\n" +
+      "// fix: pass the cookie header as a parameter\n" +
+      "fn isLoggedIn(cookieHeader: string) -> boolean {\n" +
+      "  return cookieHeader.includes('session=')\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
