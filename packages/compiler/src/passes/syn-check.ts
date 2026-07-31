@@ -412,6 +412,31 @@
  *           and delete expressions.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN039  An `Object.defineProperty(...)` or `Object.defineProperties(...)` call was detected
+ *           in a fn body (?bs 0.7+). These calls redefine property descriptors — value, writable,
+ *           enumerable, configurable, get, set — at runtime, with permanent or stealthy effects
+ *           invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}`
+ *           declaration covers property-descriptor mutations. When the target is a shared or global
+ *           object, the mutation affects all callers in the runtime and can silently override
+ *           capability-gated globals (`fetch`, `WebSocket`, `setTimeout`) in ways that bypass
+ *           SYN007–SYN038 at runtime even when source-level checks passed.
+ *           Detection: `Object` not preceded by `.`/`?.`, followed by `.` or `?.`, method is
+ *           `defineProperty` or `defineProperties`, followed by `(` or `?.(`.
+ *           `fn`/`function` declarations named `Object` are excluded.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
+ *   SYN040  An `Object.setPrototypeOf(target, proto)` or `target.__proto__ = proto` was detected
+ *           in a fn body (?bs 0.7+). These replace the prototype chain of `target` at runtime —
+ *           silently redirecting all property lookups (including capability-gated globals such as
+ *           `fetch`, `WebSocket`, `setTimeout`) through a new chain invisible to the static
+ *           capability model. SYN007–SYN039 checks fire on source-level tokens; a prior prototype
+ *           mutation defeats those checks at runtime even though the source appeared safe.
+ *           Detection:
+ *             `Object` — not preceded by `.`/`?.`, not a fn/function declaration, followed by `.`
+ *             or `?.`, followed by `setPrototypeOf`, followed by `(` or `?.(`.
+ *             `__proto__` — preceded by `.` or `?.`, followed by `=` (plain assignment only).
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -558,6 +583,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn036 = getErrorCode("SYN036")!;
   const syn037 = getErrorCode("SYN037")!;
   const syn038 = getErrorCode("SYN038")!;
+  const syn039 = getErrorCode("SYN039")!;
+  const syn040 = getErrorCode("SYN040")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3313,6 +3340,137 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn037.rule,
             idiom: syn037.idiom,
             rewrite: syn037.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN039 + SYN040: Object.defineProperty / Object.setPrototypeOf ──
+        case "Object": {
+          // Exclude: `obj.Object.*` — Object preceded by `.` or `?.`
+          const prevIdxObj = prevSignificant(tokens, i - 1);
+          const prevObj = tokens[prevIdxObj];
+          if (prevObj && ((prevObj.kind === "punct" && prevObj.text === ".") || prevObj.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Object
+          if (prevObj && prevObj.kind === "keyword" && prevObj.text === "fn") continue;
+          if (prevObj && prevObj.kind === "ident" && prevObj.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdxObj)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdxObj = nextSignificant(tokens, i + 1);
+          const nextObj = tokens[nextIdxObj];
+          const isDotObj = nextObj && nextObj.kind === "punct" && nextObj.text === ".";
+          const isOptChainObj = nextObj && nextObj.kind === "questionDot";
+          if (!isDotObj && !isOptChainObj) continue;
+
+          // Get the method name
+          const methodIdxObj = nextSignificant(tokens, nextIdxObj + 1);
+          const methodObj = tokens[methodIdxObj];
+          if (!methodObj || methodObj.kind !== "ident") continue;
+
+          const sepObj = isOptChainObj ? "?." : ".";
+
+          if (methodObj.text === "defineProperty" || methodObj.text === "defineProperties") {
+            // ── SYN039 ──
+            let callIdx39 = nextSignificant(tokens, methodIdxObj + 1);
+            let callTok39 = tokens[callIdx39];
+            let isOptCall39 = false;
+            if (callTok39 && callTok39.kind === "questionDot") {
+              isOptCall39 = true;
+              callIdx39 = nextSignificant(tokens, callIdx39 + 1);
+              callTok39 = tokens[callIdx39];
+            }
+            if (!callTok39 || !(callTok39.kind === "open" && callTok39.text === "(")) continue;
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+            const callSep39 = isOptCall39 ? "?." : "";
+            const loc39 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN039",
+              severity: "warning",
+              file: null,
+              line: loc39.line,
+              column: loc39.column,
+              start: tok.start,
+              end: callTok39.start + 1,
+              message:
+                `fn '${decl.name}' calls Object${sepObj}${methodObj.text}${callSep39}() — ` +
+                `Object.${methodObj.text} redefines property descriptors at runtime; ` +
+                `effects (hidden getters/setters, non-writable locks) are invisible to the capability model and cannot be declared in the fn header; ` +
+                `avoid mutating shared or global objects; ` +
+                `wrap in unsafe "redefines <target>.<key> for <reason>" { Object.${methodObj.text}(...) } if intentional`,
+              rule: syn039.rule,
+              idiom: syn039.idiom,
+              rewrite: syn039.rewrite,
+            });
+          } else if (methodObj.text === "setPrototypeOf") {
+            // ── SYN040 (Object.setPrototypeOf) ──
+            let callIdx40 = nextSignificant(tokens, methodIdxObj + 1);
+            let callTok40 = tokens[callIdx40];
+            if (callTok40 && callTok40.kind === "questionDot") {
+              callIdx40 = nextSignificant(tokens, callIdx40 + 1);
+              callTok40 = tokens[callIdx40];
+            }
+            if (!callTok40 || !(callTok40.kind === "open" && callTok40.text === "(")) continue;
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+            const loc40a = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN040",
+              severity: "warning",
+              file: null,
+              line: loc40a.line,
+              column: loc40a.column,
+              start: tok.start,
+              end: methodObj.end,
+              message:
+                `fn '${decl.name}' calls Object${sepObj}setPrototypeOf() — ` +
+                `Object.setPrototypeOf() replaces the prototype chain of a target at runtime, ` +
+                `silently redirecting property lookups (including capability-gated globals such as fetch, WebSocket, setTimeout) ` +
+                `through a new chain invisible to the static capability model; ` +
+                `SYN007–SYN039 source-level checks are defeated at runtime if a prototype mutation occurs first; ` +
+                `model shape changes as explicit data structures, or wrap in unsafe "mutates prototype of <target> for <reason>" { Object${sepObj}setPrototypeOf(...) }`,
+              rule: syn040.rule,
+              idiom: syn040.idiom,
+              rewrite: syn040.rewrite,
+            });
+          }
+          break;
+        }
+
+        // ── SYN040: __proto__ assignment ──────────────────────────────────────
+        case "__proto__": {
+          // Must be preceded by `.` or `?.` — confirming this is a member access
+          const prevIdx40b = prevSignificant(tokens, i - 1);
+          const prev40b = tokens[prevIdx40b];
+          if (!prev40b || !((prev40b.kind === "punct" && prev40b.text === ".") || prev40b.kind === "questionDot"))
+            continue;
+
+          // Must be followed by `=` (plain assignment, `eq` token — not `==`, `===`, `+=`, etc.)
+          const nextIdx40b = nextSignificant(tokens, i + 1);
+          const next40b = tokens[nextIdx40b];
+          if (!next40b || next40b.kind !== "eq") continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const loc40b = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN040",
+            severity: "warning",
+            file: null,
+            line: loc40b.line,
+            column: loc40b.column,
+            start: tok.start,
+            end: tok.end,
+            message:
+              `fn '${decl.name}' assigns to .__proto__ — ` +
+              `.__proto__ = proto replaces the prototype chain of the target at runtime, ` +
+              `silently redirecting property lookups (including capability-gated globals) ` +
+              `through a new chain invisible to the static capability model; ` +
+              `use Object.create() to build objects with explicit prototypes instead, ` +
+              `or wrap in unsafe "mutates prototype for <reason>" { target.__proto__ = proto }`,
+            rule: syn040.rule,
+            idiom: syn040.idiom,
+            rewrite: syn040.rewrite,
           });
           break;
         }
