@@ -437,6 +437,17 @@
  *             `__proto__` — preceded by `.` or `?.`, followed by `=` (plain assignment only).
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN041  A `globalThis.<name>`, `window.<name>`, or `self.<name>` access was detected
+ *           in a fn body (?bs 0.7+), where `<name>` is one of the globals monitored by
+ *           SYN004–SYN040 as bare identifiers. The global-receiver form bypasses those
+ *           checks: `globalThis.fetch(...)` reaches the network without any capability
+ *           warning, because SYN007's bare-`fetch` detection excludes member-call forms.
+ *           The capability bypass is identical at runtime.
+ *           Excluded: cases where the receiver ident is itself a member access
+ *           (`obj.globalThis.fetch`), fn/function declarations named
+ *           `globalThis`/`window`/`self`. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -504,6 +515,21 @@ const HISTORY_NAV_METHODS = new Set(["pushState", "replaceState", "back", "forwa
 // WebAssembly.* members that execute or compile opaque binary code — covered by SYN036
 const SYN036_WASM_MEMBERS = new Set([
   "instantiate", "instantiateStreaming", "compile", "compileStreaming", "Instance", "Module",
+]);
+// SYN041: dangerous globals reachable via globalThis / window / self receivers
+const SYN041_DANGEROUS_MEMBERS = new Set([
+  "fetch", "WebSocket", "EventSource", "Worker", "SharedWorker",
+  "eval", "Function",
+  "setTimeout", "setInterval", "queueMicrotask",
+  "BroadcastChannel",
+  "localStorage", "sessionStorage", "indexedDB",
+  "Notification",
+  "Math", "crypto",
+  "navigator",
+  "Proxy", "Reflect", "Object",
+  "process",
+  "caches", "RTCPeerConnection", "WebAssembly", "MessageChannel",
+  "requestAnimationFrame", "requestIdleCallback",
 ]);
 // SYN038: global object receivers whose property writes are undeclared side effects
 const SYN038_GLOBAL_RECEIVERS = new Set(["globalThis", "window", "self"]);
@@ -585,6 +611,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn038 = getErrorCode("SYN038")!;
   const syn039 = getErrorCode("SYN039")!;
   const syn040 = getErrorCode("SYN040")!;
+  const syn041 = getErrorCode("SYN041")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3475,67 +3502,90 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN038: globalThis / window / self property write ────────────────
+        // ── SYN038 + SYN041: globalThis / window / self member access ────────
         case "globalThis":
         case "window":
         case "self": {
-          // Exclude: `obj.globalThis.foo = v` — receiver preceded by `.` or `?.`
-          const prevIdx38 = prevSignificant(tokens, i - 1);
-          const prev38 = tokens[prevIdx38];
-          if (prev38 && ((prev38.kind === "punct" && prev38.text === ".") || prev38.kind === "questionDot"))
+          // Shared prefix: exclude member accesses on local bindings and fn declarations
+          const prevIdxGlob = prevSignificant(tokens, i - 1);
+          const prevGlob = tokens[prevIdxGlob];
+          if (prevGlob && ((prevGlob.kind === "punct" && prevGlob.text === ".") || prevGlob.kind === "questionDot"))
             continue;
-
-          // Exclude: fn/function/function* declarations named globalThis/window/self
-          if (prev38 && prev38.kind === "keyword" && prev38.text === "fn") continue;
-          if (prev38 && prev38.kind === "ident" && prev38.text === "function") continue;
-          if (isFunctionStarDecl(tokens, prevIdx38)) continue;
+          if (prevGlob && prevGlob.kind === "keyword" && prevGlob.text === "fn") continue;
+          if (prevGlob && prevGlob.kind === "ident" && prevGlob.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdxGlob)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx38 = nextSignificant(tokens, i + 1);
-          const next38 = tokens[nextIdx38];
-          const isDot38 = next38 && next38.kind === "punct" && next38.text === ".";
-          const isOptChain38 = next38 && next38.kind === "questionDot";
-          if (!isDot38 && !isOptChain38) continue;
+          const nextIdxGlob = nextSignificant(tokens, i + 1);
+          const nextGlob = tokens[nextIdxGlob];
+          const isDotGlob = nextGlob && nextGlob.kind === "punct" && nextGlob.text === ".";
+          const isOptChainGlob = nextGlob && nextGlob.kind === "questionDot";
+          if (!isDotGlob && !isOptChainGlob) continue;
 
-          // Must have a member name after the dot
-          const memberIdx38 = nextSignificant(tokens, nextIdx38 + 1);
-          const memberTok38 = tokens[memberIdx38];
-          if (!memberTok38 || memberTok38.kind !== "ident") continue;
+          const memberIdxGlob = nextSignificant(tokens, nextIdxGlob + 1);
+          const memberTokGlob = tokens[memberIdxGlob];
+          if (!memberTokGlob || memberTokGlob.kind !== "ident") continue;
 
-          // Must be followed by an assignment operator: `=` or compound (`+=`, `-=`, etc.)
-          const afterMemberIdx38 = nextSignificant(tokens, memberIdx38 + 1);
-          const afterMember38 = tokens[afterMemberIdx38];
-          const isEq38 = afterMember38 && afterMember38.kind === "eq";
-          const isCompound38 = afterMember38 && afterMember38.kind === "operator" &&
-            SYN038_COMPOUND_ASSIGNS.has(afterMember38.text);
-          if (!isEq38 && !isCompound38) continue;
+          const receiverGlob = tok.text;
+          const sepGlob = isOptChainGlob ? "?." : ".";
+          const memberNameGlob = memberTokGlob.text;
+
+          const afterMemberIdxGlob = nextSignificant(tokens, memberIdxGlob + 1);
+          const afterMemberGlob = tokens[afterMemberIdxGlob];
+          const isEq38 = afterMemberGlob && afterMemberGlob.kind === "eq";
+          const isCompound38 = afterMemberGlob && afterMemberGlob.kind === "operator" &&
+            SYN038_COMPOUND_ASSIGNS.has(afterMemberGlob.text);
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
 
-          const sep38 = isOptChain38 ? "?." : ".";
-          const memberName38 = memberTok38.text;
-          const assignOp38 = afterMember38!.text;
-          const receiver38 = tok.text;
-          const loc38 = locationOf(src, tok.start);
-          warnings.push({
-            code: "SYN038",
-            severity: "warning",
-            file: null,
-            line: loc38.line,
-            column: loc38.column,
-            start: tok.start,
-            end: afterMember38!.end,
-            message:
-              `fn '${decl.name}' writes to ${receiver38}${sep38}${memberName38} ${assignOp38} — ` +
-              `writing to the global object mutates ambient shared state invisible to the capability model; ` +
-              `no uses {} / reads {} / writes {} declaration covers global scope writes; ` +
-              `callers cannot see the dependency and tests cannot isolate it without mocking the global; ` +
-              `pass state through explicit parameters and return values instead, ` +
-              `or wrap in unsafe "writes ${receiver38}.${memberName38} for <reason>" { ${receiver38}${sep38}${memberName38} ${assignOp38} ... }`,
-            rule: syn038.rule,
-            idiom: syn038.idiom,
-            rewrite: syn038.rewrite,
-          });
+          const locGlob = locationOf(src, tok.start);
+
+          // ── SYN038: property write ──
+          if (isEq38 || isCompound38) {
+            const assignOp38 = afterMemberGlob!.text;
+            warnings.push({
+              code: "SYN038",
+              severity: "warning",
+              file: null,
+              line: locGlob.line,
+              column: locGlob.column,
+              start: tok.start,
+              end: afterMemberGlob!.end,
+              message:
+                `fn '${decl.name}' writes to ${receiverGlob}${sepGlob}${memberNameGlob} ${assignOp38} — ` +
+                `writing to the global object mutates ambient shared state invisible to the capability model; ` +
+                `no uses {} / reads {} / writes {} declaration covers global scope writes; ` +
+                `callers cannot see the dependency and tests cannot isolate it without mocking the global; ` +
+                `pass state through explicit parameters and return values instead, ` +
+                `or wrap in unsafe "writes ${receiverGlob}.${memberNameGlob} for <reason>" { ${receiverGlob}${sepGlob}${memberNameGlob} ${assignOp38} ... }`,
+              rule: syn038.rule,
+              idiom: syn038.idiom,
+              rewrite: syn038.rewrite,
+            });
+          }
+
+          // ── SYN041: dangerous member access via global receiver ──
+          if (SYN041_DANGEROUS_MEMBERS.has(memberNameGlob)) {
+            warnings.push({
+              code: "SYN041",
+              severity: "warning",
+              file: null,
+              line: locGlob.line,
+              column: locGlob.column,
+              start: tok.start,
+              end: memberTokGlob.end,
+              message:
+                `fn '${decl.name}' accesses ${receiverGlob}${sepGlob}${memberNameGlob} — ` +
+                `the ${receiverGlob} global receiver routes around the bare-identifier SYN check for ${memberNameGlob}; ` +
+                `the capability bypass is identical at runtime; ` +
+                `use botscript stdlib equivalents with explicit uses {} declarations, ` +
+                `or wrap in unsafe "uses ${memberNameGlob} via ${receiverGlob} for <reason>" { ${receiverGlob}${sepGlob}${memberNameGlob} }`,
+              rule: syn041.rule,
+              idiom: syn041.idiom,
+              rewrite: syn041.rewrite,
+            });
+          }
+
           break;
         }
 

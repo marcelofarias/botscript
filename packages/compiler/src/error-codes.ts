@@ -1987,6 +1987,39 @@ const E: Record<string, ErrorCodeEntry> = {
       "  obj.__proto__ = proto  // SYN040\n" +
       "}",
   },
+  SYN041: {
+    code: "SYN041",
+    title: "globalThis / window / self receiver routes a dangerous global past SYN capability checks",
+    rule:
+      "Accessing a known-dangerous global via `globalThis.X`, `window.X`, or `self.X` " +
+      "bypasses the bare-identifier detection of SYN004–SYN040: the compiler's existing " +
+      "checks fire on `fetch(...)`, `eval(...)`, `WebSocket(...)`, etc. as bare calls, " +
+      "but those same checks exclude member-access forms — so `globalThis.fetch(...)` " +
+      "reaches the network without any capability warning. The global receiver form is " +
+      "equivalent at runtime; the capability bypass is identical.",
+    idiom:
+      "use botscript stdlib equivalents with explicit `uses {}` declarations (e.g. `http.get` " +
+      "instead of `globalThis.fetch`); if the global access is intentional, wrap in " +
+      "`unsafe \"uses <global> directly for <reason>\" { globalThis.<name>(...) }`",
+    rewrite:
+      "// before — globalThis.fetch bypasses SYN007 and the capability model\n" +
+      "fn getData(url: string) -> any {\n" +
+      "  return globalThis.fetch(url)  // SYN041\n" +
+      "}\n\n" +
+      "// after — explicit capability declaration visible to callers\n" +
+      "fn getData(url: string) uses { network } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN041: globalThis receiver bypasses the fetch capability check\n" +
+      "fn fetchData(url: string) -> any {\n" +
+      "  return globalThis.fetch(url)  // SYN041 — same as bare fetch(), same bypass\n" +
+      "}\n\n" +
+      "// fix: use the stdlib capability\n" +
+      "fn fetchData(url: string) uses { network } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
