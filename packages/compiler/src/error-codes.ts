@@ -1657,6 +1657,54 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return channel.port2\n" +
       "}",
   },
+  SYN032: {
+    code: "SYN032",
+    title: "new RTCPeerConnection() opens a peer-to-peer network channel invisible to the capability model",
+    rule:
+      "`new RTCPeerConnection(config)` initiates a WebRTC peer-to-peer session. Once the ICE " +
+      "handshake completes, the connection can exchange arbitrary data via `RTCDataChannel` or " +
+      "stream media — directly over UDP, bypassing all HTTP-layer visibility. CAP001 checks for " +
+      "`http.*` member calls; `RTCPeerConnection` is invisible to it. A fn that constructs an " +
+      "`RTCPeerConnection` has an undeclared network dependency capable of exfiltrating data " +
+      "via peer-to-peer UDP with no HTTP trace, making monitoring and auditing ineffective. " +
+      "ICE candidates are gathered asynchronously and connection events fire after the fn returns — " +
+      "all handler effects are invisible to the fn's `uses {}`, `reads {}`, or `writes {}` clause.",
+    idiom:
+      "wrap `new RTCPeerConnection(config)` in `unsafe \"opens WebRTC peer connection for <reason>\" { ... }` " +
+      "to make the peer-to-peer channel construction visible and acknowledged in the fn's source; " +
+      "prefer capability-declared http.* calls when only client-server communication is needed — " +
+      "RTCPeerConnection is appropriate only for genuine peer-to-peer media or data transfer",
+    rewrite:
+      "// before — RTCPeerConnection opens a network channel invisible to CAP001\n" +
+      "fn initPeer(config: RTCConfiguration) -> void {\n" +
+      "  const pc = new RTCPeerConnection(config)  // SYN032\n" +
+      "  const dc = pc.createDataChannel('data')\n" +
+      "  dc.onmessage = (e) => { storage.set('last', e.data) }  // invisible to fn header\n" +
+      "}\n\n" +
+      "// after — peer connection explicitly acknowledged\n" +
+      "fn initPeer(config: RTCConfiguration) -> void {\n" +
+      "  const pc = unsafe \"opens WebRTC peer connection for p2p data channel\" {\n" +
+      "    new RTCPeerConnection(config)\n" +
+      "  }\n" +
+      "  const dc = pc.createDataChannel('data')\n" +
+      "  dc.onmessage = (e) => { storage.set('last', e.data) }\n" +
+      "}",
+    example:
+      "// SYN032: RTCPeerConnection bypasses the capability model with peer-to-peer UDP\n" +
+      "fn connectPeer(config: RTCConfiguration) -> RTCPeerConnection {\n" +
+      "  const pc = new RTCPeerConnection(config)\n" +
+      "  pc.onicecandidate = (e) => { http.post('/signal', e.candidate) }  // invisible\n" +
+      "  return pc\n" +
+      "}\n\n" +
+      "// fix: wrap in unsafe\n" +
+      "fn connectPeer(config: RTCConfiguration) -> RTCPeerConnection {\n" +
+      "  const pc = unsafe \"opens WebRTC peer connection for media relay\" {\n" +
+      "    new RTCPeerConnection(config)\n" +
+      "  }\n" +
+      "  pc.onicecandidate = (e) => { http.post('/signal', e.candidate) }\n" +
+      "  return pc\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

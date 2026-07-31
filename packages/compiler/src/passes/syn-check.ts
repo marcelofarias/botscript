@@ -319,6 +319,18 @@
  *           declarations named `MessageChannel`, object/class method shorthands, and
  *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
  *
+ *   SYN032  A `new RTCPeerConnection(config)`, `RTCPeerConnection(config)`, or `RTCPeerConnection?.(config)`
+ *           call was detected in a fn body (?bs 0.7+). `RTCPeerConnection` initiates a WebRTC
+ *           peer-to-peer session. Once the ICE handshake completes, the connection can exchange
+ *           arbitrary data via `RTCDataChannel` or stream media — directly over UDP, bypassing all
+ *           HTTP-layer visibility. CAP001 checks for `http.*` member calls; `RTCPeerConnection` is
+ *           invisible to it. ICE candidates and connection events fire asynchronously after the fn
+ *           returns — handler effects cannot be declared in the fn's `uses {}`, `reads {}`, or
+ *           `writes {}` clause.
+ *           Excluded: member calls (`obj.RTCPeerConnection`), `fn`/`function`/`function*`
+ *           declarations named `RTCPeerConnection`, object/class method shorthands, and
+ *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -407,6 +419,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn029 = getErrorCode("SYN029")!;
   const syn030 = getErrorCode("SYN030")!;
   const syn031 = getErrorCode("SYN031")!;
+  const syn032 = getErrorCode("SYN032")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2794,6 +2807,85 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn031.rule,
             idiom: syn031.idiom,
             rewrite: syn031.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN032: new RTCPeerConnection() ──────────────────────────────────
+        case "RTCPeerConnection": {
+          // Exclude: `obj.RTCPeerConnection(...)` — preceded by `.` or `?.`
+          const prevIdx32 = prevSignificant(tokens, i - 1);
+          const prev32 = tokens[prevIdx32];
+          if (prev32 && ((prev32.kind === "punct" && prev32.text === ".") || prev32.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named RTCPeerConnection
+          if (prev32 && prev32.kind === "ident" && prev32.text === "function") continue;
+          if (prev32 && prev32.kind === "keyword" && prev32.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx32)) continue;
+
+          const hasNew32 = prev32 && prev32.kind === "ident" && prev32.text === "new";
+
+          const nextIdx32 = nextSignificant(tokens, i + 1);
+          const next32 = tokens[nextIdx32];
+
+          let isOpt32 = false;
+          let callIdx32 = nextIdx32;
+
+          if (next32 && next32.kind === "questionDot") {
+            isOpt32 = true;
+            callIdx32 = nextSignificant(tokens, nextIdx32 + 1);
+          } else if (hasNew32 && next32 && next32.kind === "operator" && next32.text === "<") {
+            // new RTCPeerConnection<T>( — generic scan only when `new` precedes
+            let depth = 1;
+            let j = nextIdx32 + 1;
+            while (j < tokens.length && depth > 0) {
+              const t = tokens[j];
+              if (!t) break;
+              if (t.kind === "operator" && t.text === "<") depth++;
+              else if (t.kind === "operator" && (t.text === ">" || t.text === ">>" || t.text === ">>>"))
+                depth = Math.max(0, depth - t.text.length);
+              j++;
+            }
+            callIdx32 = nextSignificant(tokens, j);
+          }
+
+          const callTok32 = tokens[callIdx32];
+          if (!callTok32 || !(callTok32.kind === "open" && callTok32.text === "(")) continue;
+
+          // Exclude method shorthands and TS method signatures: { RTCPeerConnection() { } } / { RTCPeerConnection(): T; }
+          if (callTok32.matchedAt !== undefined) {
+            const afterCloseIdx32 = nextSignificant(tokens, callTok32.matchedAt + 1);
+            const afterClose32 = tokens[afterCloseIdx32];
+            if (afterClose32 && (
+              (afterClose32.kind === "open" && afterClose32.text === "{") ||
+              afterClose32.kind === "fatArrow" ||
+              (afterClose32.kind === "punct" && afterClose32.text === ":")
+            )) continue;
+          }
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const warnStart32 = hasNew32 ? prev32!.start : tok.start;
+          const loc32 = locationOf(src, warnStart32);
+          warnings.push({
+            code: "SYN032",
+            severity: "warning",
+            file: null,
+            line: loc32.line,
+            column: loc32.column,
+            start: warnStart32,
+            end: callTok32.start + 1,
+            message:
+              `fn '${decl.name}' ${hasNew32 ? "constructs new " : "calls "}RTCPeerConnection${isOpt32 ? "?." : ""}() — ` +
+              `RTCPeerConnection opens a WebRTC peer-to-peer session; once ICE completes the connection can ` +
+              `exchange data via RTCDataChannel or stream media over UDP — invisible to CAP001, which only ` +
+              `checks http.* member calls; handler effects (onicecandidate, ondatachannel) fire asynchronously ` +
+              `after the fn returns and cannot be declared in fn headers; ` +
+              `wrap in unsafe "opens WebRTC peer connection for <reason>" { ${hasNew32 ? "new " : ""}RTCPeerConnection${isOpt32 ? "?." : ""}(config) }`,
+            rule: syn032.rule,
+            idiom: syn032.idiom,
+            rewrite: syn032.rewrite,
           });
           break;
         }
