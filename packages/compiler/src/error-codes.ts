@@ -1780,6 +1780,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return pathname.startsWith('/admin')\n" +
       "}",
   },
+  SYN035: {
+    code: "SYN035",
+    title: "history.* access mutates browser history or reads ambient navigation state — both invisible to callers",
+    rule:
+      "the global `history` object exposes two classes of hidden effect. " +
+      "Mutation methods (`history.pushState(state, title, url)`, `.replaceState(state, title, url)`, " +
+      "`.back()`, `.forward()`, `.go(delta)`) alter the browser history stack and/or the address bar — " +
+      "visible, persistent side effects that outlive the fn call and cannot be declared in any fn header. " +
+      "Ambient reads (`history.length`, `.state`, `.scrollRestoration`) return values that differ " +
+      "depending on how the user navigated to the current page; the same fn returns different results " +
+      "in different sessions without any visible declaration. " +
+      "Neither category is captured by CAP001 (which tracks stdlib namespaces) or any " +
+      "`uses {} / reads {} / writes {}` declaration.",
+    idiom:
+      "for history mutations: accept a `push: (url: string, state?: unknown) => void` callback as a " +
+      "parameter so callers control navigation, or wrap in " +
+      "`unsafe \"pushes route for <reason>\" { history.pushState(state, '', url) }` if direct access is required; " +
+      "for ambient reads: accept the required value as a parameter so callers can inject a fixed value in tests",
+    rewrite:
+      "// before — history mutation hides a navigation side effect\n" +
+      "fn navigate(url: string) -> void {\n" +
+      "  history.pushState(null, '', url)  // SYN035\n" +
+      "}\n\n" +
+      "// after — caller controls navigation; fn is testable without a browser\n" +
+      "fn navigate(url: string, push: (url: string) => void) -> void {\n" +
+      "  push(url)\n" +
+      "}",
+    example:
+      "// SYN035: history.pushState hides a navigation side effect\n" +
+      "fn goTo(path: string) -> void {\n" +
+      "  history.pushState(null, '', path)  // SYN035\n" +
+      "}\n\n" +
+      "// fix: accept a push callback; caller decides what navigation means\n" +
+      "fn goTo(path: string, push: (p: string) => void) -> void {\n" +
+      "  push(path)\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

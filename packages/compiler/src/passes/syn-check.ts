@@ -357,6 +357,21 @@
  *           then a member name in the high-concern set. `window.location.href` is excluded
  *           (location preceded by `.`). `unsafe {}` blocks are suppressed.
  *
+ *   SYN035  A `history.<member>` access was detected in a fn body (?bs 0.7+).
+ *           The global `history` object has two concern categories:
+ *             • History mutations and navigation: `history.pushState(state, title, url)`,
+ *               `.replaceState(state, title, url)`, `.back()`, `.forward()`, `.go(delta)` —
+ *               these alter the browser history stack and/or the address bar. They are
+ *               visible, persistent side effects that outlive the fn call and cannot be
+ *               declared in any fn header.
+ *             • Ambient state reads: `history.length`, `.state`, `.scrollRestoration` —
+ *               these return values that differ depending on how the user navigated to the
+ *               current page; the same fn returns different results in different sessions
+ *               without any visible declaration.
+ *           Detection: `history` ident not preceded by `.`/`?.`, followed by `.`/`?.`,
+ *           then a member name in the high-concern set. `window.history.pushState` is
+ *           excluded (history preceded by `.`). `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -414,6 +429,13 @@ const SYN034_LOCATION_MEMBERS = new Set([
 ]);
 // location members that trigger navigation (side effects vs environment reads)
 const LOCATION_NAV_METHODS = new Set(["assign", "replace", "reload"]);
+// history.* members covered by SYN035 (history mutation and ambient navigation state reads)
+const SYN035_HISTORY_MEMBERS = new Set([
+  "pushState", "replaceState", "back", "forward", "go",
+  "length", "state", "scrollRestoration",
+]);
+// history members that mutate browser history / trigger navigation (vs ambient reads)
+const HISTORY_NAV_METHODS = new Set(["pushState", "replaceState", "back", "forward", "go"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -455,6 +477,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn032 = getErrorCode("SYN032")!;
   const syn033 = getErrorCode("SYN033")!;
   const syn034 = getErrorCode("SYN034")!;
+  const syn035 = getErrorCode("SYN035")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3018,6 +3041,64 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn034.rule,
             idiom: syn034.idiom,
             rewrite: syn034.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN035: history.* — browser history mutation + ambient navigation state ──
+        case "history": {
+          // Exclude: `obj.history.*` — history preceded by `.` or `?.`
+          const prevIdx35 = prevSignificant(tokens, i - 1);
+          const prev35 = tokens[prevIdx35];
+          if (prev35 && ((prev35.kind === "punct" && prev35.text === ".") || prev35.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named history
+          if (prev35 && prev35.kind === "keyword" && prev35.text === "fn") continue;
+          if (prev35 && prev35.kind === "ident" && prev35.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx35)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx35 = nextSignificant(tokens, i + 1);
+          const next35 = tokens[nextIdx35];
+          const isDot35 = next35 && next35.kind === "punct" && next35.text === ".";
+          const isOptChain35 = next35 && next35.kind === "questionDot";
+          if (!isDot35 && !isOptChain35) continue;
+
+          // Member must be in the high-concern history set
+          const memberIdx35 = nextSignificant(tokens, nextIdx35 + 1);
+          const memberTok35 = tokens[memberIdx35];
+          if (!memberTok35 || memberTok35.kind !== "ident") continue;
+          if (!SYN035_HISTORY_MEMBERS.has(memberTok35.text)) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep35 = isOptChain35 ? "?." : ".";
+          const memberName35 = memberTok35.text;
+          const isNavMutation35 = HISTORY_NAV_METHODS.has(memberName35);
+          const loc35 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN035",
+            severity: "warning",
+            file: null,
+            line: loc35.line,
+            column: loc35.column,
+            start: tok.start,
+            end: memberTok35.end,
+            message:
+              `fn '${decl.name}' accesses history${sep35}${memberName35} — ` +
+              (isNavMutation35
+                ? `history.${memberName35}() mutates the browser history stack or triggers navigation; ` +
+                  `the side effect outlives the fn call and cannot be declared in any fn header; ` +
+                  `accept a push/navigate callback as a parameter so callers control navigation, ` +
+                  `or wrap in unsafe "pushes history for <reason>" { history${sep35}${memberName35}(...) }`
+                : `history.${memberName35} reads ambient navigation state that varies by session; ` +
+                  `no uses {} / reads {} / writes {} declaration covers the history global; ` +
+                  `pass the required value as a parameter so callers can inject a fixed value in tests, ` +
+                  `or wrap in unsafe "reads history.${memberName35} for <reason>" { history${sep35}${memberName35} }`),
+            rule: syn035.rule,
+            idiom: syn035.idiom,
+            rewrite: syn035.rewrite,
           });
           break;
         }
