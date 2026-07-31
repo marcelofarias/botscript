@@ -372,6 +372,20 @@
  *           then a member name in the high-concern set. `window.history.pushState` is
  *           excluded (history preceded by `.`). `unsafe {}` blocks are suppressed.
  *
+ *   SYN036  A `WebAssembly.instantiate(bytes)`, `.instantiateStreaming(response)`,
+ *           `.compile(bytes)`, `.compileStreaming(response)`, `new WebAssembly.Instance(module)`,
+ *           or `new WebAssembly.Module(bytes)` call was detected in a fn body (?bs 0.7+).
+ *           These forms execute or compile a binary WASM module at runtime. A WASM module's
+ *           capability surface is entirely opaque to botscript's static analysis: the module can
+ *           make network requests, write to memory, call any imported JS function, and produce any
+ *           side effect — none of it visible in the caller's `uses {}`, `reads {}`, or `writes {}`
+ *           declarations. This is the WASM analogue of `eval()` (SYN004): arbitrary execution
+ *           from a binary blob that the compiler cannot inspect.
+ *           Excluded: `obj.WebAssembly.*` (member on a local binding), `fn`/`function`/`function*`
+ *           declarations named `WebAssembly`, `WebAssembly.*` accesses where the member is not in
+ *           the execution/compilation set (e.g. `WebAssembly.validate`). `unsafe {}` blocks and
+ *           `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -436,6 +450,10 @@ const SYN035_HISTORY_MEMBERS = new Set([
 ]);
 // history members that mutate browser history / trigger navigation (vs ambient reads)
 const HISTORY_NAV_METHODS = new Set(["pushState", "replaceState", "back", "forward", "go"]);
+// WebAssembly.* members that execute or compile opaque binary code — covered by SYN036
+const SYN036_WASM_MEMBERS = new Set([
+  "instantiate", "instantiateStreaming", "compile", "compileStreaming", "Instance", "Module",
+]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -478,6 +496,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn033 = getErrorCode("SYN033")!;
   const syn034 = getErrorCode("SYN034")!;
   const syn035 = getErrorCode("SYN035")!;
+  const syn036 = getErrorCode("SYN036")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3099,6 +3118,72 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn035.rule,
             idiom: syn035.idiom,
             rewrite: syn035.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN036: WebAssembly.instantiate / compile — opaque binary execution ─
+        case "WebAssembly": {
+          // Exclude: `obj.WebAssembly` — preceded by `.` or `?.`
+          const prevIdx36 = prevSignificant(tokens, i - 1);
+          const prev36 = tokens[prevIdx36];
+          if (prev36 && ((prev36.kind === "punct" && prev36.text === ".") || prev36.kind === "questionDot"))
+            continue;
+
+          // Exclude: function/fn/function* declarations named WebAssembly
+          if (prev36 && prev36.kind === "ident" && prev36.text === "function") continue;
+          if (prev36 && prev36.kind === "keyword" && prev36.text === "fn") continue;
+          if (isFunctionStarDecl(tokens, prevIdx36)) continue;
+
+          // Must be followed by `.` or `?.` (member access on the WebAssembly namespace)
+          const nextIdx36 = nextSignificant(tokens, i + 1);
+          const next36 = tokens[nextIdx36];
+          const isDot36 = next36 && next36.kind === "punct" && next36.text === ".";
+          const isOptChain36 = next36 && next36.kind === "questionDot";
+          if (!isDot36 && !isOptChain36) continue;
+
+          // Check the member name — only fire for execution/compilation members
+          const memberIdx36 = nextSignificant(tokens, nextIdx36 + 1);
+          const memberTok36 = tokens[memberIdx36];
+          if (!memberTok36 || memberTok36.kind !== "ident") continue;
+          if (!SYN036_WASM_MEMBERS.has(memberTok36.text)) continue;
+
+          // Must be a call: member must be followed by `(` or `?.(` (call confirmation)
+          let afterMemberIdx36 = nextSignificant(tokens, memberIdx36 + 1);
+          let afterMember36 = tokens[afterMemberIdx36];
+          let isOptCall36 = false;
+          if (afterMember36 && afterMember36.kind === "questionDot") {
+            isOptCall36 = true;
+            afterMemberIdx36 = nextSignificant(tokens, afterMemberIdx36 + 1);
+            afterMember36 = tokens[afterMemberIdx36];
+          }
+          if (!afterMember36 || !(afterMember36.kind === "open" && afterMember36.text === "(")) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const hasNew36 = prev36 && prev36.kind === "ident" && prev36.text === "new";
+          const warnStart36 = hasNew36 ? prev36!.start : tok.start;
+          const loc36 = locationOf(src, warnStart36);
+          const sep36 = isOptChain36 ? "?." : ".";
+          const callSep36 = isOptCall36 ? "?." : "";
+          const newPrefix36 = hasNew36 ? "new " : "";
+          warnings.push({
+            code: "SYN036",
+            severity: "warning",
+            file: null,
+            line: loc36.line,
+            column: loc36.column,
+            start: warnStart36,
+            end: memberTok36.end,
+            message:
+              `fn '${decl.name}' calls ${newPrefix36}WebAssembly${sep36}${memberTok36.text}${callSep36}() — ` +
+              `WebAssembly execution is opaque to the capability model: the compiled module can make network ` +
+              `requests, access memory, and produce any side effect without a uses {} or writes {} declaration; ` +
+              `accept a pre-compiled WebAssembly.Instance parameter instead, or wrap in ` +
+              `unsafe "executes <module> WASM for <reason>" { ${newPrefix36}WebAssembly${sep36}${memberTok36.text}${callSep36}(...) }`,
+            rule: syn036.rule,
+            idiom: syn036.idiom,
+            rewrite: syn036.rewrite,
           });
           break;
         }

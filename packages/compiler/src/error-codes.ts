@@ -1817,6 +1817,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  push(path)\n" +
       "}",
   },
+  SYN036: {
+    code: "SYN036",
+    title: "WebAssembly.instantiate/compile executes opaque binary code invisible to the capability model",
+    rule:
+      "`WebAssembly.instantiate(bytes)`, `.instantiateStreaming(response)`, `.compile(bytes)`, " +
+      "`.compileStreaming(response)`, `new WebAssembly.Instance(module)`, and `new WebAssembly.Module(bytes)` " +
+      "execute or compile a binary WASM module at runtime. A WASM module's capability surface is entirely " +
+      "opaque to botscript's static analysis: the module can make network requests, write to memory, call " +
+      "any imported JS function, and produce any side effect — none of it visible in the caller's `uses {}`, " +
+      "`reads {}`, or `writes {}` declarations. This is the WASM analogue of `eval()` (SYN004): arbitrary " +
+      "execution from a binary blob that the compiler cannot inspect.",
+    idiom:
+      "accept the WASM module as a pre-compiled `WebAssembly.Module` parameter passed in by the caller, " +
+      "so capability decisions are made at the call site; or wrap in " +
+      "`unsafe \"executes <module> WASM for <reason>\" { WebAssembly.instantiate(bytes) }` " +
+      "with a comment explaining what capabilities the module uses and why direct instantiation is required",
+    rewrite:
+      "// before — WebAssembly.instantiate hides an opaque capability surface\n" +
+      "fn runWasm(bytes: ArrayBuffer) -> Promise<WebAssembly.Exports> {\n" +
+      "  const { instance } = await WebAssembly.instantiate(bytes, {})  // SYN036\n" +
+      "  return instance.exports\n" +
+      "}\n\n" +
+      "// after — caller decides when/whether to instantiate; fn receives a ready module\n" +
+      "fn runWasm(mod: WebAssembly.Instance) -> WebAssembly.Exports {\n" +
+      "  return mod.exports\n" +
+      "}",
+    example:
+      "// SYN036: WebAssembly.instantiate executes opaque binary code\n" +
+      "?bs 0.7\n" +
+      "fn loadModule(bytes: ArrayBuffer) -> void {\n" +
+      "  WebAssembly.instantiate(bytes, {})  // SYN036\n" +
+      "}\n\n" +
+      "// fix: accept a pre-instantiated module; let callers control WASM execution\n" +
+      "fn loadModule(instance: WebAssembly.Instance) -> WebAssembly.Exports {\n" +
+      "  return instance.exports\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
