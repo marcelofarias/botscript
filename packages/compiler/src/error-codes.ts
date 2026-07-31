@@ -1705,6 +1705,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return pc\n" +
       "}",
   },
+  SYN033: {
+    code: "SYN033",
+    title: "import.meta.env access hides a deployment dependency",
+    rule:
+      "`import.meta.env.*` reads build-time environment variables injected by Vite, Vitest, " +
+      "esbuild, and similar bundlers. Unlike `process.env` (SYN005), which fires in Node.js " +
+      "contexts, `import.meta.env` is the standard pattern for environment access in modern " +
+      "browser-targeted and isomorphic bots. Both have the same problem: the fn silently " +
+      "depends on a deployment value that callers cannot see, audit, or override in tests. " +
+      "Any test that calls the fn must also have the right build-time environment, making " +
+      "the dependency invisible and the fn harder to isolate.",
+    idiom:
+      "pass config values as explicit fn parameters so callers control what is injected; " +
+      "read `import.meta.env.X` at the module's entry point, bind to a constant, and pass " +
+      "it down — or wrap in `unsafe \"reads build-time env\" { import.meta.env.API_KEY }` " +
+      "if direct access at the call site is required",
+    rewrite:
+      "// before — import.meta.env hides a deployment dependency\n" +
+      "fn getApiUrl() -> string {\n" +
+      "  return import.meta.env.VITE_API_URL  // SYN033\n" +
+      "}\n\n" +
+      "// after — caller controls the value; tests can inject\n" +
+      "fn getApiUrl(baseUrl: string) -> string {\n" +
+      "  return baseUrl\n" +
+      "}",
+    example:
+      "// SYN033: import.meta.env hides a deployment dependency\n" +
+      "fn buildHeaders(token: string) -> Record<string, string> {\n" +
+      "  const env = import.meta.env.MODE  // SYN033\n" +
+      "  return { Authorization: token, 'X-Env': env }\n" +
+      "}\n\n" +
+      "// fix: accept env as an explicit parameter\n" +
+      "fn buildHeaders(token: string, env: string) -> Record<string, string> {\n" +
+      "  return { Authorization: token, 'X-Env': env }\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",

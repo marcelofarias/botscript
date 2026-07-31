@@ -331,6 +331,17 @@
  *           declarations named `RTCPeerConnection`, object/class method shorthands, and
  *           TypeScript method signatures. `unsafe {}` blocks are suppressed.
  *
+ *   SYN033  An `import.meta.env.*` access was detected in a fn body (?bs 0.7+).
+ *           `import.meta.env` is the standard pattern for reading build-time environment
+ *           variables injected by Vite, Vitest, esbuild, and similar bundlers — the
+ *           browser-targeted / isomorphic equivalent of Node.js's `process.env` (SYN005).
+ *           Both have the same structural problem: the fn silently depends on a deployment
+ *           configuration value that callers cannot see, pass, or override in tests.
+ *           Detection: `import` ident not preceded by `.`/`?.`, followed by `.`, then `meta`,
+ *           then `.`/`?.`, then `env`. Only the three-token chain `import.meta.env` fires;
+ *           `import.meta.url`, `import.meta.resolve`, and other `import.meta.*` accesses
+ *           are excluded. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -420,6 +431,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn030 = getErrorCode("SYN030")!;
   const syn031 = getErrorCode("SYN031")!;
   const syn032 = getErrorCode("SYN032")!;
+  const syn033 = getErrorCode("SYN033")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1143,10 +1155,52 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: `fn import(...)` botscript declarations — `fn` is kind="keyword".
           if (prev11 && prev11.kind === "keyword" && prev11.text === "fn") continue;
 
-          // Exclude: `import.meta` and other `import.something` property accesses.
           const nextIdx11 = nextSignificant(tokens, i + 1);
           const next11 = tokens[nextIdx11];
-          if (next11 && next11.kind === "punct" && next11.text === ".") continue;
+
+          // ── SYN033: import.meta.env.* — three-level chain ───────────────────
+          // Detect `import.meta.env` (or `?.` variant at the meta→env dot).
+          // All other `import.*` property accesses fall through to the `continue`
+          // below, which excludes them from SYN011.
+          if (next11 && next11.kind === "punct" && next11.text === ".") {
+            const metaIdx33 = nextSignificant(tokens, nextIdx11 + 1);
+            const metaTok33 = tokens[metaIdx33];
+            if (metaTok33 && metaTok33.kind === "ident" && metaTok33.text === "meta") {
+              const dotAfterMetaIdx = nextSignificant(tokens, metaIdx33 + 1);
+              const dotAfterMeta = tokens[dotAfterMetaIdx];
+              const isMetaDot = dotAfterMeta && dotAfterMeta.kind === "punct" && dotAfterMeta.text === ".";
+              const isMetaOptDot = dotAfterMeta && dotAfterMeta.kind === "questionDot";
+              if (isMetaDot || isMetaOptDot) {
+                const envIdx33 = nextSignificant(tokens, dotAfterMetaIdx + 1);
+                const envTok33 = tokens[envIdx33];
+                if (envTok33 && envTok33.kind === "ident" && envTok33.text === "env") {
+                  if (!isInsideRange(tok.start, unsafeRanges)) {
+                    const sep33 = isMetaOptDot ? "?." : ".";
+                    const loc33 = locationOf(src, tok.start);
+                    warnings.push({
+                      code: "SYN033",
+                      severity: "warning",
+                      file: null,
+                      line: loc33.line,
+                      column: loc33.column,
+                      start: tok.start,
+                      end: envTok33.end,
+                      message:
+                        `fn '${decl.name}' accesses import.meta${sep33}env — ` +
+                        `import.meta.env reads build-time environment variables invisible to callers; ` +
+                        `pass config values as explicit fn parameters, or wrap in ` +
+                        `unsafe "reads build-time env" { import.meta.env.KEY }`,
+                      rule: syn033.rule,
+                      idiom: syn033.idiom,
+                      rewrite: syn033.rewrite,
+                    });
+                  }
+                }
+              }
+            }
+            // All `import.X` forms (not import.meta.env): exclude from SYN011.
+            continue;
+          }
 
           // Must be followed by `(` or `?.(` — confirming this is a dynamic import call.
           let isOptImport = false;
