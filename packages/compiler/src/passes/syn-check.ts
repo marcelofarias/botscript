@@ -342,6 +342,21 @@
  *           `import.meta.url`, `import.meta.resolve`, and other `import.meta.*` accesses
  *           are excluded. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN034  A `location.<member>` access was detected in a fn body (?bs 0.7+).
+ *           The global `location` object has two concern categories:
+ *             • Environment reads: `location.href`, `.pathname`, `.search`, `.hash`,
+ *               `.hostname`, `.host`, `.port`, `.protocol`, `.origin` — these read the
+ *               ambient URL, which differs between deployments, test environments, and CI
+ *               runs. A fn that reads `location.pathname` silently depends on the
+ *               deployment URL; tests running via `file:///` or a different origin get
+ *               different values without any visible declaration.
+ *             • Navigation I/O: `location.assign(url)`, `.replace(url)`, `.reload()` —
+ *               these redirect or reload the page; the side effect is invisible to callers
+ *               and cannot be declared in `uses {}`, `reads {}`, or `writes {}` headers.
+ *           Detection: `location` ident not preceded by `.`/`?.`, followed by `.`/`?.`,
+ *           then a member name in the high-concern set. `window.location.href` is excluded
+ *           (location preceded by `.`). `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -392,6 +407,13 @@ const SYN023_NAVIGATOR_MEMBERS = new Set([
   "hardwareConcurrency", "deviceMemory", "connection", "wakeLock",
   "sendBeacon",
 ]);
+// location.* members covered by SYN034 (navigation I/O and ambient URL reads)
+const SYN034_LOCATION_MEMBERS = new Set([
+  "href", "pathname", "search", "hash", "hostname", "host", "port", "protocol", "origin",
+  "assign", "replace", "reload",
+]);
+// location members that trigger navigation (side effects vs environment reads)
+const LOCATION_NAV_METHODS = new Set(["assign", "replace", "reload"]);
 
 export function passSynCheck(src: string, version: VersionInfo): SynCheckResult {
   if (!atLeast(version.resolved, "0.7")) return { code: src, warnings: [] };
@@ -432,6 +454,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn031 = getErrorCode("SYN031")!;
   const syn032 = getErrorCode("SYN032")!;
   const syn033 = getErrorCode("SYN033")!;
+  const syn034 = getErrorCode("SYN034")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2940,6 +2963,61 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn032.rule,
             idiom: syn032.idiom,
             rewrite: syn032.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN034: location.* — global location access (navigation I/O + env dep) ──
+        case "location": {
+          // Exclude: `obj.location.*` — location preceded by `.` or `?.`
+          const prevIdx34 = prevSignificant(tokens, i - 1);
+          const prev34 = tokens[prevIdx34];
+          if (prev34 && ((prev34.kind === "punct" && prev34.text === ".") || prev34.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named location
+          if (prev34 && prev34.kind === "keyword" && prev34.text === "fn") continue;
+          if (prev34 && prev34.kind === "ident" && prev34.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx34)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx34 = nextSignificant(tokens, i + 1);
+          const next34 = tokens[nextIdx34];
+          const isDot34 = next34 && next34.kind === "punct" && next34.text === ".";
+          const isOptChain34 = next34 && next34.kind === "questionDot";
+          if (!isDot34 && !isOptChain34) continue;
+
+          // Member must be in the high-concern location set
+          const memberIdx34 = nextSignificant(tokens, nextIdx34 + 1);
+          const memberTok34 = tokens[memberIdx34];
+          if (!memberTok34 || memberTok34.kind !== "ident") continue;
+          if (!SYN034_LOCATION_MEMBERS.has(memberTok34.text)) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep34 = isOptChain34 ? "?." : ".";
+          const memberName34 = memberTok34.text;
+          const isNavCall34 = LOCATION_NAV_METHODS.has(memberName34);
+          const loc34 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN034",
+            severity: "warning",
+            file: null,
+            line: loc34.line,
+            column: loc34.column,
+            start: tok.start,
+            end: memberTok34.end,
+            message:
+              `fn '${decl.name}' accesses location${sep34}${memberName34} — ` +
+              (isNavCall34
+                ? `location.${memberName34}() is a navigation side effect that redirects or reloads the page; `
+                : `location.${memberName34} reads the ambient URL, which differs between deployment environments; `) +
+              `no uses {} / reads {} / writes {} declaration covers the location global; ` +
+              `pass the required value as a parameter so callers can see the dependency and tests can inject a mock, ` +
+              `or wrap in unsafe "accesses location.${memberName34} for <reason>" { location${sep34}${memberName34} }`,
+            rule: syn034.rule,
+            idiom: syn034.idiom,
+            rewrite: syn034.rewrite,
           });
           break;
         }

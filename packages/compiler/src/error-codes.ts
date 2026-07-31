@@ -1741,6 +1741,45 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return { Authorization: token, 'X-Env': env }\n" +
       "}",
   },
+  SYN034: {
+    code: "SYN034",
+    title: "location.* access reads ambient URL or triggers navigation — both invisible to callers",
+    rule:
+      "the global `location` object exposes two classes of hidden effect. " +
+      "Property reads (`location.href`, `.pathname`, `.search`, `.hash`, `.hostname`, " +
+      "`.host`, `.port`, `.protocol`, `.origin`) create an ambient URL dependency: the " +
+      "same fn returns different values depending on which deployment origin it runs in, " +
+      "making it impossible to unit-test without browser environment mocking. " +
+      "Navigation methods (`location.assign(url)`, `.replace(url)`, `.reload()`) are " +
+      "navigation side effects: they redirect or reload the page — a visible, persistent " +
+      "effect that outlives the fn call and cannot be declared in any fn header. " +
+      "Neither category is captured by CAP001 (which tracks stdlib namespaces) or any " +
+      "`uses {} / reads {} / writes {}` declaration.",
+    idiom:
+      "for URL reads: accept the required value as a parameter so callers can control it " +
+      "and tests can inject a fixed string; " +
+      "for navigation calls: accept a `navigate: (url: string) => void` callback as a " +
+      "parameter so callers decide what happens — or wrap in " +
+      "`unsafe \"reads location.pathname for routing\" { location.pathname }` if direct access is required",
+    rewrite:
+      "// before — location read hides a URL dependency\n" +
+      "fn getSection() -> string {\n" +
+      "  return location.pathname.split('/')[1]  // SYN034\n" +
+      "}\n\n" +
+      "// after — caller passes the pathname; fn is testable without a browser\n" +
+      "fn getSection(pathname: string) -> string {\n" +
+      "  return pathname.split('/')[1]\n" +
+      "}",
+    example:
+      "// SYN034: location.pathname hides a URL dependency\n" +
+      "fn isAdminRoute() -> boolean {\n" +
+      "  return location.pathname.startsWith('/admin')  // SYN034\n" +
+      "}\n\n" +
+      "// fix: accept pathname as a parameter\n" +
+      "fn isAdminRoute(pathname: string) -> boolean {\n" +
+      "  return pathname.startsWith('/admin')\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
