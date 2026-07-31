@@ -399,6 +399,19 @@
  *           fn/function declarations named `call`/`apply`/`bind`.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN038  A property write to `globalThis`, `window`, or `self` was detected in a fn body
+ *           (?bs 0.7+). Writing to the global object (`globalThis.foo = value`) mutates shared
+ *           ambient state that any code in the runtime can observe — an undeclared side effect
+ *           invisible to botscript's capability model: no `uses {}`, `reads {}`, or `writes {}`
+ *           declaration covers global scope mutations. Callers cannot see the dependency and
+ *           tests cannot isolate it without mocking the global namespace.
+ *           Detection: `globalThis`/`window`/`self` ident not preceded by `.`/`?.`, followed by
+ *           `.`/`?.` + member name + assignment operator (`=`, `+=`, `-=`, `*=`, etc.).
+ *           Excluded: member calls on local bindings (`obj.globalThis.foo = v`), fn declarations
+ *           named `globalThis`/`window`/`self`, reads (`globalThis.foo` without an assignment),
+ *           and delete expressions.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -466,6 +479,13 @@ const HISTORY_NAV_METHODS = new Set(["pushState", "replaceState", "back", "forwa
 // WebAssembly.* members that execute or compile opaque binary code — covered by SYN036
 const SYN036_WASM_MEMBERS = new Set([
   "instantiate", "instantiateStreaming", "compile", "compileStreaming", "Instance", "Module",
+]);
+// SYN038: global object receivers whose property writes are undeclared side effects
+const SYN038_GLOBAL_RECEIVERS = new Set(["globalThis", "window", "self"]);
+// SYN038: compound assignment operators that constitute a write
+const SYN038_COMPOUND_ASSIGNS = new Set([
+  "+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=",
+  "<<=", ">>=", ">>>=", "&&=", "||=", "??=",
 ]);
 // SYN-guarded globals whose direct-call-bypass via .call()/.apply()/.bind() is caught by SYN037.
 // Includes every single-token global that SYN007–SYN036 protect (member-access globals like
@@ -537,6 +557,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn035 = getErrorCode("SYN035")!;
   const syn036 = getErrorCode("SYN036")!;
   const syn037 = getErrorCode("SYN037")!;
+  const syn038 = getErrorCode("SYN038")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3292,6 +3313,70 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn037.rule,
             idiom: syn037.idiom,
             rewrite: syn037.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN038: globalThis / window / self property write ────────────────
+        case "globalThis":
+        case "window":
+        case "self": {
+          // Exclude: `obj.globalThis.foo = v` — receiver preceded by `.` or `?.`
+          const prevIdx38 = prevSignificant(tokens, i - 1);
+          const prev38 = tokens[prevIdx38];
+          if (prev38 && ((prev38.kind === "punct" && prev38.text === ".") || prev38.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named globalThis/window/self
+          if (prev38 && prev38.kind === "keyword" && prev38.text === "fn") continue;
+          if (prev38 && prev38.kind === "ident" && prev38.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdx38)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdx38 = nextSignificant(tokens, i + 1);
+          const next38 = tokens[nextIdx38];
+          const isDot38 = next38 && next38.kind === "punct" && next38.text === ".";
+          const isOptChain38 = next38 && next38.kind === "questionDot";
+          if (!isDot38 && !isOptChain38) continue;
+
+          // Must have a member name after the dot
+          const memberIdx38 = nextSignificant(tokens, nextIdx38 + 1);
+          const memberTok38 = tokens[memberIdx38];
+          if (!memberTok38 || memberTok38.kind !== "ident") continue;
+
+          // Must be followed by an assignment operator: `=` or compound (`+=`, `-=`, etc.)
+          const afterMemberIdx38 = nextSignificant(tokens, memberIdx38 + 1);
+          const afterMember38 = tokens[afterMemberIdx38];
+          const isEq38 = afterMember38 && afterMember38.kind === "eq";
+          const isCompound38 = afterMember38 && afterMember38.kind === "operator" &&
+            SYN038_COMPOUND_ASSIGNS.has(afterMember38.text);
+          if (!isEq38 && !isCompound38) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep38 = isOptChain38 ? "?." : ".";
+          const memberName38 = memberTok38.text;
+          const assignOp38 = afterMember38!.text;
+          const receiver38 = tok.text;
+          const loc38 = locationOf(src, tok.start);
+          warnings.push({
+            code: "SYN038",
+            severity: "warning",
+            file: null,
+            line: loc38.line,
+            column: loc38.column,
+            start: tok.start,
+            end: afterMember38!.end,
+            message:
+              `fn '${decl.name}' writes to ${receiver38}${sep38}${memberName38} ${assignOp38} — ` +
+              `writing to the global object mutates ambient shared state invisible to the capability model; ` +
+              `no uses {} / reads {} / writes {} declaration covers global scope writes; ` +
+              `callers cannot see the dependency and tests cannot isolate it without mocking the global; ` +
+              `pass state through explicit parameters and return values instead, ` +
+              `or wrap in unsafe "writes ${receiver38}.${memberName38} for <reason>" { ${receiver38}${sep38}${memberName38} ${assignOp38} ... }`,
+            rule: syn038.rule,
+            idiom: syn038.idiom,
+            rewrite: syn038.rewrite,
           });
           break;
         }
