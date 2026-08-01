@@ -73,6 +73,16 @@
  *            succeeds — the failure path is absent at both the type level (INT008)
  *            and the exception channel (INT009/INT010).
  *
+ *              INT011  intent contains "pure" but the function is declared `async`.
+ *                      An async fn always returns a Promise — two calls with identical
+ *                      arguments return distinct, non-equal objects — and suspends by
+ *                      yielding to the event loop, which is a timing side effect. Both
+ *                      properties contradict the pure claim of determinism and
+ *                      referential transparency. Make the body synchronous, or remove
+ *                      the pure claim. Alternatively, keep the return type sync and
+ *                      wrap the result in `Promise.resolve(...)` from a non-async body.
+ *                      (header-level structural check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -105,6 +115,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const allowGenerics = atLeast(version.resolved, "0.4");
   const checksReadsWrites = atLeast(version.resolved, "0.8");
   const checksThrows = atLeast(version.resolved, "0.9");
+  const checksAsync = atLeast(version.resolved, "0.9");
   const trackAliases = atLeast(version.resolved, "0.8");
   const program = parseProgram(src, { allowGenerics, includeNestedFns: true });
   const tokens = program.tokens;
@@ -139,7 +150,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, aliases, diagnostics, trackAliases);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
@@ -169,6 +180,7 @@ function checkPureClaim(
   allDecls: FnDecl[],
   checksReadsWrites: boolean,
   checksThrows: boolean,
+  checksAsync: boolean,
   aliases: Map<string, string>,
   diagnostics: Diagnostic[],
   acceptOptionalChain = false,
@@ -255,6 +267,46 @@ function checkPureClaim(
         `fn ${decl.name}(...) intent: "pure" -> ...\n\n` +
         `// option B — declare the capability and remove the pure claim:\n` +
         `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
+    });
+  }
+
+  // INT011: header-level structural check (0.9+) — intent claims "pure" but the
+  // function is declared async. An async fn always returns a Promise (two calls
+  // with identical arguments return distinct, non-equal objects) and suspends by
+  // yielding to the event loop, producing timing side effects. Both contradict
+  // the pure guarantee of determinism and referential transparency.
+  if (checksAsync && decl.isAsync) {
+    const entry = getErrorCode("INT011")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    diagnostics.push({
+      code: "INT011",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'pure' but is declared async — ` +
+        `an async function yields to the event loop (a timing side effect) and returns a ` +
+        `distinct Promise on every call, contradicting the pure claim of determinism and ` +
+        `referential transparency; make the body synchronous or remove the pure intent`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — make the function synchronous (preferred):\n` +
+        `fn ${decl.name}(...) intent: "pure" -> T {\n` +
+        `  return compute(...)  // sync body, no await\n` +
+        `}\n\n` +
+        `// option B — remove the pure claim and keep async:\n` +
+        `async fn ${decl.name}(...) -> Promise<T> {\n` +
+        `  return await compute(...)\n` +
+        `}\n\n` +
+        `// option C — sync body returning a resolved Promise (if callers need Promise<T>):\n` +
+        `fn ${decl.name}(...) intent: "pure" -> Promise<T> {\n` +
+        `  return Promise.resolve(compute(...))  // sync, no timing side effect\n` +
+        `}`,
     });
   }
 }

@@ -1158,3 +1158,118 @@ describe("INT010 — infallible intent body calls a throwing same-file callee (?
     }
   });
 });
+
+describe("INT011 — intent 'pure' + async fn (?bs 0.9+)", () => {
+  it("fires INT011 when async fn declares intent: \"pure\"", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn slugify(s: string) intent: "pure" -> Promise<string> {\n' +
+      "  return s.toLowerCase()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(BotscriptError);
+    try {
+      t(src);
+    } catch (e) {
+      const err = e as BotscriptError;
+      const d = err.diagnostics.find((d) => d.code === "INT011")!;
+      expect(d).toBeDefined();
+      expect(d.code).toBe("INT011");
+      expect(d.message).toContain("slugify");
+      expect(d.message).toContain("pure");
+      expect(d.message).toContain("async");
+      expect(d.rule).toMatch(/Promise/);
+      expect(d.rewrite).toBeTruthy();
+    }
+  });
+
+  it("fires INT011 when intent contains 'pure' among other words", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn compute(x: number) intent: "pure and total" -> Promise<number> {\n' +
+      "  return x * 2\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT011/);
+  });
+
+  it("fires INT011 for 'Pure' (case-insensitive match)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn toUpper(s: string) intent: "Pure" -> Promise<string> {\n' +
+      "  return s.toUpperCase()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT011/);
+  });
+
+  it("does NOT fire INT011 for a sync fn with intent: \"pure\"", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn slugify(s: string) intent: "pure" -> string {\n' +
+      "  return s.toLowerCase()\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT011 for async fn without pure intent", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn fetchUser(id: string) uses { net } intent: "idempotent" -> Promise<string> {\n' +
+      '  return id\n' +
+      "}\n";
+    // INT003 would fire (idempotent + random/time), but NOT INT011
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = (e as BotscriptError).diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT011");
+    }
+  });
+
+  it("does NOT fire INT011 on pre-0.9 pins", () => {
+    const src =
+      "?bs 0.7\n" +
+      'async fn slugify(s: string) intent: "pure" -> Promise<string> {\n' +
+      "  return s.toLowerCase()\n" +
+      "}\n";
+    // INT011 is gated at 0.9; on 0.7 it must not fire
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = (e as BotscriptError).diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT011");
+    }
+  });
+
+  it("does NOT fire INT011 for 'impure' (word-boundary guard)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn mutate(s: string) intent: "impure" -> Promise<string> {\n' +
+      "  return s\n" +
+      "}\n";
+    // "impure" does not contain a whole-word "pure" match
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = (e as BotscriptError).diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT011");
+    }
+  });
+
+  it("rewrite hint includes all three options", () => {
+    const src =
+      "?bs 0.9\n" +
+      'async fn add(a: number, b: number) intent: "pure" -> Promise<number> {\n' +
+      "  return a + b\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const diag = caught!.diagnostics.find((d) => d.code === "INT011")!;
+    expect(diag.rewrite).toContain("option A");
+    expect(diag.rewrite).toContain("option B");
+    expect(diag.rewrite).toContain("option C");
+    expect(diag.rewrite).toContain("Promise.resolve");
+  });
+});

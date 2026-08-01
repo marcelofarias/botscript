@@ -679,6 +679,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  INT011: {
+    code: "INT011",
+    title: "intent declares 'pure' but function is async",
+    rule:
+      "a function declaring intent: \"pure\" must not be async — an async function always " +
+      "returns a Promise (two calls with identical arguments return distinct, non-equal objects) " +
+      "and suspends execution by yielding to the event loop, producing timing side effects; " +
+      "both properties contradict the pure guarantee of determinism and referential transparency",
+    idiom:
+      "remove the `async` keyword and any `await` expressions from the body, or downgrade " +
+      "the intent claim; if the function wraps a synchronous computation in a Promise purely " +
+      "as a calling convention, use `Promise.resolve(value)` from a sync body instead of `async`",
+    rewrite:
+      "// option A — make the function synchronous (preferred for pure fns):\n" +
+      "fn name(args) intent: \"pure\" -> T {\n" +
+      "  return compute(args)  // sync, no await\n" +
+      "}\n\n" +
+      "// option B — remove the pure claim and keep async:\n" +
+      "async fn name(args) -> Promise<T> {\n" +
+      "  return await compute(args)\n" +
+      "}\n\n" +
+      "// option C — if you must return a Promise from a sync computation:\n" +
+      "fn name(args) intent: \"pure\" -> Promise<T> {\n" +
+      "  return Promise.resolve(compute(args))  // sync body, no timing side effects\n" +
+      "}",
+    example:
+      "// before — fn claims pure but is declared async; INT011 fires\n" +
+      "?bs 0.9\n" +
+      "async fn slugify(s: string) intent: \"pure\" -> Promise<string> {\n" +
+      "  return s.toLowerCase().replace(/ /g, \"-\")\n" +
+      "}\n\n" +
+      "// after option A — synchronous, genuinely pure\n" +
+      "?bs 0.9\n" +
+      "fn slugify(s: string) intent: \"pure\" -> string {\n" +
+      "  return s.toLowerCase().replace(/ /g, \"-\")\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",
