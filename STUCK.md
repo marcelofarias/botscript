@@ -3,6 +3,17 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-01  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34 SP
+
+**Shipped INT013 directly to main** (1 commit, 2017 → 2027 tests):
+- INT013: `intent: "idempotent"` body calls same-file fn that declares `uses { random }` or `uses { time }` (callee-transitivity gap, parallel to INT012/pure)
+- All 4 intent claims (pure, idempotent, total, infallible) now have callee-transitivity checks
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 46th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-07-31  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34
 
 **Shipped SYN037–SYN041 directly to main** (5 commits, 1874 → 1961 tests):
