@@ -915,3 +915,246 @@ describe("INT007 — total intent body calls a throwing same-file callee (?bs 0.
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT008 — infallible intent return type is Result<> or Option<> (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT008 — infallible intent return type exposes failure path (?bs 0.9)", () => {
+  it("fires INT008 when infallible fn returns Result<T, E>", () => {
+    const src = `?bs 0.9\nfn defaultName(raw: string) intent: "infallible" -> Result<string, ParseError> = ok(raw)\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT008");
+      expect(e.diagnostics[0]!.message).toContain("infallible");
+      expect(e.diagnostics[0]!.message).toContain("Result<");
+    }
+  });
+
+  it("fires INT008 when infallible fn returns Option<T>", () => {
+    const src = `?bs 0.9\nfn maybeValue(x: number) intent: "infallible" -> Option<number> = some(x)\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT008");
+      expect(e.diagnostics[0]!.message).toContain("Option<");
+    }
+  });
+
+  it("does NOT fire INT008 when infallible fn returns a plain type", () => {
+    const src = `?bs 0.9\nfn greet(name: string) intent: "infallible" -> string = name\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT008 on ?bs 0.8 (check gated on 0.9)", () => {
+    const src = `?bs 0.8\nfn defaultName(raw: string) intent: "infallible" -> Result<string, ParseError> = ok(raw)\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT008 independently of INT009 when both violations present", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn parse(s: string) intent: "infallible" throws { ParseError } -> Result<number, ParseError> = ok(0)\n';
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT008");
+      expect(codes).toContain("INT009");
+    }
+  });
+
+  it("rewrite hint includes the plain-type option", () => {
+    const src = `?bs 0.9\nfn defaultName(raw: string) intent: "infallible" -> Result<string, ParseError> = ok(raw)\n`;
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const diag = caught!.diagnostics.find((d) => d.code === "INT008")!;
+    expect(diag.rewrite).toContain("infallible");
+    expect(diag.rewrite).toContain("total");
+  });
+
+  it("does NOT fire INT008 for 'non-infallible' — word-boundary guard", () => {
+    const src = `?bs 0.9\nfn defaultName(raw: string) intent: "non-infallible" -> Result<string, ParseError> = ok(raw)\n`;
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT008");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INT009 — infallible intent declares throws {} (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT009 — infallible intent declares throws {} (?bs 0.9)", () => {
+  it("fires INT009 when infallible fn declares throws {}", () => {
+    const src = `?bs 0.9\nfn parse(s: string) intent: "infallible" throws { ParseError } -> number = 0\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT009");
+      expect(e.diagnostics.find((d) => d.code === "INT009")!.message).toContain("ParseError");
+      expect(e.diagnostics.find((d) => d.code === "INT009")!.message).toContain("infallible");
+    }
+  });
+
+  it("does NOT fire INT009 when infallible fn has no throws declaration", () => {
+    const src = `?bs 0.9\nfn greet(name: string) intent: "infallible" -> string = name\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT009 on ?bs 0.8 (check gated on 0.9)", () => {
+    const src = `?bs 0.8\nfn parse(s: string) intent: "infallible" throws { ParseError } -> number = 0\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("rewrite hint includes the total+Result option and the remove-throws option", () => {
+    const src = `?bs 0.9\nfn parse(s: string) intent: "infallible" throws { ParseError } -> number = 0\n`;
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const diag = caught!.diagnostics.find((d) => d.code === "INT009")!;
+    expect(diag.rewrite).toContain("total");
+    expect(diag.rewrite).toContain("ParseError");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INT010 — infallible intent body calls same-file fn that throws (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT010 — infallible intent body calls a throwing same-file callee (?bs 0.9)", () => {
+  it("fires INT010 when infallible fn body calls a same-file fn that declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "infallible" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT010");
+      expect(e.diagnostics[0]!.message).toContain("validate");
+      expect(e.diagnostics[0]!.message).toContain("ValidationError");
+      expect(e.diagnostics[0]!.message).toContain("infallible");
+    }
+  });
+
+  it("does NOT fire INT010 when infallible fn calls a non-throwing callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn clean(s: string) -> string = s\n" +
+      'fn process(s: string) intent: "infallible" -> string {\n' +
+      "  return clean(s)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT009 (not INT010) when infallible fn also declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "infallible" throws { ValidationError } -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT009");
+      expect(codes).not.toContain("INT010");
+    }
+  });
+
+  it("does NOT fire INT010 on ?bs 0.8 (check gated on 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "infallible" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT010 when infallible fn has no body (expression-only)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "infallible" -> string = s\n';
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT010");
+    }
+  });
+
+  it("rewrite hint names the callee and the throws type", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) throws { FetchError } -> string = id\n" +
+      'fn run(id: string) intent: "infallible" -> string {\n' +
+      "  return fetchUser(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const diag = caught!.diagnostics.find((d) => d.code === "INT010")!;
+    expect(diag.rewrite).toContain("fetchUser");
+    expect(diag.rewrite).toContain("FetchError");
+  });
+
+  it("fires INT008 and INT010 together when infallible fn has Result return AND calls throwing callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "infallible" -> Result<string, ValidationError> {\n' +
+      "  return ok(validate(s))\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT008");
+      expect(codes).toContain("INT010");
+    }
+  });
+
+  it("does NOT fire INT010 for 'non-infallible' — word-boundary guard", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "non-infallible" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT010");
+    }
+  });
+});

@@ -561,6 +561,124 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  INT008: {
+    code: "INT008",
+    title: "intent declares 'infallible' but return type exposes a failure path",
+    rule:
+      "a function declaring intent: \"infallible\" must not return Result<T, E> or Option<T> — " +
+      "those types carry a failure arm (err / none) that callers must handle, contradicting the " +
+      "infallible guarantee; an infallible fn always produces a plain success value",
+    idiom:
+      "use a plain return type (e.g. string, number, T) instead of Result<> or Option<>; " +
+      "if the fn can genuinely fail, use intent: \"total\" with a Result<T, E> return instead — " +
+      "total handles all inputs and returns success-or-failure in the type, which is weaker than infallible",
+    rewrite:
+      "// option A — unwrap to a plain type (fn truly never fails):\n" +
+      "fn name(args) intent: \"infallible\" -> T { ... }\n\n" +
+      "// option B — downgrade to total (fn may fail but always returns):\n" +
+      "fn name(args) intent: \"total\" -> Result<T, E> { ... }",
+    example:
+      "// before — fn claims infallible but return type is Result<string, ParseError>; INT008 fires\n" +
+      "?bs 0.9\n" +
+      "fn defaultName(raw: string) intent: \"infallible\" -> Result<string, ParseError> {\n" +
+      "  return ok(raw.trim() || \"unnamed\")  // INT008\n" +
+      "}\n\n" +
+      "// after option A — plain return type matches the infallible claim\n" +
+      "?bs 0.9\n" +
+      "fn defaultName(raw: string) intent: \"infallible\" -> string {\n" +
+      "  return raw.trim() || \"unnamed\"\n" +
+      "}\n\n" +
+      "// after option B — downgrade to total if failure path is real\n" +
+      "?bs 0.9\n" +
+      "fn defaultName(raw: string) intent: \"total\" -> Result<string, ParseError> {\n" +
+      "  return ok(raw.trim() || \"unnamed\")\n" +
+      "}",
+  },
+  INT009: {
+    code: "INT009",
+    title: "intent declares 'infallible' but function declares throws {}",
+    rule:
+      "a function declaring intent: \"infallible\" must not declare `throws { ... }` — " +
+      "throwing an exception is a failure that escapes the fn's boundary, contradicting the " +
+      "infallible guarantee; an infallible fn never propagates an exception to its caller",
+    idiom:
+      "remove the throws {} clause and encode failure in the return type using Result<T, E>, " +
+      "then downgrade the intent claim to \"total\" (always returns, may return err); " +
+      "if the fn truly never fails, remove throws {} and keep intent: \"infallible\"",
+    rewrite:
+      "// option A — remove throws {} and return Result (downgrade to total):\n" +
+      "fn name(args) intent: \"total\" -> Result<type, ErrType> { ... }\n\n" +
+      "// option B — remove throws {} if the fn truly never propagates exceptions:\n" +
+      "fn name(args) intent: \"infallible\" -> type { ... }",
+    example:
+      "// before — fn claims infallible but declares throws { ParseError }; INT009 fires\n" +
+      "?bs 0.9\n" +
+      "fn parse(s: string) intent: \"infallible\" throws { ParseError } -> number {\n" +
+      "  return Number(s)  // INT009\n" +
+      "}\n\n" +
+      "// after option A — downgrade to total + Result\n" +
+      "?bs 0.9\n" +
+      "fn parse(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+      "  const n = Number(s)\n" +
+      "  return isNaN(n) ? err(new ParseError(s)) : ok(n)\n" +
+      "}\n\n" +
+      "// after option B — remove throws {} if the fn won't throw\n" +
+      "?bs 0.9\n" +
+      "fn parse(s: string) intent: \"infallible\" -> number {\n" +
+      "  return Number(s) || 0\n" +
+      "}",
+  },
+  INT010: {
+    code: "INT010",
+    title: "intent declares 'infallible' but function body calls a same-file callee that throws",
+    rule:
+      "a function declaring intent: \"infallible\" must not call same-file functions that declare " +
+      "`throws { ... }` without catching those exceptions — a throwing callee can propagate an " +
+      "exception through the infallible fn's body, reopening a failure channel that the infallible " +
+      "claim is supposed to close",
+    idiom:
+      "wrap the throwing call in a try/catch and either suppress the exception (returning a default " +
+      "value) or encode it in a Result and downgrade the intent claim to \"total\"; " +
+      "alternatively, replace the call with a non-throwing variant",
+    rewrite:
+      "// option A — suppress the exception with a safe default (keeps infallible):\n" +
+      "fn name(args) intent: \"infallible\" -> T {\n" +
+      "  try {\n" +
+      "    return callee()\n" +
+      "  } catch {\n" +
+      "    return defaultValue\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — encode in Result and downgrade to total:\n" +
+      "fn name(args) intent: \"total\" -> Result<T, CalledError> {\n" +
+      "  try {\n" +
+      "    return ok(callee())\n" +
+      "  } catch (e) {\n" +
+      "    return err(new CalledError(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option C — use a non-throwing variant of the callee:\n" +
+      "fn name(args) intent: \"infallible\" -> T {\n" +
+      "  return calleeSafe()  // returns T instead of throwing\n" +
+      "}",
+    example:
+      "// before — fn claims infallible but calls validate() which throws { ValidationError }; INT010 fires\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      "fn process(s: string) intent: \"infallible\" -> string {\n" +
+      "  return validate(s)  // INT010 — validate may throw\n" +
+      "}\n\n" +
+      "// after option A — catch and suppress, keep infallible guarantee\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      "fn process(s: string) intent: \"infallible\" -> string {\n" +
+      "  try {\n" +
+      "    return validate(s)\n" +
+      "  } catch {\n" +
+      "    return \"\"\n" +
+      "  }\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

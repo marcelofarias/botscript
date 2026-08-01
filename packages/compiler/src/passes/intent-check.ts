@@ -50,6 +50,29 @@
  *                      the total claim.
  *                      (body-level verification — fires when INT006 does not, 0.9+)
  *
+ *              INT008  intent contains "infallible" but the function's return type
+ *                      contains Result<> or Option<> — those types expose a failure arm
+ *                      (err / none) that callers must handle, contradicting the infallible
+ *                      guarantee. Use a plain type, or downgrade to intent: "total".
+ *                      (header-level return-type consistency check, 0.9+)
+ *
+ *              INT009  intent contains "infallible" but the function declares
+ *                      `throws { ... }`. Throwing propagates a failure to callers;
+ *                      an infallible fn may never do that. Encode failure in Result
+ *                      and downgrade to intent: "total", or remove throws {} entirely.
+ *                      (header-level consistency check, 0.9+)
+ *
+ *              INT010  intent contains "infallible" but the function body directly
+ *                      calls a same-file function that declares `throws { ... }` without
+ *                      catching. Closes the "body lies" gap for the infallible claim.
+ *                      Fires only when INT009 does not (no throws {} header on this fn).
+ *                      (body-level verification — fires when INT009 does not, 0.9+)
+ *
+ *            The infallible/total hierarchy: infallible ⊂ total. A total fn always
+ *            returns but may return err. An infallible fn always returns and always
+ *            succeeds — the failure path is absent at both the type level (INT008)
+ *            and the exception channel (INT009/INT010).
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -123,6 +146,9 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
       checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
+    }
+    if (checksThrows && containsInfallibleClaim(decl.intent)) {
+      checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
     }
   }
 
@@ -466,6 +492,15 @@ function containsTotalClaim(intent: string): boolean {
 }
 
 /**
+ * True when the intent string contains the word "infallible" as a whole token.
+ * Matches: "infallible", "pure infallible", "Infallible". Does NOT match
+ * substrings: "non-infallible" is excluded by the hyphen boundary.
+ */
+function containsInfallibleClaim(intent: string): boolean {
+  return /(?<![a-zA-Z0-9_-])infallible(?![a-zA-Z0-9_-])/i.test(intent);
+}
+
+/**
  * "total" claim: INT006 (header — throws {} declared) and INT007 (body — calls
  * a same-file fn that throws without catching).
  *
@@ -563,6 +598,143 @@ function checkTotalClaim(
         `// option B — remove the total intent claim:\n` +
         `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
         `  return ${calleeName}(...)\n` +
+        `}`,
+    });
+  }
+}
+
+/**
+ * "infallible" claim: INT008 (return type exposes failure path), INT009
+ * (throws {} declared in header), and INT010 (body calls throwing callee).
+ *
+ * INT008: An infallible fn cannot return Result<T, E> or Option<T> — those
+ * types carry a failure arm (err / none) that callers must handle.
+ *
+ * INT009: An infallible fn cannot declare throws {} — throwing propagates
+ * a failure to callers. Parallel to INT006 for total.
+ *
+ * INT010: Even without a throws {} header, an infallible fn can re-open the
+ * exception channel by calling a same-file callee that does declare throws {}
+ * without catching. Parallel to INT007 for total.
+ * Only fires when INT009 does not (no throws {} header on this fn).
+ *
+ * INT008 fires independently of INT009/INT010 (different violation axis).
+ * INT009 and INT010 are mutually exclusive (INT009 takes priority).
+ */
+function checkInfallibleClaim(
+  decl: FnDecl,
+  src: string,
+  tokens: Token[],
+  innerByDecl: Map<FnDecl, FnDecl[]>,
+  fnNames: Set<string>,
+  fnNameToThrows: Map<string, string[]>,
+  diagnostics: Diagnostic[],
+): void {
+  const intentStart = decl.intentStart!;
+  const loc = locationOf(src, intentStart);
+  const intentSpanEnd = intentStart + decl.intent!.length + 2;
+
+  // INT008: header-level — return type contains Result<> or Option<>.
+  const rt = decl.returnType;
+  if (rt.includes("Result<") || rt.includes("Option<")) {
+    const entry8 = getErrorCode("INT008")!;
+    const failureType = rt.includes("Result<") ? "Result<>" : "Option<>";
+    diagnostics.push({
+      code: "INT008",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentSpanEnd,
+      message:
+        `fn '${decl.name}' intent claims 'infallible' but return type is '${rt.trim()}' — ` +
+        `${failureType} exposes a failure arm that callers must handle, contradicting the infallible guarantee; ` +
+        `use a plain return type, or downgrade to intent: "total" which allows failure in the return type`,
+      rule: entry8.rule,
+      idiom: entry8.idiom,
+      rewrite:
+        `// option A — plain return type (fn truly never fails):\n` +
+        `fn ${decl.name}(...) intent: "infallible" -> T { ... }\n\n` +
+        `// option B — downgrade to total (fn may fail but always returns):\n` +
+        `fn ${decl.name}(...) intent: "total" -> ${rt.trim()} { ... }`,
+    });
+  }
+
+  // INT009: header-level — throws {} declared on this fn.
+  if ((decl.throws?.length ?? 0) > 0) {
+    const entry9 = getErrorCode("INT009")!;
+    const throwsStr = decl.throws!.join(", ");
+    diagnostics.push({
+      code: "INT009",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentSpanEnd,
+      message:
+        `fn '${decl.name}' intent claims 'infallible' but declares throws { ${throwsStr} } — ` +
+        `throwing propagates a failure outside the fn's boundary, contradicting the infallible guarantee; ` +
+        `encode failure in Result<T, E> and downgrade to intent: "total", or remove throws {} if the fn won't throw`,
+      rule: entry9.rule,
+      idiom: entry9.idiom,
+      rewrite:
+        `// option A — remove throws {} and return Result (downgrade to total):\n` +
+        `fn ${decl.name}(...) intent: "total" -> Result<type, ${throwsStr}> { ... }\n\n` +
+        `// option B — remove throws {} if the fn truly won't propagate exceptions:\n` +
+        `fn ${decl.name}(...) intent: "infallible" -> type { ... }`,
+    });
+    return; // INT009 and INT010 are mutually exclusive
+  }
+
+  // INT010: body-level — calls a same-file fn that declares throws {}.
+  // Skip fns with no body (abstract / declaration-only).
+  if (decl.bodyTokenStart === undefined) return;
+  if (fnNameToThrows.size === 0) return;
+
+  const inner = innerByDecl.get(decl) ?? [];
+  const callees = collectCallees(tokens, decl, inner, fnNames);
+  const entry10 = getErrorCode("INT010")!;
+  const fired = new Set<string>();
+
+  for (const calleeName of callees) {
+    if (fired.has(calleeName)) continue;
+    const calleeThrows = fnNameToThrows.get(calleeName);
+    if (!calleeThrows || calleeThrows.length === 0) continue;
+    fired.add(calleeName);
+
+    const throwsStr = calleeThrows.join(", ");
+    diagnostics.push({
+      code: "INT010",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentSpanEnd,
+      message:
+        `fn '${decl.name}' intent claims 'infallible' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+        `a throwing callee can propagate an exception through the infallible fn, reopening the failure channel; ` +
+        `catch '${calleeName}'s exception (suppress or encode in Result) or use a non-throwing variant`,
+      rule: entry10.rule,
+      idiom: entry10.idiom,
+      rewrite:
+        `// option A — catch and suppress, keep infallible:\n` +
+        `fn ${decl.name}(...) intent: "infallible" -> T {\n` +
+        `  try {\n` +
+        `    return ${calleeName}(...)\n` +
+        `  } catch {\n` +
+        `    return defaultValue\n` +
+        `  }\n` +
+        `}\n\n` +
+        `// option B — encode in Result, downgrade to total:\n` +
+        `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+        `  try {\n` +
+        `    return ok(${calleeName}(...))\n` +
+        `  } catch (e) {\n` +
+        `    return err(new ${calleeThrows[0]!}(e))\n` +
+        `  }\n` +
         `}`,
     });
   }
