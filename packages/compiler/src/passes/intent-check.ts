@@ -36,7 +36,13 @@
  *                      it structurally non-idempotent.
  *                      (header-level consistency check, 0.8+)
  *
- *            Planned for future versions: total, monotonic, …
+ *              INT006  intent contains "total" but the function declares
+ *                      `throws { ... }`. A total function handles all inputs
+ *                      and never propagates exceptions — declaring throws {}
+ *                      contradicts that guarantee. Use Result<T, E> instead.
+ *                      (header-level consistency check, 0.9+)
+ *
+ *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
  *   ?bs 0.8  INT001 extended: also fires when `reads { ... }` or `writes { ... }`
@@ -88,6 +94,9 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
+    }
+    if (checksThrows && containsTotalClaim(decl.intent)) {
+      checkTotalClaim(decl, src, diagnostics);
     }
   }
 
@@ -419,5 +428,56 @@ function containsPureClaim(intent: string): boolean {
  */
 function containsIdempotentClaim(intent: string): boolean {
   return /(?<![a-zA-Z0-9_-])idempotent(?![a-zA-Z0-9_-])/i.test(intent);
+}
+
+/**
+ * True when the intent string contains the word "total" as a whole token.
+ * Matches: "total", "total function", "pure and total". Does NOT match
+ * substrings: "subtotal", "totally" are excluded by the word boundaries.
+ */
+function containsTotalClaim(intent: string): boolean {
+  return /(?<![a-zA-Z0-9_-])total(?![a-zA-Z0-9_-])/i.test(intent);
+}
+
+/**
+ * "total" claim: INT006 (header conflict — throws {} contradicts total).
+ *
+ * A total function handles all inputs without exception propagation. Declaring
+ * throws {} contradicts that guarantee: callers would need to catch exceptions,
+ * meaning the fn does NOT handle all cases. The fix is to convert to Result<T, E>.
+ */
+function checkTotalClaim(
+  decl: FnDecl,
+  src: string,
+  diagnostics: Diagnostic[],
+): void {
+  if ((decl.throws?.length ?? 0) === 0) return;
+
+  const entry = getErrorCode("INT006")!;
+  const intentStart = decl.intentStart!;
+  const loc = locationOf(src, intentStart);
+  const throwsStr = decl.throws!.join(", ");
+
+  diagnostics.push({
+    code: "INT006",
+    severity: "error",
+    file: null,
+    line: loc.line,
+    column: loc.column,
+    start: intentStart,
+    end: intentStart + decl.intent!.length + 2,
+    message:
+      `fn '${decl.name}' intent claims 'total' but declares throws { ${throwsStr} } — ` +
+      `a total function handles all inputs without exception propagation; ` +
+      `declaring throws {} means callers must catch, contradicting the total guarantee; ` +
+      `use Result<T, ${throwsStr}> to encode failure in the return type instead`,
+    rule: entry.rule,
+    idiom: entry.idiom,
+    rewrite:
+      `// option A — remove throws {} and return Result (preferred for total fns):\n` +
+      `fn ${decl.name}(...) intent: "total" -> Result<type, ${throwsStr}> { ... }\n\n` +
+      `// option B — remove the total intent claim (keep throws {}):\n` +
+      `fn ${decl.name}(...) throws { ${throwsStr} } -> type { ... }`,
+  });
 }
 

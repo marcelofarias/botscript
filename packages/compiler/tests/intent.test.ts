@@ -703,3 +703,94 @@ describe("INT001 — pure intent vs throws {} annotations (?bs 0.9)", () => {
     expect(() => t(src)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT006 — total intent vs throws {} (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT006 — total intent vs throws {} annotations (?bs 0.9)", () => {
+  it("fires INT006 when intent is 'total' and function declares throws {}", () => {
+    const src = `?bs 0.9\nfn parseHex(s: string) intent: "total" throws { ParseError } -> string = s\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT006");
+      expect(e.diagnostics[0]!.message).toContain("ParseError");
+      expect(e.diagnostics[0]!.message).toContain("total");
+    }
+  });
+
+  it("fires INT006 when intent is 'total' and throws {} has multiple types", () => {
+    const src = `?bs 0.9\nfn parse(s: string) intent: "total" throws { ParseError, ValidationError } -> string = s\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT006");
+      const msg = e.diagnostics[0]!.message;
+      expect(msg).toContain("ParseError");
+      expect(msg).toContain("ValidationError");
+    }
+  });
+
+  it("fires INT006 when intent string is 'total' (standalone)", () => {
+    const src = `?bs 0.9\nfn run(s: string) intent: "total" throws { RunError } -> string = s\n`;
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT006");
+    }
+  });
+
+  it("does NOT fire INT006 when intent is 'total' and throws {} is absent", () => {
+    const src = `?bs 0.9\nfn parseHex(s: string) intent: "total" -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT006 when intent is 'total' and throws {} is empty", () => {
+    const src = `?bs 0.9\nfn parseHex(s: string) intent: "total" throws { } -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT006 on ?bs 0.8 (check gated on 0.9)", () => {
+    const src = `?bs 0.8\nfn parseHex(s: string) intent: "total" throws { ParseError } -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT006 on ?bs 0.7 (check gated on 0.9)", () => {
+    const src = `?bs 0.7\nfn parseHex(s: string) intent: "total" throws { ParseError } -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT006 when throws {} present but intent is not 'total'", () => {
+    const src = `?bs 0.9\nfn run(s: string) throws { RunError } -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT006 for 'subtotal' — word-boundary guard", () => {
+    const src = `?bs 0.9\nfn run(s: string) intent: "subtotal" throws { RunError } -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("message includes Result as the fix alternative", () => {
+    const src = `?bs 0.9\nfn parseHex(s: string) intent: "total" throws { ParseError } -> string = s\n`;
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    expect(caught!.diagnostics[0]!.message).toContain("Result");
+  });
+
+  it("rewrite hint names the throws type in the Result option", () => {
+    const src = `?bs 0.9\nfn parseHex(s: string) intent: "total" throws { ParseError } -> string = s\n`;
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    expect(caught!.diagnostics[0]!.rewrite).toContain("ParseError");
+  });
+});

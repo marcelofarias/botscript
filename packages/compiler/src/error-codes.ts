@@ -486,6 +486,33 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn recordAttempt(id: string) writes { auditLog } -> void { }",
   },
+  INT006: {
+    code: "INT006",
+    title: "intent declares 'total' but function declares throws {}",
+    rule:
+      "a function declaring intent: \"total\" must not declare `throws { ... }` — " +
+      "a total function handles all inputs and never propagates exceptions to callers; " +
+      "declaring throws {} contradicts that guarantee",
+    idiom:
+      "use Result<T, E> for fallible total functions — the error is part of the return type, " +
+      "not an exception channel; callers can then exhaustively match without worrying about uncaught throws",
+    rewrite:
+      "// option A — remove throws {} and convert to Result (preferred for total fns):\n" +
+      "fn name(args) intent: \"total\" -> Result<T, ErrorType> { ... }\n\n" +
+      "// option B — remove the total intent claim (keep throws {}):\n" +
+      "fn name(args) throws { ErrorType } -> T { ... }",
+    example:
+      "// before — fn claims total but declares throws { ParseError }; INT006 fires\n" +
+      "?bs 0.9\n" +
+      "fn parseHex(s: string) intent: \"total\" throws { ParseError } -> number {\n" +
+      "  // ...\n" +
+      "}\n\n" +
+      "// after — remove throws, return Result so callers can exhaustively match\n" +
+      "?bs 0.9\n" +
+      "fn parseHex(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+      "  // ...\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",
