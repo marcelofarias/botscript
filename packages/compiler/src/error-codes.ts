@@ -513,6 +513,54 @@ const E: Record<string, ErrorCodeEntry> = {
       "  // ...\n" +
       "}",
   },
+  INT007: {
+    code: "INT007",
+    title: "intent declares 'total' but function body calls a same-file callee that throws",
+    rule:
+      "a function declaring intent: \"total\" must not call same-file functions that declare " +
+      "`throws { ... }` without catching those exceptions — a total function handles all error " +
+      "paths and never propagates exceptions to callers; calling a throwing callee without a " +
+      "try/catch re-opens the exception channel the total claim is supposed to close",
+    idiom:
+      "wrap the call in a try/catch and convert the caught exception to a Result variant, " +
+      "or replace the call with a non-throwing alternative that returns Result<T, E>; " +
+      "the total claim means every error path is encoded in the return type, not the exception channel",
+    rewrite:
+      "// option A — catch the exception and convert to Result (preferred for total fns):\n" +
+      "fn name(args) intent: \"total\" -> Result<T, CalledError> {\n" +
+      "  try {\n" +
+      "    const v = callee()\n" +
+      "    return ok(v)\n" +
+      "  } catch (e) {\n" +
+      "    return err(new CalledError(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — use a non-throwing variant of the callee:\n" +
+      "fn name(args) intent: \"total\" -> Result<T, E> {\n" +
+      "  return calleeResult()  // returns Result<T, CalledError> instead of throwing\n" +
+      "}\n\n" +
+      "// option C — remove the total intent claim:\n" +
+      "fn name(args) throws { CalledError } -> T {\n" +
+      "  return callee()\n" +
+      "}",
+    example:
+      "// before — fn claims total but calls validate() which throws { ValidationError }; INT007 fires\n" +
+      "?bs 0.9\n" +
+      "fn validateAndParse(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+      "  validate(s)  // throws { ValidationError } — INT007\n" +
+      "  return parseNum(s)\n" +
+      "}\n\n" +
+      "// after — catch the exception, encode in Result\n" +
+      "?bs 0.9\n" +
+      "fn validateAndParse(s: string) intent: \"total\" -> Result<number, ParseError | ValidationError> {\n" +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "    return parseNum(s)\n" +
+      "  } catch (e) {\n" +
+      "    return err(new ValidationError(String(e)))\n" +
+      "  }\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

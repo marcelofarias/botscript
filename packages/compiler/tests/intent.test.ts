@@ -794,3 +794,124 @@ describe("INT006 — total intent vs throws {} annotations (?bs 0.9)", () => {
     expect(caught!.diagnostics[0]!.rewrite).toContain("ParseError");
   });
 });
+
+// ---------------------------------------------------------------------------
+// INT007 — total intent body calls same-file fn that throws (?bs 0.9+)
+// ---------------------------------------------------------------------------
+
+describe("INT007 — total intent body calls a throwing same-file callee (?bs 0.9)", () => {
+  it("fires INT007 when total fn body calls a same-file fn that declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      expect(e.diagnostics[0]!.code).toBe("INT007");
+      expect(e.diagnostics[0]!.message).toContain("validate");
+      expect(e.diagnostics[0]!.message).toContain("ValidationError");
+      expect(e.diagnostics[0]!.message).toContain("total");
+    }
+  });
+
+  it("fires INT007 for each distinct throwing callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      "fn parse(s: string) throws { ParseError } -> number = 0\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  validate(s)\n" +
+      "  parse(s)\n" +
+      "  return s\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes.filter((c) => c === "INT007").length).toBe(2);
+    }
+  });
+
+  it("does NOT fire INT007 when total fn body calls a non-throwing same-file fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(s: string) -> string = s\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  return helper(s)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT007 when total fn has no body (expression-only with no callee)", () => {
+    const src = `?bs 0.9\nfn run(s: string) intent: "total" -> string = s\n`;
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT007 on ?bs 0.8 (check gated on 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT006 (not INT007) when total fn also declares throws {}", () => {
+    // INT006 and INT007 are mutually exclusive — INT006 takes priority.
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn run(s: string) intent: "total" throws { ValidationError } -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+      expect.fail("should have thrown");
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).toContain("INT006");
+      expect(codes).not.toContain("INT007");
+    }
+  });
+
+  it("rewrite hint names the callee and the throws type", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) throws { FetchError } -> string = id\n" +
+      'fn run(id: string) intent: "total" -> string {\n' +
+      "  return fetchUser(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const diag = caught!.diagnostics.find((d) => d.code === "INT007")!;
+    expect(diag.rewrite).toContain("fetchUser");
+    expect(diag.rewrite).toContain("FetchError");
+  });
+
+  it("does NOT fire INT007 for 'subtotal' — word-boundary guard", () => {
+    // THR001 may still fire (run under-declares throws), but INT007 must not.
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn run(s: string) intent: "subtotal" -> string {\n' +
+      "  return validate(s)\n" +
+      "}\n";
+    try {
+      t(src);
+    } catch (e) {
+      if (!(e instanceof BotscriptError)) throw e;
+      const codes = e.diagnostics.map((d) => d.code);
+      expect(codes).not.toContain("INT007");
+    }
+  });
+});

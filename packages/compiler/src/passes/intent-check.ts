@@ -42,6 +42,14 @@
  *                      contradicts that guarantee. Use Result<T, E> instead.
  *                      (header-level consistency check, 0.9+)
  *
+ *              INT007  intent contains "total" but the function body directly
+ *                      calls a same-file function that declares `throws { ... }`.
+ *                      When INT006 does not fire (no throws {} header), the body
+ *                      can still open the exception channel by calling a throwing
+ *                      callee without catching. Closes the "body lies" gap for
+ *                      the total claim.
+ *                      (body-level verification — fires when INT006 does not, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -66,6 +74,7 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
+import { computeNesting, collectCallees } from "./_callgraph.js";
 
 export function passIntentCheck(src: string, version: VersionInfo): string {
   if (!atLeast(version.resolved, "0.7")) return src;
@@ -79,6 +88,23 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const allDecls = program.fns.map((s) => s.decl);
   const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
+
+  // INT007 body-level check needs the callgraph. Build once, reuse per fn.
+  const innerByDecl = checksThrows ? computeNesting(allDecls) : new Map<FnDecl, FnDecl[]>();
+  const fnNames = new Set(allDecls.map((d) => d.name));
+  // Map fn name → union of declared throws types across all same-file decls with that name.
+  const fnNameToThrows = new Map<string, string[]>();
+  if (checksThrows) {
+    for (const d of allDecls) {
+      if ((d.throws?.length ?? 0) === 0) continue;
+      const existing = fnNameToThrows.get(d.name);
+      if (existing) {
+        for (const t of d.throws!) if (!existing.includes(t)) existing.push(t);
+      } else {
+        fnNameToThrows.set(d.name, [...d.throws!]);
+      }
+    }
+  }
 
   for (const slot of program.fns) {
     const decl = slot.decl;
@@ -96,7 +122,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
-      checkTotalClaim(decl, src, diagnostics);
+      checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
     }
   }
 
@@ -440,44 +466,105 @@ function containsTotalClaim(intent: string): boolean {
 }
 
 /**
- * "total" claim: INT006 (header conflict — throws {} contradicts total).
+ * "total" claim: INT006 (header — throws {} declared) and INT007 (body — calls
+ * a same-file fn that throws without catching).
  *
- * A total function handles all inputs without exception propagation. Declaring
- * throws {} contradicts that guarantee: callers would need to catch exceptions,
- * meaning the fn does NOT handle all cases. The fix is to convert to Result<T, E>.
+ * INT006: A total function handles all inputs without exception propagation.
+ * Declaring throws {} contradicts that guarantee. Fix: use Result<T, E>.
+ *
+ * INT007: Even without a throws {} header, a total fn can re-open the exception
+ * channel by calling a same-file callee that does declare throws {}. Fix: wrap
+ * the call in try/catch converting to Result, or use a non-throwing variant.
+ * Only fires when INT006 does not (no throws {} header on this fn).
  */
 function checkTotalClaim(
   decl: FnDecl,
   src: string,
+  tokens: Token[],
+  innerByDecl: Map<FnDecl, FnDecl[]>,
+  fnNames: Set<string>,
+  fnNameToThrows: Map<string, string[]>,
   diagnostics: Diagnostic[],
 ): void {
-  if ((decl.throws?.length ?? 0) === 0) return;
+  // INT006: header-level — throws {} declared on this fn.
+  if ((decl.throws?.length ?? 0) > 0) {
+    const entry = getErrorCode("INT006")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const throwsStr = decl.throws!.join(", ");
 
-  const entry = getErrorCode("INT006")!;
+    diagnostics.push({
+      code: "INT006",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'total' but declares throws { ${throwsStr} } — ` +
+        `a total function handles all inputs without exception propagation; ` +
+        `declaring throws {} means callers must catch, contradicting the total guarantee; ` +
+        `use Result<T, ${throwsStr}> to encode failure in the return type instead`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// option A — remove throws {} and return Result (preferred for total fns):\n` +
+        `fn ${decl.name}(...) intent: "total" -> Result<type, ${throwsStr}> { ... }\n\n` +
+        `// option B — remove the total intent claim (keep throws {}):\n` +
+        `fn ${decl.name}(...) throws { ${throwsStr} } -> type { ... }`,
+    });
+    return; // INT006 and INT007 are mutually exclusive
+  }
+
+  // INT007: body-level — calls a same-file fn that declares throws {}.
+  // Skip fns with no body (abstract / declaration-only).
+  if (decl.bodyTokenStart === undefined) return;
+  if (fnNameToThrows.size === 0) return;
+
+  const inner = innerByDecl.get(decl) ?? [];
+  const callees = collectCallees(tokens, decl, inner, fnNames);
+  const entry7 = getErrorCode("INT007")!;
   const intentStart = decl.intentStart!;
   const loc = locationOf(src, intentStart);
-  const throwsStr = decl.throws!.join(", ");
+  const fired = new Set<string>();
 
-  diagnostics.push({
-    code: "INT006",
-    severity: "error",
-    file: null,
-    line: loc.line,
-    column: loc.column,
-    start: intentStart,
-    end: intentStart + decl.intent!.length + 2,
-    message:
-      `fn '${decl.name}' intent claims 'total' but declares throws { ${throwsStr} } — ` +
-      `a total function handles all inputs without exception propagation; ` +
-      `declaring throws {} means callers must catch, contradicting the total guarantee; ` +
-      `use Result<T, ${throwsStr}> to encode failure in the return type instead`,
-    rule: entry.rule,
-    idiom: entry.idiom,
-    rewrite:
-      `// option A — remove throws {} and return Result (preferred for total fns):\n` +
-      `fn ${decl.name}(...) intent: "total" -> Result<type, ${throwsStr}> { ... }\n\n` +
-      `// option B — remove the total intent claim (keep throws {}):\n` +
-      `fn ${decl.name}(...) throws { ${throwsStr} } -> type { ... }`,
-  });
+  for (const calleeName of callees) {
+    if (fired.has(calleeName)) continue;
+    const calleeThrows = fnNameToThrows.get(calleeName);
+    if (!calleeThrows || calleeThrows.length === 0) continue;
+    fired.add(calleeName);
+
+    const throwsStr = calleeThrows.join(", ");
+    diagnostics.push({
+      code: "INT007",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'total' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+        `a total function must handle all error paths; ` +
+        `catch '${calleeName}'s exception or use a non-throwing variant`,
+      rule: entry7.rule,
+      idiom: entry7.idiom,
+      rewrite:
+        `// option A — catch '${calleeName}'s exception and convert to Result:\n` +
+        `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+        `  try {\n` +
+        `    const v = ${calleeName}(...)\n` +
+        `    return ok(v)\n` +
+        `  } catch (e) {\n` +
+        `    return err(new ${calleeThrows[0]!}(e))\n` +
+        `  }\n` +
+        `}\n\n` +
+        `// option B — remove the total intent claim:\n` +
+        `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
+        `  return ${calleeName}(...)\n` +
+        `}`,
+    });
+  }
 }
 
