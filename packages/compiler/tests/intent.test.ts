@@ -1420,3 +1420,139 @@ describe("INT012 — intent 'pure' body calls same-file fn with uses {} (?bs 0.9
     expect(codes).toContain("INT012");
   });
 });
+
+describe("INT013 — intent 'idempotent' body calls same-file fn with uses { random } or uses { time } (?bs 0.9+)", () => {
+  it("fires INT013 when idempotent fn body calls a same-file fn that uses { time }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn timestamp() uses { time } -> number = time.now()\n\n" +
+      'fn tag(id: string) intent: "idempotent" -> string {\n' +
+      "  return id + timestamp()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT013/);
+  });
+
+  it("fires INT013 when idempotent fn body calls a same-file fn that uses { random }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn nonce() uses { random } -> number = random.float()\n\n" +
+      'fn makeId(prefix: string) intent: "idempotent" -> string {\n' +
+      "  return prefix + nonce()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT013/);
+  });
+
+  it("INT013 diagnostic names the callee and its non-idempotent capability", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTime() uses { time } -> number = time.now()\n\n" +
+      'fn label(x: string) intent: "idempotent" -> string {\n' +
+      "  return x + getTime()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT013")!;
+    expect(d.code).toBe("INT013");
+    expect(d.message).toContain("getTime");
+    expect(d.message).toContain("time");
+  });
+
+  it("does NOT fire INT013 when idempotent fn calls a callee with no non-idempotent uses", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn double(n: number) -> number = n * 2\n\n" +
+      'fn compute(n: number) intent: "idempotent" -> number {\n' +
+      "  return double(n)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT013 when callee uses { net } (only random/time are non-idempotent)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(url: string) uses { net } -> string = net.get(url)\n\n" +
+      'fn load(id: string) intent: "idempotent" -> string {\n' +
+      "  return fetch(id)\n" +
+      "}\n";
+    // net is not a non-idempotent capability for idempotent purposes; no INT013
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT013");
+  });
+
+  it("does NOT fire INT013 on pre-0.9 pins", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn getTime() uses { time } -> number = time.now()\n\n" +
+      'fn label(x: string) intent: "idempotent" -> string {\n' +
+      "  return x + getTime()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT013");
+  });
+
+  it("fires INT003 (not INT013) when idempotent fn itself declares uses { time }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTime() uses { time } -> number = time.now()\n\n" +
+      'fn label(x: string) uses { time } intent: "idempotent" -> string {\n' +
+      "  return x + getTime()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT003");
+    expect(codes).not.toContain("INT013");
+  });
+
+  it("fires INT004 (not INT013) when idempotent fn body directly calls time.now()", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTime() uses { time } -> number = time.now()\n\n" +
+      'fn label(x: string) intent: "idempotent" -> string {\n' +
+      "  return x + time.now()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT004");
+    expect(codes).not.toContain("INT013");
+  });
+
+  it("INT013 rewrite contains both option A (inject) and option B (remove claim)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTime() uses { time } -> number = time.now()\n\n" +
+      'fn label(x: string) intent: "idempotent" -> string {\n' +
+      "  return x + getTime()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT013")!;
+    expect(d.rewrite).toContain("option A");
+    expect(d.rewrite).toContain("option B");
+    expect(d.rewrite).toContain("getTime");
+  });
+
+  it("fires INT013 for callee that uses both random and time — reports non-idempotent caps", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn mixed() uses { time, random } -> string = time.now() + random.float()\n\n" +
+      'fn make(x: string) intent: "idempotent" -> string {\n' +
+      "  return x + mixed()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT013")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("mixed");
+  });
+});

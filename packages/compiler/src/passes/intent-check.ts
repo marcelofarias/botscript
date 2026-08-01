@@ -90,6 +90,15 @@
  *                      not fire. Fires only when INT001 and INT002 do not.
  *                      (body-level callee-transitivity check, 0.9+)
  *
+ *              INT013  intent contains "idempotent" but the function body calls a
+ *                      same-file fn that declares `uses { random }` or `uses { time }`.
+ *                      Those namespaces produce a different value on each call; calling
+ *                      such a fn makes the outer fn non-idempotent by transitivity even
+ *                      when the outer fn itself declares no non-idempotent capabilities
+ *                      and INT003/INT004 do not fire. Closes the callee-transitivity gap
+ *                      for the idempotent claim, parallel to INT012 for pure.
+ *                      (body-level callee-transitivity check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -171,7 +180,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
       checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
@@ -384,7 +393,7 @@ const NON_IDEMPOTENT = new Set(["random", "time"]);
 
 /**
  * "idempotent" claim: INT003 (header conflict), INT004 (body under-declaration),
- * INT005 (writes {} conflict).
+ * INT005 (writes {} conflict), INT013 (callee-transitivity gap).
  *
  * An idempotent fn is safe to retry: same inputs → same observable result.
  * `random` and `time` break that — they yield different values per call — so a
@@ -403,6 +412,10 @@ function checkIdempotentClaim(
   aliases: Map<string, string>,
   diagnostics: Diagnostic[],
   acceptOptionalChain = false,
+  checksThrows = false,
+  innerByDecl: Map<FnDecl, FnDecl[]> = new Map(),
+  fnNames: Set<string> = new Set(),
+  fnNameToUses: Map<string, string[]> = new Map(),
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -506,6 +519,54 @@ function checkIdempotentClaim(
         `// option B — declare the capability and remove the idempotent claim:\n` +
         `fn ${decl.name}(...) uses { ${proposedCaps} } -> ...`,
     });
+  }
+
+  // INT013: body-level callee-transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls a same-file fn that declares uses { random } or uses { time }.
+  // Fires only when INT003/INT004 did not (no direct header or body conflict).
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToUses.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry13 = getErrorCode("INT013")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired13 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired13.has(calleeName)) continue;
+      const calleeUses = fnNameToUses.get(calleeName);
+      if (!calleeUses) continue;
+      const nonIdemCaps = calleeUses.filter((c) => NON_IDEMPOTENT.has(c));
+      if (nonIdemCaps.length === 0) continue;
+      fired13.add(calleeName);
+
+      const usesStr = nonIdemCaps.join(", ");
+      diagnostics.push({
+        code: "INT013",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls '${calleeName}' which declares uses { ${usesStr} } — ` +
+          `a callee with non-idempotent capability makes the caller non-idempotent by transitivity; ` +
+          `inject the callee's return value as a parameter, or remove the idempotent intent claim`,
+        rule: entry13.rule,
+        idiom: entry13.idiom,
+        rewrite:
+          `// option A — inject the computed value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "idempotent" -> R {\n` +
+          `  // use precomputed instead of calling '${calleeName}'\n` +
+          `}\n\n` +
+          `// option B — remove the idempotent intent claim:\n` +
+          `fn ${decl.name}(...) uses { ${usesStr} } -> R {\n` +
+          `  const v = ${calleeName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
   }
 }
 

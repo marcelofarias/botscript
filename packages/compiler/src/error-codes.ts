@@ -756,6 +756,40 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return id + \":\" + ts  // pure: no callee with uses {}\n" +
       "}",
   },
+  INT013: {
+    code: "INT013",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares uses { random } or uses { time }",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call other functions that carry " +
+      "`random` or `time` capability declarations — those callees produce different values on " +
+      "each call, so the outer fn inherits non-idempotent behaviour by transitivity even when " +
+      "it declares no non-idempotent capabilities itself",
+    idiom:
+      "call the non-idempotent callee before the idempotent fn and pass its return value in as " +
+      "a parameter (dependency injection), or remove the idempotent intent claim",
+    rewrite:
+      "// option A — inject the computed value as a parameter (preferred):\n" +
+      "fn name(args, precomputed: T) intent: \"idempotent\" -> R {\n" +
+      "  return compute(args, precomputed)  // no longer calls non-idempotent callee\n" +
+      "}\n\n" +
+      "// option B — remove the idempotent intent claim:\n" +
+      "fn name(args) uses { random } -> R {\n" +
+      "  const v = callee(args)  // callee declares uses { random }\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls timestamp() which uses { time }; INT013 fires\n" +
+      "?bs 0.9\n" +
+      "fn timestamp() uses { time } -> number = time.now()\n\n" +
+      "fn tag(id: string) intent: \"idempotent\" -> string {\n" +
+      "  return id + \"-\" + timestamp()  // INT013: callee declares uses { time }\n" +
+      "}\n\n" +
+      "// after option A — inject the timestamp as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn tag(id: string, ts: number) intent: \"idempotent\" -> string {\n" +
+      "  return id + \"-\" + ts  // idempotent: same inputs → same output\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",
