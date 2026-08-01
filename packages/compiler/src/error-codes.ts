@@ -716,6 +716,46 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return s.toLowerCase().replace(/ /g, \"-\")\n" +
       "}",
   },
+  INT012: {
+    code: "INT012",
+    title: "intent declares 'pure' but body calls a same-file fn that declares uses {}",
+    rule:
+      "a function declaring intent: \"pure\" must not call other functions that carry capability " +
+      "declarations (`uses { ... }`) — those callees consume external resources, so the caller " +
+      "inherits their side effects even without declaring them directly; the pure claim requires " +
+      "that the entire transitive call closure is free of external resource use",
+    idiom:
+      "either remove the call to the capability-bearing callee and replace it with a pure " +
+      "computation, pass the callee's return value in as a parameter (dependency injection), " +
+      "or remove the pure intent claim from this function",
+    rewrite:
+      "// option A — inject the computed value as a parameter (preferred):\n" +
+      "fn name(args, precomputedValue: T) intent: \"pure\" -> R {\n" +
+      "  return compute(args, precomputedValue)  // no longer calls callee with uses {}\n" +
+      "}\n\n" +
+      "// option B — remove the pure intent claim:\n" +
+      "fn name(args) uses { cap } -> R {\n" +
+      "  const v = callee(args)  // callee declares uses { cap }\n" +
+      "  return compute(v)\n" +
+      "}\n\n" +
+      "// option C — remove the call and compute inline without capabilities:\n" +
+      "fn name(args) intent: \"pure\" -> R {\n" +
+      "  return compute(args)  // pure body, no callee with uses {}\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls getTimestamp() which uses { time }; INT012 fires\n" +
+      "?bs 0.9\n" +
+      "fn getTimestamp() uses { time } -> number = time.now()\n\n" +
+      "fn buildKey(id: string) intent: \"pure\" -> string {\n" +
+      "  const ts = getTimestamp()  // INT012: callee declares uses { time }\n" +
+      "  return id + \":\" + ts\n" +
+      "}\n\n" +
+      "// after option A — inject the timestamp as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn buildKey(id: string, ts: number) intent: \"pure\" -> string {\n" +
+      "  return id + \":\" + ts  // pure: no callee with uses {}\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

@@ -1273,3 +1273,150 @@ describe("INT011 — intent 'pure' + async fn (?bs 0.9+)", () => {
     expect(diag.rewrite).toContain("Promise.resolve");
   });
 });
+
+describe("INT012 — intent 'pure' body calls same-file fn with uses {} (?bs 0.9+)", () => {
+  it("fires INT012 when pure fn body calls a same-file fn that declares uses {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getTimestamp() uses { time } -> number = time.now()\n\n" +
+      'fn buildKey(id: string) intent: "pure" -> string {\n' +
+      "  const ts = getTimestamp()\n" +
+      "  return id\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT012/);
+  });
+
+  it("INT012 diagnostic names the callee and its uses", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchData() uses { net } -> string = net.get(\"url\")\n\n" +
+      'fn processData(x: string) intent: "pure" -> string {\n' +
+      "  const raw = fetchData()\n" +
+      "  return raw\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT012")!;
+    expect(d.code).toBe("INT012");
+    expect(d.message).toContain("fetchData");
+    expect(d.message).toContain("net");
+  });
+
+  it("does NOT fire INT012 when pure fn calls a callee with no uses {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn double(n: number) -> number = n * 2\n\n" +
+      'fn square(n: number) intent: "pure" -> number {\n' +
+      "  return double(n) * double(n)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT012 on pre-0.9 pins (gated on checksThrows)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn getTimestamp() uses { time } -> number = time.now()\n\n" +
+      'fn buildKey(id: string) intent: "pure" -> string {\n' +
+      "  const ts = getTimestamp()\n" +
+      "  return id\n" +
+      "}\n";
+    // at 0.8 INT001 fires because pure+uses={} is already caught at header level for getTimestamp;
+    // but buildKey has no uses {} itself — only INT002 could fire (no direct stdlib call either)
+    // INT012 must NOT fire at 0.8
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT012");
+  });
+
+  it("fires INT001 (not INT012) when pure fn itself declares uses {}", () => {
+    // If the pure fn already has uses {}, INT001 fires at header level and returns.
+    // INT012 must not fire (INT001 subsumes).
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimestamp() uses { time } -> number = unsafe "test" { time.now() }\n\n' +
+      'fn buildKey(id: string) uses { time } intent: "pure" -> string {\n' +
+      "  const ts = getTimestamp()\n" +
+      "  return id\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT001");
+    expect(codes).not.toContain("INT012");
+  });
+
+  it("fires INT002 (not INT012) when pure fn body directly calls stdlib", () => {
+    // If the body directly calls time.now(), INT002 fires and INT012 must not.
+    const src =
+      "?bs 0.9\n" +
+      "fn getTimestamp() uses { time } -> number = time.now()\n\n" +
+      'fn buildKey(id: string) intent: "pure" -> string {\n' +
+      "  const ts = time.now()\n" +
+      "  return id\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT002");
+    expect(codes).not.toContain("INT012");
+  });
+
+  it("fires INT012 for callee with multiple capabilities", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn doWork() uses { net, fs } -> string = net.get(\"url\")\n\n" +
+      'fn pureWrapper(x: string) intent: "pure" -> string {\n' +
+      "  return doWork()\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT012")!;
+    expect(d.message).toContain("net");
+  });
+
+  it("rewrite hint names the callee and includes injection option", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getClock() uses { time } -> number = time.now()\n\n" +
+      'fn makeId(prefix: string) intent: "pure" -> string {\n' +
+      "  const ts = getClock()\n" +
+      "  return prefix\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT012")!;
+    expect(d.rewrite).toContain("option A");
+    expect(d.rewrite).toContain("option B");
+    expect(d.rewrite).toContain("getClock");
+  });
+
+  it("does NOT fire INT012 when fn has no body (expression-only)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimestamp() uses { time } -> number = unsafe "test" { time.now() }\n\n' +
+      'fn buildKey(id: string) intent: "pure" -> string = id\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT011 and INT012 together when pure fn is both async and calls capped callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn getClock() uses { time } -> number = time.now()\n\n" +
+      'async fn badFn(x: string) intent: "pure" -> Promise<string> {\n' +
+      "  const ts = getClock()\n" +
+      "  return x\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT011");
+    expect(codes).toContain("INT012");
+  });
+});

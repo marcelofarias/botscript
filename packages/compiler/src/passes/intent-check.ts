@@ -83,6 +83,13 @@
  *                      wrap the result in `Promise.resolve(...)` from a non-async body.
  *                      (header-level structural check, 0.9+)
  *
+ *              INT012  intent contains "pure" but the function body calls a same-file
+ *                      fn that declares `uses { ... }`. A callee that consumes external
+ *                      resources makes the caller non-pure by transitivity, even when
+ *                      the caller itself declares no capabilities and INT001/INT002 do
+ *                      not fire. Fires only when INT001 and INT002 do not.
+ *                      (body-level callee-transitivity check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -123,11 +130,13 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const aliases = trackAliases ? collectStdlibAliases(tokens) : new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
 
-  // INT007 body-level check needs the callgraph. Build once, reuse per fn.
+  // INT007/INT010/INT012 body-level checks need the callgraph. Build once, reuse per fn.
   const innerByDecl = checksThrows ? computeNesting(allDecls) : new Map<FnDecl, FnDecl[]>();
   const fnNames = new Set(allDecls.map((d) => d.name));
   // Map fn name → union of declared throws types across all same-file decls with that name.
   const fnNameToThrows = new Map<string, string[]>();
+  // Map fn name → union of declared uses capabilities across all same-file decls with that name.
+  const fnNameToUses = new Map<string, string[]>();
   if (checksThrows) {
     for (const d of allDecls) {
       if ((d.throws?.length ?? 0) === 0) continue;
@@ -136,6 +145,15 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         for (const t of d.throws!) if (!existing.includes(t)) existing.push(t);
       } else {
         fnNameToThrows.set(d.name, [...d.throws!]);
+      }
+    }
+    for (const d of allDecls) {
+      if (d.capabilities.length === 0) continue;
+      const existing = fnNameToUses.get(d.name);
+      if (existing) {
+        for (const c of d.capabilities) if (!existing.includes(c)) existing.push(c);
+      } else {
+        fnNameToUses.set(d.name, [...d.capabilities]);
       }
     }
   }
@@ -150,7 +168,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases);
@@ -171,7 +189,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
 }
 
 /**
- * "pure" claim: INT001 (header conflict) and INT002 (body under-declaration).
+ * "pure" claim: INT001 (header conflict), INT002 (body under-declaration),
+ * and INT012 (body calls same-file fn with uses {}).
  */
 function checkPureClaim(
   decl: FnDecl,
@@ -184,6 +203,9 @@ function checkPureClaim(
   aliases: Map<string, string>,
   diagnostics: Diagnostic[],
   acceptOptionalChain = false,
+  innerByDecl: Map<FnDecl, FnDecl[]> = new Map(),
+  fnNames: Set<string> = new Set(),
+  fnNameToUses: Map<string, string[]> = new Map(),
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -268,6 +290,52 @@ function checkPureClaim(
         `// option B — declare the capability and remove the pure claim:\n` +
         `fn ${decl.name}(...) uses { ${bodyUse.capability} } -> ...`,
     });
+  }
+
+  // INT012: body-level callee-transitivity check (0.9+) — intent claims "pure" but
+  // body calls a same-file fn that declares uses { ... }. Only fires when INT001 and
+  // INT002 did not (no direct header conflict, no direct stdlib reference in body).
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToUses.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry12 = getErrorCode("INT012")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired12 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired12.has(calleeName)) continue;
+      const calleeUses = fnNameToUses.get(calleeName);
+      if (!calleeUses || calleeUses.length === 0) continue;
+      fired12.add(calleeName);
+
+      const usesStr = calleeUses.join(", ");
+      diagnostics.push({
+        code: "INT012",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls '${calleeName}' which declares uses { ${usesStr} } — ` +
+          `a callee with capability declarations makes the caller non-pure by transitivity; ` +
+          `inject the callee's return value as a parameter, or remove the pure intent claim`,
+        rule: entry12.rule,
+        idiom: entry12.idiom,
+        rewrite:
+          `// option A — inject the computed value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "pure" -> R {\n` +
+          `  // use precomputed instead of calling '${calleeName}'\n` +
+          `}\n\n` +
+          `// option B — remove the pure intent claim:\n` +
+          `fn ${decl.name}(...) uses { ${usesStr} } -> R {\n` +
+          `  const v = ${calleeName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
   }
 
   // INT011: header-level structural check (0.9+) — intent claims "pure" but the
