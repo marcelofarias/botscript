@@ -109,6 +109,17 @@
  *                      Fires only when INT005, INT003, and INT004 do not.
  *                      (body-level callee-transitivity check, 0.9+)
  *
+ *              INT019  intent contains "idempotent" but the function body calls a
+ *                      same-file fn that is declared `async`. An async callee schedules
+ *                      microtasks on every invocation (a timing side effect) and always
+ *                      returns a distinct Promise object — two calls with identical
+ *                      arguments produce different Promise instances and different
+ *                      event-loop schedules, violating the idempotent guarantee that
+ *                      repeated calls produce the same observable outcome.
+ *                      Parallel to INT017 (pure + async callee) on the idempotent axis.
+ *                      Fires only when INT003, INT004, INT005, INT013, and INT015 do not.
+ *                      (body-level callee-async transitivity check, 0.9+)
+ *
  *              INT014  intent string carries a claim that is subsumed by a stronger
  *                      claim in the same string. Two cases:
  *                        — 'pure' + 'idempotent': pure bans all uses (superset of
@@ -248,7 +259,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
       checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
@@ -654,6 +665,7 @@ function checkIdempotentClaim(
   fnNames: Set<string> = new Set(),
   fnNameToUses: Map<string, string[]> = new Map(),
   fnNameToWrites: Map<string, string[]> = new Map(),
+  fnNameToIsAsync: Map<string, boolean> = new Map(),
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -849,6 +861,57 @@ function checkIdempotentClaim(
           `// option B — remove the idempotent intent claim and declare writes on outer fn:\n` +
           `fn ${decl.name}(...) writes { ${writesStr} } -> R {\n` +
           `  return ${calleeName}(...)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT019: body-level callee-async transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls a same-file fn that is declared async. An async callee schedules
+  // microtasks on every invocation (timing side effect) and returns a distinct Promise
+  // object each time, violating the idempotent guarantee by transitivity.
+  // Fires only when INT003, INT004, INT005, INT013, and INT015 did not.
+  if (checksThrows && !bodyUse && !decl.isAsync && decl.bodyTokenStart !== undefined && fnNameToIsAsync.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry19 = getErrorCode("INT019")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired19 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired19.has(calleeName)) continue;
+      if (!fnNameToIsAsync.get(calleeName)) continue;
+      fired19.add(calleeName);
+
+      diagnostics.push({
+        code: "INT019",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls '${calleeName}' which is declared async — ` +
+          `an async callee schedules microtasks on every invocation (a timing side effect) and returns a ` +
+          `distinct Promise on every call, violating the idempotent guarantee by transitivity; ` +
+          `make '${calleeName}' synchronous, inject its resolved value as a parameter, or remove the idempotent intent claim`,
+        rule: entry19.rule,
+        idiom: entry19.idiom,
+        rewrite:
+          `// option A — make the callee synchronous (preferred):\n` +
+          `fn ${calleeName}(...) -> T = compute(...)\n\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> T = ${calleeName}(...)\n\n` +
+          `// option B — inject the resolved value as a parameter:\n` +
+          `fn ${decl.name}(precomputed: T) intent: "idempotent" -> R {\n` +
+          `  // use precomputed instead of calling '${calleeName}'\n` +
+          `}\n\n` +
+          `// call site: ${decl.name}(await ${calleeName}(...))\n\n` +
+          `// option C — remove the idempotent claim:\n` +
+          `fn ${decl.name}(...) -> R {\n` +
+          `  const v = ${calleeName}(...)\n` +
+          `  return compute(v)\n` +
           `}`,
       });
     }

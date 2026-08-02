@@ -981,6 +981,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  INT019: {
+    code: "INT019",
+    title: "intent declares 'idempotent' but body calls a same-file fn that is declared async",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call other functions that are declared async — " +
+      "an async callee schedules microtasks on every invocation (a timing side effect) and always returns a " +
+      "distinct Promise object, so two calls with the same arguments produce different Promise instances " +
+      "and different event-loop schedules; repeating the outer call cannot guarantee the same observable " +
+      "outcome as a single call, violating the idempotent contract; " +
+      "this check fires only when INT003, INT004, INT005, INT013, and INT015 do not",
+    idiom:
+      "make the async callee synchronous if possible, or inject its resolved value as a parameter; " +
+      "if the async call is essential, remove the idempotent intent claim and explicitly model the " +
+      "retry/dedup logic at the call site instead of relying on the intent annotation",
+    rewrite:
+      "// option A — make the callee synchronous (preferred):\n" +
+      "fn callee(...) -> T = compute(...)\n\n" +
+      "fn outer(...) intent: \"idempotent\" -> R = callee(...)\n\n" +
+      "// option B — inject the resolved value as a parameter:\n" +
+      "fn outer(precomputed: T) intent: \"idempotent\" -> R {\n" +
+      "  // use precomputed instead of calling the async callee\n" +
+      "}\n\n" +
+      "// call site: outer(await asyncCallee(...))\n\n" +
+      "// option C — remove the idempotent claim:\n" +
+      "fn outer(...) -> R {\n" +
+      "  const v = asyncCallee(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls fetchConfig() which is async; INT019 fires\n" +
+      "?bs 0.9\n" +
+      "async fn fetchConfig(key: string) uses { net } -> Promise<string> { ... }\n\n" +
+      "fn getConfigValue(key: string) intent: \"idempotent\" -> Promise<string> {\n" +
+      "  return fetchConfig(key)  // INT019: async callee introduces timing side effects\n" +
+      "}\n\n" +
+      "// after option A — make callee synchronous (use a sync cache lookup instead)\n" +
+      "?bs 0.9\n" +
+      "fn readCache(key: string) reads { config } -> string { ... }\n\n" +
+      "fn getConfigValue(key: string) intent: \"idempotent\" reads { config } -> string {\n" +
+      "  return readCache(key)\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

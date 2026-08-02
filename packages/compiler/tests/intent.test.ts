@@ -2121,3 +2121,122 @@ describe("INT018 — intent 'pure' body calls same-file fn that declares throws 
     expect(codes.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// INT019 — idempotent intent body calls same-file async fn
+describe("INT019 — intent 'idempotent' body calls same-file async fn (?bs 0.9+)", () => {
+  it("fires INT019 when idempotent fn calls a same-file async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchData(id: string) uses { net } -> Promise<string> = id\n" +
+      'fn getRecord(id: string) intent: "idempotent" -> Promise<string> {\n' +
+      "  return fetchData(id)\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT019/);
+  });
+
+  it("INT019 diagnostic message names the caller and async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn loadUser(id: string) uses { net } -> Promise<string> = id\n" +
+      'fn getUser(id: string) intent: "idempotent" -> Promise<string> {\n' +
+      "  return loadUser(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT019")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("getUser");
+    expect(d.message).toContain("loadUser");
+    expect(d.message).toContain("async");
+  });
+
+  it("does NOT fire INT019 when idempotent fn calls a non-async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn normalize(s: string) -> string = s.toLowerCase()\n" +
+      'fn canonicalize(s: string) intent: "idempotent" -> string = normalize(s)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT003 (not INT019) when idempotent fn itself declares uses { random }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(n: number) -> Promise<number> = n\n" +
+      'fn pick(n: number) uses { random } intent: "idempotent" -> Promise<number> {\n' +
+      "  return helper(n)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT003");
+    expect(codes).not.toContain("INT019");
+  });
+
+  it("fires INT004 (not INT019) when idempotent fn body directly references random", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(n: number) -> Promise<number> = n\n" +
+      'fn pick(n: number) intent: "idempotent" -> Promise<number> {\n' +
+      "  const r = random.next()\n" +
+      "  return helper(n)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT004");
+    expect(codes).not.toContain("INT019");
+  });
+
+  it("does NOT fire INT019 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "async fn fetch(id: string) -> Promise<string> = id\n" +
+      'fn get(id: string) intent: "idempotent" -> Promise<string> = fetch(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT019");
+  });
+
+  it("INT019 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncHelper(x: string) uses { net } -> Promise<string> = x\n" +
+      'fn idempotentFn(x: string) intent: "idempotent" -> Promise<string> = asyncHelper(x)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT019")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("fires INT019 with multiple async callees (one diagnostic per callee)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchA(id: string) uses { net } -> Promise<string> = id\n" +
+      "async fn fetchB(id: string) uses { net } -> Promise<string> = id\n" +
+      'fn getAll(id: string) intent: "idempotent" -> string {\n' +
+      "  fetchA(id)\n" +
+      "  fetchB(id)\n" +
+      "  return id\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.filter((d) => d.code === "INT019");
+    expect(codes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does NOT fire INT019 when the idempotent fn itself is async", () => {
+    // When the caller is also async, INT019 does not apply (the async-caller
+    // case has its own semantic — async idempotent is a distinct pattern).
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchInner(id: string) uses { net } -> Promise<string> = id\n" +
+      'async fn fetchOuter(id: string) intent: "idempotent" uses { net } -> Promise<string> = fetchInner(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT019");
+  });
+});
