@@ -1659,3 +1659,97 @@ describe("INT014 — redundant intent claim (subsumption check, ?bs 0.9+)", () =
     expect(d.rewrite).toBeDefined();
   });
 });
+
+describe("INT015 — intent 'idempotent' body calls same-file fn with writes {} (?bs 0.9+)", () => {
+  it("fires INT015 when idempotent fn body calls a same-file fn that declares writes {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) intent: "idempotent" -> void {\n' +
+      "  persist(raw)\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT015/);
+  });
+
+  it("INT015 diagnostic names the callee and its writes labels", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) intent: "idempotent" -> void {\n' +
+      "  persist(raw)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT015")!;
+    expect(d.code).toBe("INT015");
+    expect(d.message).toContain("persist");
+    expect(d.message).toContain("db");
+  });
+
+  it("does NOT fire INT015 when idempotent fn calls a callee with no writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn transform(x: string) -> string = x.trim()\n" +
+      'fn process(raw: string) intent: "idempotent" -> string {\n' +
+      "  return transform(raw)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT015 on pre-0.9 pins", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) intent: "idempotent" -> void {\n' +
+      "  persist(raw)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT015");
+  });
+
+  it("fires INT005 (not INT015) when idempotent fn itself declares writes {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) writes { db } intent: "idempotent" -> void {\n' +
+      "  persist(raw)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).toContain("INT005");
+    expect(codes).not.toContain("INT015");
+  });
+
+  it("INT015 rewrite contains both split-boundary and remove-claim options", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) intent: "idempotent" -> void {\n' +
+      "  persist(raw)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT015")!;
+    expect(d.rewrite).toContain("option A");
+    expect(d.rewrite).toContain("option B");
+    expect(d.rewrite).toContain("db");
+  });
+
+  it("fires INT015 for callee with multiple writes labels", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn audit(x: string) writes { db, log } -> void = db.save(x)\n" +
+      'fn process(raw: string) intent: "idempotent" -> void {\n' +
+      "  audit(raw)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT015")!;
+    expect(d.message).toContain("db");
+    expect(d.message).toContain("log");
+  });
+});

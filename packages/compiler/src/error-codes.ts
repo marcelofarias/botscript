@@ -790,6 +790,42 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return id + \"-\" + ts  // idempotent: same inputs → same output\n" +
       "}",
   },
+  INT015: {
+    code: "INT015",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares writes { }",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call other functions that carry " +
+      "`writes { ... }` declarations — a callee that mutates a resource makes the caller " +
+      "non-idempotent by transitivity (repeated calls produce different side effects) even " +
+      "when the caller itself declares no writes {} and INT005 does not fire",
+    idiom:
+      "refactor so the write happens outside the idempotent boundary, or remove the idempotent " +
+      "intent claim and declare writes {} on the outer fn to surface the effect to callers",
+    rewrite:
+      "// option A — move the write outside the idempotent fn boundary:\n" +
+      "fn persist(data: Data) writes { db } -> void = db.save(data)\n\n" +
+      "fn computeAndStore(input: Input) writes { db } -> void {\n" +
+      "  const result = transform(input)  // idempotent: no writes, no callee writes\n" +
+      "  persist(result)                  // write happens outside the idempotent scope\n" +
+      "}\n\n" +
+      "// option B — remove the idempotent intent claim and declare writes on outer fn:\n" +
+      "fn name(args) writes { db } -> R {\n" +
+      "  return callee(args)  // callee declares writes { db }\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls persist() which writes { db }; INT015 fires\n" +
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n\n" +
+      "fn process(raw: string) intent: \"idempotent\" -> void {\n" +
+      "  persist(raw)  // INT015: callee declares writes { db }\n" +
+      "}\n\n" +
+      "// after option A — move write out of idempotent boundary\n" +
+      "?bs 0.9\n" +
+      "fn transform(raw: string) intent: \"idempotent\" -> string = raw.trim()\n\n" +
+      "fn process(raw: string) writes { db } -> void {\n" +
+      "  persist(transform(raw))  // transform is idempotent; persist is outside\n" +
+      "}",
+  },
   INT014: {
     code: "INT014",
     title: "intent string contains a redundant claim that is already implied by a stronger claim",

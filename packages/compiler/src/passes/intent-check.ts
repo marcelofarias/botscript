@@ -99,6 +99,16 @@
  *                      for the idempotent claim, parallel to INT012 for pure.
  *                      (body-level callee-transitivity check, 0.9+)
  *
+ *              INT015  intent contains "idempotent" but the function body calls a
+ *                      same-file fn that declares `writes { ... }`. A callee that
+ *                      mutates a resource makes the caller non-idempotent by
+ *                      transitivity — repeated calls produce different side effects even
+ *                      when the caller itself declares no writes {} and INT005 does not
+ *                      fire. Closes the callee-transitivity gap for the writes-idempotent
+ *                      axis, parallel to INT013 for random/time.
+ *                      Fires only when INT005, INT003, and INT004 do not.
+ *                      (body-level callee-transitivity check, 0.9+)
+ *
  *              INT014  intent string carries a claim that is subsumed by a stronger
  *                      claim in the same string. Two cases:
  *                        — 'pure' + 'idempotent': pure bans all uses (superset of
@@ -155,6 +165,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const fnNameToThrows = new Map<string, string[]>();
   // Map fn name → union of declared uses capabilities across all same-file decls with that name.
   const fnNameToUses = new Map<string, string[]>();
+  // Map fn name → union of declared writes labels across all same-file decls with that name.
+  const fnNameToWrites = new Map<string, string[]>();
   if (checksThrows) {
     for (const d of allDecls) {
       if ((d.throws?.length ?? 0) === 0) continue;
@@ -174,6 +186,15 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         fnNameToUses.set(d.name, [...d.capabilities]);
       }
     }
+    for (const d of allDecls) {
+      if ((d.writes?.length ?? 0) === 0) continue;
+      const existing = fnNameToWrites.get(d.name);
+      if (existing) {
+        for (const w of d.writes!) if (!existing.includes(w)) existing.push(w);
+      } else {
+        fnNameToWrites.set(d.name, [...d.writes!]);
+      }
+    }
   }
 
   for (const slot of program.fns) {
@@ -189,7 +210,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
       checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
@@ -428,6 +449,7 @@ function checkIdempotentClaim(
   innerByDecl: Map<FnDecl, FnDecl[]> = new Map(),
   fnNames: Set<string> = new Set(),
   fnNameToUses: Map<string, string[]> = new Map(),
+  fnNameToWrites: Map<string, string[]> = new Map(),
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -576,6 +598,53 @@ function checkIdempotentClaim(
           `fn ${decl.name}(...) uses { ${usesStr} } -> R {\n` +
           `  const v = ${calleeName}(...)\n` +
           `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT015: body-level callee-transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls a same-file fn that declares writes { }.
+  // A callee that mutates a resource makes the caller non-idempotent by transitivity.
+  // Fires only when INT005, INT003, and INT004 did not (no direct header or body conflict).
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToWrites.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry15 = getErrorCode("INT015")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired15 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired15.has(calleeName)) continue;
+      const calleeWrites = fnNameToWrites.get(calleeName);
+      if (!calleeWrites || calleeWrites.length === 0) continue;
+      fired15.add(calleeName);
+
+      const writesStr = calleeWrites.join(", ");
+      diagnostics.push({
+        code: "INT015",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls '${calleeName}' which declares writes { ${writesStr} } — ` +
+          `a callee that mutates a resource makes the caller non-idempotent by transitivity; ` +
+          `move the write outside the idempotent boundary, or remove the idempotent intent claim`,
+        rule: entry15.rule,
+        idiom: entry15.idiom,
+        rewrite:
+          `// option A — split into an idempotent compute fn and a separate write fn:\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> T {\n` +
+          `  return compute(...)  // no writes inside\n` +
+          `}\n` +
+          `// call ${calleeName} outside, after the idempotent step\n\n` +
+          `// option B — remove the idempotent intent claim and declare writes on outer fn:\n` +
+          `fn ${decl.name}(...) writes { ${writesStr} } -> R {\n` +
+          `  return ${calleeName}(...)\n` +
           `}`,
       });
     }
