@@ -935,6 +935,52 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.9\n" +
       "fn add(a: number, b: number) intent: \"pure\" -> number = a + b",
   },
+  INT018: {
+    code: "INT018",
+    title: "intent declares 'pure' but body calls a same-file fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"pure\" must not call other functions that propagate exceptions — " +
+      "throwing an exception is a side effect (it alters control flow outside the fn boundary), and a " +
+      "pure fn may never produce side effects; even when the outer fn itself does not declare throws {}, " +
+      "calling a same-file callee that does reopens the exception channel by transitivity, violating the " +
+      "pure guarantee; this check fires only when INT001 and INT002 do not (no direct header or body conflict)",
+    idiom:
+      "wrap the throwing callee in a try/catch that converts the exception to a Result<T, E> return value, " +
+      "then return the Result from the pure fn; or use a non-throwing variant of the callee; " +
+      "or remove the pure intent claim if the fn's purpose requires exception propagation",
+    rewrite:
+      "// option A — catch the exception and return Result (preferred for pure fns):\n" +
+      "fn outer(...) intent: \"pure\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(callee(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — use a non-throwing variant (if one exists):\n" +
+      "fn outer(...) intent: \"pure\" -> Result<T, EType> = calleeSafe(...)\n\n" +
+      "// option C — remove the pure claim if exception propagation is intentional:\n" +
+      "fn outer(...) throws { EType } -> T = callee(...)",
+    example:
+      "// before — fn claims pure but calls validate() which declares throws { ValidationError }; INT018 fires\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { ... }\n\n" +
+      "fn process(s: string) intent: \"pure\" -> string {\n" +
+      "  validate(s)  // INT018: callee declares throws { ValidationError }\n" +
+      "  return s.trim()\n" +
+      "}\n\n" +
+      "// after option A — catch and return Result\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { ... }\n\n" +
+      "fn process(s: string) intent: \"pure\" -> Result<string, ValidationError> {\n" +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "    return ok(s.trim())\n" +
+      "  } catch (e) {\n" +
+      "    return err(new ValidationError(e))\n" +
+      "  }\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

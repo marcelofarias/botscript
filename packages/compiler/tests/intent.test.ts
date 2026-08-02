@@ -1991,3 +1991,133 @@ describe("INT017 — intent 'pure' body calls same-file async fn (?bs 0.9+)", ()
     expect(codes).not.toContain("INT017");
   });
 });
+
+// INT018 — pure intent body calls same-file fn with throws {}
+describe("INT018 — intent 'pure' body calls same-file fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT018 when pure fn calls a same-file fn that declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT018/);
+  });
+
+  it("INT018 diagnostic message names the caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT018")!;
+    expect(d.message).toMatch(/process/);
+    expect(d.message).toMatch(/validate/);
+    expect(d.message).toMatch(/ValidationError/);
+  });
+
+  it("does NOT fire INT018 when pure fn calls a non-throwing callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(s: string) -> string = s.trim()\n" +
+      'fn process(s: string) intent: "pure" -> string = helper(s)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT001 (not INT018) when pure fn itself declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" throws { ValidationError } -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT001");
+    expect(codes).not.toContain("INT018");
+  });
+
+  it("fires INT002 (not INT018) when pure fn body directly calls a stdlib capability", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  const t = time.now()\n" +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT002");
+    expect(codes).not.toContain("INT018");
+  });
+
+  it("does NOT fire INT018 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT018");
+  });
+
+  it("INT018 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT018")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("fires INT001 (not INT018) when pure fn itself declares uses { net }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn process(s: string) uses { net } intent: "pure" -> string {\n' +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT001");
+    expect(codes).not.toContain("INT018");
+  });
+
+  it("fires INT018 with multiple throwing callees (one diagnostic per callee)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validateA(s: string) throws { ErrorA } -> void { }\n" +
+      "fn validateB(s: string) throws { ErrorB } -> void { }\n" +
+      'fn process(s: string) intent: "pure" -> string {\n' +
+      "  validateA(s)\n" +
+      "  validateB(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.filter((d) => d.code === "INT018");
+    expect(codes.length).toBeGreaterThanOrEqual(2);
+  });
+});

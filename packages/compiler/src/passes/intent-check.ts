@@ -128,6 +128,17 @@
  *                      Fires only when INT001, INT002, INT011, INT012, and INT016 do not.
  *                      (body-level callee-async transitivity check, 0.9+)
  *
+ *              INT018  intent contains "pure" but the function body calls a same-file
+ *                      fn that declares `throws { ... }`. Throwing an exception is a
+ *                      side effect that escapes the fn boundary; a pure fn may never
+ *                      produce side effects, so calling a throwing callee makes the
+ *                      outer fn non-pure by transitivity even when the outer fn itself
+ *                      does not declare throws {} and INT001 does not fire. Fix: wrap
+ *                      the callee call in try/catch and return Result<T, E>, use a
+ *                      non-throwing variant, or remove the pure intent claim.
+ *                      Fires only when INT001 and INT002 do not.
+ *                      (body-level callee-throws transitivity check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -234,7 +245,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites);
@@ -278,6 +289,7 @@ function checkPureClaim(
   fnNameToReads: Map<string, string[]> = new Map(),
   fnNameToWrites: Map<string, string[]> = new Map(),
   fnNameToIsAsync: Map<string, boolean> = new Map(),
+  fnNameToThrows: Map<string, string[]> = new Map(),
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -516,6 +528,57 @@ function checkPureClaim(
           `fn ${decl.name}(...) -> R {\n` +
           `  const v = ${calleeName}(...)\n` +
           `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT018: body-level callee-throws transitivity check (0.9+) — intent claims "pure"
+  // but body calls a same-file fn that declares throws {}. Throwing an exception is a
+  // side effect; a pure fn cannot propagate exceptions by transitivity, even when the
+  // outer fn itself does not declare throws {} and INT001 does not fire.
+  // Only fires when INT001 and INT002 did not (no direct header or body conflict).
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToThrows.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry18 = getErrorCode("INT018")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired18 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired18.has(calleeName)) continue;
+      const calleeThrows = fnNameToThrows.get(calleeName);
+      if (!calleeThrows || calleeThrows.length === 0) continue;
+      fired18.add(calleeName);
+
+      const throwsStr = calleeThrows.join(", ");
+      diagnostics.push({
+        code: "INT018",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+          `exceptions are side effects; a pure fn cannot propagate exceptions by transitivity; ` +
+          `wrap '${calleeName}' in try/catch returning Result<T, ${throwsStr}>, or remove the pure intent claim`,
+        rule: entry18.rule,
+        idiom: entry18.idiom,
+        rewrite:
+          `// option A — catch the exception and return Result (preferred):\n` +
+          `fn ${decl.name}(...) intent: "pure" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${calleeName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${calleeThrows[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — remove the pure claim:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
+          `  return ${calleeName}(...)\n` +
           `}`,
       });
     }
