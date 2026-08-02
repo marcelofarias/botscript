@@ -1753,3 +1753,133 @@ describe("INT015 — intent 'idempotent' body calls same-file fn with writes {} 
     expect(d.message).toContain("log");
   });
 });
+
+// INT016 — pure intent body calls same-file fn with reads {} or writes {}
+describe("INT016 — intent 'pure' body calls same-file fn with reads {} or writes {} (?bs 0.9+)", () => {
+  it("fires INT016 when pure fn calls a callee that declares reads { db }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> string = db.find(id)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  return load(id)\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT016/);
+  });
+
+  it("fires INT016 when pure fn calls a callee that declares writes { db }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(data: string) writes { db } -> void = db.save(data)\n" +
+      'fn process(raw: string) intent: "pure" -> string {\n' +
+      "  persist(raw)\n" +
+      "  return raw.trim()\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT016/);
+  });
+
+  it("fires INT016 when pure fn calls a callee that declares both reads and writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn upsert(id: string, val: string) reads { db } writes { db } -> string = db.upsert(id, val)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  return upsert(id, id)\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT016/);
+  });
+
+  it("INT016 diagnostic message names the callee and its effects", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { cache } -> string = cache.get(id)\n" +
+      'fn transform(id: string) intent: "pure" -> string {\n' +
+      "  return load(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT016")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("load");
+    expect(d.message).toContain("reads { cache }");
+  });
+
+  it("INT016 rewrite contains inject-parameter and remove-claim options", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> string = db.find(id)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  return load(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT016")!;
+    expect(d.rewrite).toContain("option A");
+    expect(d.rewrite).toContain("option B");
+    expect(d.rewrite).toContain("load");
+  });
+
+  it("does NOT fire INT016 when pure fn has no callee with reads/writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn add(a: number, b: number) -> number = a + b\n" +
+      'fn compute(x: number) intent: "pure" -> number {\n' +
+      "  return add(x, 1)\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT016 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn load(id: string) reads { db } -> string = db.find(id)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  return load(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT016");
+  });
+
+  it("fires INT001 (not INT016) when pure fn itself declares reads {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> string = db.find(id)\n" +
+      'fn process(id: string) reads { db } intent: "pure" -> string {\n' +
+      "  return load(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).toContain("INT001");
+    expect(codes).not.toContain("INT016");
+  });
+
+  it("fires INT002 (not INT016) when pure fn body directly calls a stdlib capability", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> string = db.find(id)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  const x = http.get(id)\n" +
+      "  return load(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).toContain("INT002");
+    expect(codes).not.toContain("INT016");
+  });
+
+  it("fires INT016 for callee with multiple reads labels", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetch(id: string) reads { db, cache } -> string = db.find(id)\n" +
+      'fn process(id: string) intent: "pure" -> string {\n' +
+      "  return fetch(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT016")!;
+    expect(d.message).toContain("db");
+    expect(d.message).toContain("cache");
+  });
+});

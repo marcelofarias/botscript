@@ -167,6 +167,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const fnNameToUses = new Map<string, string[]>();
   // Map fn name → union of declared writes labels across all same-file decls with that name.
   const fnNameToWrites = new Map<string, string[]>();
+  // Map fn name → union of declared reads labels across all same-file decls with that name.
+  const fnNameToReads = new Map<string, string[]>();
   if (checksThrows) {
     for (const d of allDecls) {
       if ((d.throws?.length ?? 0) === 0) continue;
@@ -195,6 +197,15 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         fnNameToWrites.set(d.name, [...d.writes!]);
       }
     }
+    for (const d of allDecls) {
+      if ((d.reads?.length ?? 0) === 0) continue;
+      const existing = fnNameToReads.get(d.name);
+      if (existing) {
+        for (const r of d.reads!) if (!existing.includes(r)) existing.push(r);
+      } else {
+        fnNameToReads.set(d.name, [...d.reads!]);
+      }
+    }
   }
 
   for (const slot of program.fns) {
@@ -207,7 +218,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites);
@@ -248,6 +259,8 @@ function checkPureClaim(
   innerByDecl: Map<FnDecl, FnDecl[]> = new Map(),
   fnNames: Set<string> = new Set(),
   fnNameToUses: Map<string, string[]> = new Map(),
+  fnNameToReads: Map<string, string[]> = new Map(),
+  fnNameToWrites: Map<string, string[]> = new Map(),
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -373,6 +386,66 @@ function checkPureClaim(
           `}\n\n` +
           `// option B — remove the pure intent claim:\n` +
           `fn ${decl.name}(...) uses { ${usesStr} } -> R {\n` +
+          `  const v = ${calleeName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT016: body-level callee-transitivity check (0.9+) — intent claims "pure" but
+  // body calls a same-file fn that declares reads { } or writes { }. A reads callee
+  // makes the caller's output depend on external state (non-deterministic). A writes
+  // callee introduces a side effect. Both contradict the pure guarantee.
+  // Only fires when INT001 and INT002 did not (no direct header conflict, no direct
+  // stdlib reference in body). Parallel to INT012 (uses {}) for the reads/writes axis.
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined &&
+      (fnNameToReads.size > 0 || fnNameToWrites.size > 0)) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry16 = getErrorCode("INT016")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired16 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired16.has(calleeName)) continue;
+      const calleeReads = fnNameToReads.get(calleeName);
+      const calleeWrites = fnNameToWrites.get(calleeName);
+      if ((!calleeReads || calleeReads.length === 0) && (!calleeWrites || calleeWrites.length === 0)) continue;
+      fired16.add(calleeName);
+
+      const effectParts: string[] = [];
+      if (calleeReads && calleeReads.length > 0) effectParts.push(`reads { ${calleeReads.join(", ")} }`);
+      if (calleeWrites && calleeWrites.length > 0) effectParts.push(`writes { ${calleeWrites.join(", ")} }`);
+      const effectStr = effectParts.join(", ");
+      const effectKind = (calleeReads?.length ?? 0) > 0 && (calleeWrites?.length ?? 0) > 0
+        ? "reads and writes external state"
+        : (calleeReads?.length ?? 0) > 0
+          ? "reads external state (non-deterministic)"
+          : "writes external state (side effect)";
+
+      diagnostics.push({
+        code: "INT016",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls '${calleeName}' which declares ${effectStr} — ` +
+          `a callee that ${effectKind} makes the caller non-pure by transitivity; ` +
+          `inject the external value as a parameter, or remove the pure intent claim`,
+        rule: entry16.rule,
+        idiom: entry16.idiom,
+        rewrite:
+          `// option A — inject the external value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., preloaded: T) intent: "pure" -> R {\n` +
+          `  // use preloaded instead of calling '${calleeName}'\n` +
+          `}\n\n` +
+          `// option B — remove the pure intent claim and surface the effect:\n` +
+          `fn ${decl.name}(...) ${effectStr} -> R {\n` +
           `  const v = ${calleeName}(...)\n` +
           `  return compute(v)\n` +
           `}`,

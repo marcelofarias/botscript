@@ -826,6 +826,47 @@ const E: Record<string, ErrorCodeEntry> = {
       "  persist(transform(raw))  // transform is idempotent; persist is outside\n" +
       "}",
   },
+  INT016: {
+    code: "INT016",
+    title: "intent declares 'pure' but body calls a same-file fn that declares reads { } or writes { }",
+    rule:
+      "a function declaring intent: \"pure\" must not call other functions that carry " +
+      "`reads { ... }` or `writes { ... }` declarations — a callee that reads external " +
+      "state makes the caller's output depend on that state (non-deterministic); a callee " +
+      "that writes external state introduces a side effect; both contradict the pure " +
+      "guarantee of referential transparency and determinism, even when the caller itself " +
+      "declares no reads {} or writes {} and INT001 does not fire",
+    idiom:
+      "inject the external value as a parameter so the pure fn receives it as a pure input, " +
+      "or remove the pure intent claim and declare the appropriate reads {} / writes {} on " +
+      "the outer fn to surface the effect to callers",
+    rewrite:
+      "// option A — inject the external value as a parameter (preferred):\n" +
+      "fn load(id: string) reads { db } -> Record = db.find(id)\n\n" +
+      "fn process(record: Record) intent: \"pure\" -> Summary {\n" +
+      "  return summarize(record)  // pure: record is a parameter, not a live read\n" +
+      "}\n\n" +
+      "// call site: process(load(id))  — load() is separate, effect is explicit\n\n" +
+      "// option B — remove the pure claim and surface the reads:\n" +
+      "fn process(id: string) reads { db } -> Summary {\n" +
+      "  const record = load(id)  // callee declares reads { db }\n" +
+      "  return summarize(record)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls load() which reads { db }; INT016 fires\n" +
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> Record = db.find(id)\n\n" +
+      "fn process(id: string) intent: \"pure\" -> Summary {\n" +
+      "  const record = load(id)  // INT016: callee declares reads { db }\n" +
+      "  return summarize(record)\n" +
+      "}\n\n" +
+      "// after option A — inject value as parameter, keep pure intent\n" +
+      "?bs 0.9\n" +
+      "fn load(id: string) reads { db } -> Record = db.find(id)\n\n" +
+      "fn process(record: Record) intent: \"pure\" -> Summary = summarize(record)\n\n" +
+      "// call site:\n" +
+      "const summary = process(load(id))  // load at boundary; process remains pure",
+  },
   INT014: {
     code: "INT014",
     title: "intent string contains a redundant claim that is already implied by a stronger claim",
