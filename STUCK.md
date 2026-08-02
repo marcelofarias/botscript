@@ -3,6 +3,17 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-02  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
+
+**Shipped INT018 directly to main** (1 commit, 2027 → 2072 tests):
+- INT018: `intent: "pure"` body calls same-file fn that declares `throws {}` (closes last callee-transitivity axis for pure)
+- Pure now has all four callee axes covered: uses {} (INT012), reads/writes {} (INT016), async (INT017), throws {} (INT018)
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 48th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-01  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 20:34 SP
 
 **Shipped INT013 directly to main** (1 commit, 2017 → 2027 tests):
