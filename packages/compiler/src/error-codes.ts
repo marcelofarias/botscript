@@ -867,6 +867,47 @@ const E: Record<string, ErrorCodeEntry> = {
       "// call site:\n" +
       "const summary = process(load(id))  // load at boundary; process remains pure",
   },
+  INT017: {
+    code: "INT017",
+    title: "intent declares 'pure' but body calls a same-file fn declared async",
+    rule:
+      "a function declaring intent: \"pure\" must not call other functions that are declared " +
+      "`async` — an async callee yields to the event loop on every invocation (a timing side " +
+      "effect) and always returns a distinct Promise object, so two calls with identical arguments " +
+      "produce non-equal return values; both properties contradict the pure guarantee of " +
+      "determinism and referential transparency, even when the caller itself is synchronous " +
+      "and INT011 does not fire",
+    idiom:
+      "make the callee synchronous so the caller can remain pure, or extract the async call " +
+      "to the call site and inject the resolved value as a parameter, or remove the pure intent " +
+      "claim from the outer fn",
+    rewrite:
+      "// option A — make the callee synchronous (preferred when possible):\n" +
+      "fn helper(...) -> T = compute(...)  // no async, no Promise\n\n" +
+      "fn outer(...) intent: \"pure\" -> T = helper(...)\n\n" +
+      "// option B — inject the resolved value as a parameter:\n" +
+      "async fn fetchHelper(...) -> Promise<T> = await fetch(...)\n\n" +
+      "fn outer(precomputed: T) intent: \"pure\" -> R {\n" +
+      "  // use precomputed instead of calling fetchHelper\n" +
+      "}\n\n" +
+      "// call site: outer(await fetchHelper(...))\n\n" +
+      "// option C — remove the pure claim and keep the async callee:\n" +
+      "fn outer(...) -> R {\n" +
+      "  const v = fetchHelper(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls async helper(); INT017 fires\n" +
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n\n" +
+      "fn double(x: number) intent: \"pure\" -> Promise<number> {\n" +
+      "  return helper(x)  // INT017: callee is async\n" +
+      "}\n\n" +
+      "// after option A — make helper synchronous, keep pure intent\n" +
+      "?bs 0.9\n" +
+      "fn helper(x: number) -> number = x * 2\n\n" +
+      "fn double(x: number) intent: \"pure\" -> number = helper(x)",
+  },
   INT014: {
     code: "INT014",
     title: "intent string contains a redundant claim that is already implied by a stronger claim",

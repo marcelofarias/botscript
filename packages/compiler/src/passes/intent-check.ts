@@ -118,6 +118,16 @@
  *                      Fix: remove the weaker claim.
  *                      (?bs 0.9+, fires on the redundant claim)
  *
+ *              INT017  intent contains "pure" but the function body calls a same-file
+ *                      fn that is declared `async`. An async callee yields to the event
+ *                      loop on every call (a timing side effect) and always returns a
+ *                      distinct Promise object — two calls with identical arguments
+ *                      return non-equal values — contradicting the pure guarantee of
+ *                      determinism and referential transparency, even when the caller
+ *                      itself is synchronous and INT011 does not fire.
+ *                      Fires only when INT001, INT002, INT011, INT012, and INT016 do not.
+ *                      (body-level callee-async transitivity check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -169,6 +179,8 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
   const fnNameToWrites = new Map<string, string[]>();
   // Map fn name → union of declared reads labels across all same-file decls with that name.
   const fnNameToReads = new Map<string, string[]>();
+  // Map fn name → true if any same-file decl with that name is declared async.
+  const fnNameToIsAsync = new Map<string, boolean>();
   if (checksThrows) {
     for (const d of allDecls) {
       if ((d.throws?.length ?? 0) === 0) continue;
@@ -206,6 +218,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
         fnNameToReads.set(d.name, [...d.reads!]);
       }
     }
+    for (const d of allDecls) {
+      if (!d.isAsync) continue;
+      fnNameToIsAsync.set(d.name, true);
+    }
   }
 
   for (const slot of program.fns) {
@@ -218,7 +234,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync);
     }
     if (containsIdempotentClaim(decl.intent)) {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites);
@@ -261,6 +277,7 @@ function checkPureClaim(
   fnNameToUses: Map<string, string[]> = new Map(),
   fnNameToReads: Map<string, string[]> = new Map(),
   fnNameToWrites: Map<string, string[]> = new Map(),
+  fnNameToIsAsync: Map<string, boolean> = new Map(),
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -446,6 +463,57 @@ function checkPureClaim(
           `}\n\n` +
           `// option B — remove the pure intent claim and surface the effect:\n` +
           `fn ${decl.name}(...) ${effectStr} -> R {\n` +
+          `  const v = ${calleeName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT017: body-level callee-async transitivity check (0.9+) — intent claims "pure"
+  // but body calls a same-file fn that is declared async. An async callee yields to
+  // the event loop (timing side effect) and returns a distinct Promise on every call,
+  // making the caller non-pure by transitivity even when the caller itself is sync.
+  // Only fires when INT001 and INT002 did not and the caller is not async (INT011).
+  if (checksAsync && !decl.isAsync && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToIsAsync.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry17 = getErrorCode("INT017")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired17 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired17.has(calleeName)) continue;
+      if (!fnNameToIsAsync.get(calleeName)) continue;
+      fired17.add(calleeName);
+
+      diagnostics.push({
+        code: "INT017",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls '${calleeName}' which is declared async — ` +
+          `an async callee yields to the event loop (a timing side effect) and returns a distinct ` +
+          `Promise on every call, making the caller non-pure by transitivity; ` +
+          `make '${calleeName}' synchronous, inject its resolved value as a parameter, or remove the pure intent claim`,
+        rule: entry17.rule,
+        idiom: entry17.idiom,
+        rewrite:
+          `// option A — make the callee synchronous (preferred):\n` +
+          `fn ${calleeName}(...) -> T = compute(...)\n\n` +
+          `fn ${decl.name}(...) intent: "pure" -> T = ${calleeName}(...)\n\n` +
+          `// option B — inject the resolved value as a parameter:\n` +
+          `fn ${decl.name}(precomputed: T) intent: "pure" -> R {\n` +
+          `  // use precomputed instead of calling '${calleeName}'\n` +
+          `}\n\n` +
+          `// call site: ${decl.name}(await ${calleeName}(...))\n\n` +
+          `// option C — remove the pure claim:\n` +
+          `fn ${decl.name}(...) -> R {\n` +
           `  const v = ${calleeName}(...)\n` +
           `  return compute(v)\n` +
           `}`,

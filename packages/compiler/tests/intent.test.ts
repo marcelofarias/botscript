@@ -1883,3 +1883,111 @@ describe("INT016 — intent 'pure' body calls same-file fn with reads {} or writ
     expect(d.message).toContain("cache");
   });
 });
+
+// INT017 — pure intent body calls async same-file fn
+describe("INT017 — intent 'pure' body calls same-file async fn (?bs 0.9+)", () => {
+  it("fires INT017 when pure fn calls an async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'fn double(x: number) intent: "pure" -> Promise<number> {\n' +
+      "  return helper(x)\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT017/);
+  });
+
+  it("INT017 diagnostic message names the caller, callee, and reason", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchVal(id: string) -> Promise<string> = id\n" +
+      'fn getVal(id: string) intent: "pure" -> Promise<string> {\n' +
+      "  return fetchVal(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT017")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("getVal");
+    expect(d.message).toContain("fetchVal");
+    expect(d.message).toContain("async");
+  });
+
+  it("does NOT fire INT017 when pure fn calls a sync callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(x: number) -> number = x * 2\n" +
+      'fn double(x: number) intent: "pure" -> number = helper(x)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT011 (not INT017) when the pure fn itself is async", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'async fn double(x: number) intent: "pure" -> Promise<number> {\n' +
+      "  return helper(x)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT011");
+    expect(codes).not.toContain("INT017");
+  });
+
+  it("fires INT002 (not INT017) when pure fn body calls a stdlib capability directly", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'fn double(x: number) intent: "pure" -> Promise<number> {\n' +
+      "  const t = time.now()\n" +
+      "  return helper(x)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT002");
+    expect(codes).not.toContain("INT017");
+  });
+
+  it("does NOT fire INT017 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'fn double(x: number) intent: "pure" -> Promise<number> {\n' +
+      "  return helper(x)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught?.diagnostics.map((d) => d.code) ?? [];
+    expect(codes).not.toContain("INT017");
+  });
+
+  it("INT017 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'fn double(x: number) intent: "pure" -> Promise<number> {\n' +
+      "  return helper(x)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT017")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("fires INT001 (not INT017) when pure fn itself declares uses { net }", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn helper(x: number) -> Promise<number> = x * 2\n" +
+      'fn double(x: number) uses { net } intent: "pure" -> Promise<number> {\n' +
+      "  return helper(x)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT001");
+    expect(codes).not.toContain("INT017");
+  });
+});
