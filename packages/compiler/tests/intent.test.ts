@@ -1556,3 +1556,106 @@ describe("INT013 — intent 'idempotent' body calls same-file fn with uses { ran
     expect(d.message).toContain("mixed");
   });
 });
+
+describe("INT014 — redundant intent claim (subsumption check, ?bs 0.9+)", () => {
+  it("fires INT014 when intent contains both 'pure' and 'idempotent'", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn add(a: number, b: number) intent: "pure idempotent" -> number = a + b\n';
+    expect(() => t(src)).toThrow(/INT014/);
+  });
+
+  it("fires INT014 when intent contains both 'infallible' and 'total'", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn trim(s: string) intent: "infallible total" -> string = s.trim()\n';
+    expect(() => t(src)).toThrow(/INT014/);
+  });
+
+  it("INT014 message names the redundant claim and the stronger claim (pure+idempotent)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn add(a: number, b: number) intent: "pure idempotent" -> number = a + b\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT014")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("idempotent");
+    expect(d.message).toContain("pure");
+    expect(d.message).toContain("redundant");
+  });
+
+  it("INT014 message names the redundant claim and the stronger claim (infallible+total)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn trim(s: string) intent: "infallible total" -> string = s.trim()\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const d = caught!.diagnostics.find((d) => d.code === "INT014")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("total");
+    expect(d.message).toContain("infallible");
+    expect(d.message).toContain("redundant");
+  });
+
+  it("does NOT fire INT014 when only 'pure' is declared (no redundancy)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn add(a: number, b: number) intent: "pure" -> number = a + b\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT014 when only 'idempotent' is declared (no redundancy)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn add(a: number, b: number) intent: "idempotent" -> number = a + b\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT014 when only 'infallible' is declared (no redundancy)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn trim(s: string) intent: "infallible" -> string = s.trim()\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT014 when only 'total' is declared (no redundancy)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn parse(s: string) intent: "total" -> number = Number(s)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT014 on pre-0.9 pins", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn add(a: number, b: number) intent: "pure idempotent" -> number = a + b\n';
+    let codes: string[] = [];
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) codes = e.diagnostics.map((d) => d.code); }
+    expect(codes).not.toContain("INT014");
+  });
+
+  it("fires both INT014 cases when intent has all four claims", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn noop() intent: "pure idempotent infallible total" -> number = 0\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    expect(caught).not.toBeNull();
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes.filter((c) => c === "INT014").length).toBe(2);
+  });
+
+  it("INT014 rewrite suggests removing the weaker claim", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn add(a: number, b: number) intent: "pure idempotent" -> number = a + b\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT014")!;
+    expect(d.rewrite).toContain("pure");
+    expect(d.rewrite).toBeDefined();
+  });
+});

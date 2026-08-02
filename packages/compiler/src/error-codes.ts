@@ -790,6 +790,33 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return id + \"-\" + ts  // idempotent: same inputs → same output\n" +
       "}",
   },
+  INT014: {
+    code: "INT014",
+    title: "intent string contains a redundant claim that is already implied by a stronger claim",
+    rule:
+      "the botscript intent system has a subsumption hierarchy: 'pure' implies 'idempotent' " +
+      "(pure bans all uses, which is strictly stronger than idempotent's ban on random and time), " +
+      "and 'infallible' implies 'total' (infallible is total plus a no-Result-return constraint). " +
+      "declaring both a stronger and a weaker claim in the same intent string is redundant — the " +
+      "weaker claim adds no enforcement beyond what the stronger one already provides",
+    idiom: "remove the weaker claim from the intent string and keep only the strongest claim",
+    rewrite:
+      "// before — redundant: 'pure' already implies 'idempotent'\n" +
+      "fn name(...) intent: \"pure idempotent\" -> T = ...\n\n" +
+      "// after — keep only the stronger claim\n" +
+      "fn name(...) intent: \"pure\" -> T = ...\n\n" +
+      "// before — redundant: 'infallible' already implies 'total'\n" +
+      "fn parse(...) intent: \"infallible total\" -> T = ...\n\n" +
+      "// after — keep only the stronger claim\n" +
+      "fn parse(...) intent: \"infallible\" -> T = ...",
+    example:
+      "// before — both 'pure' and 'idempotent' declared; INT014 fires on 'idempotent'\n" +
+      "?bs 0.9\n" +
+      "fn add(a: number, b: number) intent: \"pure idempotent\" -> number = a + b\n\n" +
+      "// after — 'pure' alone is sufficient (subsumes idempotent)\n" +
+      "?bs 0.9\n" +
+      "fn add(a: number, b: number) intent: \"pure\" -> number = a + b",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

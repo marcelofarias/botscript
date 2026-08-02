@@ -99,6 +99,15 @@
  *                      for the idempotent claim, parallel to INT012 for pure.
  *                      (body-level callee-transitivity check, 0.9+)
  *
+ *              INT014  intent string carries a claim that is subsumed by a stronger
+ *                      claim in the same string. Two cases:
+ *                        — 'pure' + 'idempotent': pure bans all uses (superset of
+ *                          idempotent's random/time ban); idempotent is redundant.
+ *                        — 'infallible' + 'total': infallible = total + no-Result-return;
+ *                          total is redundant.
+ *                      Fix: remove the weaker claim.
+ *                      (?bs 0.9+, fires on the redundant claim)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -187,6 +196,9 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     }
     if (checksThrows && containsInfallibleClaim(decl.intent)) {
       checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
+    }
+    if (checksThrows) {
+      checkRedundantIntentClaims(decl, src, diagnostics);
     }
   }
 
@@ -917,6 +929,76 @@ function checkInfallibleClaim(
         `    return err(new ${calleeThrows[0]!}(e))\n` +
         `  }\n` +
         `}`,
+    });
+  }
+}
+
+/**
+ * INT014: intent string contains a redundant claim implied by a stronger claim (?bs 0.9+).
+ *
+ * Subsumption rules enforced here:
+ *   pure → idempotent  — pure bans all uses (superset of idempotent's random/time ban)
+ *   infallible → total — infallible = total + no-Result-return (strictly stronger)
+ *
+ * When both a stronger and weaker claim appear together, the weaker one is noise.
+ * Fix: remove the weaker claim and keep only the stronger one.
+ */
+function checkRedundantIntentClaims(
+  decl: FnDecl,
+  src: string,
+  diagnostics: Diagnostic[],
+): void {
+  const intent = decl.intent!;
+  const intentStart = decl.intentStart!;
+  const loc = locationOf(src, intentStart);
+  const spanEnd = intentStart + intent.length + 2;
+  const entry = getErrorCode("INT014")!;
+
+  const hasPure = containsPureClaim(intent);
+  const hasIdempotent = containsIdempotentClaim(intent);
+  const hasTotal = containsTotalClaim(intent);
+  const hasInfallible = containsInfallibleClaim(intent);
+
+  if (hasPure && hasIdempotent) {
+    diagnostics.push({
+      code: "INT014",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: spanEnd,
+      message:
+        `fn '${decl.name}' intent: "${intent}" — 'idempotent' claim is redundant: ` +
+        `'pure' already implies it (pure bans all uses, which is strictly stronger than ` +
+        `idempotent's ban on random and time); remove 'idempotent' and keep 'pure'`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// remove the weaker 'idempotent' claim — 'pure' already guarantees it:\n` +
+        `fn ${decl.name}(...) intent: "pure" -> T = ...`,
+    });
+  }
+
+  if (hasInfallible && hasTotal) {
+    diagnostics.push({
+      code: "INT014",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: spanEnd,
+      message:
+        `fn '${decl.name}' intent: "${intent}" — 'total' claim is redundant: ` +
+        `'infallible' already implies it (infallible is total plus a no-Result-return ` +
+        `constraint; the no-throws guarantee of total is a strict subset); ` +
+        `remove 'total' and keep 'infallible'`,
+      rule: entry.rule,
+      idiom: entry.idiom,
+      rewrite:
+        `// remove the weaker 'total' claim — 'infallible' already guarantees it:\n` +
+        `fn ${decl.name}(...) intent: "infallible" -> T = ...`,
     });
   }
 }
