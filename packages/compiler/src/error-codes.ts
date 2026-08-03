@@ -1351,6 +1351,114 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  INT028: {
+    code: "INT028",
+    title: "intent declares 'pure' but body calls an imported fn that declares uses {}",
+    rule:
+      "a function declaring intent: \"pure\" must not call imported functions that declare capability requirements — " +
+      "capabilities (network I/O, filesystem, time, random, …) are side effects; " +
+      "a callee that declares uses { cap } exercises that capability on every call, " +
+      "making the caller non-pure by transitivity even when the caller declares no capability itself; " +
+      "this check extends INT012 to cross-file callees visible via moduleEffects; " +
+      "this check fires only when INT001 and INT002 do not",
+    idiom:
+      "inject the callee's return value as a parameter to break the capability dependency, " +
+      "or lift the capability declaration to the outer fn and remove the pure intent claim",
+    rewrite:
+      "// option A — inject the computed value as a parameter (preferred):\n" +
+      "fn outer(precomputed: T) intent: \"pure\" -> R {\n" +
+      "  // use precomputed instead of calling the imported fn\n" +
+      "}\n\n" +
+      "// option B — remove the pure intent claim and declare the capability:\n" +
+      "fn outer(...) uses { cap } -> R {\n" +
+      "  const v = importedFn(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls imported fetchEnv() which declares uses { env }; INT028 fires\n" +
+      "?bs 0.9\n" +
+      "import { fetchEnv } from \"./env\"  // fetchEnv declares uses { env }\n\n" +
+      "fn buildUrl(path: string) intent: \"pure\" -> string {\n" +
+      "  return fetchEnv(\"BASE_URL\") + path  // INT028: imported callee declares uses { env }\n" +
+      "}\n\n" +
+      "// after option A — inject the base URL as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn buildUrl(baseUrl: string, path: string) intent: \"pure\" -> string {\n" +
+      "  return baseUrl + path\n" +
+      "}",
+  },
+  INT029: {
+    code: "INT029",
+    title: "intent declares 'pure' but body calls an imported fn that declares reads {} or writes {}",
+    rule:
+      "a function declaring intent: \"pure\" must not call imported functions that declare reads {} or writes {} — " +
+      "a callee that reads external state makes the caller's output depend on ambient state (non-deterministic); " +
+      "a callee that writes external state introduces a side effect; " +
+      "both contradict the pure guarantee of determinism and referential transparency by transitivity; " +
+      "this check extends INT016 to cross-file callees visible via moduleEffects; " +
+      "this check fires only when INT001 and INT002 do not",
+    idiom:
+      "inject the externally-read value as a parameter so the fn is pure over its inputs, " +
+      "or remove the pure intent claim and surface the reads/writes on the outer fn",
+    rewrite:
+      "// option A — inject the external value as a parameter (preferred):\n" +
+      "fn outer(preloaded: T) intent: \"pure\" -> R {\n" +
+      "  // use preloaded instead of calling the imported fn\n" +
+      "}\n\n" +
+      "// option B — remove the pure intent claim and surface the effect:\n" +
+      "fn outer(...) reads { resource } -> R {\n" +
+      "  const v = importedFn(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls imported readConfig() which declares reads { config }; INT029 fires\n" +
+      "?bs 0.9\n" +
+      "import { readConfig } from \"./config\"  // readConfig declares reads { config }\n\n" +
+      "fn getTimeout(key: string) intent: \"pure\" -> number {\n" +
+      "  return readConfig(key).timeout  // INT029: imported callee declares reads { config }\n" +
+      "}\n\n" +
+      "// after option A — inject the config value as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn getTimeout(timeoutMs: number) intent: \"pure\" -> number {\n" +
+      "  return timeoutMs\n" +
+      "}",
+  },
+  INT030: {
+    code: "INT030",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares writes {}",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call imported functions that declare writes {} — " +
+      "an idempotent fn is safe to retry: multiple calls with the same arguments must produce the same " +
+      "observable outcome; a callee that declares writes {} mutates a resource on every call, " +
+      "making each retry produce additional mutations — the Nth call produces N writes, " +
+      "not the same outcome as the first call; this violates the idempotent contract by transitivity; " +
+      "this check extends INT015 to cross-file callees visible via moduleEffects",
+    idiom:
+      "move the write outside the idempotent boundary (the caller should write, the idempotent fn should compute), " +
+      "or check-then-write with a guard so repeated calls skip already-applied writes",
+    rewrite:
+      "// option A — split compute and write, keep compute idempotent:\n" +
+      "fn compute(...) intent: \"idempotent\" -> T {\n" +
+      "  return ...  // no writes inside\n" +
+      "}\n" +
+      "// caller: const v = compute(...); importedWriteFn(v)\n\n" +
+      "// option B — remove the idempotent claim and declare writes on the outer fn:\n" +
+      "fn outer(...) writes { resource } -> R {\n" +
+      "  return importedFn(...)\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls imported persist() which declares writes { db }; INT030 fires\n" +
+      "?bs 0.9\n" +
+      "import { persist } from \"./store\"  // persist declares writes { db }\n\n" +
+      "fn saveResult(id: string, value: number) intent: \"idempotent\" -> void {\n" +
+      "  persist(id, value)  // INT030: imported callee declares writes { db }\n" +
+      "}\n\n" +
+      "// after option B — remove idempotent and declare writes\n" +
+      "?bs 0.9\n" +
+      "fn saveResult(id: string, value: number) writes { db } -> void {\n" +
+      "  persist(id, value)\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

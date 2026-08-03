@@ -2848,3 +2848,228 @@ describe("INT026 — intent 'infallible' body calls imported fn that declares th
     expect(d.rewrite).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-file capabilities/reads/writes-transitivity: INT028, INT029, INT030
+// ---------------------------------------------------------------------------
+
+const tWithEffects = (
+  src: string,
+  moduleEffects: Record<string, { capabilities?: string[]; reads?: string[]; writes?: string[]; throws?: string[] }>,
+) => transform(src, { moduleEffects }).code;
+
+// INT028 — pure intent + imported fn uses {}
+describe("INT028 — intent 'pure' body calls imported fn that declares uses {} (?bs 0.9+)", () => {
+  it("fires INT028 when pure fn calls imported fn with capabilities", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    expect(() =>
+      tWithEffects(src, { fetchEnv: { capabilities: ["env"] } }),
+    ).toThrow(/INT028/);
+  });
+
+  it("INT028 diagnostic names caller, callee, and capability", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchEnv: { capabilities: ["env"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT028")!;
+    expect(d.message).toContain("buildUrl");
+    expect(d.message).toContain("fetchEnv");
+    expect(d.message).toContain("env");
+  });
+
+  it("does NOT fire INT028 when imported fn has no capabilities", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    expect(() =>
+      tWithEffects(src, { fetchEnv: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT028 when same-file callee has capabilities (INT012 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchEnv(k: string) uses { env } -> string = k\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT012");
+    expect(codes).not.toContain("INT028");
+  });
+
+  it("does NOT fire INT028 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchEnv: { capabilities: ["env"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT028");
+  });
+
+  it("INT028 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchEnv(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchEnv: { capabilities: ["env"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT028")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("resolves import alias and fires INT028", () => {
+    const src =
+      "?bs 0.9\n" +
+      'import { fetchEnv as getEnv } from "./env"\n' +
+      'fn buildUrl(path: string) intent: "pure" -> string = getEnv(path)\n';
+    expect(() =>
+      tWithEffects(src, { fetchEnv: { capabilities: ["env"] } }),
+    ).toThrow(/INT028/);
+  });
+});
+
+// INT029 — pure intent + imported fn reads {} or writes {}
+describe("INT029 — intent 'pure' body calls imported fn that declares reads {} or writes {} (?bs 0.9+)", () => {
+  it("fires INT029 when pure fn calls imported fn that reads {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimeout(key: string) intent: "pure" -> number = readConfig(key)\n';
+    expect(() =>
+      tWithEffects(src, { readConfig: { reads: ["config"] } }),
+    ).toThrow(/INT029/);
+  });
+
+  it("fires INT029 when pure fn calls imported fn that writes {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn cacheResult(k: string) intent: "pure" -> void = writeCache(k)\n';
+    expect(() =>
+      tWithEffects(src, { writeCache: { writes: ["cache"] } }),
+    ).toThrow(/INT029/);
+  });
+
+  it("INT029 diagnostic names caller, callee, and effect", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimeout(key: string) intent: "pure" -> number = readConfig(key)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { readConfig: { reads: ["config"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT029")!;
+    expect(d.message).toContain("getTimeout");
+    expect(d.message).toContain("readConfig");
+    expect(d.message).toContain("config");
+  });
+
+  it("does NOT fire INT029 when imported fn has no reads or writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimeout(key: string) intent: "pure" -> number = readConfig(key)\n';
+    expect(() =>
+      tWithEffects(src, { readConfig: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT029 when same-file callee reads/writes (INT016 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn readConfig(k: string) reads { config } -> number = 0\n" +
+      'fn getTimeout(key: string) intent: "pure" -> number = readConfig(key)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT016");
+    expect(codes).not.toContain("INT029");
+  });
+
+  it("INT029 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getTimeout(key: string) intent: "pure" -> number = readConfig(key)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { readConfig: { reads: ["config"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT029")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT030 — idempotent intent + imported fn writes {}
+describe("INT030 — intent 'idempotent' body calls imported fn that declares writes {} (?bs 0.9+)", () => {
+  it("fires INT030 when idempotent fn calls imported fn with writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn saveResult(id: string) intent: "idempotent" -> void = persist(id)\n';
+    expect(() =>
+      tWithEffects(src, { persist: { writes: ["db"] } }),
+    ).toThrow(/INT030/);
+  });
+
+  it("INT030 diagnostic names caller, callee, and written resource", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn saveResult(id: string) intent: "idempotent" -> void = persist(id)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { persist: { writes: ["db"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT030")!;
+    expect(d.message).toContain("saveResult");
+    expect(d.message).toContain("persist");
+    expect(d.message).toContain("db");
+  });
+
+  it("does NOT fire INT030 when imported fn has no writes", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn saveResult(id: string) intent: "idempotent" -> void = persist(id)\n';
+    expect(() =>
+      tWithEffects(src, { persist: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT030 when imported fn only reads (reads without writes does not fire)", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn lookupResult(id: string) intent: "idempotent" reads { db } -> string = query(id)\n';
+    expect(() =>
+      tWithEffects(src, { query: { reads: ["db"] } }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT030 when same-file callee writes (INT015 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(id: string) writes { db } -> void = id\n" +
+      'fn saveResult(id: string) intent: "idempotent" -> void = persist(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT015");
+    expect(codes).not.toContain("INT030");
+  });
+
+  it("INT030 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn saveResult(id: string) intent: "idempotent" -> void = persist(id)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { persist: { writes: ["db"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT030")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});

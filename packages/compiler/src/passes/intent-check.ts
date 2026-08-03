@@ -703,6 +703,111 @@ function checkPureClaim(
     }
   }
 
+  // INT028: cross-file callee-uses transitivity check (0.9+) — intent claims "pure"
+  // but body calls an imported fn (visible via moduleEffects) that declares uses { }.
+  // Extends INT012 to cross-file call sites. Only fires when INT001 and INT002 did not.
+  if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner28 = innerByDecl.get(decl) ?? [];
+    const callees28 = collectCallees(tokens, decl, inner28, extendedFnNames);
+    const entry28 = getErrorCode("INT028")!;
+    const intentStart28 = decl.intentStart!;
+    const loc28 = locationOf(src, intentStart28);
+    const fired28 = new Set<string>();
+
+    for (const localName of callees28) {
+      if (fired28.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT012 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.capabilities?.length) continue;
+      fired28.add(localName);
+
+      const capsStr = surface.capabilities.join(", ");
+      diagnostics.push({
+        code: "INT028",
+        severity: "error",
+        file: null,
+        line: loc28.line,
+        column: loc28.column,
+        start: intentStart28,
+        end: intentStart28 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls imported '${localName}' which declares uses { ${capsStr} } — ` +
+          `a callee with capability declarations makes the caller non-pure by transitivity; ` +
+          `inject the callee's return value as a parameter, or remove the pure intent claim`,
+        rule: entry28.rule,
+        idiom: entry28.idiom,
+        rewrite:
+          `// option A — inject the computed value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "pure" -> R {\n` +
+          `  // use precomputed instead of calling '${localName}'\n` +
+          `}\n\n` +
+          `// option B — remove the pure intent claim and declare the capability:\n` +
+          `fn ${decl.name}(...) uses { ${capsStr} } -> R {\n` +
+          `  const v = ${localName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT029: cross-file callee-reads/writes transitivity check (0.9+) — intent claims "pure"
+  // but body calls an imported fn (visible via moduleEffects) that declares reads {} or writes {}.
+  // Extends INT016 to cross-file call sites. Only fires when INT001 and INT002 did not.
+  if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner29 = innerByDecl.get(decl) ?? [];
+    const callees29 = collectCallees(tokens, decl, inner29, extendedFnNames);
+    const entry29 = getErrorCode("INT029")!;
+    const intentStart29 = decl.intentStart!;
+    const loc29 = locationOf(src, intentStart29);
+    const fired29 = new Set<string>();
+
+    for (const localName of callees29) {
+      if (fired29.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT016 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.reads?.length && !surface?.writes?.length) continue;
+      fired29.add(localName);
+
+      const effectParts: string[] = [];
+      if (surface.reads?.length) effectParts.push(`reads { ${surface.reads.join(", ")} }`);
+      if (surface.writes?.length) effectParts.push(`writes { ${surface.writes.join(", ")} }`);
+      const effectStr = effectParts.join(", ");
+      const effectKind = (surface.reads?.length ?? 0) > 0 && (surface.writes?.length ?? 0) > 0
+        ? "reads and writes external state"
+        : (surface.reads?.length ?? 0) > 0
+          ? "reads external state (non-deterministic)"
+          : "writes external state (side effect)";
+
+      diagnostics.push({
+        code: "INT029",
+        severity: "error",
+        file: null,
+        line: loc29.line,
+        column: loc29.column,
+        start: intentStart29,
+        end: intentStart29 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls imported '${localName}' which declares ${effectStr} — ` +
+          `a callee that ${effectKind} makes the caller non-pure by transitivity; ` +
+          `inject the external value as a parameter, or remove the pure intent claim`,
+        rule: entry29.rule,
+        idiom: entry29.idiom,
+        rewrite:
+          `// option A — inject the external value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., preloaded: T) intent: "pure" -> R {\n` +
+          `  // use preloaded instead of calling '${localName}'\n` +
+          `}\n\n` +
+          `// option B — remove the pure intent claim and surface the effect:\n` +
+          `fn ${decl.name}(...) ${effectStr} -> R {\n` +
+          `  const v = ${localName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
   // INT011: header-level structural check (0.9+) — intent claims "pure" but the
   // function is declared async. An async fn always returns a Promise (two calls
   // with identical arguments return distinct, non-equal objects) and suspends by
@@ -1174,6 +1279,54 @@ function checkIdempotentClaim(
           `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> = ${localName}Safe(...)\n\n` +
           `// option C — remove the idempotent claim if exception propagation is intentional:\n` +
           `fn ${decl.name}(...) throws { ${throwsStr} } -> T = ${localName}(...)`,
+      });
+    }
+  }
+
+  // INT030: cross-file callee-writes transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls an imported fn (visible via moduleEffects) that declares writes {}.
+  // Extends INT015 to cross-file call sites.
+  if (checksReadsWrites && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner30 = innerByDecl.get(decl) ?? [];
+    const callees30 = collectCallees(tokens, decl, inner30, extendedFnNames);
+    const entry30 = getErrorCode("INT030")!;
+    const intentStart30 = decl.intentStart!;
+    const loc30 = locationOf(src, intentStart30);
+    const fired30 = new Set<string>();
+
+    for (const localName of callees30) {
+      if (fired30.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT015 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.writes?.length) continue;
+      fired30.add(localName);
+
+      const writesStr = surface.writes.join(", ");
+      diagnostics.push({
+        code: "INT030",
+        severity: "error",
+        file: null,
+        line: loc30.line,
+        column: loc30.column,
+        start: intentStart30,
+        end: intentStart30 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls imported '${localName}' which declares writes { ${writesStr} } — ` +
+          `a callee that mutates a resource makes the caller non-idempotent by transitivity; ` +
+          `move the write outside the idempotent boundary, or remove the idempotent intent claim`,
+        rule: entry30.rule,
+        idiom: entry30.idiom,
+        rewrite:
+          `// option A — split into an idempotent compute fn and a separate write fn:\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> T {\n` +
+          `  return compute(...)  // no writes inside\n` +
+          `}\n` +
+          `// call '${localName}' outside, after the idempotent step\n\n` +
+          `// option B — remove the idempotent intent claim and declare writes on outer fn:\n` +
+          `fn ${decl.name}(...) writes { ${writesStr} } -> R {\n` +
+          `  return ${localName}(...)\n` +
+          `}`,
       });
     }
   }
