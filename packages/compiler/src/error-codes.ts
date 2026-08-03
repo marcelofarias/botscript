@@ -1085,6 +1085,96 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn computeSync(n: number) -> number = n * 2\n\n" +
       "fn double(n: number) intent: \"infallible\" -> number = computeSync(n)",
   },
+  INT022: {
+    code: "INT022",
+    title: "intent declares 'idempotent' but the function declares throws {}",
+    rule:
+      "a function declaring intent: \"idempotent\" must not declare throws {} — " +
+      "an idempotent fn is safe to retry: multiple calls with the same arguments must produce the same " +
+      "observable outcome; declaring throws {} means the function can propagate exceptions, and whether it " +
+      "throws or returns depends on external state that may vary across calls; if the Nth retry throws " +
+      "while the first call succeeded, the observable outcome differs — the idempotent contract is broken; " +
+      "encode failure in the return type as Result<T, E> (the fn always returns a value, making retry " +
+      "outcomes structurally identical), or remove the idempotent intent claim",
+    idiom:
+      "idempotent fns must have a deterministic, exception-free return path; encode all failure cases " +
+      "in Result<T, E> so that every call — including retries — returns the same shape of value; " +
+      "the retry-safe boundary is the fn itself: it must always return, never throw",
+    rewrite:
+      "// option A — encode failure as Result (preferred for idempotent fns):\n" +
+      "fn name(...) intent: \"idempotent\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(compute(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — remove the idempotent claim (keep throws {}):\n" +
+      "fn name(...) throws { EType } -> T { ... }",
+    example:
+      "// before — fn claims idempotent but declares throws { NetworkError }; INT022 fires\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) intent: \"idempotent\" throws { NetworkError } -> User {\n" +
+      "  return http.get(`/users/${id}`)  // INT022: throws {} contradicts idempotent guarantee\n" +
+      "}\n\n" +
+      "// after option A — encode failure as Result\n" +
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) intent: \"idempotent\" -> Result<User, NetworkError> {\n" +
+      "  try {\n" +
+      "    return ok(http.get(`/users/${id}`))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new NetworkError(e))\n" +
+      "  }\n" +
+      "}",
+  },
+  INT023: {
+    code: "INT023",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call other functions that can propagate exceptions — " +
+      "an idempotent fn is safe to retry: multiple calls with the same arguments must produce the same " +
+      "observable outcome; a callee that declares throws {} can fail on some calls and succeed on others " +
+      "depending on external state (network availability, resource contention, transient errors); " +
+      "if the callee throws on the Nth retry, the outer fn's observable outcome differs from the first call, " +
+      "violating the idempotent contract by transitivity; " +
+      "this check fires only when INT022 does not (no throws {} on the outer fn's own header)",
+    idiom:
+      "wrap the throwing callee in a try/catch that converts the exception to a Result<T, E> return value; " +
+      "this makes the outer fn's return type structurally identical across retries — err() on failure, ok() on " +
+      "success — preserving the idempotent contract; or use a non-throwing variant of the callee",
+    rewrite:
+      "// option A — catch the exception and return Result (preferred for idempotent fns):\n" +
+      "fn outer(...) intent: \"idempotent\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(callee(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — use a non-throwing variant (if one exists):\n" +
+      "fn outer(...) intent: \"idempotent\" -> Result<T, EType> = calleeSafe(...)\n\n" +
+      "// option C — remove the idempotent claim if exception propagation is intentional:\n" +
+      "fn outer(...) throws { EType } -> T = callee(...)",
+    example:
+      "// before — fn claims idempotent but calls validate() which declares throws { ValidationError }; INT023 fires\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { ... }\n\n" +
+      "fn process(s: string) intent: \"idempotent\" -> string {\n" +
+      "  validate(s)  // INT023: callee declares throws { ValidationError }\n" +
+      "  return s.trim()\n" +
+      "}\n\n" +
+      "// after option A — catch and return Result\n" +
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { ... }\n\n" +
+      "fn process(s: string) intent: \"idempotent\" -> Result<string, ValidationError> {\n" +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "    return ok(s.trim())\n" +
+      "  } catch (e) {\n" +
+      "    return err(new ValidationError(e))\n" +
+      "  }\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

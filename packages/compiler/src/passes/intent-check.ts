@@ -120,6 +120,25 @@
  *                      Fires only when INT003, INT004, INT005, INT013, and INT015 do not.
  *                      (body-level callee-async transitivity check, 0.9+)
  *
+ *              INT022  intent contains "idempotent" but the function declares
+ *                      `throws { ... }`. An idempotent fn is safe to retry — multiple
+ *                      calls with the same arguments must produce the same observable
+ *                      outcome. Declaring throws {} means the fn can propagate exceptions;
+ *                      whether it throws or returns depends on external state that may
+ *                      vary across retries, breaking the idempotent contract.
+ *                      Use Result<T, E> to encode failure in the return type instead.
+ *                      (header-level consistency check, 0.9+)
+ *
+ *              INT023  intent contains "idempotent" but the function body calls a
+ *                      same-file fn that declares `throws { ... }`. A throwing callee
+ *                      can fail on some retries and succeed on others depending on
+ *                      external state — if the Nth retry throws while the first call
+ *                      succeeded, the observable outcome differs, violating the
+ *                      idempotent contract by transitivity.
+ *                      Fires only when INT022 does not (no throws {} on the outer header).
+ *                      Parallel to INT018 (pure + callee throws) on the idempotent axis.
+ *                      (body-level callee-transitivity check, 0.9+)
+ *
  *              INT014  intent string carries a claim that is subsumed by a stronger
  *                      claim in the same string. Two cases:
  *                        — 'pure' + 'idempotent': pure bans all uses (superset of
@@ -277,7 +296,7 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
       checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync);
@@ -659,15 +678,18 @@ const NON_IDEMPOTENT = new Set(["random", "time"]);
 
 /**
  * "idempotent" claim: INT003 (header conflict), INT004 (body under-declaration),
- * INT005 (writes {} conflict), INT013 (callee-transitivity gap).
+ * INT005 (writes {} conflict), INT013 (callee-transitivity gap),
+ * INT015 (callee-writes transitivity), INT019 (callee-async transitivity),
+ * INT022 (throws {} header conflict), INT023 (callee-throws transitivity).
  *
  * An idempotent fn is safe to retry: same inputs → same observable result.
  * `random` and `time` break that — they yield different values per call — so a
  * fn that declares or directly calls either cannot honour the claim. `writes {}`
  * also contradicts idempotency: a fn that writes to a resource on every call
- * produces different observable side effects across invocations. Other
- * capabilities (net, fs, …) are not structurally flagged — INT003/INT005 are
- * narrow header heuristics, not proofs of idempotence.
+ * produces different observable side effects across invocations. `throws {}` breaks
+ * the idempotent contract by introducing an exception path that may fire on some
+ * retries but not others. Other capabilities (net, fs, …) are not structurally
+ * flagged — INT003/INT005 are narrow header heuristics, not proofs of idempotence.
  */
 function checkIdempotentClaim(
   decl: FnDecl,
@@ -684,6 +706,7 @@ function checkIdempotentClaim(
   fnNameToUses: Map<string, string[]> = new Map(),
   fnNameToWrites: Map<string, string[]> = new Map(),
   fnNameToIsAsync: Map<string, boolean> = new Map(),
+  fnNameToThrows: Map<string, string[]> = new Map(),
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -931,6 +954,100 @@ function checkIdempotentClaim(
           `  const v = ${calleeName}(...)\n` +
           `  return compute(v)\n` +
           `}`,
+      });
+    }
+  }
+
+  // INT022: header-level — throws {} declared on this fn contradicts idempotency (0.9+).
+  // An idempotent fn is safe to retry: multiple calls with the same arguments must produce
+  // the same observable outcome. Declaring throws {} means the fn can propagate exceptions;
+  // whether it throws or returns depends on external state that may vary across retries,
+  // breaking the idempotent contract. Use Result<T, E> to encode failure instead.
+  // Checked last among header checks; early returns above (INT005/INT003) prevent double-fire.
+  if (checksThrows && !bodyUse && (decl.throws?.length ?? 0) > 0) {
+    const entry22 = getErrorCode("INT022")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const throwsStr = decl.throws!.join(", ");
+    diagnostics.push({
+      code: "INT022",
+      severity: "error",
+      file: null,
+      line: loc.line,
+      column: loc.column,
+      start: intentStart,
+      end: intentStart + decl.intent!.length + 2,
+      message:
+        `fn '${decl.name}' intent claims 'idempotent' but declares throws { ${throwsStr} } — ` +
+        `an idempotent fn must produce the same observable outcome on every call; ` +
+        `declaring throws {} means the fn can propagate exceptions that may occur only on some retries, ` +
+        `breaking the idempotent contract; use Result<T, ${throwsStr}> to encode failure in the return type`,
+      rule: entry22.rule,
+      idiom: entry22.idiom,
+      rewrite:
+        `// option A — encode failure as Result (preferred for idempotent fns):\n` +
+        `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> {\n` +
+        `  try {\n` +
+        `    return ok(compute(...))\n` +
+        `  } catch (e) {\n` +
+        `    return err(new ${throwsStr.split(",")[0]!.trim()}(e))\n` +
+        `  }\n` +
+        `}\n\n` +
+        `// option B — remove the idempotent claim (keep throws {}):\n` +
+        `fn ${decl.name}(...) throws { ${throwsStr} } -> T { ... }`,
+    });
+    // INT022 fired — do not also fire INT023 for this fn.
+    return;
+  }
+
+  // INT023: body-level callee-throws transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls a same-file fn that declares throws {}. A throwing callee can fail on some
+  // retries and succeed on others depending on external state — the outer fn's observable
+  // outcome differs across calls, violating the idempotent contract by transitivity.
+  // Fires only when INT022 did not (no throws {} on the outer header).
+  if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToThrows.size > 0) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const entry23 = getErrorCode("INT023")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired23 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired23.has(calleeName)) continue;
+      const calleeThrows = fnNameToThrows.get(calleeName);
+      if (!calleeThrows || calleeThrows.length === 0) continue;
+      fired23.add(calleeName);
+
+      const throwsStr = calleeThrows.join(", ");
+      diagnostics.push({
+        code: "INT023",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+          `a throwing callee can fail on some retries and succeed on others; ` +
+          `the outer fn's observable outcome differs across calls, violating the idempotent contract by transitivity; ` +
+          `wrap the call in try/catch converting to Result<T, E>, or remove the idempotent intent claim`,
+        rule: entry23.rule,
+        idiom: entry23.idiom,
+        rewrite:
+          `// option A — catch '${calleeName}'s exception and return Result (preferred):\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${calleeName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${calleeThrows[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — use a non-throwing variant (if one exists):\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> = ${calleeName}Safe(...)\n\n` +
+          `// option C — remove the idempotent claim if exception propagation is intentional:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T = ${calleeName}(...)`,
       });
     }
   }

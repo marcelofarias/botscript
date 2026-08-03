@@ -2432,3 +2432,181 @@ describe("INT021 — intent 'infallible' body calls same-file async fn (?bs 0.9+
     expect(codes).toContain("INT021");
   });
 });
+
+// INT022 — idempotent intent + throws {} header
+describe("INT022 — intent 'idempotent' but fn declares throws {} (?bs 0.9+)", () => {
+  it("fires INT022 when idempotent fn declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn fetchUser(id: string) intent: "idempotent" throws { NetworkError } -> string {\n' +
+      "  return id\n" +
+      "}\n";
+    expect(() => t(src)).toThrow(/INT022/);
+  });
+
+  it("INT022 diagnostic message names the caller and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadConfig(key: string) intent: "idempotent" throws { ConfigError } -> string {\n' +
+      "  return key\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT022")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("loadConfig");
+    expect(d.message).toContain("ConfigError");
+    expect(d.message).toContain("idempotent");
+  });
+
+  it("INT022 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(x: string) intent: "idempotent" throws { AppError } -> string = x\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT022")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("does NOT fire INT022 when idempotent fn does not declare throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn normalize(s: string) intent: "idempotent" -> string = s.toLowerCase()\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT005 (not INT022) when idempotent fn also declares writes {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn save(s: string) writes { db } intent: "idempotent" throws { DbError } -> void {\n' +
+      "  return\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT005");
+    expect(codes).not.toContain("INT022");
+  });
+
+  it("fires INT003 (not INT022) when idempotent fn declares uses { random } and throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn pick(n: number) uses { random } intent: "idempotent" throws { RangeError } -> number {\n' +
+      "  return n\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT003");
+    expect(codes).not.toContain("INT022");
+  });
+
+  it("does NOT fire INT022 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn run(x: string) intent: "idempotent" throws { AppError } -> string = x\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT022");
+  });
+});
+
+// INT023 — idempotent intent body calls same-file fn that declares throws {}
+describe("INT023 — intent 'idempotent' body calls same-file fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT023 when idempotent fn calls a same-file fn that declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      'fn process(s: string) intent: "idempotent" -> string = validate(s)\n';
+    expect(() => t(src)).toThrow(/INT023/);
+  });
+
+  it("INT023 diagnostic message names the caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn checkQuota(id: string) throws { QuotaError } -> string = id\n" +
+      'fn enforceLimit(id: string) intent: "idempotent" -> string = checkQuota(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT023")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("enforceLimit");
+    expect(d.message).toContain("checkQuota");
+    expect(d.message).toContain("QuotaError");
+  });
+
+  it("INT023 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parse(s: string) throws { ParseError } -> string = s\n" +
+      'fn compute(s: string) intent: "idempotent" -> string = parse(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT023")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("does NOT fire INT023 when idempotent fn calls a non-throwing callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn normalize(s: string) -> string = s.toLowerCase()\n" +
+      'fn canonicalize(s: string) intent: "idempotent" -> string = normalize(s)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("fires INT022 (not INT023) when idempotent fn itself declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn helper(s: string) throws { AppError } -> string = s\n" +
+      'fn run(s: string) intent: "idempotent" throws { AppError } -> string = helper(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT022");
+    expect(codes).not.toContain("INT023");
+  });
+
+  it("fires INT005 (not INT023) when idempotent fn declares writes {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn persist(s: string) throws { DbError } -> string = s\n" +
+      'fn save(s: string) writes { db } intent: "idempotent" -> string = persist(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT005");
+    expect(codes).not.toContain("INT023");
+  });
+
+  it("does NOT fire INT023 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "fn parse(s: string) throws { ParseError } -> number { return 0 }\n" +
+      'fn compute(s: string) intent: "idempotent" -> number = parse(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT023");
+  });
+
+  it("fires INT023 with multiple throwing callees (one diagnostic per callee)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+      "fn parse(s: string) throws { ParseError } -> string = s\n" +
+      'fn process(s: string) intent: "idempotent" -> string {\n' +
+      "  const v = validate(s)\n" +
+      "  return parse(v)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.filter((d) => d.code === "INT023");
+    expect(codes.length).toBe(2);
+  });
+});
