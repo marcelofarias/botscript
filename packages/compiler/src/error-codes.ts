@@ -1459,6 +1459,43 @@ const E: Record<string, ErrorCodeEntry> = {
       "  persist(id, value)\n" +
       "}",
   },
+  INT031: {
+    code: "INT031",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares uses { random } or uses { time }",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call imported functions that declare uses { random } or uses { time } — " +
+      "an idempotent fn is safe to retry: same inputs → same observable result; " +
+      "random and time produce a different value on every call, so a callee that declares either " +
+      "makes the caller non-idempotent by transitivity — the second retry of a supposedly idempotent fn " +
+      "would observe a different random seed or timestamp; " +
+      "this check extends INT013 to cross-file callees visible via moduleEffects; " +
+      "this check fires only when INT003 and INT004 do not (no direct header or body conflict)",
+    idiom:
+      "inject the non-idempotent callee's return value as a parameter so the outer fn receives it as a stable input; " +
+      "the caller that passes the value is responsible for the non-idempotency, not the idempotent fn",
+    rewrite:
+      "// option A — inject the pre-computed value as a parameter (preferred):\n" +
+      "fn outer(..., precomputed: T) intent: \"idempotent\" -> R {\n" +
+      "  // use precomputed instead of calling the imported fn\n" +
+      "}\n\n" +
+      "// option B — remove the idempotent claim and declare the capability:\n" +
+      "fn outer(...) uses { random } -> R {\n" +
+      "  const v = importedFn(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls imported timestamp() which declares uses { time }; INT031 fires\n" +
+      "?bs 0.9\n" +
+      "import { timestamp } from \"./clock\"  // timestamp declares uses { time }\n\n" +
+      "fn buildKey(prefix: string) intent: \"idempotent\" -> string {\n" +
+      "  return prefix + \"-\" + timestamp()  // INT031: imported callee declares uses { time }\n" +
+      "}\n\n" +
+      "// after option A — inject the timestamp as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn buildKey(prefix: string, ts: number) intent: \"idempotent\" -> string {\n" +
+      "  return prefix + \"-\" + ts\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

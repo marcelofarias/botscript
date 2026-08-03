@@ -3073,3 +3073,92 @@ describe("INT030 — intent 'idempotent' body calls imported fn that declares wr
     expect(d.rewrite).toBeTruthy();
   });
 });
+
+// INT031 — idempotent intent + imported fn uses { random | time }
+describe("INT031 — intent 'idempotent' body calls imported fn that declares uses { random } or uses { time } (?bs 0.9+)", () => {
+  it("fires INT031 when idempotent fn calls imported fn with uses { time }", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + timestamp()\n';
+    expect(() =>
+      tWithEffects(src, { timestamp: { capabilities: ["time"] } }),
+    ).toThrow(/INT031/);
+  });
+
+  it("fires INT031 when idempotent fn calls imported fn with uses { random }", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn makeId(prefix: string) intent: "idempotent" -> string = prefix + genId()\n';
+    expect(() =>
+      tWithEffects(src, { genId: { capabilities: ["random"] } }),
+    ).toThrow(/INT031/);
+  });
+
+  it("INT031 diagnostic names caller, callee, and non-idempotent capability", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + timestamp()\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { timestamp: { capabilities: ["time"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT031")!;
+    expect(d.message).toContain("buildKey");
+    expect(d.message).toContain("timestamp");
+    expect(d.message).toContain("time");
+  });
+
+  it("does NOT fire INT031 when imported fn uses only non-random/time capabilities", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn fetchData(id: string) intent: "idempotent" uses { net } -> string = query(id)\n';
+    expect(() =>
+      tWithEffects(src, { query: { capabilities: ["net"] } }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT031 when same-file callee uses { time } (INT013 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn timestamp() uses { time } -> number = time.now()\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + timestamp()\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT013");
+    expect(codes).not.toContain("INT031");
+  });
+
+  it("does NOT fire INT031 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + timestamp()\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { timestamp: { capabilities: ["time"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT031");
+  });
+
+  it("resolves import alias and fires INT031", () => {
+    const src =
+      "?bs 0.9\n" +
+      "import { getTimestamp as ts } from \"./clock\"\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + ts()\n';
+    expect(() =>
+      tWithEffects(src, { getTimestamp: { capabilities: ["time"] } }),
+    ).toThrow(/INT031/);
+  });
+
+  it("INT031 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + timestamp()\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { timestamp: { capabilities: ["time"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT031")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});

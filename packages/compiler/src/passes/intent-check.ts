@@ -1330,6 +1330,57 @@ function checkIdempotentClaim(
       });
     }
   }
+
+  // INT031: cross-file callee-uses transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls an imported fn (visible via moduleEffects) that declares uses { random } or uses { time }.
+  // Extends INT013 to cross-file call sites.
+  // Fires only when INT003 (header-level uses conflict) and INT004 (body direct use) did not.
+  if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner31 = innerByDecl.get(decl) ?? [];
+    const callees31 = collectCallees(tokens, decl, inner31, extendedFnNames);
+    const entry31 = getErrorCode("INT031")!;
+    const intentStart31 = decl.intentStart!;
+    const loc31 = locationOf(src, intentStart31);
+    const fired31 = new Set<string>();
+
+    for (const localName of callees31) {
+      if (fired31.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT013 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.capabilities?.length) continue;
+      const nonIdemCaps = surface.capabilities.filter((c) => NON_IDEMPOTENT.has(c));
+      if (nonIdemCaps.length === 0) continue;
+      fired31.add(localName);
+
+      const usesStr = nonIdemCaps.join(", ");
+      diagnostics.push({
+        code: "INT031",
+        severity: "error",
+        file: null,
+        line: loc31.line,
+        column: loc31.column,
+        start: intentStart31,
+        end: intentStart31 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls imported '${localName}' which declares uses { ${usesStr} } — ` +
+          `a callee with non-idempotent capability makes the caller non-idempotent by transitivity; ` +
+          `inject the callee's return value as a parameter, or remove the idempotent intent claim`,
+        rule: entry31.rule,
+        idiom: entry31.idiom,
+        rewrite:
+          `// option A — inject the computed value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "idempotent" -> R {\n` +
+          `  // use precomputed instead of calling '${localName}'\n` +
+          `}\n\n` +
+          `// option B — remove the idempotent intent claim:\n` +
+          `fn ${decl.name}(...) uses { ${usesStr} } -> R {\n` +
+          `  const v = ${localName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
 }
 
 /**
