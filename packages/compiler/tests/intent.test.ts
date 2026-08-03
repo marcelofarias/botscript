@@ -2610,3 +2610,241 @@ describe("INT023 — intent 'idempotent' body calls same-file fn that declares t
     expect(codes.length).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-file throws-transitivity: INT024, INT025, INT026, INT027
+// ---------------------------------------------------------------------------
+
+const tWithMods = (src: string, moduleEffects: Record<string, { throws?: string[] }>) =>
+  transform(src, { moduleEffects }).code;
+
+// INT024 — pure intent + imported fn throws {}
+describe("INT024 — intent 'pure' body calls imported fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT024 when pure fn calls imported fn with throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    expect(() =>
+      tWithMods(src, { parse: { throws: ["ParseError"] } }),
+    ).toThrow(/INT024/);
+  });
+
+  it("INT024 diagnostic names caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { parse: { throws: ["ParseError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT024")!;
+    expect(d.message).toContain("normalize");
+    expect(d.message).toContain("parse");
+    expect(d.message).toContain("ParseError");
+  });
+
+  it("does NOT fire INT024 when imported fn has no throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    expect(() =>
+      tWithMods(src, { parse: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT024 when same-file callee throws (INT018 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn parse(s: string) throws { ParseError } -> string = s\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT018");
+    expect(codes).not.toContain("INT024");
+  });
+
+  it("does NOT fire INT024 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    expect(() =>
+      tWithMods(src, { parse: { throws: ["ParseError"] } }),
+    ).not.toThrow();
+  });
+
+  it("INT024 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn normalize(s: string) intent: "pure" -> string = parse(s)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { parse: { throws: ["ParseError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT024")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("resolves import alias and fires INT024", () => {
+    // import { parse as p } from "./parser" — local name is 'p', declared name 'parse'
+    const src =
+      "?bs 0.9\n" +
+      "import { parse as p } from \"./parser\"\n" +
+      'fn normalize(s: string) intent: "pure" -> string = p(s)\n';
+    expect(() =>
+      tWithMods(src, { parse: { throws: ["ParseError"] } }),
+    ).toThrow(/INT024/);
+  });
+});
+
+// INT027 — idempotent intent + imported fn throws {}
+describe("INT027 — intent 'idempotent' body calls imported fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT027 when idempotent fn calls imported fn with throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadUser(id: string) intent: "idempotent" -> string = fetchUser(id)\n';
+    expect(() =>
+      tWithMods(src, { fetchUser: { throws: ["NetworkError"] } }),
+    ).toThrow(/INT027/);
+  });
+
+  it("INT027 diagnostic names caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadUser(id: string) intent: "idempotent" -> string = fetchUser(id)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { fetchUser: { throws: ["NetworkError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT027")!;
+    expect(d.message).toContain("loadUser");
+    expect(d.message).toContain("fetchUser");
+    expect(d.message).toContain("NetworkError");
+  });
+
+  it("does NOT fire INT027 when imported fn has no throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadUser(id: string) intent: "idempotent" -> string = fetchUser(id)\n';
+    expect(() =>
+      tWithMods(src, { fetchUser: {} }),
+    ).not.toThrow();
+  });
+
+  it("fires INT022 (not INT027) when idempotent fn itself declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadUser(id: string) intent: "idempotent" throws { NetworkError } -> string = fetchUser(id)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { fetchUser: { throws: ["NetworkError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT022");
+    expect(codes).not.toContain("INT027");
+  });
+
+  it("fires INT023 (not INT027) when same-file callee throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn fetchUser(id: string) throws { NetworkError } -> string = id\n" +
+      'fn loadUser(id: string) intent: "idempotent" -> string = fetchUser(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT023");
+    expect(codes).not.toContain("INT027");
+  });
+
+  it("INT027 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn loadUser(id: string) intent: "idempotent" -> string = fetchUser(id)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { fetchUser: { throws: ["NetworkError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT027")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT025 — total intent + imported fn throws {}
+describe("INT025 — intent 'total' body calls imported fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT025 when total fn calls imported fn with throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn safeCheck(s: string) intent: "total" -> boolean = validate(s)\n';
+    expect(() =>
+      tWithMods(src, { validate: { throws: ["ValidationError"] } }),
+    ).toThrow(/INT025/);
+  });
+
+  it("does NOT fire INT025 when imported fn has no throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn safeCheck(s: string) intent: "total" -> boolean = validate(s)\n';
+    expect(() =>
+      tWithMods(src, { validate: {} }),
+    ).not.toThrow();
+  });
+
+  it("INT025 diagnostic names caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn safeCheck(s: string) intent: "total" -> boolean = validate(s)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { validate: { throws: ["ValidationError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT025")!;
+    expect(d.message).toContain("safeCheck");
+    expect(d.message).toContain("validate");
+    expect(d.message).toContain("ValidationError");
+  });
+});
+
+// INT026 — infallible intent + imported fn throws {}
+describe("INT026 — intent 'infallible' body calls imported fn that declares throws {} (?bs 0.9+)", () => {
+  it("fires INT026 when infallible fn calls imported fn with throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getConfig() intent: "infallible" -> string = load("config")\n';
+    expect(() =>
+      tWithMods(src, { load: { throws: ["IOError"] } }),
+    ).toThrow(/INT026/);
+  });
+
+  it("does NOT fire INT026 when imported fn has no throws", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getConfig() intent: "infallible" -> string = load("config")\n';
+    expect(() =>
+      tWithMods(src, { load: {} }),
+    ).not.toThrow();
+  });
+
+  it("INT026 diagnostic names caller, callee, and thrown type", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getConfig() intent: "infallible" -> string = load("config")\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { load: { throws: ["IOError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT026")!;
+    expect(d.message).toContain("getConfig");
+    expect(d.message).toContain("load");
+    expect(d.message).toContain("IOError");
+  });
+
+  it("INT026 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn getConfig() intent: "infallible" -> string = load("config")\n';
+    let caught: BotscriptError | null = null;
+    try { tWithMods(src, { load: { throws: ["IOError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT026")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});

@@ -1175,6 +1175,182 @@ const E: Record<string, ErrorCodeEntry> = {
       "  }\n" +
       "}",
   },
+  INT024: {
+    code: "INT024",
+    title: "intent declares 'pure' but body calls an imported fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"pure\" must not call imported functions that can propagate exceptions — " +
+      "throwing an exception is a side effect that escapes the fn boundary; a pure fn may never produce side " +
+      "effects, so calling an imported callee that declares throws {} makes the outer fn non-pure by " +
+      "transitivity even when the outer fn itself does not declare throws {} and INT001/INT018 do not fire; " +
+      "this check extends INT018 to cross-file callees visible via moduleEffects; " +
+      "this check fires only when INT001 and INT002 do not",
+    idiom:
+      "wrap the throwing import in a try/catch that converts the exception to a Result<T, E> return value; " +
+      "Result encodes failure in the return type instead of the exception channel, preserving the pure " +
+      "contract; or use a non-throwing variant of the imported callee",
+    rewrite:
+      "// option A — catch the exception and return Result (preferred):\n" +
+      "fn name(...) intent: \"pure\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(importedFn(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — remove the pure claim:\n" +
+      "fn name(...) throws { EType } -> T {\n" +
+      "  return importedFn(...)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls imported parse() which declares throws { ParseError }; INT024 fires\n" +
+      "?bs 0.9\n" +
+      "import { parse } from \"./parser\"  // parse declares throws { ParseError }\n\n" +
+      "fn normalize(s: string) intent: \"pure\" -> string {\n" +
+      "  return parse(s).value  // INT024: imported callee declares throws { ParseError }\n" +
+      "}\n\n" +
+      "// after option A — catch and return Result\n" +
+      "?bs 0.9\n" +
+      "fn normalize(s: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
+      "  try {\n" +
+      "    return ok(parse(s).value)\n" +
+      "  } catch (e) {\n" +
+      "    return err(new ParseError(e))\n" +
+      "  }\n" +
+      "}",
+  },
+  INT025: {
+    code: "INT025",
+    title: "intent declares 'total' but body calls an imported fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"total\" must not call imported functions that can propagate exceptions — " +
+      "a total function handles all inputs and never propagates exceptions to callers; calling an imported " +
+      "callee that declares throws {} re-opens the exception channel by transitivity, even when the outer fn " +
+      "itself does not declare throws {} and INT006/INT007 do not fire; " +
+      "this check extends INT007 to cross-file callees visible via moduleEffects",
+    idiom:
+      "wrap the throwing import in a try/catch and return Result<T, E>; this makes the outer fn total — " +
+      "it always returns a value; or use a non-throwing variant of the imported callee",
+    rewrite:
+      "// option A — catch the exception and return Result (preferred):\n" +
+      "fn name(...) intent: \"total\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(importedFn(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — remove the total claim:\n" +
+      "fn name(...) throws { EType } -> T {\n" +
+      "  return importedFn(...)\n" +
+      "}",
+    example:
+      "// before — fn claims total but calls imported validate() which declares throws { ValidationError }; INT025 fires\n" +
+      "?bs 0.9\n" +
+      "import { validate } from \"./validation\"  // validate declares throws { ValidationError }\n\n" +
+      "fn safeCheck(s: string) intent: \"total\" -> boolean {\n" +
+      "  return validate(s)  // INT025: imported callee declares throws { ValidationError }\n" +
+      "}\n\n" +
+      "// after option A — catch and return Result\n" +
+      "?bs 0.9\n" +
+      "fn safeCheck(s: string) intent: \"total\" -> Result<boolean, ValidationError> {\n" +
+      "  try {\n" +
+      "    return ok(validate(s))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new ValidationError(e))\n" +
+      "  }\n" +
+      "}",
+  },
+  INT026: {
+    code: "INT026",
+    title: "intent declares 'infallible' but body calls an imported fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"infallible\" must not call imported functions that can propagate exceptions — " +
+      "an infallible fn always succeeds: it never throws and never returns an error value; calling an imported " +
+      "callee that declares throws {} violates the no-failure guarantee by transitivity, even when the outer fn " +
+      "itself does not declare throws {} and INT009/INT010 do not fire; " +
+      "this check extends INT010 to cross-file callees visible via moduleEffects; " +
+      "infallible ⊂ total — this check applies in addition to INT025",
+    idiom:
+      "wrap the throwing import in a try/catch and return Result<T, E> — then downgrade to intent: \"total\" " +
+      "since the fn now encodes failure; or provide a non-throwing variant of the imported callee that " +
+      "guarantees success so the infallible claim can be preserved",
+    rewrite:
+      "// option A — catch exception and return Result, downgrade to total:\n" +
+      "fn name(...) intent: \"total\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(importedFn(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — use a non-throwing variant (preserve infallible):\n" +
+      "fn name(...) intent: \"infallible\" -> T = importedFnSafe(...)\n\n" +
+      "// option C — remove the infallible claim:\n" +
+      "fn name(...) throws { EType } -> T = importedFn(...)",
+    example:
+      "// before — fn claims infallible but calls imported load() which declares throws { IOError }; INT026 fires\n" +
+      "?bs 0.9\n" +
+      "import { load } from \"./store\"  // load declares throws { IOError }\n\n" +
+      "fn getConfig() intent: \"infallible\" -> Config {\n" +
+      "  return load(\"config\")  // INT026: imported callee declares throws { IOError }\n" +
+      "}\n\n" +
+      "// after option A — catch and downgrade to total\n" +
+      "?bs 0.9\n" +
+      "fn getConfig() intent: \"total\" -> Result<Config, IOError> {\n" +
+      "  try {\n" +
+      "    return ok(load(\"config\"))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new IOError(e))\n" +
+      "  }\n" +
+      "}",
+  },
+  INT027: {
+    code: "INT027",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares throws {}",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call imported functions that can propagate exceptions — " +
+      "an idempotent fn is safe to retry: multiple calls with the same arguments must produce the same " +
+      "observable outcome; an imported callee that declares throws {} can fail on some calls and succeed on " +
+      "others depending on external state (network availability, resource contention, transient errors); " +
+      "if the imported callee throws on the Nth retry, the outer fn's observable outcome differs from the " +
+      "first call, violating the idempotent contract by transitivity; " +
+      "this check extends INT023 to cross-file callees visible via moduleEffects; " +
+      "this check fires only when INT022 does not (no throws {} on the outer fn's own header)",
+    idiom:
+      "wrap the throwing import in a try/catch that converts the exception to a Result<T, E> return value; " +
+      "Result makes every call return the same shape — err() on failure, ok() on success — preserving " +
+      "the idempotent contract across retries; or use a non-throwing variant of the imported callee",
+    rewrite:
+      "// option A — catch the exception and return Result (preferred for idempotent fns):\n" +
+      "fn outer(...) intent: \"idempotent\" -> Result<T, EType> {\n" +
+      "  try {\n" +
+      "    return ok(importedFn(...))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new EType(e))\n" +
+      "  }\n" +
+      "}\n\n" +
+      "// option B — use a non-throwing variant (if one exists):\n" +
+      "fn outer(...) intent: \"idempotent\" -> Result<T, EType> = importedFnSafe(...)\n\n" +
+      "// option C — remove the idempotent claim if exception propagation is intentional:\n" +
+      "fn outer(...) throws { EType } -> T = importedFn(...)",
+    example:
+      "// before — fn claims idempotent but calls imported fetch() which declares throws { NetworkError }; INT027 fires\n" +
+      "?bs 0.9\n" +
+      "import { fetchUser } from \"./api\"  // fetchUser declares throws { NetworkError }\n\n" +
+      "fn loadUser(id: string) intent: \"idempotent\" -> User {\n" +
+      "  return fetchUser(id)  // INT027: imported callee declares throws { NetworkError }\n" +
+      "}\n\n" +
+      "// after option A — catch and return Result\n" +
+      "?bs 0.9\n" +
+      "fn loadUser(id: string) intent: \"idempotent\" -> Result<User, NetworkError> {\n" +
+      "  try {\n" +
+      "    return ok(fetchUser(id))\n" +
+      "  } catch (e) {\n" +
+      "    return err(new NetworkError(e))\n" +
+      "  }\n" +
+      "}",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

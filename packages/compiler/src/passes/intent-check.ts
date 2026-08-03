@@ -212,8 +212,9 @@ import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
 import { computeNesting, collectCallees } from "./_callgraph.js";
+import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
-export function passIntentCheck(src: string, version: VersionInfo): string {
+export function passIntentCheck(src: string, version: VersionInfo, moduleEffects?: ModuleEffects): string {
   if (!atLeast(version.resolved, "0.7")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
@@ -283,6 +284,22 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     }
   }
 
+  // Cross-file callee resolution: when moduleEffects is provided, extend the
+  // callee scan to include imported fn names (and their local aliases).
+  const importAliases = moduleEffects ? buildImportAliasMap(tokens) : new Map<string, string>();
+  const knownExternal = new Set<string>(moduleEffects ? Object.keys(moduleEffects) : []);
+  const aliasedExtNames = moduleEffects
+    ? new Set(
+        [...importAliases.entries()]
+          .filter(([, r]) => knownExternal.has(r))
+          .map(([a]) => a),
+      )
+    : new Set<string>();
+  // Extended set passed to collectCallees so cross-file call sites are collected.
+  const extendedFnNames = moduleEffects
+    ? new Set([...fnNames, ...knownExternal, ...aliasedExtNames])
+    : fnNames;
+
   for (const slot of program.fns) {
     const decl = slot.decl;
 
@@ -293,16 +310,16 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
     // Each claim is checked independently — a fn may carry several
     // (e.g. intent: "pure idempotent"), and each gets its own diagnostics.
     if (containsPureClaim(decl.intent)) {
-      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
+      checkPureClaim(decl, src, tokens, allDecls, checksReadsWrites, checksThrows, checksAsync, aliases, diagnostics, trackAliases, innerByDecl, fnNames, fnNameToUses, fnNameToReads, fnNameToWrites, fnNameToIsAsync, fnNameToThrows, moduleEffects, importAliases, extendedFnNames);
     }
     if (containsIdempotentClaim(decl.intent)) {
-      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync, fnNameToThrows);
+      checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync, fnNameToThrows, moduleEffects, importAliases, extendedFnNames);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
-      checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync);
+      checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync, moduleEffects, importAliases, extendedFnNames);
     }
     if (checksThrows && containsInfallibleClaim(decl.intent)) {
-      checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync);
+      checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync, moduleEffects, importAliases, extendedFnNames);
     }
     if (checksThrows) {
       checkRedundantIntentClaims(decl, src, diagnostics);
@@ -338,6 +355,9 @@ function checkPureClaim(
   fnNameToWrites: Map<string, string[]> = new Map(),
   fnNameToIsAsync: Map<string, boolean> = new Map(),
   fnNameToThrows: Map<string, string[]> = new Map(),
+  moduleEffects?: ModuleEffects,
+  importAliases: Map<string, string> = new Map(),
+  extendedFnNames: Set<string> = fnNames,
 ): void {
   const hasUses = decl.capabilities.length > 0;
   const hasReads = checksReadsWrites && (decl.reads?.length ?? 0) > 0;
@@ -632,6 +652,57 @@ function checkPureClaim(
     }
   }
 
+  // INT024: cross-file callee-throws transitivity check (0.9+) — intent claims "pure"
+  // but body calls an imported fn (visible via moduleEffects) that declares throws {}.
+  // Extends INT018 to cross-file call sites. Only fires when INT001 and INT002 did not.
+  if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, extendedFnNames);
+    const entry24 = getErrorCode("INT024")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired24 = new Set<string>();
+
+    for (const localName of callees) {
+      if (fired24.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT018 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.throws?.length) continue;
+      fired24.add(localName);
+
+      const throwsStr = surface.throws.join(", ");
+      diagnostics.push({
+        code: "INT024",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls imported '${localName}' which declares throws { ${throwsStr} } — ` +
+          `exceptions are side effects; a pure fn cannot propagate exceptions by transitivity; ` +
+          `wrap '${localName}' in try/catch returning Result<T, ${throwsStr}>, or remove the pure intent claim`,
+        rule: entry24.rule,
+        idiom: entry24.idiom,
+        rewrite:
+          `// option A — catch the exception and return Result (preferred):\n` +
+          `fn ${decl.name}(...) intent: "pure" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${localName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${surface.throws[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — remove the pure claim:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
+          `  return ${localName}(...)\n` +
+          `}`,
+      });
+    }
+  }
+
   // INT011: header-level structural check (0.9+) — intent claims "pure" but the
   // function is declared async. An async fn always returns a Promise (two calls
   // with identical arguments return distinct, non-equal objects) and suspends by
@@ -707,6 +778,9 @@ function checkIdempotentClaim(
   fnNameToWrites: Map<string, string[]> = new Map(),
   fnNameToIsAsync: Map<string, boolean> = new Map(),
   fnNameToThrows: Map<string, string[]> = new Map(),
+  moduleEffects?: ModuleEffects,
+  importAliases: Map<string, string> = new Map(),
+  extendedFnNames: Set<string> = fnNames,
 ): void {
   // INT005: header-level — writes { } contradicts idempotency (0.8+, same gate as
   // the writes {} enforcement). A fn that mutates a resource cannot be idempotent:
@@ -1051,6 +1125,58 @@ function checkIdempotentClaim(
       });
     }
   }
+
+  // INT027: cross-file callee-throws transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls an imported fn (visible via moduleEffects) that declares throws {}.
+  // Extends INT023 to cross-file call sites. Fires only when INT022 did not.
+  if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner = innerByDecl.get(decl) ?? [];
+    const callees = collectCallees(tokens, decl, inner, extendedFnNames);
+    const entry27 = getErrorCode("INT027")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired27 = new Set<string>();
+
+    for (const localName of callees) {
+      if (fired27.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT023 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.throws?.length) continue;
+      fired27.add(localName);
+
+      const throwsStr = surface.throws.join(", ");
+      diagnostics.push({
+        code: "INT027",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls imported '${localName}' which declares throws { ${throwsStr} } — ` +
+          `a throwing callee can fail on some retries and succeed on others; ` +
+          `the outer fn's observable outcome differs across calls, violating the idempotent contract by transitivity; ` +
+          `wrap the import call in try/catch converting to Result<T, E>, or remove the idempotent intent claim`,
+        rule: entry27.rule,
+        idiom: entry27.idiom,
+        rewrite:
+          `// option A — catch '${localName}'s exception and return Result (preferred):\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${localName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${surface.throws[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — use a non-throwing variant (if one exists):\n` +
+          `fn ${decl.name}(...) intent: "idempotent" -> Result<T, ${throwsStr}> = ${localName}Safe(...)\n\n` +
+          `// option C — remove the idempotent claim if exception propagation is intentional:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T = ${localName}(...)`,
+      });
+    }
+  }
 }
 
 /**
@@ -1185,6 +1311,9 @@ function checkTotalClaim(
   fnNameToThrows: Map<string, string[]>,
   diagnostics: Diagnostic[],
   fnNameToIsAsync: Map<string, boolean> = new Map(),
+  moduleEffects?: ModuleEffects,
+  importAliases: Map<string, string> = new Map(),
+  extendedFnNames: Set<string> = fnNames,
 ): void {
   // INT006: header-level — throws {} declared on this fn.
   if ((decl.throws?.length ?? 0) > 0) {
@@ -1309,6 +1438,57 @@ function checkTotalClaim(
       });
     }
   }
+
+  // INT025: cross-file callee-throws transitivity check (0.9+) — intent claims "total"
+  // but body calls an imported fn (visible via moduleEffects) that declares throws {}.
+  // Extends INT007 to cross-file call sites.
+  if (moduleEffects && decl.bodyTokenStart !== undefined) {
+    const innerFds = innerByDecl.get(decl) ?? [];
+    const extCallees = collectCallees(tokens, decl, innerFds, extendedFnNames);
+    const entry25 = getErrorCode("INT025")!;
+    const intentStart = decl.intentStart!;
+    const loc = locationOf(src, intentStart);
+    const fired25 = new Set<string>();
+
+    for (const localName of extCallees) {
+      if (fired25.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT007 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.throws?.length) continue;
+      fired25.add(localName);
+
+      const throwsStr = surface.throws.join(", ");
+      diagnostics.push({
+        code: "INT025",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'total' but calls imported '${localName}' which declares throws { ${throwsStr} } — ` +
+          `a total function may never propagate exceptions; calling an imported throwing callee reopens the exception channel; ` +
+          `wrap the import call in try/catch returning Result<T, E>, or remove the total intent claim`,
+        rule: entry25.rule,
+        idiom: entry25.idiom,
+        rewrite:
+          `// option A — catch the exception and return Result (preferred):\n` +
+          `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${localName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${surface.throws[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — remove the total claim:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
+          `  return ${localName}(...)\n` +
+          `}`,
+      });
+    }
+  }
 }
 
 /**
@@ -1338,6 +1518,9 @@ function checkInfallibleClaim(
   fnNameToThrows: Map<string, string[]>,
   diagnostics: Diagnostic[],
   fnNameToIsAsync: Map<string, boolean> = new Map(),
+  moduleEffects?: ModuleEffects,
+  importAliases: Map<string, string> = new Map(),
+  extendedFnNames: Set<string> = fnNames,
 ): void {
   const intentStart = decl.intentStart!;
   const loc = locationOf(src, intentStart);
@@ -1483,6 +1666,55 @@ function checkInfallibleClaim(
           `fn ${decl.name}(...) intent: "infallible" -> T = ${calleeName}(...)\n\n` +
           `// option B — downgrade intent claim:\n` +
           `fn ${decl.name}(...) intent: "total" -> Promise<T> = ${calleeName}(...)`,
+      });
+    }
+  }
+
+  // INT026: cross-file callee-throws transitivity check (0.9+) — intent claims "infallible"
+  // but body calls an imported fn (visible via moduleEffects) that declares throws {}.
+  // Extends INT010 to cross-file call sites.
+  if (moduleEffects && decl.bodyTokenStart !== undefined) {
+    const innerFds = innerByDecl.get(decl) ?? [];
+    const extCallees = collectCallees(tokens, decl, innerFds, extendedFnNames);
+    const entry26 = getErrorCode("INT026")!;
+    const fired26 = new Set<string>();
+
+    for (const localName of extCallees) {
+      if (fired26.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT010 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.throws?.length) continue;
+      fired26.add(localName);
+
+      const throwsStr = surface.throws.join(", ");
+      diagnostics.push({
+        code: "INT026",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentSpanEnd,
+        message:
+          `fn '${decl.name}' intent claims 'infallible' but calls imported '${localName}' which declares throws { ${throwsStr} } — ` +
+          `an infallible fn must never fail; calling an imported throwing callee violates the no-failure guarantee; ` +
+          `wrap the import call in try/catch and downgrade to intent: "total", or use a non-throwing variant`,
+        rule: entry26.rule,
+        idiom: entry26.idiom,
+        rewrite:
+          `// option A — catch exception and downgrade to total (preferred):\n` +
+          `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${localName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${surface.throws[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — use a non-throwing variant (preserve infallible):\n` +
+          `fn ${decl.name}(...) intent: "infallible" -> T = ${localName}Safe(...)\n\n` +
+          `// option C — remove the infallible claim:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T = ${localName}(...)`,
       });
     }
   }

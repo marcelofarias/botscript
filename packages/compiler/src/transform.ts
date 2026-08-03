@@ -179,6 +179,8 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
             return { ...e, fn: (s: string, v: VersionInfo) => passThrCheck(s, v, mods) };
           if (e.name === "capCheck")
             return { ...e, fn: (s: string, v: VersionInfo) => passCapCheck(s, v, mods) };
+          if (e.name === "intentCheck")
+            return { ...e, fn: (s: string, v: VersionInfo) => passIntentCheck(s, v, mods) };
           return e;
         })
       : PASS_PIPELINE;
