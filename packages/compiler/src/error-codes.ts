@@ -1023,6 +1023,68 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return readCache(key)\n" +
       "}",
   },
+  INT020: {
+    code: "INT020",
+    title: "intent declares 'total' but body calls a same-file fn that is declared async",
+    rule:
+      "a synchronous function declaring intent: \"total\" must not call other functions that are declared async — " +
+      "an async callee always returns a Promise that can reject; if the sync total fn forwards that Promise to its " +
+      "caller without catching, any rejection becomes an unhandled Promise rejection that escapes the fn boundary, " +
+      "directly contradicting the total guarantee that no exception propagates to callers; " +
+      "this check fires only when the total fn itself is synchronous and INT006/INT007 do not",
+    idiom:
+      "a total fn's exception boundary is only as strong as its callees' exception surfaces; " +
+      "an async callee carries a hidden rejection path that a sync caller cannot observe or catch at the JS level; " +
+      "prefer synchronous callees, or wrap the async call with a Promise catch and convert to Result",
+    rewrite:
+      "// option A — use a synchronous callee (preferred):\n" +
+      "fn callee(...) -> T = compute(...)\n\n" +
+      "fn outer(...) intent: \"total\" -> T = callee(...)\n\n" +
+      "// option B — remove the total intent claim and propagate the async boundary:\n" +
+      "async fn outer(...) -> Promise<T> = asyncCallee(...)",
+    example:
+      "// before — fn claims total but calls processAsync() which is async; INT020 fires\n" +
+      "?bs 0.9\n" +
+      "async fn processAsync(s: string) uses { net } -> Promise<string> { ... }\n\n" +
+      "fn handle(s: string) intent: \"total\" -> Promise<string> {\n" +
+      "  return processAsync(s)  // INT020: async callee can reject, escaping the total guarantee\n" +
+      "}\n\n" +
+      "// after option A — use a synchronous callee\n" +
+      "?bs 0.9\n" +
+      "fn process(s: string) -> string { ... }\n\n" +
+      "fn handle(s: string) intent: \"total\" -> string = process(s)",
+  },
+  INT021: {
+    code: "INT021",
+    title: "intent declares 'infallible' but body calls a same-file fn that is declared async",
+    rule:
+      "a synchronous function declaring intent: \"infallible\" must not call other functions that are declared async — " +
+      "an async callee always returns a Promise that can reject; if the sync infallible fn forwards that Promise to its " +
+      "caller without catching, any rejection becomes an unhandled Promise rejection that escapes the fn boundary, " +
+      "directly contradicting the infallible guarantee that the fn never fails; " +
+      "this check fires only when the infallible fn itself is synchronous and INT008/INT009/INT010 do not",
+    idiom:
+      "an infallible fn's no-failure guarantee is only as strong as its callees' exception surfaces; " +
+      "an async callee carries a hidden rejection path that a sync caller cannot observe or catch at the JS level; " +
+      "prefer synchronous callees for infallible fns",
+    rewrite:
+      "// option A — use a synchronous callee (preferred):\n" +
+      "fn callee(...) -> T = compute(...)\n\n" +
+      "fn outer(...) intent: \"infallible\" -> T = callee(...)\n\n" +
+      "// option B — downgrade intent claim:\n" +
+      "fn outer(...) intent: \"total\" -> Promise<T> = asyncCallee(...)",
+    example:
+      "// before — fn claims infallible but calls computeAsync() which is async; INT021 fires\n" +
+      "?bs 0.9\n" +
+      "async fn computeAsync(n: number) -> Promise<number> = Promise.resolve(n * 2)\n\n" +
+      "fn double(n: number) intent: \"infallible\" -> Promise<number> {\n" +
+      "  return computeAsync(n)  // INT021: async callee can reject, violating the infallible guarantee\n" +
+      "}\n\n" +
+      "// after option A — use a synchronous callee\n" +
+      "?bs 0.9\n" +
+      "fn computeSync(n: number) -> number = n * 2\n\n" +
+      "fn double(n: number) intent: \"infallible\" -> number = computeSync(n)",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",

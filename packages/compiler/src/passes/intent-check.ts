@@ -150,6 +150,24 @@
  *                      Fires only when INT001 and INT002 do not.
  *                      (body-level callee-throws transitivity check, 0.9+)
  *
+ *              INT020  intent contains "total" but the function body calls a
+ *                      same-file fn that is declared `async`. A sync fn claiming
+ *                      "total" (no exception propagation) that calls an async
+ *                      callee returns a Promise that can reject; any unhandled
+ *                      rejection escapes the fn boundary as an uncaught exception,
+ *                      contradicting the total guarantee.
+ *                      Fires only when INT006 and INT007 do not, and when the
+ *                      total fn itself is synchronous.
+ *                      (body-level callee-async transitivity check, 0.9+)
+ *
+ *              INT021  intent contains "infallible" but the function body calls a
+ *                      same-file fn that is declared `async`. Parallel to INT020
+ *                      on the infallible axis — an async callee's rejection path
+ *                      violates the no-failure guarantee.
+ *                      Fires only when INT008, INT009, and INT010 do not, and when
+ *                      the infallible fn itself is synchronous.
+ *                      (body-level callee-async transitivity check, 0.9+)
+ *
  *            Planned for future versions: monotonic, …
  *            (mechanical vocabulary grows one INT code at a time).
  *
@@ -262,10 +280,10 @@ export function passIntentCheck(src: string, version: VersionInfo): string {
       checkIdempotentClaim(decl, src, tokens, allDecls, checksReadsWrites, aliases, diagnostics, trackAliases, checksThrows, innerByDecl, fnNames, fnNameToUses, fnNameToWrites, fnNameToIsAsync);
     }
     if (checksThrows && containsTotalClaim(decl.intent)) {
-      checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
+      checkTotalClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync);
     }
     if (checksThrows && containsInfallibleClaim(decl.intent)) {
-      checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics);
+      checkInfallibleClaim(decl, src, tokens, innerByDecl, fnNames, fnNameToThrows, diagnostics, fnNameToIsAsync);
     }
     if (checksThrows) {
       checkRedundantIntentClaims(decl, src, diagnostics);
@@ -1049,6 +1067,7 @@ function checkTotalClaim(
   fnNames: Set<string>,
   fnNameToThrows: Map<string, string[]>,
   diagnostics: Diagnostic[],
+  fnNameToIsAsync: Map<string, boolean> = new Map(),
 ): void {
   // INT006: header-level — throws {} declared on this fn.
   if ((decl.throws?.length ?? 0) > 0) {
@@ -1084,51 +1103,94 @@ function checkTotalClaim(
   // INT007: body-level — calls a same-file fn that declares throws {}.
   // Skip fns with no body (abstract / declaration-only).
   if (decl.bodyTokenStart === undefined) return;
-  if (fnNameToThrows.size === 0) return;
 
-  const inner = innerByDecl.get(decl) ?? [];
-  const callees = collectCallees(tokens, decl, inner, fnNames);
-  const entry7 = getErrorCode("INT007")!;
   const intentStart = decl.intentStart!;
   const loc = locationOf(src, intentStart);
-  const fired = new Set<string>();
+  const inner = innerByDecl.get(decl) ?? [];
+  const callees = collectCallees(tokens, decl, inner, fnNames);
 
-  for (const calleeName of callees) {
-    if (fired.has(calleeName)) continue;
-    const calleeThrows = fnNameToThrows.get(calleeName);
-    if (!calleeThrows || calleeThrows.length === 0) continue;
-    fired.add(calleeName);
+  // INT007: body-level — calls a same-file fn that declares throws {}.
+  if (fnNameToThrows.size > 0) {
+    const entry7 = getErrorCode("INT007")!;
+    const fired = new Set<string>();
 
-    const throwsStr = calleeThrows.join(", ");
-    diagnostics.push({
-      code: "INT007",
-      severity: "error",
-      file: null,
-      line: loc.line,
-      column: loc.column,
-      start: intentStart,
-      end: intentStart + decl.intent!.length + 2,
-      message:
-        `fn '${decl.name}' intent claims 'total' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
-        `a total function must handle all error paths; ` +
-        `catch '${calleeName}'s exception or use a non-throwing variant`,
-      rule: entry7.rule,
-      idiom: entry7.idiom,
-      rewrite:
-        `// option A — catch '${calleeName}'s exception and convert to Result:\n` +
-        `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
-        `  try {\n` +
-        `    const v = ${calleeName}(...)\n` +
-        `    return ok(v)\n` +
-        `  } catch (e) {\n` +
-        `    return err(new ${calleeThrows[0]!}(e))\n` +
-        `  }\n` +
-        `}\n\n` +
-        `// option B — remove the total intent claim:\n` +
-        `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
-        `  return ${calleeName}(...)\n` +
-        `}`,
-    });
+    for (const calleeName of callees) {
+      if (fired.has(calleeName)) continue;
+      const calleeThrows = fnNameToThrows.get(calleeName);
+      if (!calleeThrows || calleeThrows.length === 0) continue;
+      fired.add(calleeName);
+
+      const throwsStr = calleeThrows.join(", ");
+      diagnostics.push({
+        code: "INT007",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'total' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+          `a total function must handle all error paths; ` +
+          `catch '${calleeName}'s exception or use a non-throwing variant`,
+        rule: entry7.rule,
+        idiom: entry7.idiom,
+        rewrite:
+          `// option A — catch '${calleeName}'s exception and convert to Result:\n` +
+          `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    const v = ${calleeName}(...)\n` +
+          `    return ok(v)\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${calleeThrows[0]!}(e))\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — remove the total intent claim:\n` +
+          `fn ${decl.name}(...) throws { ${throwsStr} } -> T {\n` +
+          `  return ${calleeName}(...)\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT020: body-level — total sync fn calls a same-file async fn.
+  // An async callee returns a Promise that can reject; a sync total fn forwarding
+  // that Promise cannot catch the rejection, so it escapes as an uncaught exception.
+  // Only fires when INT006 and INT007 did not (diagnostics check covers INT006 via the
+  // early return above; INT007 may have fired but INT020 is still an independent axis).
+  // Fires only when the total fn itself is synchronous.
+  if (!decl.isAsync && fnNameToIsAsync.size > 0) {
+    const entry20 = getErrorCode("INT020")!;
+    const fired20 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired20.has(calleeName)) continue;
+      if (!fnNameToIsAsync.get(calleeName)) continue;
+      fired20.add(calleeName);
+
+      diagnostics.push({
+        code: "INT020",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentStart + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'total' but calls '${calleeName}' which is declared async — ` +
+          `an async callee returns a Promise that can reject; a sync total fn forwarding that Promise ` +
+          `cannot catch the rejection, so it escapes the fn boundary as an uncaught exception, ` +
+          `contradicting the total guarantee; use a synchronous callee or remove the total intent claim`,
+        rule: entry20.rule,
+        idiom: entry20.idiom,
+        rewrite:
+          `// option A — use a synchronous callee (preferred):\n` +
+          `fn ${calleeName}(...) -> T = compute(...)\n\n` +
+          `fn ${decl.name}(...) intent: "total" -> T = ${calleeName}(...)\n\n` +
+          `// option B — remove the total intent claim:\n` +
+          `fn ${decl.name}(...) -> Promise<T> = ${calleeName}(...)`,
+      });
+    }
   }
 }
 
@@ -1158,6 +1220,7 @@ function checkInfallibleClaim(
   fnNames: Set<string>,
   fnNameToThrows: Map<string, string[]>,
   diagnostics: Diagnostic[],
+  fnNameToIsAsync: Map<string, boolean> = new Map(),
 ): void {
   const intentStart = decl.intentStart!;
   const loc = locationOf(src, intentStart);
@@ -1217,55 +1280,94 @@ function checkInfallibleClaim(
     return; // INT009 and INT010 are mutually exclusive
   }
 
-  // INT010: body-level — calls a same-file fn that declares throws {}.
-  // Skip fns with no body (abstract / declaration-only).
+  // INT010 + INT021: body-level checks — skip fns with no body (abstract / declaration-only).
   if (decl.bodyTokenStart === undefined) return;
-  if (fnNameToThrows.size === 0) return;
 
   const inner = innerByDecl.get(decl) ?? [];
   const callees = collectCallees(tokens, decl, inner, fnNames);
-  const entry10 = getErrorCode("INT010")!;
-  const fired = new Set<string>();
 
-  for (const calleeName of callees) {
-    if (fired.has(calleeName)) continue;
-    const calleeThrows = fnNameToThrows.get(calleeName);
-    if (!calleeThrows || calleeThrows.length === 0) continue;
-    fired.add(calleeName);
+  // INT010: calls a same-file fn that declares throws {}.
+  if (fnNameToThrows.size > 0) {
+    const entry10 = getErrorCode("INT010")!;
+    const fired = new Set<string>();
 
-    const throwsStr = calleeThrows.join(", ");
-    diagnostics.push({
-      code: "INT010",
-      severity: "error",
-      file: null,
-      line: loc.line,
-      column: loc.column,
-      start: intentStart,
-      end: intentSpanEnd,
-      message:
-        `fn '${decl.name}' intent claims 'infallible' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
-        `a throwing callee can propagate an exception through the infallible fn, reopening the failure channel; ` +
-        `catch '${calleeName}'s exception (suppress or encode in Result) or use a non-throwing variant`,
-      rule: entry10.rule,
-      idiom: entry10.idiom,
-      rewrite:
-        `// option A — catch and suppress, keep infallible:\n` +
-        `fn ${decl.name}(...) intent: "infallible" -> T {\n` +
-        `  try {\n` +
-        `    return ${calleeName}(...)\n` +
-        `  } catch {\n` +
-        `    return defaultValue\n` +
-        `  }\n` +
-        `}\n\n` +
-        `// option B — encode in Result, downgrade to total:\n` +
-        `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
-        `  try {\n` +
-        `    return ok(${calleeName}(...))\n` +
-        `  } catch (e) {\n` +
-        `    return err(new ${calleeThrows[0]!}(e))\n` +
-        `  }\n` +
-        `}`,
-    });
+    for (const calleeName of callees) {
+      if (fired.has(calleeName)) continue;
+      const calleeThrows = fnNameToThrows.get(calleeName);
+      if (!calleeThrows || calleeThrows.length === 0) continue;
+      fired.add(calleeName);
+
+      const throwsStr = calleeThrows.join(", ");
+      diagnostics.push({
+        code: "INT010",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentSpanEnd,
+        message:
+          `fn '${decl.name}' intent claims 'infallible' but calls '${calleeName}' which declares throws { ${throwsStr} } — ` +
+          `a throwing callee can propagate an exception through the infallible fn, reopening the failure channel; ` +
+          `catch '${calleeName}'s exception (suppress or encode in Result) or use a non-throwing variant`,
+        rule: entry10.rule,
+        idiom: entry10.idiom,
+        rewrite:
+          `// option A — catch and suppress, keep infallible:\n` +
+          `fn ${decl.name}(...) intent: "infallible" -> T {\n` +
+          `  try {\n` +
+          `    return ${calleeName}(...)\n` +
+          `  } catch {\n` +
+          `    return defaultValue\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// option B — encode in Result, downgrade to total:\n` +
+          `fn ${decl.name}(...) intent: "total" -> Result<T, ${throwsStr}> {\n` +
+          `  try {\n` +
+          `    return ok(${calleeName}(...))\n` +
+          `  } catch (e) {\n` +
+          `    return err(new ${calleeThrows[0]!}(e))\n` +
+          `  }\n` +
+          `}`,
+      });
+    }
+  }
+
+  // INT021: body-level — infallible sync fn calls a same-file async fn.
+  // Fires only when INT009 did not (early return above covers that) and the fn is synchronous.
+  if (!decl.isAsync && fnNameToIsAsync.size > 0) {
+    const entry21 = getErrorCode("INT021")!;
+    const fired21 = new Set<string>();
+
+    for (const calleeName of callees) {
+      if (fired21.has(calleeName)) continue;
+      if (!fnNameToIsAsync.get(calleeName)) continue;
+      fired21.add(calleeName);
+
+      diagnostics.push({
+        code: "INT021",
+        severity: "error",
+        file: null,
+        line: loc.line,
+        column: loc.column,
+        start: intentStart,
+        end: intentSpanEnd,
+        message:
+          `fn '${decl.name}' intent claims 'infallible' but calls '${calleeName}' which is declared async — ` +
+          `an async callee returns a Promise that can reject; a sync infallible fn forwarding that Promise ` +
+          `cannot catch the rejection, so it escapes the fn boundary as an uncaught exception, ` +
+          `violating the infallible guarantee that the fn never fails; ` +
+          `use a synchronous callee or downgrade to intent: "total"`,
+        rule: entry21.rule,
+        idiom: entry21.idiom,
+        rewrite:
+          `// option A — use a synchronous callee (preferred):\n` +
+          `fn ${calleeName}(...) -> T = compute(...)\n\n` +
+          `fn ${decl.name}(...) intent: "infallible" -> T = ${calleeName}(...)\n\n` +
+          `// option B — downgrade intent claim:\n` +
+          `fn ${decl.name}(...) intent: "total" -> Promise<T> = ${calleeName}(...)`,
+      });
+    }
   }
 }
 

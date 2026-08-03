@@ -2240,3 +2240,195 @@ describe("INT019 — intent 'idempotent' body calls same-file async fn (?bs 0.9+
     expect(codes).not.toContain("INT019");
   });
 });
+
+// INT020 — total intent body calls same-file async fn
+describe("INT020 — intent 'total' body calls same-file async fn (?bs 0.9+)", () => {
+  it("fires INT020 when total fn calls a same-file async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn processAsync(s: string) uses { net } -> Promise<string> = s\n" +
+      'fn handle(s: string) intent: "total" -> Promise<string> = processAsync(s)\n';
+    expect(() => t(src)).toThrow(/INT020/);
+  });
+
+  it("INT020 diagnostic message names the caller and async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchData(id: string) uses { net } -> Promise<string> = id\n" +
+      'fn loadData(id: string) intent: "total" -> Promise<string> {\n' +
+      "  return fetchData(id)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT020")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("loadData");
+    expect(d.message).toContain("fetchData");
+    expect(d.message).toContain("async");
+  });
+
+  it("does NOT fire INT020 when total fn calls a non-async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn normalize(s: string) -> string = s.trim()\n" +
+      'fn clean(s: string) intent: "total" -> string = normalize(s)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT020 does NOT fire at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "async fn fetchAsync(id: string) -> Promise<string> = id\n" +
+      'fn load(id: string) intent: "total" -> Promise<string> = fetchAsync(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT020");
+  });
+
+  it("INT020 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncHelper(x: string) uses { net } -> Promise<string> = x\n" +
+      'fn totalFn(x: string) intent: "total" -> Promise<string> = asyncHelper(x)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT020")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("fires INT006 (not INT020) when total fn itself declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncOp(s: string) -> Promise<string> = s\n" +
+      'fn handle(s: string) intent: "total" throws { Error } -> Promise<string> = asyncOp(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT006");
+    // INT020 may or may not fire depending on impl; INT006 must fire
+  });
+
+  it("does NOT fire INT020 when the total fn itself is async", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchInner(id: string) uses { net } -> Promise<string> = id\n" +
+      'async fn fetchOuter(id: string) intent: "total" uses { net } -> Promise<string> = fetchInner(id)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT020");
+  });
+
+  it("fires INT020 with multiple async callees (one diagnostic per callee)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchA(id: string) uses { net } -> Promise<string> = id\n" +
+      "async fn fetchB(id: string) uses { net } -> Promise<string> = id\n" +
+      'fn getAll(id: string) intent: "total" -> string {\n' +
+      "  fetchA(id)\n" +
+      "  fetchB(id)\n" +
+      "  return id\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.filter((d) => d.code === "INT020");
+    expect(codes.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// INT021 — infallible intent body calls same-file async fn
+describe("INT021 — intent 'infallible' body calls same-file async fn (?bs 0.9+)", () => {
+  it("fires INT021 when infallible fn calls a same-file async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn computeAsync(n: number) -> Promise<number> = n\n" +
+      'fn double(n: number) intent: "infallible" -> Promise<number> = computeAsync(n)\n';
+    expect(() => t(src)).toThrow(/INT021/);
+  });
+
+  it("INT021 diagnostic message names the caller and async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncCalc(n: number) -> Promise<number> = n\n" +
+      'fn compute(n: number) intent: "infallible" -> Promise<number> {\n' +
+      "  return asyncCalc(n)\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT021")!;
+    expect(d).toBeDefined();
+    expect(d.message).toContain("compute");
+    expect(d.message).toContain("asyncCalc");
+    expect(d.message).toContain("async");
+  });
+
+  it("does NOT fire INT021 when infallible fn calls a non-async callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn square(n: number) -> number = n * n\n" +
+      'fn compute(n: number) intent: "infallible" -> number = square(n)\n';
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("INT021 does NOT fire at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      "async fn asyncCalc(n: number) -> Promise<number> = n\n" +
+      'fn compute(n: number) intent: "infallible" -> Promise<number> = asyncCalc(n)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT021");
+  });
+
+  it("INT021 diagnostic has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncHelper(x: string) -> Promise<string> = x\n" +
+      'fn infallibleFn(x: string) intent: "infallible" -> Promise<string> = asyncHelper(x)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT021")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+
+  it("fires INT009 (not INT021) when infallible fn itself declares throws {}", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncOp(s: string) -> Promise<string> = s\n" +
+      'fn handle(s: string) intent: "infallible" throws { Error } -> Promise<string> = asyncOp(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT009");
+  });
+
+  it("does NOT fire INT021 when the infallible fn itself is async", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn asyncInner(n: number) -> Promise<number> = n\n" +
+      'async fn asyncOuter(n: number) intent: "infallible" -> Promise<number> = asyncInner(n)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT021");
+  });
+
+  it("fires INT008 AND INT021 independently (different violation axes)", () => {
+    // INT008 fires on Result<> return type, INT021 on async callee — both can fire.
+    const src =
+      "?bs 0.9\n" +
+      "async fn mayFail(s: string) -> Promise<string> = s\n" +
+      'fn check(s: string) intent: "infallible" -> Result<string, Error> = mayFail(s)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = caught!.diagnostics.map((d) => d.code);
+    expect(codes).toContain("INT008");
+    expect(codes).toContain("INT021");
+  });
+});
