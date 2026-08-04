@@ -439,7 +439,7 @@
  *
  *   SYN041  A `globalThis.<name>`, `window.<name>`, or `self.<name>` access was detected
  *           in a fn body (?bs 0.7+), where `<name>` is one of the globals monitored by
- *           SYN004–SYN040 as bare identifiers. The global-receiver form bypasses those
+ *           SYN004–SYN041 as bare identifiers. The global-receiver form bypasses those
  *           checks: `globalThis.fetch(...)` reaches the network without any capability
  *           warning, because SYN007's bare-`fetch` detection excludes member-call forms.
  *           The capability bypass is identical at runtime.
@@ -447,6 +447,18 @@
  *           (`obj.globalThis.fetch`), fn/function declarations named
  *           `globalThis`/`window`/`self`. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
+ *
+ *   SYN042  A `Reflect.<method>(...)` call on one of the six dangerous Reflect methods
+ *           was detected in a fn body (?bs 0.7+). `Reflect.apply` and `Reflect.construct`
+ *           call any function or constructor dynamically, bypassing the source-level ident
+ *           checks of SYN004–SYN041 (`Reflect.apply(fetch, null, [url])` reaches the
+ *           network with no capability warning). `Reflect.set`, `Reflect.defineProperty`,
+ *           and `Reflect.deleteProperty` mutate object properties at runtime in ways
+ *           invisible to the capability model (parallel to SYN039). `Reflect.setPrototypeOf`
+ *           replaces the prototype chain (parallel to SYN040), defeating runtime guards.
+ *           Detection: `Reflect` ident not preceded by `.`/`?.`, not a fn declaration,
+ *           followed by `.`/`?.`, followed by one of the six method names, followed by `(`
+ *           or `?.(`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
@@ -516,6 +528,13 @@ const HISTORY_NAV_METHODS = new Set(["pushState", "replaceState", "back", "forwa
 const SYN036_WASM_MEMBERS = new Set([
   "instantiate", "instantiateStreaming", "compile", "compileStreaming", "Instance", "Module",
 ]);
+// Reflect.* methods that bypass static name-based SYN checks — covered by SYN042
+const SYN042_REFLECT_METHODS = new Set([
+  "apply", "construct",             // dynamic dispatch — defeats SYN004–SYN041 name detection
+  "set", "defineProperty",          // property mutation — parallel to SYN039
+  "deleteProperty",                 // property deletion — invisible structural mutation
+  "setPrototypeOf",                 // prototype replacement — parallel to SYN040
+]);
 // SYN041: dangerous globals reachable via globalThis / window / self receivers
 const SYN041_DANGEROUS_MEMBERS = new Set([
   "fetch", "WebSocket", "EventSource", "Worker", "SharedWorker",
@@ -556,7 +575,7 @@ const SYN037_GUARDED_GLOBALS = new Set([
   "WebAssembly",        // SYN032
   "MessageChannel",     // SYN034
   "Proxy",              // SYN035
-  "Reflect",            // SYN036
+  "Reflect",            // SYN042
   "eval",               // SYN004
   "postMessage",        // SYN027
   "addEventListener",   // SYN030
@@ -612,6 +631,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn039 = getErrorCode("SYN039")!;
   const syn040 = getErrorCode("SYN040")!;
   const syn041 = getErrorCode("SYN041")!;
+  const syn042 = getErrorCode("SYN042")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3498,6 +3518,87 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             rule: syn040.rule,
             idiom: syn040.idiom,
             rewrite: syn040.rewrite,
+          });
+          break;
+        }
+
+        // ── SYN042: Reflect.* — dynamic dispatch and property mutation bypasses ──
+        case "Reflect": {
+          // Exclude: `obj.Reflect.*` — Reflect preceded by `.` or `?.`
+          const prevIdxRef = prevSignificant(tokens, i - 1);
+          const prevRef = tokens[prevIdxRef];
+          if (prevRef && ((prevRef.kind === "punct" && prevRef.text === ".") || prevRef.kind === "questionDot"))
+            continue;
+
+          // Exclude: fn/function/function* declarations named Reflect
+          if (prevRef && prevRef.kind === "keyword" && prevRef.text === "fn") continue;
+          if (prevRef && prevRef.kind === "ident" && prevRef.text === "function") continue;
+          if (isFunctionStarDecl(tokens, prevIdxRef)) continue;
+
+          // Must be followed by `.` or `?.`
+          const nextIdxRef = nextSignificant(tokens, i + 1);
+          const nextRef = tokens[nextIdxRef];
+          const isDotRef = nextRef && nextRef.kind === "punct" && nextRef.text === ".";
+          const isOptChainRef = nextRef && nextRef.kind === "questionDot";
+          if (!isDotRef && !isOptChainRef) continue;
+
+          // Get the method name
+          const methodIdxRef = nextSignificant(tokens, nextIdxRef + 1);
+          const methodRef = tokens[methodIdxRef];
+          if (!methodRef || methodRef.kind !== "ident") continue;
+          if (!SYN042_REFLECT_METHODS.has(methodRef.text)) continue;
+
+          // Must be followed by `(` or `?.(`
+          let callIdxRef = nextSignificant(tokens, methodIdxRef + 1);
+          let callTokRef = tokens[callIdxRef];
+          let isOptCallRef = false;
+          if (callTokRef && callTokRef.kind === "questionDot") {
+            isOptCallRef = true;
+            callIdxRef = nextSignificant(tokens, callIdxRef + 1);
+            callTokRef = tokens[callIdxRef];
+          }
+          if (!callTokRef || !(callTokRef.kind === "open" && callTokRef.text === "(")) continue;
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sepRef = isOptChainRef ? "?." : ".";
+          const callSepRef = isOptCallRef ? "?." : "";
+          const locRef = locationOf(src, tok.start);
+
+          let bypassKind: string;
+          if (methodRef.text === "apply" || methodRef.text === "construct") {
+            bypassKind =
+              `Reflect.${methodRef.text}() calls a function or constructor dynamically — ` +
+              `SYN004–SYN041 name-based checks fire on source-level idents (eval, fetch, WebSocket…) ` +
+              `and cannot see through dynamic dispatch; ` +
+              `Reflect.${methodRef.text}(dangerousFn, ...) executes it at runtime with no capability warning`;
+          } else if (methodRef.text === "setPrototypeOf") {
+            bypassKind =
+              `Reflect.setPrototypeOf() replaces the prototype chain of target at runtime, ` +
+              `silently redirecting property lookups (including capability-gated globals like fetch, WebSocket) ` +
+              `through a new chain invisible to the static capability model; ` +
+              `equivalent to Object.setPrototypeOf() (SYN040)`;
+          } else {
+            bypassKind =
+              `Reflect.${methodRef.text}() mutates object properties at runtime — ` +
+              `invisible to the capability model and equivalent to the mutations caught by SYN039; ` +
+              `use explicit property assignment or Object.assign() for traceable mutations`;
+          }
+
+          warnings.push({
+            code: "SYN042",
+            severity: "warning",
+            file: null,
+            line: locRef.line,
+            column: locRef.column,
+            start: tok.start,
+            end: callTokRef.start + 1,
+            message:
+              `fn '${decl.name}' calls Reflect${sepRef}${methodRef.text}${callSepRef}() — ` +
+              bypassKind + `; ` +
+              `wrap in unsafe "reason for Reflect.${methodRef.text}" { Reflect.${methodRef.text}(...) } if this is intentional`,
+            rule: syn042.rule,
+            idiom: syn042.idiom,
+            rewrite: syn042.rewrite,
           });
           break;
         }

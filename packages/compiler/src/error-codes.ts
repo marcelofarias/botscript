@@ -3193,6 +3193,47 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN042: {
+    code: "SYN042",
+    title: "Reflect.* call bypasses static name-based SYN capability and property checks",
+    rule:
+      "Six `Reflect` methods defeat botscript's token-level static checks: " +
+      "`Reflect.apply(target, thisArg, args)` and `Reflect.construct(target, args)` call a function or " +
+      "constructor dynamically — SYN004–SYN041 fire on source-level idents (eval, fetch, WebSocket…) and " +
+      "cannot see through dynamic dispatch, so `Reflect.apply(fetch, null, [url])` reaches the network " +
+      "with no capability warning; " +
+      "`Reflect.set(obj, key, value)`, `Reflect.defineProperty(obj, key, attrs)`, and " +
+      "`Reflect.deleteProperty(obj, key)` mutate object properties at runtime — invisible to " +
+      "the capability model and equivalent to the mutations caught by SYN039; " +
+      "`Reflect.setPrototypeOf(obj, proto)` replaces the prototype chain, defeating runtime-level " +
+      "property-lookup guards in the same way as `Object.setPrototypeOf` (SYN040)",
+    idiom:
+      "avoid Reflect methods on shared or capability-gated objects; pass functions as explicit parameters " +
+      "instead of dispatching them dynamically; if Reflect use is required for a legitimate reason, " +
+      "wrap in `unsafe \"reason for Reflect.method\" { Reflect.method(...) }`",
+    rewrite:
+      "// before — Reflect.apply bypasses SYN007 and reaches the network\n" +
+      "fn fetchData(url: string) -> any {\n" +
+      "  return Reflect.apply(fetch, null, [url])  // SYN042\n" +
+      "}\n\n" +
+      "// after — explicit capability declaration visible to callers\n" +
+      "fn fetchData(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN042: Reflect.apply bypasses the fetch capability check\n" +
+      "fn fetchData(url: string) -> any {\n" +
+      "  return Reflect.apply(fetch, null, [url])  // SYN042\n" +
+      "}\n\n" +
+      "// SYN042: Reflect.set mutates object property invisibly\n" +
+      "fn mutate(obj: Record<string, unknown>) -> void {\n" +
+      "  Reflect.set(obj, 'key', 'value')  // SYN042\n" +
+      "}\n\n" +
+      "// fix: pass values explicitly rather than using reflective mutation\n" +
+      "fn mutate(obj: Record<string, unknown>, key: string, value: unknown) -> void {\n" +
+      "  obj[key] = value\n" +
+      "}",
+  },
   DEP001: {
     code: "DEP001",
     title: "fn transitively reads a resource category not declared in its header",
