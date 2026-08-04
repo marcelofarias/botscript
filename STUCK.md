@@ -3,6 +3,19 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
+
+**Shipped RES003 directly to main** (1 commit, 2159 → 2176 tests):
+- RES003: cross-file `Result<>`/`Option<>` discard check for imported callees
+- `FnEffectSurface` gains `returnsResult`/`returnsOption` boolean fields; `buildModuleEffects` populates them
+- `passResCheck` extended with optional `moduleEffects` arg; alias resolution handles `import { saveRow as saveUser }` forms
+- Same-file shadowing: RES002 fires when a same-file fn has the same name, RES003 never double-fires
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 53rd run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-02  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
 
 **Shipped INT018 directly to main** (1 commit, 2027 → 2072 tests):
