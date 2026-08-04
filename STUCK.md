@@ -3,6 +3,21 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34 SP
+
+**Shipped INT032/033/034/035 directly to main** (1 commit, 2176 → 2201 tests):
+- INT032: `pure` calls imported async fn (extends INT017 cross-file)
+- INT033: `idempotent` calls imported async fn (extends INT019 cross-file)
+- INT034: `total` calls imported async fn (extends INT020 cross-file)
+- INT035: `infallible` calls imported async fn (extends INT021 cross-file)
+- `FnEffectSurface` gains `isAsync?: true`; `buildModuleEffects` populates it; `mergeEffectSurface` unions it
+- Import alias resolution included; 25 new tests
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 54th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
 
 **Shipped RES003 directly to main** (1 commit, 2159 → 2176 tests):
