@@ -3441,3 +3441,159 @@ describe("buildModuleEffects: populates isAsync for async fn declarations", () =
     expect(effects["compute"]?.isAsync).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// try/catch suppression — INT007/INT010/INT018/INT023 (same-file)
+// and INT024/INT025/INT026/INT027 (cross-file)
+//
+// A throwing callee wrapped in a try/catch block cannot propagate its exception
+// through the caller, so the caller's intent guarantee is not violated.
+// collectCalleesOutsideTryCatch is used for all throws-based intent checks;
+// these tests verify that the suppression is effective.
+// ---------------------------------------------------------------------------
+
+describe("try/catch suppression — same-file throws-based intent checks", () => {
+  it("does NOT fire INT007 (total) when throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("still fires INT007 when throwing callee appears OUTSIDE try block", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT007");
+  });
+
+  it("does NOT fire INT010 (infallible) when throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn run(s: string) intent: "infallible" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT018 (pure) when throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn run(s: string) intent: "pure" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+
+  it("does NOT fire INT023 (idempotent) when throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+      'fn run(s: string) intent: "idempotent" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() => t(src)).not.toThrow();
+  });
+});
+
+describe("try/catch suppression — cross-file throws-based intent checks", () => {
+  it("does NOT fire INT024 (pure) when imported throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(s: string) intent: "pure" -> string {\n' +
+      "  try {\n" +
+      "    parse(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() =>
+      tWithEffects(src, { parse: { throws: ["ParseError"] } }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT025 (total) when imported throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() =>
+      tWithEffects(src, { validate: { throws: ["ValidationError"] } }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT026 (infallible) when imported throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(s: string) intent: "infallible" -> string {\n' +
+      "  try {\n" +
+      "    load(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() =>
+      tWithEffects(src, { load: { throws: ["IOError"] } }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT027 (idempotent) when imported throwing callee is wrapped in try/catch", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(s: string) intent: "idempotent" -> string {\n' +
+      "  try {\n" +
+      "    fetch(s)\n" +
+      "  } catch (e) { }\n" +
+      "  return s\n" +
+      "}\n";
+    expect(() =>
+      tWithEffects(src, { fetch: { throws: ["NetworkError"] } }),
+    ).not.toThrow();
+  });
+
+  it("still fires INT025 when imported throwing callee appears OUTSIDE try block", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn run(s: string) intent: "total" -> string {\n' +
+      "  try {\n" +
+      "    validate(s)\n" +
+      "  } catch (e) { }\n" +
+      "  validate(s)\n" +
+      "  return s\n" +
+      "}\n";
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { validate: { throws: ["ValidationError"] } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT025");
+  });
+});
