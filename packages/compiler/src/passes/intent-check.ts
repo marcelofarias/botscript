@@ -808,6 +808,55 @@ function checkPureClaim(
     }
   }
 
+  // INT032: cross-file callee-async transitivity check (0.9+) — intent claims "pure"
+  // but body calls an imported fn (visible via moduleEffects) that is declared async.
+  // Extends INT017 to cross-file call sites. Only fires when INT011 did not (fn is sync)
+  // and no direct body-use conflict (INT001/INT002) fired.
+  if (checksAsync && !decl.isAsync && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner32 = innerByDecl.get(decl) ?? [];
+    const callees32 = collectCallees(tokens, decl, inner32, extendedFnNames);
+    const entry32 = getErrorCode("INT032")!;
+    const intentStart32 = decl.intentStart!;
+    const loc32 = locationOf(src, intentStart32);
+    const fired32 = new Set<string>();
+
+    for (const localName of callees32) {
+      if (fired32.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT017 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.isAsync) continue;
+      fired32.add(localName);
+
+      diagnostics.push({
+        code: "INT032",
+        severity: "error",
+        file: null,
+        line: loc32.line,
+        column: loc32.column,
+        start: intentStart32,
+        end: intentStart32 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'pure' but calls imported '${localName}' which is declared async — ` +
+          `an async callee yields to the event loop (a timing side effect) and returns a distinct Promise on every call; ` +
+          `inject the resolved value as a parameter, or remove the pure intent claim`,
+        rule: entry32.rule,
+        idiom: entry32.idiom,
+        rewrite:
+          `// option A — inject the resolved value as a parameter (preferred):\n` +
+          `fn ${decl.name}(precomputed: T) intent: "pure" -> R {\n` +
+          `  // use precomputed instead of calling '${localName}'\n` +
+          `}\n` +
+          `// call site: ${decl.name}(await ${localName}(...))\n\n` +
+          `// option B — remove the pure claim:\n` +
+          `fn ${decl.name}(...) -> Promise<R> {\n` +
+          `  const v = ${localName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
+
   // INT011: header-level structural check (0.9+) — intent claims "pure" but the
   // function is declared async. An async fn always returns a Promise (two calls
   // with identical arguments return distinct, non-equal objects) and suspends by
@@ -1381,6 +1430,54 @@ function checkIdempotentClaim(
       });
     }
   }
+
+  // INT033: cross-file callee-async transitivity check (0.9+) — intent claims "idempotent"
+  // but body calls an imported fn (visible via moduleEffects) that is declared async.
+  // Extends INT019 to cross-file call sites. Only fires when the caller fn is synchronous.
+  if (checksThrows && !bodyUse && !decl.isAsync && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const inner33 = innerByDecl.get(decl) ?? [];
+    const callees33 = collectCallees(tokens, decl, inner33, extendedFnNames);
+    const entry33 = getErrorCode("INT033")!;
+    const intentStart33 = decl.intentStart!;
+    const loc33 = locationOf(src, intentStart33);
+    const fired33 = new Set<string>();
+
+    for (const localName of callees33) {
+      if (fired33.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT019 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.isAsync) continue;
+      fired33.add(localName);
+
+      diagnostics.push({
+        code: "INT033",
+        severity: "error",
+        file: null,
+        line: loc33.line,
+        column: loc33.column,
+        start: intentStart33,
+        end: intentStart33 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'idempotent' but calls imported '${localName}' which is declared async — ` +
+          `a synchronous idempotent fn cannot await the Promise; on retry the caller gets a fresh Promise, ` +
+          `violating the idempotent contract by transitivity; ` +
+          `inject the resolved value as a parameter, or remove the idempotent intent claim`,
+        rule: entry33.rule,
+        idiom: entry33.idiom,
+        rewrite:
+          `// option A — inject the resolved value as a parameter (preferred):\n` +
+          `fn ${decl.name}(..., resolvedValue: T) intent: "idempotent" -> R {\n` +
+          `  // use resolvedValue instead of calling '${localName}'\n` +
+          `}\n\n` +
+          `// option B — remove the idempotent intent claim:\n` +
+          `fn ${decl.name}(...) -> Promise<R> {\n` +
+          `  const v = ${localName}(...)\n` +
+          `  return compute(v)\n` +
+          `}`,
+      });
+    }
+  }
 }
 
 /**
@@ -1693,6 +1790,53 @@ function checkTotalClaim(
       });
     }
   }
+
+  // INT034: cross-file callee-async transitivity check (0.9+) — intent claims "total"
+  // but body calls an imported fn (visible via moduleEffects) that is declared async.
+  // Extends INT020 to cross-file call sites. Only fires when the caller fn is synchronous.
+  if (!decl.isAsync && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const innerFds34 = innerByDecl.get(decl) ?? [];
+    const extCallees34 = collectCallees(tokens, decl, innerFds34, extendedFnNames);
+    const entry34 = getErrorCode("INT034")!;
+    const intentStart34 = decl.intentStart!;
+    const loc34 = locationOf(src, intentStart34);
+    const fired34 = new Set<string>();
+
+    for (const localName of extCallees34) {
+      if (fired34.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT020 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.isAsync) continue;
+      fired34.add(localName);
+
+      diagnostics.push({
+        code: "INT034",
+        severity: "error",
+        file: null,
+        line: loc34.line,
+        column: loc34.column,
+        start: intentStart34,
+        end: intentStart34 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'total' but calls imported '${localName}' which is declared async — ` +
+          `an async callee returns a Promise that can reject; a sync total fn forwarding that Promise ` +
+          `cannot catch the rejection, so it escapes the fn boundary as an uncaught exception, ` +
+          `contradicting the total guarantee; use a synchronous callee or remove the total intent claim`,
+        rule: entry34.rule,
+        idiom: entry34.idiom,
+        rewrite:
+          `// option A — use a synchronous callee (preferred):\n` +
+          `fn ${decl.name}(...) intent: "total" -> T = ${localName}Sync(...)\n\n` +
+          `// option B — inject the resolved value as a parameter:\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "total" -> R {\n` +
+          `  // use precomputed instead of calling '${localName}'\n` +
+          `}\n\n` +
+          `// option C — remove the total intent claim:\n` +
+          `fn ${decl.name}(...) -> Promise<T> = ${localName}(...)`,
+      });
+    }
+  }
 }
 
 /**
@@ -1919,6 +2063,54 @@ function checkInfallibleClaim(
           `fn ${decl.name}(...) intent: "infallible" -> T = ${localName}Safe(...)\n\n` +
           `// option C — remove the infallible claim:\n` +
           `fn ${decl.name}(...) throws { ${throwsStr} } -> T = ${localName}(...)`,
+      });
+    }
+  }
+
+  // INT035: cross-file callee-async transitivity check (0.9+) — intent claims "infallible"
+  // but body calls an imported fn (visible via moduleEffects) that is declared async.
+  // Extends INT021 to cross-file call sites. Only fires when the caller fn is synchronous.
+  if (!decl.isAsync && moduleEffects && decl.bodyTokenStart !== undefined) {
+    const innerFds35 = innerByDecl.get(decl) ?? [];
+    const extCallees35 = collectCallees(tokens, decl, innerFds35, extendedFnNames);
+    const entry35 = getErrorCode("INT035")!;
+    const intentStart35 = decl.intentStart!;
+    const loc35 = locationOf(src, intentStart35);
+    const fired35 = new Set<string>();
+
+    for (const localName of extCallees35) {
+      if (fired35.has(localName)) continue;
+      if (fnNames.has(localName)) continue; // same-file callee — INT021 handles it
+      const resolvedName = importAliases.get(localName) ?? localName;
+      const surface = moduleEffects[resolvedName];
+      if (!surface?.isAsync) continue;
+      fired35.add(localName);
+
+      diagnostics.push({
+        code: "INT035",
+        severity: "error",
+        file: null,
+        line: loc35.line,
+        column: loc35.column,
+        start: intentStart35,
+        end: intentStart35 + decl.intent!.length + 2,
+        message:
+          `fn '${decl.name}' intent claims 'infallible' but calls imported '${localName}' which is declared async — ` +
+          `an async callee returns a Promise that can reject; a sync infallible fn forwarding that Promise ` +
+          `cannot catch the rejection, so it escapes as an uncaught exception, ` +
+          `violating the infallible guarantee that the fn never fails; ` +
+          `use a synchronous callee or downgrade to intent: "total"`,
+        rule: entry35.rule,
+        idiom: entry35.idiom,
+        rewrite:
+          `// option A — use a synchronous callee (preferred):\n` +
+          `fn ${decl.name}(...) intent: "infallible" -> T = ${localName}Sync(...)\n\n` +
+          `// option B — downgrade intent claim:\n` +
+          `fn ${decl.name}(...) intent: "total" -> Promise<T> = ${localName}(...)\n\n` +
+          `// option C — inject the resolved value as a parameter:\n` +
+          `fn ${decl.name}(..., precomputed: T) intent: "infallible" -> R {\n` +
+          `  // use precomputed instead of calling '${localName}'\n` +
+          `}`,
       });
     }
   }

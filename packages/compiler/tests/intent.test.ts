@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { BotscriptError, transform } from "../src/index.js";
+import { BotscriptError, buildModuleEffects, transform } from "../src/index.js";
 
 const t = (src: string) => transform(src).code;
 
@@ -2855,7 +2855,7 @@ describe("INT026 — intent 'infallible' body calls imported fn that declares th
 
 const tWithEffects = (
   src: string,
-  moduleEffects: Record<string, { capabilities?: string[]; reads?: string[]; writes?: string[]; throws?: string[] }>,
+  moduleEffects: Record<string, { capabilities?: string[]; reads?: string[]; writes?: string[]; throws?: string[]; returnsResult?: true; returnsOption?: true; isAsync?: true }>,
 ) => transform(src, { moduleEffects }).code;
 
 // INT028 — pure intent + imported fn uses {}
@@ -3160,5 +3160,284 @@ describe("INT031 — intent 'idempotent' body calls imported fn that declares us
     expect(d.rule).toBeTruthy();
     expect(d.idiom).toBeTruthy();
     expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT032 — pure intent + imported async fn
+describe("INT032 — intent 'pure' body calls imported async fn (?bs 0.9+)", () => {
+  it("fires INT032 when pure fn calls imported async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchConfig(path)\n';
+    expect(() =>
+      tWithEffects(src, { fetchConfig: { isAsync: true } }),
+    ).toThrow(/INT032/);
+  });
+
+  it("INT032 diagnostic names caller and callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchConfig(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchConfig: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT032")!;
+    expect(d.message).toContain("buildUrl");
+    expect(d.message).toContain("fetchConfig");
+  });
+
+  it("does NOT fire INT032 when imported fn is not async", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = syncHelper(path)\n';
+    expect(() =>
+      tWithEffects(src, { syncHelper: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT032 when same-file callee is async (INT017 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn fetchConfig(p: string) -> string = p\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchConfig(path)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT017");
+    expect(codes).not.toContain("INT032");
+  });
+
+  it("does NOT fire INT032 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchConfig(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchConfig: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT032");
+  });
+
+  it("resolves import alias and fires INT032", () => {
+    const src =
+      "?bs 0.9\n" +
+      "import { fetchConfig as fc } from \"./config\"\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fc(path)\n';
+    expect(() =>
+      tWithEffects(src, { fetchConfig: { isAsync: true } }),
+    ).toThrow(/INT032/);
+  });
+
+  it("INT032 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildUrl(path: string) intent: "pure" -> string = fetchConfig(path)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { fetchConfig: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT032")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT033 — idempotent intent + imported async fn
+describe("INT033 — intent 'idempotent' body calls imported async fn (?bs 0.9+)", () => {
+  it("fires INT033 when idempotent fn calls imported async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + loadCache(prefix)\n';
+    expect(() =>
+      tWithEffects(src, { loadCache: { isAsync: true } }),
+    ).toThrow(/INT033/);
+  });
+
+  it("INT033 diagnostic names caller and callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + loadCache(prefix)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { loadCache: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT033")!;
+    expect(d.message).toContain("buildKey");
+    expect(d.message).toContain("loadCache");
+  });
+
+  it("does NOT fire INT033 when imported fn is not async", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + syncHelper(prefix)\n';
+    expect(() =>
+      tWithEffects(src, { syncHelper: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT033 when same-file callee is async (INT019 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn loadCache(p: string) -> string = p\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + loadCache(prefix)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT019");
+    expect(codes).not.toContain("INT033");
+  });
+
+  it("does NOT fire INT033 at ?bs 0.8 (gated at 0.9)", () => {
+    const src =
+      "?bs 0.8\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + loadCache(prefix)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { loadCache: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).not.toContain("INT033");
+  });
+
+  it("INT033 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn buildKey(prefix: string) intent: "idempotent" -> string = prefix + loadCache(prefix)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { loadCache: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT033")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT034 — total intent + imported async fn
+describe("INT034 — intent 'total' body calls imported async fn (?bs 0.9+)", () => {
+  it("fires INT034 when total fn calls imported async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn checkInput(input: string) intent: "total" -> boolean = validate(input)\n';
+    expect(() =>
+      tWithEffects(src, { validate: { isAsync: true } }),
+    ).toThrow(/INT034/);
+  });
+
+  it("INT034 diagnostic names caller and callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn checkInput(input: string) intent: "total" -> boolean = validate(input)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { validate: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT034")!;
+    expect(d.message).toContain("checkInput");
+    expect(d.message).toContain("validate");
+  });
+
+  it("does NOT fire INT034 when imported fn is not async", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn checkInput(input: string) intent: "total" -> boolean = validateSync(input)\n';
+    expect(() =>
+      tWithEffects(src, { validateSync: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT034 when same-file callee is async (INT020 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn validate(input: string) -> boolean = true\n" +
+      'fn checkInput(input: string) intent: "total" -> boolean = validate(input)\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT020");
+    expect(codes).not.toContain("INT034");
+  });
+
+  it("INT034 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn checkInput(input: string) intent: "total" -> boolean = validate(input)\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { validate: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT034")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// INT035 — infallible intent + imported async fn
+describe("INT035 — intent 'infallible' body calls imported async fn (?bs 0.9+)", () => {
+  it("fires INT035 when infallible fn calls imported async fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn format(value: string) intent: "infallible" -> string = value + getDefault()\n';
+    expect(() =>
+      tWithEffects(src, { getDefault: { isAsync: true } }),
+    ).toThrow(/INT035/);
+  });
+
+  it("INT035 diagnostic names caller and callee", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn format(value: string) intent: "infallible" -> string = value + getDefault()\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { getDefault: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT035")!;
+    expect(d.message).toContain("format");
+    expect(d.message).toContain("getDefault");
+  });
+
+  it("does NOT fire INT035 when imported fn is not async", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn format(value: string) intent: "infallible" -> string = value + syncDefault()\n';
+    expect(() =>
+      tWithEffects(src, { syncDefault: {} }),
+    ).not.toThrow();
+  });
+
+  it("does NOT fire INT035 when same-file callee is async (INT021 fires instead)", () => {
+    const src =
+      "?bs 0.9\n" +
+      "async fn getDefault() -> string = \"default\"\n" +
+      'fn format(value: string) intent: "infallible" -> string = value + getDefault()\n';
+    let caught: BotscriptError | null = null;
+    try { t(src); } catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const codes = (caught?.diagnostics ?? []).map((d) => d.code);
+    expect(codes).toContain("INT021");
+    expect(codes).not.toContain("INT035");
+  });
+
+  it("INT035 has rule, idiom, and rewrite from the registry", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn format(value: string) intent: "infallible" -> string = value + getDefault()\n';
+    let caught: BotscriptError | null = null;
+    try { tWithEffects(src, { getDefault: { isAsync: true } }); }
+    catch (e) { if (e instanceof BotscriptError) caught = e; }
+    const d = caught!.diagnostics.find((d) => d.code === "INT035")!;
+    expect(d.rule).toBeTruthy();
+    expect(d.idiom).toBeTruthy();
+    expect(d.rewrite).toBeTruthy();
+  });
+});
+
+// buildModuleEffects — isAsync population
+describe("buildModuleEffects: populates isAsync for async fn declarations", () => {
+  it("sets isAsync: true for an async exported fn", () => {
+    const src = "?bs 0.9\nasync fn fetchData(id: string) -> string = id\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects["fetchData"]?.isAsync).toBe(true);
+  });
+
+  it("does not set isAsync for a sync fn", () => {
+    const src = "?bs 0.9\nfn compute(x: number) -> number = x + 1\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects["compute"]?.isAsync).toBeUndefined();
   });
 });

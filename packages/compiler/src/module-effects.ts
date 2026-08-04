@@ -15,6 +15,8 @@ export interface FnEffectSurface {
   returnsResult?: true;
   /** Return type contains Option<…>. Used by RES003 (cross-file discard check). */
   returnsOption?: true;
+  /** Function is declared async. Used by INT032-035 (cross-file async-transitivity checks). */
+  isAsync?: true;
 }
 
 /**
@@ -48,6 +50,7 @@ export function mergeEffectSurface(
   if (throws.length) merged.throws = throws;
   if (a.returnsResult || b.returnsResult) merged.returnsResult = true;
   if (a.returnsOption || b.returnsOption) merged.returnsOption = true;
+  if (a.isAsync || b.isAsync) merged.isAsync = true;
   return merged;
 }
 
@@ -383,6 +386,7 @@ export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
       if (decl.throws?.length) surface.throws = decl.throws;
       if (decl.returnType.includes("Result<")) surface.returnsResult = true;
       if (decl.returnType.includes("Option<")) surface.returnsOption = true;
+      if (decl.isAsync) surface.isAsync = true;
       // Always include the function, even when surface is empty {}.
       // DEP003/DEP004 need to distinguish "known callee with no labels" from
       // "unknown callee" — omitting pure helpers causes them to look opaque.

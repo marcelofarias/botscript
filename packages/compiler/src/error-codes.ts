@@ -1496,6 +1496,140 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return prefix + \"-\" + ts\n" +
       "}",
   },
+  INT032: {
+    code: "INT032",
+    title: "intent declares 'pure' but body calls an imported async fn",
+    rule:
+      "a function declaring intent: \"pure\" must not call imported functions that are declared async — " +
+      "an async callee yields to the event loop (a timing side effect) and returns a distinct Promise on every call; " +
+      "a pure fn calling an imported async fn is non-pure by transitivity even when the caller itself is synchronous; " +
+      "this check extends INT017 to cross-file callees visible via moduleEffects",
+    idiom:
+      "inject the async callee's resolved value as a parameter so the outer fn receives it as a stable sync input; " +
+      "the call site that awaits the async fn is responsible for the timing effect, not the pure fn",
+    rewrite:
+      "// option A — inject the resolved value as a parameter (preferred):\n" +
+      "fn outer(precomputed: T) intent: \"pure\" -> R {\n" +
+      "  // use precomputed instead of calling the imported async fn\n" +
+      "}\n" +
+      "// call site: outer(await importedAsync(...))\n\n" +
+      "// option B — remove the pure claim:\n" +
+      "fn outer(...) -> Promise<R> {\n" +
+      "  const v = importedAsync(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims pure but calls imported async fetch(); INT032 fires\n" +
+      "?bs 0.9\n" +
+      "import { fetchConfig } from \"./config\"  // fetchConfig is declared async\n\n" +
+      "fn buildUrl(base: string) intent: \"pure\" -> string {\n" +
+      "  return base + \"/\" + fetchConfig()  // INT032: imported async callee violates pure\n" +
+      "}\n\n" +
+      "// after option A — inject the resolved value as a parameter\n" +
+      "?bs 0.9\n" +
+      "fn buildUrl(base: string, config: string) intent: \"pure\" -> string {\n" +
+      "  return base + \"/\" + config\n" +
+      "}",
+  },
+  INT033: {
+    code: "INT033",
+    title: "intent declares 'idempotent' but body calls an imported async fn",
+    rule:
+      "a function declaring intent: \"idempotent\" must not call imported functions that are declared async — " +
+      "an async callee returns a different Promise object on every call; " +
+      "a synchronous idempotent fn cannot await that Promise, so it forwards an unresolved Promise to its caller; " +
+      "on retry the caller gets a fresh Promise rather than the same value, violating the idempotent contract; " +
+      "this check extends INT019 to cross-file callees visible via moduleEffects",
+    idiom:
+      "inject the async callee's resolved value as a parameter so the outer fn can remain idempotent; " +
+      "alternatively, make the outer fn async and await the callee, then verify idempotency holds end-to-end",
+    rewrite:
+      "// option A — inject the resolved value as a parameter (preferred):\n" +
+      "fn outer(..., resolvedValue: T) intent: \"idempotent\" -> R {\n" +
+      "  // use resolvedValue instead of calling the imported async fn\n" +
+      "}\n\n" +
+      "// option B — remove the idempotent claim:\n" +
+      "fn outer(...) -> Promise<R> {\n" +
+      "  const v = importedAsync(...)\n" +
+      "  return compute(v)\n" +
+      "}",
+    example:
+      "// before — fn claims idempotent but calls imported async loadCache(); INT033 fires\n" +
+      "?bs 0.9\n" +
+      "import { loadCache } from \"./cache\"  // loadCache is declared async\n\n" +
+      "fn buildKey(prefix: string) intent: \"idempotent\" -> string {\n" +
+      "  return prefix + \"-\" + loadCache()  // INT033: imported async callee violates idempotent\n" +
+      "}\n\n" +
+      "// after option A — inject the resolved cache value\n" +
+      "?bs 0.9\n" +
+      "fn buildKey(prefix: string, cacheValue: string) intent: \"idempotent\" -> string {\n" +
+      "  return prefix + \"-\" + cacheValue\n" +
+      "}",
+  },
+  INT034: {
+    code: "INT034",
+    title: "intent declares 'total' but body calls an imported async fn",
+    rule:
+      "a function declaring intent: \"total\" must not call imported functions that are declared async — " +
+      "an async callee returns a Promise that can reject; " +
+      "a synchronous total fn forwarding that Promise cannot catch the rejection, " +
+      "so the rejection escapes the fn boundary as an uncaught exception, contradicting the total guarantee; " +
+      "this check extends INT020 to cross-file callees visible via moduleEffects",
+    idiom:
+      "use a synchronous variant of the imported fn so the total guarantee can be verified by the compiler; " +
+      "if none exists, inject the resolved value as a parameter and let the call site handle the async lifecycle",
+    rewrite:
+      "// option A — use a synchronous callee (preferred):\n" +
+      "fn outer(...) intent: \"total\" -> T = importedSync(...)\n\n" +
+      "// option B — inject the resolved value as a parameter:\n" +
+      "fn outer(..., precomputed: T) intent: \"total\" -> R {\n" +
+      "  // use precomputed instead of calling the imported async fn\n" +
+      "}\n\n" +
+      "// option C — remove the total intent claim:\n" +
+      "fn outer(...) -> Promise<T> = importedAsync(...)",
+    example:
+      "// before — fn claims total but calls imported async validate(); INT034 fires\n" +
+      "?bs 0.9\n" +
+      "import { validate } from \"./validator\"  // validate is declared async\n\n" +
+      "fn checkInput(input: string) intent: \"total\" -> boolean {\n" +
+      "  return validate(input)  // INT034: imported async callee violates total\n" +
+      "}\n\n" +
+      "// after option A — use a synchronous validator instead\n" +
+      "?bs 0.9\n" +
+      "fn checkInput(input: string) intent: \"total\" -> boolean = validateSync(input)",
+  },
+  INT035: {
+    code: "INT035",
+    title: "intent declares 'infallible' but body calls an imported async fn",
+    rule:
+      "a function declaring intent: \"infallible\" must not call imported functions that are declared async — " +
+      "an async callee returns a Promise that can reject; " +
+      "a synchronous infallible fn forwarding that Promise cannot catch the rejection, " +
+      "so the rejection escapes as an uncaught exception, violating the infallible guarantee that the fn never fails; " +
+      "this check extends INT021 to cross-file callees visible via moduleEffects",
+    idiom:
+      "use a synchronous variant of the imported fn so the infallible guarantee can hold; " +
+      "if the callee must be async, downgrade to intent: \"total\" and make the outer fn async as well",
+    rewrite:
+      "// option A — use a synchronous callee (preferred):\n" +
+      "fn outer(...) intent: \"infallible\" -> T = importedSync(...)\n\n" +
+      "// option B — downgrade intent claim:\n" +
+      "fn outer(...) intent: \"total\" -> Promise<T> = importedAsync(...)\n\n" +
+      "// option C — inject the resolved value as a parameter:\n" +
+      "fn outer(..., precomputed: T) intent: \"infallible\" -> R {\n" +
+      "  // use precomputed instead of calling the imported async fn\n" +
+      "}",
+    example:
+      "// before — fn claims infallible but calls imported async getDefault(); INT035 fires\n" +
+      "?bs 0.9\n" +
+      "import { getDefault } from \"./defaults\"  // getDefault is declared async\n\n" +
+      "fn format(value: string) intent: \"infallible\" -> string {\n" +
+      "  return value + getDefault()  // INT035: imported async callee violates infallible\n" +
+      "}\n\n" +
+      "// after option A — use a synchronous default instead\n" +
+      "?bs 0.9\n" +
+      "fn format(value: string) intent: \"infallible\" -> string = value + DEFAULT_SUFFIX",
+  },
   EFF002: {
     code: "EFF002",
     title: "outer fn declares narrower effects than a callback parameter",
