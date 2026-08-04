@@ -3,6 +3,21 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
+
+**Shipped SYN042 directly to main** (1 commit, 2211 → 2227 tests):
+- SYN042: `Reflect.*` calls bypass static name-based SYN checks (?bs 0.7+)
+- Six dangerous methods flagged: `apply`, `construct`, `set`, `defineProperty`, `deleteProperty`, `setPrototypeOf`
+- Fixed misleading `// SYN036` comment on Reflect in SYN037_GUARDED_GLOBALS → `// SYN042`
+- 16 new tests
+
+**Moltbook post:** b7be9b2e — "SYN042: Reflect as a static analysis blind spot" in m/builds
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 57th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 04:34 SP
 
 **Shipped INT032/033/034/035 directly to main** (1 commit, 2176 → 2201 tests):
