@@ -1,12 +1,17 @@
 /**
  * Result/Option discard check (?bs 0.9+).
  *
- * Fires a warning when a same-file function whose declared return type
- * contains `Result<` or `Option<` is called as a statement — the return
- * value is discarded without propagation (`?`), matching, or assignment.
+ * Fires a warning when a function whose declared return type contains
+ * `Result<` or `Option<` is called as a statement — the return value is
+ * discarded without propagation (`?`), matching, or assignment.
  *
- *   RES002  result/option-returning fn called but return value discarded;
- *           the error or absence path is permanently sealed from callers.
+ *   RES002  same-file result/option-returning fn called but return value
+ *           discarded; the error or absence path is permanently sealed from
+ *           callers.
+ *
+ *   RES003  imported result/option-returning fn called but return value
+ *           discarded; fires when moduleEffects carries returnsResult/
+ *           returnsOption for the callee.
  *
  * Warning-level (non-blocking) to allow intentional fire-and-forget patterns
  * (best-effort logging, optional cache writes). Authors who consciously
@@ -21,9 +26,11 @@ import { getErrorCode } from "../error-codes.js";
 import { parseProgram } from "../parser/parse.js";
 import { locationOf } from "./_location.js";
 import { nextSignificant } from "./_callgraph.js";
+import { buildImportAliasMap } from "../module-effects.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import type { Diagnostic } from "../diagnostics.js";
 import type { Token } from "../parser/lex.js";
+import type { ModuleEffects } from "../module-effects.js";
 
 const BINARY_OPS = new Set(["&&", "||", "+", "-", "*", "/", "%", "==", "!=", "===", "!==", "<", ">", "<=", ">=", "|", "&", "^", "<<", ">>", ">>>", "**"]);
 
@@ -32,7 +39,11 @@ export interface ResCheckResult {
   warnings: ReadonlyArray<Diagnostic>;
 }
 
-export function passResCheck(src: string, version: VersionInfo): string | ResCheckResult {
+export function passResCheck(
+  src: string,
+  version: VersionInfo,
+  moduleEffects?: ModuleEffects,
+): string | ResCheckResult {
   if (!atLeast(version.resolved, "0.9")) return src;
 
   const allowGenerics = atLeast(version.resolved, "0.4");
@@ -40,9 +51,7 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   const tokens = program.tokens;
   const decls = program.fns.map((s) => s.decl);
 
-  if (decls.length === 0) return src;
-
-  // 1. Collect result-bearing fn names.
+  // 1. Collect result-bearing fn names from same-file declarations.
   // If the same name appears with mixed return types (e.g. a nested fn shadows a
   // top-level fn with a different type), treat it as ambiguous and exclude it —
   // scope resolution would be needed to classify calls correctly.
@@ -52,12 +61,14 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   //      (e.g. overloads with different error arms) — exclude these too, since scope
   //      resolution would be needed to pick the right overload at the call site.
   const resultBearing = new Set<string>();
+  const optionBearing = new Set<string>();
   const nonResultBearing = new Set<string>();
   // Track all Result/Option return types seen per name to detect same-category ambiguity.
   const resultReturnTypes = new Map<string, Set<string>>();
   for (const decl of decls) {
     if (decl.returnType.includes("Result<") || decl.returnType.includes("Option<")) {
       resultBearing.add(decl.name);
+      if (decl.returnType.includes("Option<")) optionBearing.add(decl.name);
       const seen = resultReturnTypes.get(decl.name) ?? new Set<string>();
       seen.add(decl.returnType.trim());
       resultReturnTypes.set(decl.name, seen);
@@ -72,14 +83,52 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
   for (const [name, types] of resultReturnTypes) {
     if (types.size > 1) resultBearing.delete(name);
   }
-  if (resultBearing.size === 0) return src;
+
+  // 1b. Extend with imported fns from moduleEffects (RES003).
+  // Build a set of imported names that resolve to result-bearing callees.
+  // Same-file declarations shadow imported names — if a same-file fn has the
+  // same name, the same-file check (RES002) already covers it; don't add it
+  // to the imported set to avoid double-firing with the wrong code.
+  const importedResultBearing = new Set<string>(); // fires RES003
+  const importedOptionBearing = new Set<string>(); // for label in message
+  if (moduleEffects) {
+    // Resolve import aliases: `import { saveRow as saveUser }` maps local
+    // name "saveUser" → declared name "saveRow" in the effect surface.
+    const aliasMap = buildImportAliasMap(tokens);
+
+    // Collect all local names that are imported (appear in an import statement).
+    // We can't cheaply enumerate all imported names from tokens alone, so instead
+    // we check every ident token that appears in moduleEffects (after alias resolution)
+    // and is NOT defined locally.
+    const allKnownLocals = new Set([...resultBearing, ...nonResultBearing]);
+    for (const [declaredName, surface] of Object.entries(moduleEffects)) {
+      if (!surface.returnsResult && !surface.returnsOption) continue;
+      // Find all local names that resolve to this declared name.
+      // Case 1: direct import (local name === declared name), not shadowed locally.
+      if (!allKnownLocals.has(declaredName)) {
+        // Both Result and Option names go into the scanning set.
+        importedResultBearing.add(declaredName);
+        if (surface.returnsOption && !surface.returnsResult) importedOptionBearing.add(declaredName);
+      }
+      // Case 2: aliased import — find local names that alias to declaredName.
+      for (const [localAlias, target] of aliasMap) {
+        if (target === declaredName && !allKnownLocals.has(localAlias)) {
+          importedResultBearing.add(localAlias);
+          if (surface.returnsOption && !surface.returnsResult) importedOptionBearing.add(localAlias);
+        }
+      }
+    }
+  }
+
+  if (resultBearing.size === 0 && importedResultBearing.size === 0) return src;
 
   // 2. Collect char ranges to skip: test blocks and unsafe expression blocks.
   //    Calls inside these ranges are excluded from the check.
   const skipRanges: Array<{ start: number; end: number }> = [];
   collectSkipRanges(tokens, skipRanges);
 
-  const entry = getErrorCode("RES002")!;
+  const entryRES002 = getErrorCode("RES002")!;
+  const entryRES003 = getErrorCode("RES003")!;
   const warnings: Diagnostic[] = [];
 
   // 3. Scan tokens for discarded calls.
@@ -87,7 +136,9 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     const tok = tokens[i]!;
 
     if (tok.kind !== "ident") continue;
-    if (!resultBearing.has(tok.text)) continue;
+    const isSameFile = resultBearing.has(tok.text);
+    const isImported = !isSameFile && importedResultBearing.has(tok.text);
+    if (!isSameFile && !isImported) continue;
 
     // Skip if inside a test/unsafe block.
     if (isInsideSkipRange(tok.start, skipRanges)) continue;
@@ -165,21 +216,40 @@ export function passResCheck(src: string, version: VersionInfo): string | ResChe
     if (resultIsConsumed(afterClose, afterCloseSameLine)) continue;
 
     const { line, column } = locationOf(src, tok.start);
-    warnings.push({
-      code: "RES002",
-      severity: "warning" as const,
-      file: null,
-      line,
-      column,
-      start: tok.start,
-      end: tok.end,
-      message:
-        `'${tok.text}' returns ${getReturnTypeLabel(decls, tok.text)} — ` +
-        `discard hides the error/absence path; use '?', match on the result, or assign it`,
-      rule: entry.rule,
-      idiom: entry.idiom,
-      rewrite: entry.rewrite,
-    });
+    if (isSameFile) {
+      warnings.push({
+        code: "RES002",
+        severity: "warning" as const,
+        file: null,
+        line,
+        column,
+        start: tok.start,
+        end: tok.end,
+        message:
+          `'${tok.text}' returns ${getReturnTypeLabel(decls, tok.text)} — ` +
+          `discard hides the error/absence path; use '?', match on the result, or assign it`,
+        rule: entryRES002.rule,
+        idiom: entryRES002.idiom,
+        rewrite: entryRES002.rewrite,
+      });
+    } else {
+      const typeLabel = importedOptionBearing.has(tok.text) ? "Option<…>" : "Result<…>";
+      warnings.push({
+        code: "RES003",
+        severity: "warning" as const,
+        file: null,
+        line,
+        column,
+        start: tok.start,
+        end: tok.end,
+        message:
+          `'${tok.text}' is an imported fn that returns ${typeLabel} — ` +
+          `discard hides the error/absence path; use '?', match on the result, or assign it`,
+        rule: entryRES003.rule,
+        idiom: entryRES003.idiom,
+        rewrite: entryRES003.rewrite,
+      });
+    }
   }
 
   if (warnings.length === 0) return src;

@@ -3,14 +3,18 @@ import type { Token } from "./parser/lex.js";
 
 /**
  * Declared effect surface of a single exported function from another module.
- * Used by passDepCheck, passThrCheck, and passCapCheck to extend transitivity
- * across files.
+ * Used by passDepCheck, passThrCheck, passCapCheck, and passResCheck to extend
+ * transitivity across files.
  */
 export interface FnEffectSurface {
   capabilities?: readonly string[];
   reads?: readonly string[];
   writes?: readonly string[];
   throws?: readonly string[];
+  /** Return type contains Result<…>. Used by RES003 (cross-file discard check). */
+  returnsResult?: true;
+  /** Return type contains Option<…>. Used by RES003 (cross-file discard check). */
+  returnsOption?: true;
 }
 
 /**
@@ -42,6 +46,8 @@ export function mergeEffectSurface(
   if (reads.length) merged.reads = reads;
   if (writes.length) merged.writes = writes;
   if (throws.length) merged.throws = throws;
+  if (a.returnsResult || b.returnsResult) merged.returnsResult = true;
+  if (a.returnsOption || b.returnsOption) merged.returnsOption = true;
   return merged;
 }
 
@@ -375,6 +381,8 @@ export function buildModuleEffects(sources: readonly string[]): ModuleEffects {
       if (decl.reads?.length) surface.reads = decl.reads;
       if (decl.writes?.length) surface.writes = decl.writes;
       if (decl.throws?.length) surface.throws = decl.throws;
+      if (decl.returnType.includes("Result<")) surface.returnsResult = true;
+      if (decl.returnType.includes("Option<")) surface.returnsOption = true;
       // Always include the function, even when surface is empty {}.
       // DEP003/DEP004 need to distinguish "known callee with no labels" from
       // "unknown callee" — omitting pure helpers causes them to look opaque.

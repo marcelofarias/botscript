@@ -286,7 +286,7 @@ describe("buildModuleEffects builder", () => {
       "?bs 0.9\n" +
         "fn fetchRow(id: string) reads { userDb } throws { NetworkError } -> Result<string, string> = unsafe(id)\n",
     ]);
-    expect(effects.fetchRow).toEqual({ reads: ["userDb"], throws: ["NetworkError"] });
+    expect(effects.fetchRow).toEqual({ reads: ["userDb"], throws: ["NetworkError"], returnsResult: true });
   });
 
   it("merges same-name declarations across sources instead of clobbering", () => {
@@ -294,7 +294,7 @@ describe("buildModuleEffects builder", () => {
       "?bs 0.9\nfn save(x: string) reads { db } -> Result<string, string> = unsafe(x)\n",
       "?bs 0.9\nfn save(x: string) writes { cache } -> Result<string, string> = unsafe(x)\n",
     ]);
-    expect(effects.save).toEqual({ reads: ["db"], writes: ["cache"] });
+    expect(effects.save).toEqual({ reads: ["db"], writes: ["cache"], returnsResult: true });
   });
 
   it("skips malformed sources so checking degrades gracefully", () => {

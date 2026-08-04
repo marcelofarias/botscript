@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { transform } from "../src/transform.js";
+import type { ModuleEffects } from "../src/module-effects.js";
 
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
 function check(src: string) {
   return transform(src);
+}
+
+function checkWithMods(src: string, moduleEffects: ModuleEffects) {
+  return transform(src, { moduleEffects });
 }
 
 // ---------------------------------------------------------------------------
@@ -375,5 +380,207 @@ describe("RES002: optional-call syntax", () => {
       "}\n";
     const result = check(src);
     expect(result.warnings.some((w) => w.code === "RES002")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES003 — cross-file Result/Option discard (imported callees)
+// ---------------------------------------------------------------------------
+
+describe("RES003: imported Result-returning fn discarded in statement position", () => {
+  it("fires RES003 when imported fn with returnsResult is called as a statement", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(true);
+  });
+
+  it("fires RES003 when imported fn with returnsOption is called as a statement", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(id: string) -> void {\n" +
+      "  findUser(id)\n" +
+      "}\n";
+    const result = checkWithMods(src, { findUser: { returnsOption: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(true);
+  });
+
+  it("does not fire RES003 when result is propagated with ?", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> Result<void, string> {\n" +
+      "  saveUser(user)?\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("does not fire RES003 when result is assigned", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  const r = saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("does not fire RES003 when result is matched", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  match saveUser(user) { _ -> 1 }\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("does not fire RES003 when inside an unsafe block", () => {
+    const src =
+      "?bs 0.9\n" +
+      'fn caller(user: string) -> void {\n' +
+      '  unsafe "intentional discard" { saveUser(user) }\n' +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("does not fire RES003 when no moduleEffects provided", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = check(src);
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("fires RES002 (not RES003) when same-file fn shadows imported name", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn saveUser(user: string) -> Result<void, string> { ok(undefined) }\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES002")).toBe(true);
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("fires RES003 message containing fn name and Result type label", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    const w = result.warnings.find((w) => w.code === "RES003");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("saveUser");
+    expect(w!.message).toContain("Result");
+  });
+
+  it("fires RES003 message containing Option type label for Option-returning fn", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(id: string) -> void {\n" +
+      "  findUser(id)\n" +
+      "}\n";
+    const result = checkWithMods(src, { findUser: { returnsOption: true } });
+    const w = result.warnings.find((w) => w.code === "RES003");
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("findUser");
+    expect(w!.message).toContain("Option");
+  });
+
+  it("fires RES003 for aliased import when moduleEffects uses declared name", () => {
+    // `import { saveRow as saveUser }` — local name is "saveUser", declared is "saveRow"
+    const src =
+      "?bs 0.9\n" +
+      'import { saveRow as saveUser } from "./db.bs"\n' +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveRow: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(true);
+  });
+
+  it("does not fire RES003 before ?bs 0.9", () => {
+    const src =
+      "?bs 0.2\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(false);
+  });
+
+  it("RES003 diagnostic carries start and end spans", () => {
+    const src =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = checkWithMods(src, { saveUser: { returnsResult: true } });
+    const w = result.warnings.find((w) => w.code === "RES003");
+    expect(w).toBeDefined();
+    expect(typeof w!.start).toBe("number");
+    expect(typeof w!.end).toBe("number");
+    expect(w!.end).toBeGreaterThan(w!.start!);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RES003 — buildModuleEffects integration
+// ---------------------------------------------------------------------------
+
+describe("RES003: buildModuleEffects populates returnsResult / returnsOption", () => {
+  it("buildModuleEffects sets returnsResult for fns returning Result<>", async () => {
+    const { buildModuleEffects } = await import("../src/module-effects.js");
+    const src =
+      "?bs 0.9\n" +
+      "export fn saveUser(user: string) -> Result<void, string> { ok(undefined) }\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects["saveUser"]?.returnsResult).toBe(true);
+    expect(effects["saveUser"]?.returnsOption).toBeUndefined();
+  });
+
+  it("buildModuleEffects sets returnsOption for fns returning Option<>", async () => {
+    const { buildModuleEffects } = await import("../src/module-effects.js");
+    const src =
+      "?bs 0.9\n" +
+      "export fn findUser(id: string) -> Option<string> { none }\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects["findUser"]?.returnsOption).toBe(true);
+    expect(effects["findUser"]?.returnsResult).toBeUndefined();
+  });
+
+  it("buildModuleEffects does not set returnsResult for plain return types", async () => {
+    const { buildModuleEffects } = await import("../src/module-effects.js");
+    const src =
+      "?bs 0.9\n" +
+      "export fn getName(id: string) -> string = id\n";
+    const effects = buildModuleEffects([src]);
+    expect(effects["getName"]?.returnsResult).toBeUndefined();
+    expect(effects["getName"]?.returnsOption).toBeUndefined();
+  });
+
+  it("end-to-end: buildModuleEffects output triggers RES003 in transform", async () => {
+    const { buildModuleEffects } = await import("../src/module-effects.js");
+    const exportedSrc =
+      "?bs 0.9\n" +
+      "export fn saveUser(user: string) -> Result<void, string> { ok(undefined) }\n";
+    const moduleEffects = buildModuleEffects([exportedSrc]);
+
+    const callerSrc =
+      "?bs 0.9\n" +
+      "fn caller(user: string) -> void {\n" +
+      "  saveUser(user)\n" +
+      "}\n";
+    const result = transform(callerSrc, { moduleEffects });
+    expect(result.warnings.some((w) => w.code === "RES003")).toBe(true);
   });
 });

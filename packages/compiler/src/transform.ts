@@ -108,9 +108,10 @@ const PASS_PIPELINE: ReadonlyArray<PipelineEntry> = [
   // matCheck: exhaustiveness check on Result match (MAT001) — fires when a
   // match explicitly handles ok or err but omits the other without a wildcard.
   { name: "matCheck", fn: passMatCheck, minVersion: "0.9" },
-  // resCheck: non-blocking warning (RES002) when a Result- or Option-returning
-  // fn is called as a statement — the return value is discarded and the error/
-  // absence path is permanently sealed from callers.
+  // resCheck: non-blocking warning (RES002/RES003) when a Result- or Option-
+  // returning fn is called as a statement — the return value is discarded and
+  // the error/absence path is permanently sealed from callers. RES002 fires for
+  // same-file callees; RES003 fires for imported callees via moduleEffects.
   { name: "resCheck", fn: passResCheck, minVersion: "0.9" },
   // capAssert: non-blocking warning (CAP003) when a `uses {}` claim appears on
   // an `unsafe fn` — the claim is programmer-asserted, not compiler-proven.
@@ -181,6 +182,8 @@ export function transform(source: string, opts: TransformOptions = {}): Transfor
             return { ...e, fn: (s: string, v: VersionInfo) => passCapCheck(s, v, mods) };
           if (e.name === "intentCheck")
             return { ...e, fn: (s: string, v: VersionInfo) => passIntentCheck(s, v, mods) };
+          if (e.name === "resCheck")
+            return { ...e, fn: (s: string, v: VersionInfo) => passResCheck(s, v, mods) };
           return e;
         })
       : PASS_PIPELINE;
