@@ -89,6 +89,84 @@ export function collectCallees(
 }
 
 /**
+ * Like `collectCallees`, but excludes callees whose calls only appear inside
+ * `try { }` blocks. Used by INT010/INT034/INT035: a throwing callee wrapped in
+ * try/catch cannot propagate its exception through the caller, so it does not
+ * violate the `infallible` guarantee.
+ *
+ * Callee names that appear both inside AND outside try blocks are still
+ * included — the outside occurrence is the unsafe one.
+ */
+export function collectCalleesOutsideTryCatch(
+  tokens: Token[],
+  fn: FnDecl,
+  inner: FnDecl[],
+  fnNames: Set<string>,
+): Set<string> {
+  const start = fn.bodyTokenStart ?? fn.tokenStart;
+
+  // Phase 1: collect try-block token ranges [startIdx, endIdx) while skipping
+  // nested fn declarations so a `try` inside an arrow fn isn't treated as
+  // protecting the outer fn's calls.
+  const tryRanges: Array<[number, number]> = [];
+  {
+    const openInners: FnDecl[] = [];
+    let ni = 0;
+    for (let i = start; i < fn.tokenEnd; i++) {
+      while (openInners.length > 0 && openInners[openInners.length - 1]!.tokenEnd <= i) openInners.pop();
+      while (ni < inner.length && inner[ni]!.tokenStart <= i) { openInners.push(inner[ni]!); ni++; }
+      if (openInners.length > 0) continue;
+
+      const tok = tokens[i];
+      if (!tok || tok.kind !== "ident" || tok.text !== "try") continue;
+
+      const braceIdx = nextSignificant(tokens, i + 1);
+      const braceTok = tokens[braceIdx];
+      if (!braceTok || braceTok.kind !== "open" || braceTok.text !== "{") continue;
+      if (braceTok.matchedAt === undefined) continue;
+
+      // Record the range inside the try block (exclusive of the braces themselves).
+      tryRanges.push([braceIdx + 1, braceTok.matchedAt]);
+    }
+  }
+
+  // Phase 2: collect callees outside try-block ranges.
+  const callees = new Set<string>();
+  const open: FnDecl[] = [];
+  let nextInner = 0;
+
+  for (let i = start; i < fn.tokenEnd; i++) {
+    while (open.length > 0 && open[open.length - 1]!.tokenEnd <= i) open.pop();
+    while (nextInner < inner.length && inner[nextInner]!.tokenStart <= i) {
+      open.push(inner[nextInner]!);
+      nextInner++;
+    }
+    if (open.length > 0) continue;
+
+    // Skip tokens inside any try block.
+    let inTry = false;
+    for (const [s, e] of tryRanges) { if (i >= s && i < e) { inTry = true; break; } }
+    if (inTry) continue;
+
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "ident") continue;
+    if (!fnNames.has(tok.text)) continue;
+    if (tok.text === fn.name) continue;
+
+    const prevIdx = prevSignificant(tokens, i - 1);
+    const prev = tokens[prevIdx];
+    if (prev && ((prev.kind === "punct" && prev.text === ".") || prev.kind === "questionDot"))
+      continue;
+
+    if (!isDirectOrOptionalCall(tokens, i)) continue;
+
+    callees.add(tok.text);
+  }
+
+  return callees;
+}
+
+/**
  * Returns true if the token at `identIdx` is directly followed by `(` or `?.(`,
  * indicating a direct or optional-direct call rather than a bare reference.
  */

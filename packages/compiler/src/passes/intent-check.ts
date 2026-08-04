@@ -211,7 +211,7 @@ import { locationOf } from "./_location.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { STDLIB_TO_CAP } from "./_stdlib.js";
 import { aliasesForFn, blockShadowsForFn, isInBlockShadow, collectStdlibAliases, type BlockShadowRange } from "./_alias.js";
-import { computeNesting, collectCallees } from "./_callgraph.js";
+import { computeNesting, collectCallees, collectCalleesOutsideTryCatch } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 
 export function passIntentCheck(src: string, version: VersionInfo, moduleEffects?: ModuleEffects): string {
@@ -608,7 +608,7 @@ function checkPureClaim(
   // Only fires when INT001 and INT002 did not (no direct header or body conflict).
   if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToThrows.size > 0) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, fnNames);
     const entry18 = getErrorCode("INT018")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -657,7 +657,7 @@ function checkPureClaim(
   // Extends INT018 to cross-file call sites. Only fires when INT001 and INT002 did not.
   if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, extendedFnNames);
+    const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, extendedFnNames);
     const entry24 = getErrorCode("INT024")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -1235,7 +1235,7 @@ function checkIdempotentClaim(
   // Fires only when INT022 did not (no throws {} on the outer header).
   if (checksThrows && !bodyUse && decl.bodyTokenStart !== undefined && fnNameToThrows.size > 0) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, fnNames);
+    const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, fnNames);
     const entry23 = getErrorCode("INT023")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -1285,7 +1285,7 @@ function checkIdempotentClaim(
   // Extends INT023 to cross-file call sites. Fires only when INT022 did not.
   if (checksThrows && !bodyUse && moduleEffects && decl.bodyTokenStart !== undefined) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, extendedFnNames);
+    const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, extendedFnNames);
     const entry27 = getErrorCode("INT027")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -1654,7 +1654,7 @@ function checkTotalClaim(
   const intentStart = decl.intentStart!;
   const loc = locationOf(src, intentStart);
   const inner = innerByDecl.get(decl) ?? [];
-  const callees = collectCallees(tokens, decl, inner, fnNames);
+  const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, fnNames);
 
   // INT007: body-level — calls a same-file fn that declares throws {}.
   if (fnNameToThrows.size > 0) {
@@ -1745,7 +1745,7 @@ function checkTotalClaim(
   // Extends INT007 to cross-file call sites.
   if (moduleEffects && decl.bodyTokenStart !== undefined) {
     const innerFds = innerByDecl.get(decl) ?? [];
-    const extCallees = collectCallees(tokens, decl, innerFds, extendedFnNames);
+    const extCallees = collectCalleesOutsideTryCatch(tokens, decl, innerFds, extendedFnNames);
     const entry25 = getErrorCode("INT025")!;
     const intentStart = decl.intentStart!;
     const loc = locationOf(src, intentStart);
@@ -1933,13 +1933,16 @@ function checkInfallibleClaim(
 
   const inner = innerByDecl.get(decl) ?? [];
   const callees = collectCallees(tokens, decl, inner, fnNames);
+  // For INT010: exclude callees whose calls are all inside try blocks — those
+  // exceptions are caught and cannot propagate through the infallible fn.
+  const calleesOutsideTry = collectCalleesOutsideTryCatch(tokens, decl, inner, fnNames);
 
   // INT010: calls a same-file fn that declares throws {}.
   if (fnNameToThrows.size > 0) {
     const entry10 = getErrorCode("INT010")!;
     const fired = new Set<string>();
 
-    for (const calleeName of callees) {
+    for (const calleeName of calleesOutsideTry) {
       if (fired.has(calleeName)) continue;
       const calleeThrows = fnNameToThrows.get(calleeName);
       if (!calleeThrows || calleeThrows.length === 0) continue;
@@ -2023,7 +2026,7 @@ function checkInfallibleClaim(
   // Extends INT010 to cross-file call sites.
   if (moduleEffects && decl.bodyTokenStart !== undefined) {
     const innerFds = innerByDecl.get(decl) ?? [];
-    const extCallees = collectCallees(tokens, decl, innerFds, extendedFnNames);
+    const extCallees = collectCalleesOutsideTryCatch(tokens, decl, innerFds, extendedFnNames);
     const entry26 = getErrorCode("INT026")!;
     const fired26 = new Set<string>();
 

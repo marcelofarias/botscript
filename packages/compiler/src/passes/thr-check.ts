@@ -37,7 +37,7 @@ import type { FnDecl } from "../parser/parse-fn.js";
 import { atLeast, type VersionInfo } from "./version.js";
 import { locationOf } from "./_location.js";
 import type { Token } from "../parser/lex.js";
-import { computeNesting, collectCallees, hasOpaqueCall, collectFnBodyLocalNames, nextSignificant, prevSignificant } from "./_callgraph.js";
+import { computeNesting, collectCallees, collectCalleesOutsideTryCatch, hasOpaqueCall, collectFnBodyLocalNames, nextSignificant, prevSignificant } from "./_callgraph.js";
 import { buildImportAliasMap, type ModuleEffects } from "../module-effects.js";
 import { collectStdlibAliases } from "./_alias.js";
 import { extractResultArgs, splitTopLevelPipe, leadingTypeIdent } from "./_type-parser.js";
@@ -125,7 +125,9 @@ export function passThrCheck(
 
   for (const decl of decls) {
     const inner = innerByDecl.get(decl) ?? [];
-    const callees = collectCallees(tokens, decl, inner, allCalleeNames);
+    // Use the try-aware variant: callee throws that are caught by a surrounding
+    // try/catch do not propagate to the caller and should not affect thr-check.
+    const callees = collectCalleesOutsideTryCatch(tokens, decl, inner, allCalleeNames);
     records.set(decl, {
       decl,
       declaredThrows: new Set(decl.throws ?? []),

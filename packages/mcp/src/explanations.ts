@@ -12,8 +12,14 @@ export interface Explanation {
   title: string;
   /** A multi-paragraph explanation of why the rule exists. */
   body: string;
-  /** A worked-example pair: a snippet that fails, and a snippet that passes. */
-  example: { fails: string; passes: string };
+  /**
+   * A worked-example pair: a snippet that fails, and a snippet that passes.
+   * For cross-file checks that require moduleEffects, `failsEffects` is a
+   * separate source string whose exported fn declarations provide the effect
+   * surface — the test will call `buildModuleEffects([failsEffects])` and
+   * pass the result to `transform(fails, { moduleEffects })`.
+   */
+  example: { fails: string; failsEffects?: string; passes: string };
 }
 
 export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
@@ -294,6 +300,106 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "}\n",
     },
   },
+  UNS006: {
+    code: "UNS006",
+    title: "@ts-ignore / @ts-expect-error bypasses TypeScript type checking",
+    body:
+      "UNS006 fires when a botscript file contains a `// @ts-ignore` or `// @ts-expect-error` " +
+      "comment. TypeScript suppression comments silence type errors on the next line without " +
+      "requiring a written reason or an explicit escape-hatch annotation. A model that cannot " +
+      "satisfy the type system will reach for them rather than fixing the underlying problem, " +
+      "defeating botscript's safety net silently and leaving no trail for reviewers.\n\n" +
+      "The botscript alternative is `unsafe \"<reason>\" { expr as Type }` — the cast and its " +
+      "justification live together in the same expression, the reason shows up in diff review, " +
+      "and the compiler tracks it as an intentional bypass rather than a suppression.\n\n" +
+      "UNS006 is gated on `?bs 0.9`. Files pinned to earlier versions are unaffected.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn getUser(data: unknown) -> User {\n" +
+        " // @ts-ignore\n" +
+        "  return data; // UNS006: @ts-ignore silences the type error without justification\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn getUser(data: unknown) -> User {\n" +
+        "  unsafe \"vendor response shape is User; validated at the ingress boundary\" { data as User }\n" +
+        "}\n",
+    },
+  },
+  UNS007: {
+    code: "UNS007",
+    title: "unsafe block body is a pure literal — escape hatch wraps nothing",
+    body:
+      "UNS007 fires when an `unsafe \"<reason>\" { body }` block's body contains only literal " +
+      "tokens (numbers, strings, booleans, null, undefined) and no identifier tokens at all. " +
+      "Such a block has never justified anything: there is no `as` type cast and no stdlib " +
+      "capability call for the reason string to cover. The wrapper is meaningless.\n\n" +
+      "This is a 'born-stale' variant: the block was vacuous from the start. The 'decay-stale' " +
+      "population (blocks that used to wrap something real but no longer do) is caught by UNS008. " +
+      "Both fire when the `unsafe` wrapper is no longer necessary, but for different reasons.\n\n" +
+      "Fix: remove the `unsafe` wrapper entirely and keep the literal expression.\n\n" +
+      "UNS007 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "const x = unsafe \"magic number\" { 42 }; // UNS007: pure literal; unsafe wraps nothing\n",
+      passes:
+        "?bs 0.9\n" +
+        "const x = 42;\n",
+    },
+  },
+  UNS008: {
+    code: "UNS008",
+    title: "decay-stale unsafe block — body has no cast, capability call, or bypass pattern",
+    body:
+      "UNS008 fires when an `unsafe \"<reason>\" { ... }` block's body contains identifier " +
+      "tokens but none of the patterns that require the escape hatch: no `as` type cast " +
+      "(UNS004), no stdlib capability call (UNS005), no `throw` statement (SYN002), no " +
+      "`console.*` call (SYN003), and no other bypass pattern the compiler tracks.\n\n" +
+      "This is a 'decay-stale' block: it used to wrap something that genuinely needed the " +
+      "escape hatch, but the body has since been refactored and the unsafe wrapper was not " +
+      "removed. The reason string still records a past justification that no longer applies " +
+      "to the current body.\n\n" +
+      "Fix: remove the `unsafe` wrapper. If the code still needs it, ensure the body contains " +
+      "a recognized bypass pattern.\n\n" +
+      "UNS008 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "const value = unsafe \"data is string\" { payload }; // UNS008: body has no cast or capability call\n",
+      passes:
+        "// option A — remove the wrapper\n" +
+        "?bs 0.9\n" +
+        "const value = payload;\n\n" +
+        "// option B — ensure the body still needs the escape hatch\n" +
+        "?bs 0.9\n" +
+        "const value = unsafe \"payload is validated at ingress\" { payload as string };\n",
+    },
+  },
+  UNS009: {
+    code: "UNS009",
+    title: "unsafe reason string is too weak to justify the escape hatch",
+    body:
+      "UNS009 fires when the reason string in `unsafe \"<reason>\" { ... }` does not meet " +
+      "the informative-justification bar. The reason must describe why the escape hatch is " +
+      "needed, what it bypasses, and ideally who owns the risk.\n\n" +
+      "Empty strings, whitespace-only strings, and known-weak single-word deferrals are " +
+      "rejected: `\"TODO\"`, `\"legacy\"`, `\"temp\"`, `\"temporary\"`, `\"workaround\"`, `\"fixme\"`, " +
+      "`\"hack\"`, `\"ignore\"`, `\"wip\"`. These are non-reasons — they record that someone " +
+      "pressed through the gate, not why.\n\n" +
+      "A good reason describes the specific bypass: `\"http.get returns untyped Response; " +
+      "caller match-handles\"` or `\"vendor SDK types any; upstream issue #42 tracks the fix\"`.\n\n" +
+      "UNS009 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "const resp = unsafe \"TODO\" { http.get(url) }; // UNS009: reason string is too weak\n",
+      passes:
+        "?bs 0.9\n" +
+        "const resp = unsafe \"http.get returns untyped Response; caller match-handles\" { http.get(url) };\n",
+    },
+  },
   INT001: {
     code: "INT001",
     title: "intent declares 'pure' but function has capability, resource, or throws declarations",
@@ -460,6 +566,960 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
         "// option B — remove writes if the fn does not actually mutate anything\n" +
         "?bs 0.9\n" +
         "fn recordAttempt(id: string) intent: \"idempotent\" -> void { }\n",
+    },
+  },
+  INT006: {
+    code: "INT006",
+    title: "intent declares 'total' but function declares throws {}",
+    body:
+      "INT006 fires when a function header combines `intent: \"total\"` with a non-empty " +
+      "`throws { ... }` clause. A total function handles all inputs and never propagates " +
+      "exceptions to callers — declaring `throws {}` directly contradicts that guarantee. " +
+      "If the function can fail, the idiomatic botscript pattern is to encode failure in " +
+      "the return type as `Result<T, E>` and let callers match exhaustively instead of " +
+      "catching exceptions.\n\n" +
+      "INT006 is a header-level consistency check (analogous to INT001 for `pure`). It fires " +
+      "whenever both clauses coexist, regardless of what the body actually does. This is " +
+      "intentional — the declaration surface is the contract, and the contract is " +
+      "self-contradictory.\n\n" +
+      "INT006 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn parseHex(s: string) intent: \"total\" throws { ParseError } -> number {\n" +
+        " // INT006: total + throws {} is self-contradictory\n" +
+        "}\n",
+      passes:
+        "// option A — encode failure as Result\n" +
+        "?bs 0.9\n" +
+        "fn parseHex(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+        " // ...\n" +
+        "}\n\n" +
+        "// option B — remove the intent claim if the fn can throw\n" +
+        "?bs 0.9\n" +
+        "fn parseHex(s: string) throws { ParseError } -> number {\n" +
+        " // ...\n" +
+        "}\n",
+    },
+  },
+  INT007: {
+    code: "INT007",
+    title: "intent declares 'total' but function body calls a same-file callee that throws",
+    body:
+      "INT007 fires when a function declaring `intent: \"total\"` calls a same-file function " +
+      "that declares `throws { ... }` without catching those exceptions. A total function " +
+      "must handle all error paths and never propagate exceptions to callers. Calling a " +
+      "throwing callee without a try/catch re-opens the exception channel the total claim " +
+      "is supposed to close.\n\n" +
+      "INT007 is the body-level complement to INT006 (which fires on the header). It fires " +
+      "when INT006 does not — i.e., when the caller's own header has no `throws {}` clause " +
+      "but the body calls a same-file fn that does. The transitivity gap is closed: reading " +
+      "the header alone should be sufficient to understand the fn's failure surface.\n\n" +
+      "Fix: wrap the callee call in try/catch and return `Result<T, E>`, use a non-throwing " +
+      "variant, or remove the `total` intent claim.\n\n" +
+      "INT007 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> void { }\n" +
+        "fn validateAndParse(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+        "  validate(s) // INT007: callee throws { ValidationError }, not caught here\n" +
+        "  return parseNum(s)\n" +
+        "}\n",
+      passes:
+        "// use a Result-returning validate so total fn has no throwing callee\n" +
+        "?bs 0.9\n" +
+        "fn validate(s: string) -> Result<void, ValidationError> = ok(undefined)\n" +
+        "fn validateAndParse(s: string) intent: \"total\" -> Result<void, ValidationError> {\n" +
+        "  return validate(s)\n" +
+        "}\n",
+    },
+  },
+  INT008: {
+    code: "INT008",
+    title: "intent declares 'infallible' but return type exposes a failure path",
+    body:
+      "INT008 fires when a function declares `intent: \"infallible\"` but its return type " +
+      "contains `Result<T, E>` or `Option<T>`. Those types carry a failure arm (`err` / `none`) " +
+      "that callers must handle — their presence contradicts the infallible guarantee that the " +
+      "function always produces a plain success value.\n\n" +
+      "An infallible function never fails: it never throws, never returns `err(...)`, and never " +
+      "returns `none`. If the function can fail, the correct intent is `\"total\"` (which pairs " +
+      "naturally with a `Result<T, E>` return type).\n\n" +
+      "INT008 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn defaultName(raw: string) intent: \"infallible\" -> Result<string, ParseError> {\n" +
+        "  return ok(raw.trim() || \"unnamed\") // INT008: Result return contradicts infallible\n" +
+        "}\n",
+      passes:
+        "// option A — plain return type matches the infallible claim\n" +
+        "?bs 0.9\n" +
+        "fn defaultName(raw: string) intent: \"infallible\" -> string {\n" +
+        "  return raw.trim() || \"unnamed\"\n" +
+        "}\n\n" +
+        "// option B — downgrade to total if a failure path is real\n" +
+        "?bs 0.9\n" +
+        "fn defaultName(raw: string) intent: \"total\" -> Result<string, ParseError> {\n" +
+        "  return ok(raw.trim() || \"unnamed\")\n" +
+        "}\n",
+    },
+  },
+  INT009: {
+    code: "INT009",
+    title: "intent declares 'infallible' but function declares throws {}",
+    body:
+      "INT009 fires when a function header combines `intent: \"infallible\"` with a non-empty " +
+      "`throws { ... }` clause. An infallible function never fails — it never throws and never " +
+      "returns an error value. Declaring `throws {}` directly contradicts that guarantee; throwing " +
+      "is a failure that escapes the function's boundary.\n\n" +
+      "INT009 is the infallible-intent companion to INT006 (total + throws). It is a header-level " +
+      "consistency check that fires whenever both clauses coexist.\n\n" +
+      "Fix options: remove `throws {}` if the fn genuinely won't throw; downgrade to " +
+      "`intent: \"total\"` and use `Result<T, E>` to encode failure.\n\n" +
+      "INT009 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn parse(s: string) intent: \"infallible\" throws { ParseError } -> number {\n" +
+        "  return Number(s) // INT009: infallible + throws {} is self-contradictory\n" +
+        "}\n",
+      passes:
+        "// option A — downgrade to total + Result\n" +
+        "?bs 0.9\n" +
+        "fn parse(s: string) intent: \"total\" -> Result<number, ParseError> {\n" +
+        "  const n = Number(s)\n" +
+        "  return isNaN(n) ? err(new ParseError(s)) : ok(n)\n" +
+        "}\n\n" +
+        "// option B — remove throws {} if the fn won't actually throw\n" +
+        "?bs 0.9\n" +
+        "fn parse(s: string) intent: \"infallible\" -> number {\n" +
+        "  return Number(s) || 0\n" +
+        "}\n",
+    },
+  },
+  INT010: {
+    code: "INT010",
+    title: "intent declares 'infallible' but function body calls a same-file callee that throws",
+    body:
+      "INT010 fires when a function declaring `intent: \"infallible\"` calls a same-file function " +
+      "that declares `throws { ... }` without catching those exceptions. A throwing callee can " +
+      "propagate an exception through the infallible fn's body, reopening a failure channel that " +
+      "the infallible claim is supposed to permanently close.\n\n" +
+      "INT010 is the body-level complement to INT009 (header-level). It fires when INT009 does " +
+      "not — i.e., when the caller's header has no `throws {}` clause but the body calls a " +
+      "same-file fn that does.\n\n" +
+      "Fix: wrap the throwing call in try/catch and either suppress the exception (returning a " +
+      "default value to preserve the infallible guarantee) or downgrade to `intent: \"total\"` " +
+      "and use `Result<T, E>`.\n\n" +
+      "INT010 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+        "fn process(s: string) intent: \"infallible\" -> string {\n" +
+        "  return validate(s) // INT010: validate may throw, violating the infallible guarantee\n" +
+        "}\n",
+      passes:
+        "// option A — catch and suppress, keep infallible guarantee\n" +
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> string = s\n" +
+        "fn process(s: string) intent: \"infallible\" -> string {\n" +
+        "  try {\n" +
+        "    return validate(s)\n" +
+        "  } catch {\n" +
+        "    return \"\"\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT011: {
+    code: "INT011",
+    title: "intent declares 'pure' but function is async",
+    body:
+      "INT011 fires when a function declared `async` also carries `intent: \"pure\"`. An async " +
+      "function always returns a Promise — two calls with identical arguments return distinct, " +
+      "non-equal Promise objects — and suspends execution by yielding to the event loop, " +
+      "producing timing side effects. Both properties contradict the pure guarantee of " +
+      "determinism and referential transparency.\n\n" +
+      "A pure function must be synchronous. If the function's work is inherently synchronous " +
+      "(the `async` keyword is vestigial), remove it and any `await` expressions. If the work " +
+      "is genuinely async, the `pure` intent claim is wrong and should be removed.\n\n" +
+      "INT011 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "async fn slugify(s: string) intent: \"pure\" -> Promise<string> {\n" +
+        "  return s.toLowerCase().replace(/ /g, \"-\") // INT011: async contradicts pure\n" +
+        "}\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn slugify(s: string) intent: \"pure\" -> string {\n" +
+        "  return s.toLowerCase().replace(/ /g, \"-\")\n" +
+        "}\n",
+    },
+  },
+  INT012: {
+    code: "INT012",
+    title: "intent declares 'pure' but body calls a same-file fn that declares uses {}",
+    body:
+      "INT012 fires when a function declaring `intent: \"pure\"` calls a same-file function " +
+      "that carries a `uses { ... }` capability declaration. A callee that consumes external " +
+      "resources (network, filesystem, time, random, …) makes the caller non-pure by " +
+      "transitivity, even when the caller's own header declares no capabilities.\n\n" +
+      "INT012 is the body-level callee-transitivity check for the capability axis. It fires " +
+      "only when INT001 and INT002 do not — i.e., when the caller itself declares no " +
+      "capabilities and the body contains no direct stdlib references, but still reaches " +
+      "an effectful callee.\n\n" +
+      "Fix: inject the callee's result as a parameter (keeping the pure fn closed over " +
+      "inputs only), use a capability-free variant of the callee, or remove the `pure` " +
+      "intent claim.\n\n" +
+      "INT012 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn getTimestamp() uses { time } -> number = time.now()\n\n" +
+        "fn buildKey(id: string) intent: \"pure\" -> string {\n" +
+        "  const ts = getTimestamp() // INT012: callee declares uses { time }\n" +
+        "  return id + \":\" + ts\n" +
+        "}\n",
+      passes:
+        "// inject the timestamp as a parameter instead\n" +
+        "?bs 0.9\n" +
+        "fn buildKey(id: string, ts: number) intent: \"pure\" -> string {\n" +
+        "  return id + \":\" + ts\n" +
+        "}\n",
+    },
+  },
+  INT013: {
+    code: "INT013",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares uses { random } or uses { time }",
+    body:
+      "INT013 fires when a function declaring `intent: \"idempotent\"` calls a same-file " +
+      "function that carries `random` or `time` in its `uses { ... }` clause. Those " +
+      "capabilities produce a different value on every call, so the outer function inherits " +
+      "non-idempotent behaviour by transitivity — the output changes across calls even when " +
+      "the inputs are identical.\n\n" +
+      "INT013 fires only when INT003 and INT004 do not. It closes the callee-transitivity " +
+      "gap for the idempotent claim: reading the fn header alone should be enough to " +
+      "understand whether the fn is safe to retry.\n\n" +
+      "Fix: call the non-idempotent callee before the idempotent fn and pass its result as " +
+      "a parameter; use a deterministic alternative; or remove the `idempotent` intent claim.\n\n" +
+      "INT013 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn timestamp() uses { time } -> number = time.now()\n\n" +
+        "fn tag(id: string) intent: \"idempotent\" -> string {\n" +
+        "  return id + \"-\" + timestamp() // INT013: callee declares uses { time }\n" +
+        "}\n",
+      passes:
+        "// inject the timestamp as a parameter\n" +
+        "?bs 0.9\n" +
+        "fn tag(id: string, ts: number) intent: \"idempotent\" -> string {\n" +
+        "  return id + \"-\" + ts\n" +
+        "}\n",
+    },
+  },
+  INT014: {
+    code: "INT014",
+    title: "intent string contains a redundant claim already implied by a stronger claim",
+    body:
+      "INT014 fires when an `intent: \"...\"` string contains both a stronger and a weaker " +
+      "claim from the botscript intent subsumption hierarchy:\n\n" +
+      "- `pure` implies `idempotent` — pure bans all capabilities, which is strictly stronger " +
+      "  than idempotent's ban on only `random` and `time`.\n" +
+      "- `infallible` implies `total` — infallible is total plus a no-Result/Option-return constraint.\n\n" +
+      "Declaring both `pure` and `idempotent`, or both `infallible` and `total`, adds no " +
+      "enforcement: the compiler only checks the stronger claim. INT014 fires on the redundant " +
+      "(weaker) claim and recommends removing it.\n\n" +
+      "INT014 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn add(a: number, b: number) intent: \"pure idempotent\" -> number = a + b\n" +
+        "// INT014: 'idempotent' is redundant; 'pure' already subsumes it\n",
+      passes:
+        "// option A — use only the stronger claim\n" +
+        "?bs 0.9\n" +
+        "fn add(a: number, b: number) intent: \"pure\" -> number = a + b\n\n" +
+        "// option B — if 'idempotent' was intended, remove 'pure'\n" +
+        "?bs 0.9\n" +
+        "fn add(a: number, b: number) intent: \"idempotent\" -> number = a + b\n",
+    },
+  },
+  INT015: {
+    code: "INT015",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares writes {}",
+    body:
+      "INT015 fires when a function declaring `intent: \"idempotent\"` calls a same-file " +
+      "function that carries a `writes { ... }` declaration. A callee that mutates a resource " +
+      "makes the caller non-idempotent by transitivity — repeated calls produce additional " +
+      "mutations, so the Nth call produces a different observable outcome than the first.\n\n" +
+      "INT015 fires only when INT005, INT003, and INT004 do not. It closes the callee-transitivity " +
+      "gap for the writes-idempotent axis.\n\n" +
+      "Fix: move the write operation outside the idempotent boundary; pass the data through " +
+      "a pure transformation first; or remove the `idempotent` intent claim and declare the " +
+      "`writes {}` dependency directly.\n\n" +
+      "INT015 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn persist(data: string) writes { db } -> void = db.save(data)\n\n" +
+        "fn process(raw: string) intent: \"idempotent\" -> void {\n" +
+        "  persist(raw) // INT015: callee declares writes { db }\n" +
+        "}\n",
+      passes:
+        "// move the write outside the idempotent boundary\n" +
+        "?bs 0.9\n" +
+        "fn transform(raw: string) intent: \"idempotent\" -> string = raw.trim()\n\n" +
+        "fn process(raw: string) writes { db } -> void {\n" +
+        "  persist(transform(raw)) // transform is idempotent; persist is outside the boundary\n" +
+        "}\n",
+    },
+  },
+  INT016: {
+    code: "INT016",
+    title: "intent declares 'pure' but body calls a same-file fn that declares reads {} or writes {}",
+    body:
+      "INT016 fires when a function declaring `intent: \"pure\"` calls a same-file function " +
+      "that carries a `reads { ... }` or `writes { ... }` declaration. A callee that reads " +
+      "external state makes the caller's output depend on ambient state (non-deterministic); " +
+      "a callee that writes external state introduces a side effect. Both contradict the pure " +
+      "guarantee of referential transparency and determinism, even when the caller's own " +
+      "header declares no reads or writes.\n\n" +
+      "INT016 fires only when INT001, INT002, INT012, and INT013 do not. It closes the " +
+      "callee-transitivity gap for the reads/writes axis.\n\n" +
+      "Fix: inject the state value as a parameter; use a reads/writes-free alternative; or " +
+      "remove the `pure` intent claim.\n\n" +
+      "INT016 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn load(id: string) reads { db } -> Record = db.find(id)\n\n" +
+        "fn process(id: string) intent: \"pure\" -> Summary {\n" +
+        "  const record = load(id) // INT016: callee declares reads { db }\n" +
+        "  return summarize(record)\n" +
+        "}\n",
+      passes:
+        "// inject the record as a parameter, keep pure intent\n" +
+        "?bs 0.9\n" +
+        "fn process(record: Record) intent: \"pure\" -> Summary = summarize(record)\n",
+    },
+  },
+  INT017: {
+    code: "INT017",
+    title: "intent declares 'pure' but body calls a same-file fn declared async",
+    body:
+      "INT017 fires when a function declaring `intent: \"pure\"` calls a same-file function " +
+      "that is declared `async`. An async callee yields to the event loop on every invocation " +
+      "(a timing side effect) and always returns a distinct Promise object — two calls with " +
+      "identical arguments produce non-equal return values. Both properties contradict the " +
+      "pure guarantee of determinism and referential transparency, even when the caller is " +
+      "synchronous.\n\n" +
+      "INT017 fires only when INT001, INT002, INT011, INT012, INT013, INT015, and INT016 do " +
+      "not. It closes the callee-async-transitivity gap for same-file pure functions.\n\n" +
+      "Fix: make the callee synchronous if possible; inject its resolved result as a parameter; " +
+      "or remove the `pure` intent claim.\n\n" +
+      "INT017 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "async fn helper(x: number) -> Promise<number> = x * 2\n\n" +
+        "fn double(x: number) intent: \"pure\" -> Promise<number> {\n" +
+        "  return helper(x) // INT017: async callee violates pure\n" +
+        "}\n",
+      passes:
+        "// make the helper synchronous\n" +
+        "?bs 0.9\n" +
+        "fn helper(x: number) -> number = x * 2\n\n" +
+        "fn double(x: number) intent: \"pure\" -> number = helper(x)\n",
+    },
+  },
+  INT018: {
+    code: "INT018",
+    title: "intent declares 'pure' but body calls a same-file fn that declares throws {}",
+    body:
+      "INT018 fires when a function declaring `intent: \"pure\"` calls a same-file function " +
+      "that declares `throws { ... }` without catching those exceptions. Throwing an exception " +
+      "is a side effect — it alters control flow outside the function boundary — and a pure " +
+      "function may never produce side effects. Calling a throwing callee reopens the exception " +
+      "channel by transitivity, violating the pure guarantee.\n\n" +
+      "INT018 fires only when INT001 and INT002 do not. It closes the callee-throws-transitivity " +
+      "gap for same-file pure functions.\n\n" +
+      "Fix: wrap the callee call in try/catch and return `Result<T, E>`; use a non-throwing " +
+      "variant; or remove the `pure` intent claim.\n\n" +
+      "INT018 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> void { }\n\n" +
+        "fn process(s: string) intent: \"pure\" -> string {\n" +
+        "  validate(s) // INT018: callee declares throws { ValidationError }\n" +
+        "  return s.trim()\n" +
+        "}\n",
+      passes:
+        "// catch and return Result\n" +
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> void { }\n\n" +
+        "fn process(s: string) intent: \"pure\" -> Result<string, ValidationError> {\n" +
+        "  try {\n" +
+        "    validate(s)\n" +
+        "    return ok(s.trim())\n" +
+        "  } catch (e) {\n" +
+        "    return err(new ValidationError(String(e)))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT019: {
+    code: "INT019",
+    title: "intent declares 'idempotent' but body calls a same-file fn that is declared async",
+    body:
+      "INT019 fires when a function declaring `intent: \"idempotent\"` calls a same-file " +
+      "function that is declared `async`. An async callee schedules microtasks on every " +
+      "invocation (a timing side effect) and always returns a distinct Promise — two calls " +
+      "with the same arguments produce different Promise instances and different event-loop " +
+      "schedules. Repeating the outer fn cannot guarantee the same observable outcome as a " +
+      "single call, breaking the idempotency contract.\n\n" +
+      "INT019 fires only when INT003, INT004, INT005, INT013, and INT015 do not. It closes " +
+      "the callee-async-transitivity gap for same-file idempotent functions.\n\n" +
+      "Fix: use a synchronous alternative; inject the async callee's resolved result as a " +
+      "parameter; or remove the `idempotent` intent claim.\n\n" +
+      "INT019 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "async fn fetchConfig(key: string) uses { net } -> Promise<string> { }\n\n" +
+        "fn getConfigValue(key: string) intent: \"idempotent\" -> Promise<string> {\n" +
+        "  return fetchConfig(key) // INT019: async callee violates idempotent\n" +
+        "}\n",
+      passes:
+        "// use a synchronous cache lookup instead\n" +
+        "?bs 0.9\n" +
+        "fn readCache(key: string) reads { config } -> string { }\n\n" +
+        "fn getConfigValue(key: string) intent: \"idempotent\" reads { config } -> string {\n" +
+        "  return readCache(key)\n" +
+        "}\n",
+    },
+  },
+  INT020: {
+    code: "INT020",
+    title: "intent declares 'total' but body calls a same-file fn that is declared async",
+    body:
+      "INT020 fires when a synchronous function declaring `intent: \"total\"` calls a same-file " +
+      "function that is declared `async`. An async callee always returns a Promise that can " +
+      "reject. If the synchronous total fn forwards that Promise to its caller without " +
+      "catching, any rejection becomes an unhandled Promise rejection that escapes the fn " +
+      "boundary — directly contradicting the total guarantee that no exception propagates " +
+      "to callers.\n\n" +
+      "INT020 fires only when INT006 and INT007 do not.\n\n" +
+      "Fix: use a synchronous callee; make the caller async and await + try/catch the callee; " +
+      "or remove the `total` intent claim.\n\n" +
+      "INT020 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "async fn processAsync(s: string) uses { net } -> Promise<string> { }\n\n" +
+        "fn handle(s: string) intent: \"total\" -> Promise<string> {\n" +
+        "  return processAsync(s) // INT020: async callee rejection can escape the total boundary\n" +
+        "}\n",
+      passes:
+        "// use a synchronous callee\n" +
+        "?bs 0.9\n" +
+        "fn process(s: string) -> string { }\n\n" +
+        "fn handle(s: string) intent: \"total\" -> string = process(s)\n",
+    },
+  },
+  INT021: {
+    code: "INT021",
+    title: "intent declares 'infallible' but body calls a same-file fn that is declared async",
+    body:
+      "INT021 fires when a synchronous function declaring `intent: \"infallible\"` calls a " +
+      "same-file function that is declared `async`. An async callee always returns a Promise " +
+      "that can reject. If the synchronous infallible fn forwards that Promise without " +
+      "catching, any rejection escapes the fn boundary as an uncaught exception — directly " +
+      "contradicting the infallible guarantee that the function never fails.\n\n" +
+      "INT021 is the infallible-intent companion to INT020 (total). It fires only when " +
+      "INT009 and INT010 do not.\n\n" +
+      "Fix: use a synchronous callee; or remove the `infallible` intent claim and downgrade " +
+      "to `total` with appropriate error handling.\n\n" +
+      "INT021 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "async fn computeAsync(n: number) -> Promise<number> = Promise.resolve(n * 2)\n\n" +
+        "fn double(n: number) intent: \"infallible\" -> Promise<number> {\n" +
+        "  return computeAsync(n) // INT021: async callee rejection violates infallible\n" +
+        "}\n",
+      passes:
+        "// use a synchronous callee\n" +
+        "?bs 0.9\n" +
+        "fn computeSync(n: number) -> number = n * 2\n\n" +
+        "fn double(n: number) intent: \"infallible\" -> number = computeSync(n)\n",
+    },
+  },
+  INT022: {
+    code: "INT022",
+    title: "intent declares 'idempotent' but the function declares throws {}",
+    body:
+      "INT022 fires when a function header combines `intent: \"idempotent\"` with a non-empty " +
+      "`throws { ... }` clause. An idempotent function is safe to retry — multiple calls with " +
+      "the same arguments must produce the same observable outcome. Declaring `throws {}` means " +
+      "the function can propagate exceptions whose occurrence may vary across calls (network " +
+      "availability, resource contention, transient errors). If the Nth retry throws while the " +
+      "first call succeeded, the observable outcome differs — the idempotency contract is broken.\n\n" +
+      "INT022 is a header-level consistency check (analogous to INT006 for `total`). It fires " +
+      "whenever both clauses coexist.\n\n" +
+      "Fix: encode failure as `Result<T, E>` and use `try/catch` inside the fn body; or " +
+      "remove the `idempotent` intent claim.\n\n" +
+      "INT022 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) intent: \"idempotent\" throws { NetworkError } -> User {\n" +
+        "  return http.get(`/users/${id}`) // INT022: throws {} contradicts idempotent\n" +
+        "}\n",
+      passes:
+        "// encode failure as Result using match (UNS005-safe)\n" +
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) intent: \"idempotent\" uses { net } -> Result<User, NetworkError> {\n" +
+        "  match http.get(`/users/${id}`) {\n" +
+        "    ok { value } -> ok(value)\n" +
+        "    err { e } -> err(new NetworkError(e))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT023: {
+    code: "INT023",
+    title: "intent declares 'idempotent' but body calls a same-file fn that declares throws {}",
+    body:
+      "INT023 fires when a function declaring `intent: \"idempotent\"` calls a same-file " +
+      "function that declares `throws { ... }` without catching. An idempotent fn is safe " +
+      "to retry: same inputs must produce the same observable outcome. A callee that can " +
+      "throw may fail on some calls and succeed on others depending on external state, making " +
+      "the caller non-idempotent by transitivity.\n\n" +
+      "INT023 is the body-level complement to INT022 (header-level). It fires only when " +
+      "INT022 does not.\n\n" +
+      "Fix: wrap the callee in try/catch and return `Result<T, E>`; use a non-throwing " +
+      "variant; or remove the `idempotent` intent claim.\n\n" +
+      "INT023 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> void { }\n\n" +
+        "fn process(s: string) intent: \"idempotent\" -> string {\n" +
+        "  validate(s) // INT023: callee declares throws { ValidationError }\n" +
+        "  return s.trim()\n" +
+        "}\n",
+      passes:
+        "// catch and return Result\n" +
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> void { }\n\n" +
+        "fn process(s: string) intent: \"idempotent\" -> Result<string, ValidationError> {\n" +
+        "  try {\n" +
+        "    validate(s)\n" +
+        "    return ok(s.trim())\n" +
+        "  } catch (e) {\n" +
+        "    return err(new ValidationError(String(e)))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT024: {
+    code: "INT024",
+    title: "intent declares 'pure' but body calls an imported fn that declares throws {}",
+    body:
+      "INT024 fires when a function declaring `intent: \"pure\"` calls an imported function " +
+      "that declares `throws { ... }`, without catching those exceptions. This is the cross-file " +
+      "extension of INT018 (same-file callee throws). Throwing is a side effect that escapes " +
+      "the function boundary; even when the caller's own header has no `throws {}` clause, " +
+      "the imported callee can propagate exceptions through it by transitivity.\n\n" +
+      "INT024 requires the `moduleEffects` map to be provided to `transform()` — the map must " +
+      "include the imported function's `throws` surface for the check to fire. Cross-file calls " +
+      "without a `moduleEffects` entry remain opaque and do not trigger INT024.\n\n" +
+      "Fix: catch the exception and return `Result<T, E>`; use a non-throwing variant; or " +
+      "remove the `pure` intent claim.\n\n" +
+      "INT024 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { parse } from \"./parser\"\n\n" +
+        "fn normalize(s: string) intent: \"pure\" -> string {\n" +
+        "  return parse(s)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn parse(s: string) throws { ParseError } -> string = s\n",
+      passes:
+        "// catch and return Result\n" +
+        "?bs 0.9\n" +
+        "fn normalize(s: string) intent: \"pure\" -> Result<string, ParseError> {\n" +
+        "  try {\n" +
+        "    return ok(parse(s))\n" +
+        "  } catch (e) {\n" +
+        "    return err(new ParseError(e))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT025: {
+    code: "INT025",
+    title: "intent declares 'total' but body calls an imported fn that declares throws {}",
+    body:
+      "INT025 fires when a function declaring `intent: \"total\"` calls an imported function " +
+      "that declares `throws { ... }`, without catching. This is the cross-file extension of " +
+      "INT007 (same-file callee throws). A total function handles all inputs and never propagates " +
+      "exceptions to callers; an imported callee that throws re-opens the exception channel by " +
+      "transitivity.\n\n" +
+      "INT025 requires the `moduleEffects` map to include the imported function's `throws` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: catch the exception and return `Result<T, E>`; use a non-throwing variant; or " +
+      "remove the `total` intent claim.\n\n" +
+      "INT025 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { validate } from \"./validation\"\n\n" +
+        "fn safeCheck(s: string) intent: \"total\" -> boolean {\n" +
+        "  return validate(s)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn validate(s: string) throws { ValidationError } -> boolean = true\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn safeCheck(s: string) intent: \"total\" -> Result<boolean, ValidationError> {\n" +
+        "  try {\n" +
+        "    return ok(validate(s))\n" +
+        "  } catch (e) {\n" +
+        "    return err(new ValidationError(e))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT026: {
+    code: "INT026",
+    title: "intent declares 'infallible' but body calls an imported fn that declares throws {}",
+    body:
+      "INT026 fires when a function declaring `intent: \"infallible\"` calls an imported " +
+      "function that declares `throws { ... }`, without catching. This is the cross-file " +
+      "extension of INT010 (same-file callee throws). An infallible function never fails — " +
+      "an imported callee that can throw violates the no-failure guarantee by transitivity.\n\n" +
+      "INT026 requires the `moduleEffects` map to include the imported function's `throws` " +
+      "surface. `infallible ⊂ total` — this check applies in addition to INT025.\n\n" +
+      "Fix: catch and suppress the exception (returning a default to preserve infallibility); " +
+      "downgrade to `total` and use `Result<T, E>`; or use a non-throwing variant.\n\n" +
+      "INT026 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { load } from \"./store\"\n\n" +
+        "fn getConfig() intent: \"infallible\" -> string {\n" +
+        "  return load(\"config\")\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn load(key: string) throws { IOError } -> string = key\n",
+      passes:
+        "// downgrade to total + Result\n" +
+        "?bs 0.9\n" +
+        "fn getConfig() intent: \"total\" -> Result<string, IOError> {\n" +
+        "  try {\n" +
+        "    return ok(load(\"config\"))\n" +
+        "  } catch (e) {\n" +
+        "    return err(new IOError(e))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT027: {
+    code: "INT027",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares throws {}",
+    body:
+      "INT027 fires when a function declaring `intent: \"idempotent\"` calls an imported " +
+      "function that declares `throws { ... }`, without catching. This is the cross-file " +
+      "extension of INT023 (same-file callee throws). An idempotent fn is safe to retry — " +
+      "an imported callee that can throw may fail on some calls and succeed on others depending " +
+      "on external state, making the caller non-idempotent by transitivity.\n\n" +
+      "INT027 requires the `moduleEffects` map to include the imported function's `throws` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: catch and return `Result<T, E>`; use a non-throwing variant; or remove the " +
+      "`idempotent` intent claim.\n\n" +
+      "INT027 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { fetchUser } from \"./api\"\n\n" +
+        "fn loadUser(id: string) intent: \"idempotent\" -> string {\n" +
+        "  return fetchUser(id)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn fetchUser(id: string) throws { NetworkError } -> string = id\n",
+      passes:
+        "?bs 0.9\n" +
+        "fn loadUser(id: string) intent: \"idempotent\" -> Result<string, NetworkError> {\n" +
+        "  try {\n" +
+        "    return ok(fetchUser(id))\n" +
+        "  } catch (e) {\n" +
+        "    return err(new NetworkError(e))\n" +
+        "  }\n" +
+        "}\n",
+    },
+  },
+  INT028: {
+    code: "INT028",
+    title: "intent declares 'pure' but body calls an imported fn that declares uses {}",
+    body:
+      "INT028 fires when a function declaring `intent: \"pure\"` calls an imported function " +
+      "that declares capability requirements in its `uses { ... }` clause. This is the " +
+      "cross-file extension of INT012 (same-file callee with uses {}). Capabilities (network " +
+      "I/O, filesystem, time, random, …) are side effects; a callee that declares `uses { cap }` " +
+      "exercises that capability on every call, making the caller non-pure by transitivity even " +
+      "when the caller's own header declares no capabilities.\n\n" +
+      "INT028 requires the `moduleEffects` map to include the imported function's `capabilities` " +
+      "surface. Without it, the cross-file call is opaque and the check cannot fire.\n\n" +
+      "Fix: inject the callee's result as a parameter; use a capability-free alternative; or " +
+      "remove the `pure` intent claim.\n\n" +
+      "INT028 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { fetchEnv } from \"./env\"\n\n" +
+        "fn buildUrl(path: string) intent: \"pure\" -> string {\n" +
+        "  return fetchEnv(\"BASE_URL\") + path\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn fetchEnv(key: string) uses { env } -> string = key\n",
+      passes:
+        "// inject the base URL as a parameter\n" +
+        "?bs 0.9\n" +
+        "fn buildUrl(baseUrl: string, path: string) intent: \"pure\" -> string {\n" +
+        "  return baseUrl + path\n" +
+        "}\n",
+    },
+  },
+  INT029: {
+    code: "INT029",
+    title: "intent declares 'pure' but body calls an imported fn that declares reads {} or writes {}",
+    body:
+      "INT029 fires when a function declaring `intent: \"pure\"` calls an imported function " +
+      "that declares `reads { ... }` or `writes { ... }`. This is the cross-file extension of " +
+      "INT016. A callee that reads external state makes the caller's output depend on ambient " +
+      "state (non-deterministic); a callee that writes external state introduces a side effect. " +
+      "Both contradict the pure guarantee by transitivity.\n\n" +
+      "INT029 requires the `moduleEffects` map to include the imported function's `reads` and " +
+      "`writes` surfaces. Without it, the check cannot fire.\n\n" +
+      "Fix: inject the state value as a parameter; use a reads/writes-free alternative; or " +
+      "remove the `pure` intent claim.\n\n" +
+      "INT029 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { readConfig } from \"./config\"\n\n" +
+        "fn getTimeout(key: string) intent: \"pure\" -> number {\n" +
+        "  return readConfig(key)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn readConfig(key: string) reads { config } -> number = 0\n",
+      passes:
+        "// inject the config value as a parameter\n" +
+        "?bs 0.9\n" +
+        "fn getTimeout(timeoutMs: number) intent: \"pure\" -> number {\n" +
+        "  return timeoutMs\n" +
+        "}\n",
+    },
+  },
+  INT030: {
+    code: "INT030",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares writes {}",
+    body:
+      "INT030 fires when a function declaring `intent: \"idempotent\"` calls an imported " +
+      "function that declares `writes { ... }`. This is the cross-file extension of INT015. " +
+      "A callee that writes to a resource makes each retry produce additional mutations — the " +
+      "Nth call produces N writes instead of the same outcome as the first call, violating " +
+      "the idempotency contract.\n\n" +
+      "INT030 requires the `moduleEffects` map to include the imported function's `writes` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: move the write operation outside the idempotent boundary; or remove the " +
+      "`idempotent` intent claim and declare the `writes {}` dependency directly.\n\n" +
+      "INT030 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { persist } from \"./store\"\n\n" +
+        "fn saveResult(id: string, value: number) intent: \"idempotent\" -> void {\n" +
+        "  persist(id, value)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn persist(id: string, value: number) writes { db } -> void { }\n",
+      passes:
+        "// remove idempotent claim and declare writes\n" +
+        "?bs 0.9\n" +
+        "fn saveResult(id: string, value: number) writes { db } -> void {\n" +
+        "  persist(id, value)\n" +
+        "}\n",
+    },
+  },
+  INT031: {
+    code: "INT031",
+    title: "intent declares 'idempotent' but body calls an imported fn that declares uses { random } or uses { time }",
+    body:
+      "INT031 fires when a function declaring `intent: \"idempotent\"` calls an imported " +
+      "function that declares `uses { random }` or `uses { time }`. This is the cross-file " +
+      "extension of INT013. Random and time produce a different value on every call; a callee " +
+      "that declares either makes the caller non-idempotent by transitivity — the second retry " +
+      "of a supposedly idempotent fn would use different random/time values than the first.\n\n" +
+      "INT031 requires the `moduleEffects` map to include the imported function's `capabilities` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: inject the random/time value as a parameter; use a deterministic alternative; or " +
+      "remove the `idempotent` intent claim.\n\n" +
+      "INT031 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { timestamp } from \"./clock\"\n\n" +
+        "fn buildKey(prefix: string) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + \"-\" + timestamp()\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn timestamp() uses { time } -> number = 0\n",
+      passes:
+        "// inject the timestamp as a parameter\n" +
+        "?bs 0.9\n" +
+        "fn buildKey(prefix: string, ts: number) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + \"-\" + ts\n" +
+        "}\n",
+    },
+  },
+  INT032: {
+    code: "INT032",
+    title: "intent declares 'pure' but body calls an imported async fn",
+    body:
+      "INT032 fires when a function declaring `intent: \"pure\"` calls an imported function " +
+      "that is declared `async`. This is the cross-file extension of INT017 (same-file async " +
+      "callee). An async callee yields to the event loop (a timing side effect) and returns a " +
+      "distinct Promise object on every call — a pure fn calling it is non-pure by transitivity " +
+      "even when the caller itself is synchronous.\n\n" +
+      "INT032 requires the `moduleEffects` map to include the imported function's `isAsync: true` " +
+      "surface (populated by `buildModuleEffects`). Without it, the check cannot fire.\n\n" +
+      "Fix: inject the async callee's resolved value as a parameter; use a synchronous " +
+      "alternative; or remove the `pure` intent claim.\n\n" +
+      "INT032 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { fetchConfig } from \"./config\"\n\n" +
+        "fn buildUrl(base: string) intent: \"pure\" -> string {\n" +
+        "  return base + \"/\" + fetchConfig()\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "async fn fetchConfig() -> string = \"\"\n",
+      passes:
+        "// inject the resolved value as a parameter\n" +
+        "?bs 0.9\n" +
+        "fn buildUrl(base: string, config: string) intent: \"pure\" -> string {\n" +
+        "  return base + \"/\" + config\n" +
+        "}\n",
+    },
+  },
+  INT033: {
+    code: "INT033",
+    title: "intent declares 'idempotent' but body calls an imported async fn",
+    body:
+      "INT033 fires when a function declaring `intent: \"idempotent\"` calls an imported " +
+      "function that is declared `async`. This is the cross-file extension of INT019. An " +
+      "async callee returns a different Promise object on every call. A synchronous idempotent " +
+      "fn cannot await that Promise, so it forwards an unresolved Promise to its caller; on " +
+      "retry the caller gets a fresh Promise rather than the same value, violating the " +
+      "idempotent contract.\n\n" +
+      "INT033 requires the `moduleEffects` map to include the imported function's `isAsync: true` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: inject the async callee's resolved value as a parameter; use a synchronous " +
+      "alternative; or remove the `idempotent` intent claim.\n\n" +
+      "INT033 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { loadCache } from \"./cache\"\n\n" +
+        "fn buildKey(prefix: string) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + \"-\" + loadCache()\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "async fn loadCache() -> string = \"\"\n",
+      passes:
+        "// inject the resolved cache value\n" +
+        "?bs 0.9\n" +
+        "fn buildKey(prefix: string, cacheValue: string) intent: \"idempotent\" -> string {\n" +
+        "  return prefix + \"-\" + cacheValue\n" +
+        "}\n",
+    },
+  },
+  INT034: {
+    code: "INT034",
+    title: "intent declares 'total' but body calls an imported async fn",
+    body:
+      "INT034 fires when a synchronous function declaring `intent: \"total\"` calls an imported " +
+      "function that is declared `async`. This is the cross-file extension of INT020. An async " +
+      "callee returns a Promise that can reject. A synchronous total fn forwarding that Promise " +
+      "cannot catch the rejection — the rejection escapes the fn boundary as an uncaught " +
+      "exception, contradicting the total guarantee that no exception propagates to callers.\n\n" +
+      "INT034 requires the `moduleEffects` map to include the imported function's `isAsync: true` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: use a synchronous validator; or remove the `total` intent claim.\n\n" +
+      "INT034 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { validate } from \"./validator\"\n\n" +
+        "fn checkInput(input: string) intent: \"total\" -> boolean {\n" +
+        "  return validate(input)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "async fn validate(input: string) -> boolean = true\n",
+      passes:
+        "// use a synchronous validator instead\n" +
+        "?bs 0.9\n" +
+        "fn checkInput(input: string) intent: \"total\" -> boolean = validateSync(input)\n",
+    },
+  },
+  INT035: {
+    code: "INT035",
+    title: "intent declares 'infallible' but body calls an imported async fn",
+    body:
+      "INT035 fires when a synchronous function declaring `intent: \"infallible\"` calls an " +
+      "imported function that is declared `async`. This is the cross-file extension of INT021. " +
+      "An async callee returns a Promise that can reject. A synchronous infallible fn " +
+      "forwarding that Promise cannot catch the rejection — the rejection escapes as an " +
+      "uncaught exception, violating the infallible guarantee that the function never fails.\n\n" +
+      "INT035 requires the `moduleEffects` map to include the imported function's `isAsync: true` " +
+      "surface. Without it, the check cannot fire.\n\n" +
+      "Fix: use a synchronous default; or downgrade to `total` with appropriate error handling.\n\n" +
+      "INT035 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { getDefault } from \"./defaults\"\n\n" +
+        "fn format(value: string) intent: \"infallible\" -> string {\n" +
+        "  return value + getDefault()\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "async fn getDefault() -> string = \"\"\n",
+      passes:
+        "// use a synchronous default instead\n" +
+        "?bs 0.9\n" +
+        "fn format(value: string) intent: \"infallible\" -> string = value + DEFAULT_SUFFIX\n",
     },
   },
   FMT001: {
@@ -639,6 +1699,40 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       passes:
         "?bs 0.9\n" +
         "fn saveUser(user: string) writes { userDb } -> Result<void, string> { ok(undefined) }\n" +
+        "fn processUser(user: string) writes { userDb } -> Result<void, string> {\n" +
+        "  saveUser(user)?\n" +
+        "}\n",
+    },
+  },
+  RES003: {
+    code: "RES003",
+    title: "imported Result- or Option-returning fn called but return value discarded",
+    body:
+      "RES003 is the cross-file extension of RES002. It fires as a **warning** (non-blocking) " +
+      "when an imported function whose declared return type contains `Result<>` or `Option<>` " +
+      "is called as a bare statement — the return value is discarded without propagation (`?`), " +
+      "matching, or assignment. This permanently seals the error or absence path from callers.\n\n" +
+      "RES003 requires the `moduleEffects` map to include the imported function's `returnsResult` " +
+      "or `returnsOption` surface (populated by `buildModuleEffects`). Without it, the check " +
+      "cannot fire. Same-file calls are handled by RES002.\n\n" +
+      "Fix options:\n" +
+      "- `saveUser(user)?` — propagate the error to the caller\n" +
+      "- `match saveUser(user) { ok { } -> ... err { e } -> ... }` — handle each case\n" +
+      "- `let result = saveUser(user)` — assign and inspect later\n" +
+      "- `unsafe \"intentional discard\" { saveUser(user) }` — document the discard explicitly\n\n" +
+      "RES003 is gated on `?bs 0.9`.",
+    example: {
+      fails:
+        "?bs 0.9\n" +
+        "import { saveUser } from \"./db\"\n\n" +
+        "fn processUser(user: string) writes { userDb } -> void {\n" +
+        "  saveUser(user)\n" +
+        "}\n",
+      failsEffects:
+        "?bs 0.9\n" +
+        "fn saveUser(user: string) writes { userDb } -> Result<void, string> = ok(undefined)\n",
+      passes:
+        "?bs 0.9\n" +
         "fn processUser(user: string) writes { userDb } -> Result<void, string> {\n" +
         "  saveUser(user)?\n" +
         "}\n",
@@ -1595,7 +2689,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "```\n" +
       "// SYN025 — before\n" +
       "fn scheduleRender(frame: number) uses { net } -> void {\n" +
-      "  requestAnimationFrame(() => http.get(\"/render/\" + frame))  // SYN025\n" +
+      "  requestAnimationFrame(() => http.get(\"/render/\" + frame)) // SYN025\n" +
       "}\n\n" +
       "// after — extract the work; caller controls scheduling\n" +
       "fn render(frame: number) uses { net } -> void {\n" +
@@ -1637,7 +2731,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "```\n" +
       "// SYN026 — before\n" +
       "fn deferCleanup() uses { fs } -> void {\n" +
-      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\"))  // SYN026\n" +
+      "  requestIdleCallback(() => fs.delete(\"/tmp/cache\")) // SYN026\n" +
       "}\n\n" +
       "// after — extract the work; caller controls scheduling\n" +
       "fn cleanup() uses { fs } -> void {\n" +
@@ -1835,7 +2929,7 @@ export const EXPLANATIONS: Readonly<Record<string, Explanation>> = {
       "  Red { hex } -> hex\n" +
       "  Green       -> \"green\"\n" +
       "  Blue        -> \"blue\"\n" +
-      "  _ -> \"unreachable\"  // remove this\n" +
+      "  _ -> \"unreachable\" // remove this\n" +
       "}\n" +
       "```\n\n" +
       "**Fix:** remove the wildcard arm. If you add a new variant to the union later, " +

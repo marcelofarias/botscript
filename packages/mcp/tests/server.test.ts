@@ -66,12 +66,43 @@ describe("botscript-mcp explanations", () => {
       "INT003",
       "INT004",
       "INT005",
+      "INT006",
+      "INT007",
+      "INT008",
+      "INT009",
+      "INT010",
+      "INT011",
+      "INT012",
+      "INT013",
+      "INT014",
+      "INT015",
+      "INT016",
+      "INT017",
+      "INT018",
+      "INT019",
+      "INT020",
+      "INT021",
+      "INT022",
+      "INT023",
+      "INT024",
+      "INT025",
+      "INT026",
+      "INT027",
+      "INT028",
+      "INT029",
+      "INT030",
+      "INT031",
+      "INT032",
+      "INT033",
+      "INT034",
+      "INT035",
       "MAT001",
       "MAT002",
       "MAT003",
       "MAT004",
       "RES001",
       "RES002",
+      "RES003",
       "SYN001",
       "SYN002",
       "SYN003",
@@ -106,6 +137,10 @@ describe("botscript-mcp explanations", () => {
       "UNS003",
       "UNS004",
       "UNS005",
+      "UNS006",
+      "UNS007",
+      "UNS008",
+      "UNS009",
       "VER001",
       "VER002",
       "VER003",
@@ -117,12 +152,19 @@ describe("botscript-mcp explanations", () => {
     // matching code (errors) OR compile successfully but return a warning with
     // the matching code (warning-only diagnostics like CAP003). The passes
     // example must compile without errors or warnings for that code.
-    const { transform, BotscriptError } = await import("@mbfarias/botscript-compiler");
+    //
+    // For cross-file checks: if `example.failsEffects` is provided, it is
+    // compiled with `buildModuleEffects` and passed to `transform` so that
+    // cross-module effect surfaces are visible to the checker.
+    const { transform, buildModuleEffects, BotscriptError } = await import("@mbfarias/botscript-compiler");
     for (const code of KNOWN_CODES) {
       const { example } = EXPLANATIONS[code]!;
+      const moduleEffects = example.failsEffects
+        ? buildModuleEffects([example.failsEffects])
+        : undefined;
       let threwOrWarned = false;
       try {
-        const result = transform(example.fails);
+        const result = transform(example.fails, moduleEffects ? { moduleEffects } : undefined);
         // Didn't throw — check for a matching warning.
         const warn = result.warnings.find((w) => w.code === code);
         expect(warn, `fails example for ${code} produced neither an error nor a warning`).toBeDefined();
