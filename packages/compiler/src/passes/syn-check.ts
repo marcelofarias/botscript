@@ -497,6 +497,20 @@
  *           aliases are not tracked. `unsafe {}` blocks and `unsafe "reason" fn` bodies
  *           are suppressed.
  *
+ *   SYN046  A module-scope destructuring rename of a SYN-guarded global is called inside
+ *           a fn body (?bs 0.7+). `const { fetch: req } = globalThis` at module scope
+ *           followed by `req(url)` inside a fn body bypasses SYN004–SYN045: name-token
+ *           checks fire on the canonical ident (`fetch`, `eval`, etc.) and receiver
+ *           checks fire on `globalThis`/`window`/`self` — the alias name `req` appears
+ *           on no watch-list, so the capability model is invisible to callers. At runtime
+ *           `req(url)` and `fetch(url)` are identical. Detection: a `const`/`let`/`var`
+ *           destructuring at module scope whose RHS is a global-receiver ident and whose
+ *           pattern contains a `dangerous: alias` rename where `dangerous` is in
+ *           SYN037_GUARDED_GLOBALS; when that alias is called in any fn body (not a
+ *           method access, not a declaration), SYN046 fires. Fn-body-level destructuring
+ *           is not tracked. `unsafe {}` blocks and `unsafe "reason" fn` bodies are
+ *           suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -674,6 +688,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn043 = getErrorCode("SYN043")!;
   const syn044 = getErrorCode("SYN044")!;
   const syn045 = getErrorCode("SYN045")!;
+  const syn046 = getErrorCode("SYN046")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -693,6 +708,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const fnBodyCharRanges = program.fns.map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
   const guardedGlobalAliases = new Map<string, string>(); // alias name → original guarded global (SYN044)
   const receiverAliases = new Map<string, string>();       // alias name → original receiver global (SYN045)
+  const renamedDestructAliases = new Map<string, { original: string; receiver: string }>(); // SYN046
   for (let ai = 0; ai < tokens.length; ai++) {
     const atok = tokens[ai];
     if (!atok || atok.kind !== "ident") continue;
@@ -721,6 +737,49 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
     if (SYN045_RECEIVER_GLOBALS.has(rhsTokA.text)) {
       receiverAliases.set(nameTokA.text, rhsTokA.text);
+    }
+  }
+
+  // SYN046: pre-pass — collect module-scope destructuring renames of guarded globals.
+  // Detects: const { fetch: req } = globalThis  →  calling req() bypasses SYN007+SYN044.
+  // Only tracks renamed properties (colon form); non-renamed const { fetch } = globalThis
+  // is not a bypass because calling fetch() still fires SYN007 on the canonical token.
+  for (let ai = 0; ai < tokens.length; ai++) {
+    const atok = tokens[ai];
+    if (!atok || atok.kind !== "ident") continue;
+    if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+    // Module-scope only: skip if inside any fn body.
+    if (fnBodyCharRanges.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+    // Next must be `{` — this is a destructuring pattern.
+    const braceAi46 = nextSignificant(tokens, ai + 1);
+    const braceTok46 = tokens[braceAi46];
+    if (!braceTok46 || !(braceTok46.kind === "open" && braceTok46.text === "{")) continue;
+    // Find matching `}` via matchedAt.
+    const closeBraceIdx46 = braceTok46.matchedAt;
+    if (closeBraceIdx46 === undefined) continue;
+    // After `}`: must be `=`.
+    const eqAi46 = nextSignificant(tokens, closeBraceIdx46 + 1);
+    const eqTok46 = tokens[eqAi46];
+    if (!eqTok46 || eqTok46.kind !== "eq") continue;
+    // RHS: must be a bare global-receiver ident.
+    const rhsAi46 = nextSignificant(tokens, eqAi46 + 1);
+    const rhsTok46 = tokens[rhsAi46];
+    if (!rhsTok46 || rhsTok46.kind !== "ident") continue;
+    if (!SYN045_RECEIVER_GLOBALS.has(rhsTok46.text)) continue;
+    // Scan inside `{ ... }` for `guardedGlobal : alias` rename pairs.
+    for (let di = braceAi46 + 1; di < closeBraceIdx46; di++) {
+      const dtok = tokens[di];
+      if (!dtok || dtok.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(dtok.text)) continue;
+      // Check for `: alias` rename (object destructuring rename form).
+      const colonAi46 = nextSignificant(tokens, di + 1);
+      const colonTok46 = tokens[colonAi46];
+      if (!colonTok46 || !(colonTok46.kind === "punct" && colonTok46.text === ":")) continue;
+      const aliasAi46 = nextSignificant(tokens, colonAi46 + 1);
+      const aliasTok46 = tokens[aliasAi46];
+      if (!aliasTok46 || aliasTok46.kind !== "ident") continue;
+      renamedDestructAliases.set(aliasTok46.text, { original: dtok.text, receiver: rhsTok46.text });
+      di = aliasAi46;
     }
   }
 
@@ -789,6 +848,49 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn044.rule,
               idiom: syn044.idiom,
               rewrite: syn044.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN046: module-scope destructuring rename of guarded global called in fn body ──
+      // Must run BEFORE the switch for the same reason as SYN044/SYN045.
+      if (renamedDestructAliases.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx46 = nextSignificant(tokens, i + 1);
+        const next46 = tokens[nextIdx46];
+        const isCall46 =
+          next46 && (
+            (next46.kind === "open" && next46.text === "(") ||
+            next46.kind === "questionDot"
+          );
+        if (isCall46) {
+          const prevIdx46 = prevSignificant(tokens, i - 1);
+          const prev46 = tokens[prevIdx46];
+          const isMemberAccess46 = prev46 && ((prev46.kind === "punct" && prev46.text === ".") || prev46.kind === "questionDot");
+          const isDecl46 = prev46 && (
+            (prev46.kind === "keyword" && prev46.text === "fn") ||
+            (prev46.kind === "ident" && (prev46.text === "function" || prev46.text === "const" || prev46.text === "let" || prev46.text === "var"))
+          );
+          if (!isMemberAccess46 && !isDecl46) {
+            const info46 = renamedDestructAliases.get(tok.text)!;
+            const loc46 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN046",
+              severity: "warning",
+              file: null,
+              line: loc46.line,
+              column: loc46.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a module-scope ` +
+                `destructuring rename of the guarded global '${info46.original}' (via '${info46.receiver}'); ` +
+                `calling through the renamed alias bypasses SYN004–SYN045 name-token checks; ` +
+                `call '${info46.original}' or '${info46.receiver}.${info46.original}' directly so the relevant SYN check fires, ` +
+                `or wrap in unsafe "calls ${info46.original} via destructuring rename for <reason>" { ${tok.text}(...) }`,
+              rule: syn046.rule,
+              idiom: syn046.idiom,
+              rewrite: syn046.rewrite,
             });
           }
         }

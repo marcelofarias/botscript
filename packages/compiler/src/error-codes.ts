@@ -3312,6 +3312,53 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)  // explicit capability declaration\n" +
       "}",
   },
+  SYN046: {
+    code: "SYN046",
+    title: "Module-scope destructuring rename of a guarded global called through the alias bypasses SYN name-token checks",
+    rule:
+      "Destructuring a dangerous global from `globalThis`, `window`, or `self` with a rename " +
+      "(`const { fetch: req } = globalThis`) and then calling through the alias (`req(url)`) " +
+      "bypasses all name-token checks SYN004–SYN045: those checks fire on the canonical name " +
+      "(`fetch`, `eval`, etc.) or the canonical receiver (`globalThis`/`window`/`self`) — " +
+      "the renamed alias `req` appears on no watch-list, so `req(url)` reaches the network with " +
+      "no capability warning. At runtime `req(url)` and `fetch(url)` are identical. " +
+      "Detection: a `const`/`let`/`var` destructuring at module scope whose RHS is a global-receiver " +
+      "ident and whose pattern contains a `dangerous: alias` rename where `dangerous` is in the " +
+      "SYN037-guarded set; when that alias is called in any fn body (not a method access, not a " +
+      "declaration), SYN046 fires. Fn-body-level destructuring is not tracked to avoid shadowing " +
+      "false positives. `unsafe {}` blocks and `unsafe \"reason\" fn` bodies are suppressed.",
+    idiom:
+      "call the guarded global directly so the relevant SYN check fires; " +
+      "if the destructuring rename is genuinely needed (e.g. dependency injection), wrap the call in " +
+      "`unsafe \"calls <global> via destructuring rename for <reason>\" { req(...) }`",
+    rewrite:
+      "// before — const { fetch: req } = globalThis; req() bypasses SYN007\n" +
+      "const { fetch: req } = globalThis\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return req(url)  // SYN046\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN046: fetch renamed during destructuring; req() bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "const { fetch: req } = globalThis\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return req(url)  // SYN046 — same as fetch(url), bypasses SYN007+SYN044\n" +
+      "}\n\n" +
+      "// SYN046: eval renamed; run() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "const { eval: run } = globalThis\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  return run(code)  // SYN046\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)  // explicit capability declaration\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",
