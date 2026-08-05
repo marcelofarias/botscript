@@ -3234,6 +3234,44 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN044: {
+    code: "SYN044",
+    title: "SYN-guarded global assigned to a local binding and called through the alias bypasses name-token detection",
+    rule:
+      "Assigning a SYN-guarded global to a local binding (`const f = fetch`, `const e = eval`) and " +
+      "then calling through that alias (`f(url)`, `e(code)`) bypasses SYN004–SYN043: all name-token checks " +
+      "fire on the guarded identifier itself, but the call site token is `f` or `e` — not `fetch` or `eval` — " +
+      "so the capability model is invisible to the alias. At runtime, `f(url)` and `fetch(url)` are identical; " +
+      "the alias is purely an evasion of the static check. " +
+      "Detection covers direct single-name RHS assignments (`const f = fetch`); " +
+      "computed, destructured, or member-access RHS forms are not covered and fall back to ALI001/ALI003. " +
+      "Suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies.",
+    idiom:
+      "call the guarded global directly so SYN004–SYN043 fire on the canonical name; " +
+      "if the alias is genuinely needed (e.g. dependency injection), wrap the aliased call in " +
+      "`unsafe \"calls <global> via alias for <reason>\" { f(...) }`",
+    rewrite:
+      "// before — const f = fetch aliases the guarded global; f(url) bypasses SYN007\n" +
+      "const f = fetch\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return f(url)  // SYN044\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN044: eval aliased and called through the binding\n" +
+      "?bs 0.7\n" +
+      "const run = eval\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  return run(code)  // SYN044 — same as eval(code), bypasses SYN004\n" +
+      "}\n\n" +
+      "// fix: call eval directly (then SYN004 fires) or use a botscript-approved alternative\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  eval(code)  // SYN004 fires here — add unsafe \"reason\" { } to acknowledge\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",

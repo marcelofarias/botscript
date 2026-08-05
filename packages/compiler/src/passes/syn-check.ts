@@ -471,6 +471,18 @@
  *           are out of scope. `unsafe {}` blocks and `unsafe "reason" fn` bodies are
  *           suppressed.
  *
+ *   SYN044  A module-scope binding that aliases a SYN-guarded global is called inside a
+ *           fn body (?bs 0.7+). `const f = fetch` followed by `f(url)` inside a fn body
+ *           bypasses SYN004–SYN043 because all name-token checks fire on the guarded
+ *           identifier itself — the alias name `f` is not in any watch-list, so the
+ *           capability model is invisible to callers. Detection: a `const`/`let`/`var`
+ *           binding at module scope whose initialiser is exactly a bare SYN037-guarded
+ *           global name (no member access, no call on the RHS); when that binding name
+ *           appears as a direct call in any fn body (not a method access, not a
+ *           declaration), SYN044 fires. Fn-body-level aliases are not tracked to avoid
+ *           shadowing false positives. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -644,6 +656,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn041 = getErrorCode("SYN041")!;
   const syn042 = getErrorCode("SYN042")!;
   const syn043 = getErrorCode("SYN043")!;
+  const syn044 = getErrorCode("SYN044")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -654,6 +667,39 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     if (decl.unsafeReason !== undefined) {
       unsafeRanges.push({ start: decl.body.start, end: decl.body.end });
     }
+  }
+
+  // SYN044: pre-pass — collect module-scope guarded-global aliases.
+  // Only module-scope (outside any fn body) to avoid shadowing false positives:
+  // if `const f = fetch` is at module level and `fn run() { const f = x; f() }` exists,
+  // flagging `f()` inside run() would be wrong because the inner binding shadows the alias.
+  const fnBodyCharRanges = program.fns.map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+  const guardedGlobalAliases = new Map<string, string>(); // alias name → original guarded global
+  for (let ai = 0; ai < tokens.length; ai++) {
+    const atok = tokens[ai];
+    if (!atok || atok.kind !== "ident") continue;
+    if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+    // Module-scope only: skip if this token is inside any fn body.
+    if (fnBodyCharRanges.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+    // Next: binding name (plain ident — skip destructuring).
+    const nameAi = nextSignificant(tokens, ai + 1);
+    const nameTokA = tokens[nameAi];
+    if (!nameTokA || nameTokA.kind !== "ident") continue;
+    // Next: `=` assignment.
+    const eqAi = nextSignificant(tokens, nameAi + 1);
+    const eqTokA = tokens[eqAi];
+    if (!eqTokA || eqTokA.kind !== "eq") continue;
+    // RHS: must be a bare guarded-global ident (no call, no member access on it).
+    const rhsAi = nextSignificant(tokens, eqAi + 1);
+    const rhsTokA = tokens[rhsAi];
+    if (!rhsTokA || rhsTokA.kind !== "ident") continue;
+    if (!SYN037_GUARDED_GLOBALS.has(rhsTokA.text)) continue;
+    const afterRhsAi = nextSignificant(tokens, rhsAi + 1);
+    const afterRhsA = tokens[afterRhsAi];
+    if (afterRhsA && afterRhsA.kind === "punct" && afterRhsA.text === ".") continue;
+    if (afterRhsA && afterRhsA.kind === "questionDot") continue;
+    if (afterRhsA && afterRhsA.kind === "open" && afterRhsA.text === "(") continue;
+    guardedGlobalAliases.set(nameTokA.text, rhsTokA.text);
   }
 
   const nesting = computeNesting(program.fns.map((f) => f.decl));
@@ -682,6 +728,49 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
       const tok = tokens[i];
       if (!tok || tok.kind !== "ident") continue;
+
+      // ── SYN044: module-scope guarded-global alias called in fn body ───────
+      // Must run BEFORE the switch: the default: case does `continue` for
+      // any unrecognised ident, so code after the switch is unreachable for alias names.
+      if (guardedGlobalAliases.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx44 = nextSignificant(tokens, i + 1);
+        const next44 = tokens[nextIdx44];
+        const isCall44 =
+          next44 && (
+            (next44.kind === "open" && next44.text === "(") ||
+            next44.kind === "questionDot"
+          );
+        if (isCall44) {
+          const prevIdx44 = prevSignificant(tokens, i - 1);
+          const prev44 = tokens[prevIdx44];
+          const isMemberAccess44 = prev44 && ((prev44.kind === "punct" && prev44.text === ".") || prev44.kind === "questionDot");
+          const isDecl44 = prev44 && (
+            (prev44.kind === "keyword" && prev44.text === "fn") ||
+            (prev44.kind === "ident" && (prev44.text === "function" || prev44.text === "const" || prev44.text === "let" || prev44.text === "var"))
+          );
+          if (!isMemberAccess44 && !isDecl44) {
+            const origGlobal44 = guardedGlobalAliases.get(tok.text)!;
+            const loc44 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN044",
+              severity: "warning",
+              file: null,
+              line: loc44.line,
+              column: loc44.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a module-scope alias of ` +
+                `the guarded global '${origGlobal44}'; calling through the alias bypasses SYN004–SYN043 ` +
+                `name-token checks; call '${origGlobal44}' directly so the relevant SYN check fires, ` +
+                `or wrap in unsafe "calls ${origGlobal44} via alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn044.rule,
+              idiom: syn044.idiom,
+              rewrite: syn044.rewrite,
+            });
+          }
+        }
+      }
 
       switch (tok.text) {
 
