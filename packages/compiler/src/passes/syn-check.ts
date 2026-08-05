@@ -460,6 +460,17 @@
  *           followed by `.`/`?.`, followed by one of the six method names, followed by `(`
  *           or `?.(`. `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN043  A computed string bracket access on a global receiver — `globalThis['fetch']`,
+ *           `window['eval']`, `self['setTimeout']` — was detected in a fn body (?bs 0.7+).
+ *           SYN041 catches dot-notation global-receiver bypasses (`globalThis.fetch`), but
+ *           the bracket form puts the dangerous name inside a string literal where the
+ *           token-level ident checks cannot see it; the capability bypass at runtime is
+ *           identical. Detection: `globalThis`/`window`/`self` ident not preceded by
+ *           `.`/`?.`, followed by `[<string-literal>]` where the literal value is one of
+ *           the SYN041-monitored dangerous members. Template literals and dynamic keys
+ *           are out of scope. `unsafe {}` blocks and `unsafe "reason" fn` bodies are
+ *           suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -632,6 +643,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn040 = getErrorCode("SYN040")!;
   const syn041 = getErrorCode("SYN041")!;
   const syn042 = getErrorCode("SYN042")!;
+  const syn043 = getErrorCode("SYN043")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3616,11 +3628,45 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prevGlob && prevGlob.kind === "ident" && prevGlob.text === "function") continue;
           if (isFunctionStarDecl(tokens, prevIdxGlob)) continue;
 
-          // Must be followed by `.` or `?.`
           const nextIdxGlob = nextSignificant(tokens, i + 1);
           const nextGlob = tokens[nextIdxGlob];
           const isDotGlob = nextGlob && nextGlob.kind === "punct" && nextGlob.text === ".";
           const isOptChainGlob = nextGlob && nextGlob.kind === "questionDot";
+          const isBracketGlob = nextGlob && nextGlob.kind === "open" && nextGlob.text === "[";
+
+          // ── SYN043: computed string bracket access — globalThis['fetch'] etc. ──
+          if (isBracketGlob) {
+            const strIdx43 = nextSignificant(tokens, nextIdxGlob + 1);
+            const strTok43 = tokens[strIdx43];
+            if (strTok43 && strTok43.kind === "string") {
+              const raw43 = strTok43.text;
+              const memberName43 = raw43.slice(1, -1);
+              if (SYN041_DANGEROUS_MEMBERS.has(memberName43) && !isInsideRange(tok.start, unsafeRanges)) {
+                const loc43 = locationOf(src, tok.start);
+                warnings.push({
+                  code: "SYN043",
+                  severity: "warning",
+                  file: null,
+                  line: loc43.line,
+                  column: loc43.column,
+                  start: tok.start,
+                  end: strTok43.end,
+                  message:
+                    `fn '${decl.name}' accesses ${tok.text}['${memberName43}'] via computed bracket notation — ` +
+                    `the string literal hides the dangerous global name from SYN041 token-level detection; ` +
+                    `the capability bypass is identical to ${tok.text}.${memberName43} at runtime; ` +
+                    `use botscript stdlib equivalents with explicit uses {} declarations, ` +
+                    `or wrap in unsafe "uses ${memberName43} via ${tok.text}['${memberName43}'] for <reason>" { ${tok.text}['${memberName43}'] }`,
+                  rule: syn043.rule,
+                  idiom: syn043.idiom,
+                  rewrite: syn043.rewrite,
+                });
+              }
+            }
+            continue;
+          }
+
+          // Must be followed by `.` or `?.`
           if (!isDotGlob && !isOptChainGlob) continue;
 
           const memberIdxGlob = nextSignificant(tokens, nextIdxGlob + 1);

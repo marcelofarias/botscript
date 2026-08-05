@@ -3193,6 +3193,47 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN043: {
+    code: "SYN043",
+    title: "computed string property access on global receiver bypasses SYN041 name-based detection",
+    rule:
+      "`globalThis['fetch'](url)`, `window['eval'](code)`, and similar computed-string bracket accesses " +
+      "on global receivers bypass the bare-identifier detection of SYN004–SYN042 and the dot-notation " +
+      "detection of SYN041: the dangerous global name appears inside a string literal, not as a source-level " +
+      "identifier, so token-level checks on the callee ident cannot fire; " +
+      "at runtime the capability bypass is identical to `globalThis.fetch(url)` or `fetch(url)` directly; " +
+      "detection applies to `globalThis`, `window`, and `self` receivers followed by `[<string-literal>]` " +
+      "where the literal value is one of the SYN041-monitored dangerous members; " +
+      "suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies",
+    idiom:
+      "use botscript stdlib equivalents with explicit `uses {}` declarations instead of reaching for " +
+      "dangerous globals via computed property access; if a specific runtime indirection is unavoidable, " +
+      "wrap in `unsafe \"reason\" { globalThis['name'](...) }` to make the bypass visible in diff review",
+    rewrite:
+      "// before — globalThis['fetch'] bypasses SYN007 and SYN041\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return globalThis['fetch'](url)  // SYN043\n" +
+      "}\n\n" +
+      "// after — explicit capability declaration visible to callers\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN043: globalThis['fetch'] bypasses the capability check\n" +
+      "?bs 0.7\n" +
+      "fn request(url: string) -> any {\n" +
+      "  return globalThis['fetch'](url)  // SYN043\n" +
+      "}\n\n" +
+      "// SYN043: window['eval'] bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> void {\n" +
+      "  window['eval'](code)  // SYN043\n" +
+      "}\n\n" +
+      "// fix: use stdlib equivalents with declared capabilities\n" +
+      "fn request(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",

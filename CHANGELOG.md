@@ -228,6 +228,16 @@ goes behind a new pin.
 ## ?bs 0.7 — unreleased
 
 ### Added
+- **SYN043 — computed string bracket access on global receiver bypasses SYN041.**
+  SYN043 fires as a **warning** (non-blocking) when `globalThis['fetch']`,
+  `window['eval']`, `self['setTimeout']`, or any bracket-notation access with a
+  string-literal key matching a SYN041-monitored dangerous member is detected in a
+  fn body at `?bs 0.7+`. SYN041 already catches dot-notation bypasses
+  (`globalThis.fetch`) — this closes the parallel bracket-notation gap: the dangerous
+  global name hides inside a string literal, invisible to token-level ident checks,
+  but the capability bypass at runtime is identical. Template literals and dynamic
+  computed keys are out of scope. Suppressed inside `unsafe {}` blocks and
+  `unsafe "reason" fn` bodies. 19 new tests (2227 → 2246).
 - **Machine-checkable `intent: "..."`** clauses on fn headers (RFC #15).
   A free-form string capturing the function's intent, parsed and stored on
   `FnDecl`. The first mechanical claim the compiler verifies is `"pure"` —
