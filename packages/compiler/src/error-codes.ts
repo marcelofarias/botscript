@@ -3272,6 +3272,46 @@ const E: Record<string, ErrorCodeEntry> = {
       "  eval(code)  // SYN004 fires here — add unsafe \"reason\" { } to acknowledge\n" +
       "}",
   },
+  SYN045: {
+    code: "SYN045",
+    title: "Module-scope alias of a global receiver object used as member-access receiver in fn body bypasses SYN041–SYN043",
+    rule:
+      "Assigning a global receiver object (`globalThis`, `window`, `self`) to a module-scope binding " +
+      "(`const g = globalThis`) and then using that alias as a member-access receiver inside a fn body " +
+      "(`g.fetch(url)`, `g.eval(code)`) bypasses SYN041–SYN043: those checks fire on the literal receiver " +
+      "tokens `globalThis`/`window`/`self` — the alias name `g` is not in any receiver watch-list, so " +
+      "`g.fetch(url)` reaches the network with no capability warning. At runtime the access is identical. " +
+      "Detection: a `const`/`let`/`var` binding at module scope whose RHS is exactly one of the three " +
+      "global-receiver idents (no call, no member access on the RHS); when that alias appears as a " +
+      "member-access receiver for a SYN041-dangerous member inside any fn body, SYN045 fires. " +
+      "Fn-body-level aliases are not tracked to avoid shadowing false positives. " +
+      "Suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies.",
+    idiom:
+      "access the guarded global directly so SYN041 fires on the canonical receiver name; " +
+      "if aliasing globalThis/window/self is genuinely required, wrap the aliased member access in " +
+      "`unsafe \"uses <member> via aliased receiver for <reason>\" { g.<member>(...) }`",
+    rewrite:
+      "// before — const g = globalThis aliases the receiver; g.fetch() bypasses SYN041\n" +
+      "const g = globalThis\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return g.fetch(url)  // SYN045\n" +
+      "}\n\n" +
+      "// after — access through canonical receiver; SYN041 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN045: globalThis aliased and used as member-access receiver\n" +
+      "?bs 0.7\n" +
+      "const g = globalThis\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return g.fetch(url)  // SYN045 — same as globalThis.fetch(url), bypasses SYN041\n" +
+      "}\n\n" +
+      "// fix: access globalThis.fetch directly (then SYN041 fires) or use stdlib\n" +
+      "fn run(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)  // explicit capability declaration\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",
