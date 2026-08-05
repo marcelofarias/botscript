@@ -3359,6 +3359,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)  // explicit capability declaration\n" +
       "}",
   },
+  SYN047: {
+    code: "SYN047",
+    title: "Node.js global receiver bypasses SYN041–SYN046 capability checks",
+    rule:
+      "In Node.js, `global` is the native global object — equivalent to `globalThis` at runtime. " +
+      "Accessing a dangerous global via `global.fetch(url)`, `global['eval'](code)`, or writing " +
+      "`global.foo = val` bypasses all 46 prior SYN checks: SYN041–SYN043 only watch " +
+      "`globalThis`, `window`, and `self` receivers, so `global.*` routes the same capability " +
+      "bypass past every token-level check. Detection: `global.<member>` or `global[<string-literal>]` " +
+      "access inside a fn body where `<member>` or the literal is a SYN041-dangerous global or a " +
+      "property write to `global.*`; `unsafe {}` blocks and `unsafe \"reason\" fn` bodies are suppressed. " +
+      "Note: `global` used as a parameter name or local binding is not distinguished — prefer " +
+      "`globalThis` (cross-environment standard) over `global` in botscript code.",
+    idiom:
+      "use botscript stdlib equivalents with explicit `uses {}` declarations rather than reaching for " +
+      "`global.*`; if `global` access is genuinely required (e.g. Node built-in shimming), " +
+      "wrap in `unsafe \"uses <member> via Node global for <reason>\" { global.<member> }`",
+    rewrite:
+      "// before — global.fetch bypasses SYN007 and SYN041\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return global.fetch(url)  // SYN047\n" +
+      "}\n\n" +
+      "// after — explicit capability declaration visible to callers\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN047: global.fetch bypasses the network capability check\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return global.fetch(url)  // SYN047 — same bypass as globalThis.fetch (SYN041)\n" +
+      "}\n\n" +
+      "// SYN047: computed bracket form\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return global['eval'](code)  // SYN047 — same bypass as globalThis['eval'] (SYN043)\n" +
+      "}\n\n" +
+      "// fix: explicit capability\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",

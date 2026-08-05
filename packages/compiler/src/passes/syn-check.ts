@@ -511,6 +511,16 @@
  *           is not tracked. `unsafe {}` blocks and `unsafe "reason" fn` bodies are
  *           suppressed.
  *
+ *   SYN047  A `global.<member>` or `global[<string-literal>]` access or `global.*`
+ *           property write was detected in a fn body (?bs 0.7+). In Node.js, `global`
+ *           is the native global object — runtime-equivalent to `globalThis`. All 46
+ *           prior SYN checks only watch `globalThis`, `window`, and `self` receivers;
+ *           `global.*` reaches any dangerous capability with no warning.
+ *           Detection: `global.<member>` where `<member>` is in SYN041_DANGEROUS_MEMBERS,
+ *           `global[<string-literal>]` where the literal is in SYN041_DANGEROUS_MEMBERS,
+ *           or `global.<member> = ...` / `global.<member> <op>= ...` assignments.
+ *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -689,6 +699,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn044 = getErrorCode("SYN044")!;
   const syn045 = getErrorCode("SYN045")!;
   const syn046 = getErrorCode("SYN046")!;
+  const syn047 = getErrorCode("SYN047")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -3985,6 +3996,123 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn041.rule,
               idiom: syn041.idiom,
               rewrite: syn041.rewrite,
+            });
+          }
+
+          break;
+        }
+
+        // ── SYN047: Node.js global receiver — global.<member> and global['<member>'] ──
+        case "global": {
+          // Exclude: member access on a local binding (`obj.global.fetch`), fn declarations.
+          const prevIdxG47 = prevSignificant(tokens, i - 1);
+          const prevG47 = tokens[prevIdxG47];
+          if (prevG47 && ((prevG47.kind === "punct" && prevG47.text === ".") || prevG47.kind === "questionDot"))
+            break;
+          if (prevG47 && prevG47.kind === "keyword" && prevG47.text === "fn") break;
+          if (prevG47 && prevG47.kind === "ident" && prevG47.text === "function") break;
+          if (isFunctionStarDecl(tokens, prevIdxG47)) break;
+
+          const nextIdxG47 = nextSignificant(tokens, i + 1);
+          const nextG47 = tokens[nextIdxG47];
+          const isDotG47 = nextG47 && nextG47.kind === "punct" && nextG47.text === ".";
+          const isOptChainG47 = nextG47 && nextG47.kind === "questionDot";
+          const isBracketG47 = nextG47 && nextG47.kind === "open" && nextG47.text === "[";
+
+          if (isInsideRange(tok.start, unsafeRanges)) break;
+
+          // ── SYN047: computed string bracket — global['fetch'] etc. ──
+          if (isBracketG47) {
+            const strIdx47 = nextSignificant(tokens, nextIdxG47 + 1);
+            const strTok47 = tokens[strIdx47];
+            if (strTok47 && strTok47.kind === "string") {
+              const raw47 = strTok47.text;
+              const memberName47 = raw47.slice(1, -1);
+              if (SYN041_DANGEROUS_MEMBERS.has(memberName47)) {
+                const loc47 = locationOf(src, tok.start);
+                warnings.push({
+                  code: "SYN047",
+                  severity: "warning",
+                  file: null,
+                  line: loc47.line,
+                  column: loc47.column,
+                  start: tok.start,
+                  end: strTok47.end,
+                  message:
+                    `fn '${decl.name}' accesses global['${memberName47}'] via computed bracket notation — ` +
+                    `the Node.js global receiver with a string literal hides the dangerous global name from ` +
+                    `SYN041–SYN046 token-level detection; the capability bypass is identical to ` +
+                    `globalThis['${memberName47}'] at runtime; use botscript stdlib equivalents with ` +
+                    `explicit uses {} declarations, ` +
+                    `or wrap in unsafe "uses ${memberName47} via global['${memberName47}'] for <reason>" { global['${memberName47}'] }`,
+                  rule: syn047.rule,
+                  idiom: syn047.idiom,
+                  rewrite: syn047.rewrite,
+                });
+              }
+            }
+            break;
+          }
+
+          if (!isDotG47 && !isOptChainG47) break;
+
+          const memberIdxG47 = nextSignificant(tokens, nextIdxG47 + 1);
+          const memberTokG47 = tokens[memberIdxG47];
+          if (!memberTokG47 || memberTokG47.kind !== "ident") break;
+
+          const sepG47 = isOptChainG47 ? "?." : ".";
+          const memberNameG47 = memberTokG47.text;
+
+          const afterMemberIdxG47 = nextSignificant(tokens, memberIdxG47 + 1);
+          const afterMemberG47 = tokens[afterMemberIdxG47];
+          const isEqG47 = afterMemberG47 && afterMemberG47.kind === "eq";
+          const isCompoundG47 = afterMemberG47 && afterMemberG47.kind === "operator" &&
+            SYN038_COMPOUND_ASSIGNS.has(afterMemberG47.text);
+
+          const locG47 = locationOf(src, tok.start);
+
+          // Property write: global.foo = val (parallel to SYN038 for Node global)
+          if (isEqG47 || isCompoundG47) {
+            const assignOpG47 = afterMemberG47!.text;
+            warnings.push({
+              code: "SYN047",
+              severity: "warning",
+              file: null,
+              line: locG47.line,
+              column: locG47.column,
+              start: tok.start,
+              end: memberTokG47.end,
+              message:
+                `fn '${decl.name}' writes global${sepG47}${memberNameG47} ${assignOpG47} ... — ` +
+                `writing to the Node.js global object is an undeclared global side effect; ` +
+                `no uses {} / reads {} / writes {} declaration covers global scope writes; ` +
+                `callers cannot see the dependency; pass state through explicit parameters and return values, ` +
+                `or wrap in unsafe "writes global.${memberNameG47} for <reason>" { global${sepG47}${memberNameG47} ${assignOpG47} ... }`,
+              rule: syn047.rule,
+              idiom: syn047.idiom,
+              rewrite: syn047.rewrite,
+            });
+          }
+
+          // Dangerous member access: global.fetch(url)
+          if (SYN041_DANGEROUS_MEMBERS.has(memberNameG47)) {
+            warnings.push({
+              code: "SYN047",
+              severity: "warning",
+              file: null,
+              line: locG47.line,
+              column: locG47.column,
+              start: tok.start,
+              end: memberTokG47.end,
+              message:
+                `fn '${decl.name}' accesses global${sepG47}${memberNameG47} — ` +
+                `the Node.js global receiver routes around all SYN041–SYN046 checks (those only watch ` +
+                `globalThis, window, and self); the capability bypass is identical at runtime; ` +
+                `use botscript stdlib equivalents with explicit uses {} declarations, ` +
+                `or wrap in unsafe "uses ${memberNameG47} via Node global for <reason>" { global${sepG47}${memberNameG47} }`,
+              rule: syn047.rule,
+              idiom: syn047.idiom,
+              rewrite: syn047.rewrite,
             });
           }
 
