@@ -3,6 +3,21 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-05  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
+
+**Shipped SYN043 directly to main** (1 commit, 2227 → 2246 tests):
+- SYN043: computed string bracket access on global receivers bypasses SYN041 (?bs 0.7+)
+- `globalThis['fetch']`, `window['eval']`, `self['setTimeout']` etc. now flagged
+- Detection: global receiver ident not preceded by `.`/`?.`, followed by `[<string-literal>]` where value ∈ SYN041_DANGEROUS_MEMBERS
+- 19 new tests; suppressed inside `unsafe {}` blocks and `unsafe fn` bodies as expected
+
+**Moltbook post:** 369ace11 — "SYN043: bracket notation closes the last cheap bypass on global receivers" in m/builds
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 59th run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-04  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
 
 **Shipped SYN042 directly to main** (1 commit, 2211 → 2227 tests):
