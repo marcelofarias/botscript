@@ -700,6 +700,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn045 = getErrorCode("SYN045")!;
   const syn046 = getErrorCode("SYN046")!;
   const syn047 = getErrorCode("SYN047")!;
+  const syn048 = getErrorCode("SYN048")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -794,6 +795,59 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
   }
 
+  // SYN048: pre-pass — collect fn-body-local aliases of guarded globals.
+  // SYN044 only covers module-scope aliases; `const req = fetch` declared inside a fn body
+  // is not tracked there (shadowing false-positive risk was cited for module-scope pre-pass,
+  // but per-fn-body tracking avoids that entirely because we scope to each fn individually).
+  const localGuardedAliases48 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart48 = decl.bodyTokenStart ?? decl.tokenStart;
+    // Find all nested fn char-ranges within this decl so we skip their tokens.
+    const nestedRanges48 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localAliases48 = new Map<string, string>();
+    for (let ai = bodyStart48; ai < decl.tokenEnd; ai++) {
+      const atok = tokens[ai];
+      if (!atok) continue;
+      // Skip tokens inside nested fn bodies.
+      if (nestedRanges48.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      if (atok.kind !== "ident") continue;
+      if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+      // Next: binding name (plain ident — skip destructuring).
+      const nameAi48 = nextSignificant(tokens, ai + 1);
+      const nameTok48 = tokens[nameAi48];
+      if (!nameTok48 || nameTok48.kind !== "ident") continue;
+      // Next: `=`.
+      const eqAi48 = nextSignificant(tokens, nameAi48 + 1);
+      const eqTok48 = tokens[eqAi48];
+      if (!eqTok48 || eqTok48.kind !== "eq") continue;
+      // RHS: bare guarded-global ident (no call, no member access).
+      const rhsAi48 = nextSignificant(tokens, eqAi48 + 1);
+      const rhsTok48 = tokens[rhsAi48];
+      if (!rhsTok48 || rhsTok48.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(rhsTok48.text)) continue;
+      const afterRhs48Ai = nextSignificant(tokens, rhsAi48 + 1);
+      const afterRhs48 = tokens[afterRhs48Ai];
+      if (afterRhs48 && afterRhs48.kind === "punct" && afterRhs48.text === ".") continue;
+      if (afterRhs48 && afterRhs48.kind === "questionDot") continue;
+      if (afterRhs48 && afterRhs48.kind === "open" && afterRhs48.text === "(") continue;
+      localAliases48.set(nameTok48.text, rhsTok48.text);
+    }
+    if (localAliases48.size > 0) {
+      localGuardedAliases48.set(decl, localAliases48);
+    }
+  }
+
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
@@ -807,6 +861,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     let nextInner = 0;
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
+    const fnLocalAliases48 = localGuardedAliases48.get(decl);
 
     // Single dispatch loop: nesting bookkeeping runs once per token position.
     // All SYN checks are dispatched via a switch on tok.text after an ident guard.
@@ -902,6 +957,53 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn046.rule,
               idiom: syn046.idiom,
               rewrite: syn046.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN048: fn-body-local alias of guarded global called in same fn body ──────
+      // Must run BEFORE the switch: the default: case does `continue` for any
+      // unrecognised ident, so code after the switch is unreachable for alias names.
+      if (fnLocalAliases48 && fnLocalAliases48.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx48 = nextSignificant(tokens, i + 1);
+        const next48 = tokens[nextIdx48];
+        const isCall48 =
+          next48 &&
+          ((next48.kind === "open" && next48.text === "(") || next48.kind === "questionDot");
+        if (isCall48) {
+          const prevIdx48 = prevSignificant(tokens, i - 1);
+          const prev48 = tokens[prevIdx48];
+          const isMemberAccess48 =
+            prev48 &&
+            ((prev48.kind === "punct" && prev48.text === ".") || prev48.kind === "questionDot");
+          const isDecl48 =
+            prev48 &&
+            ((prev48.kind === "keyword" && prev48.text === "fn") ||
+              (prev48.kind === "ident" &&
+                (prev48.text === "function" ||
+                  prev48.text === "const" ||
+                  prev48.text === "let" ||
+                  prev48.text === "var")));
+          if (!isMemberAccess48 && !isDecl48) {
+            const origGlobal48 = fnLocalAliases48.get(tok.text)!;
+            const loc48 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN048",
+              severity: "warning",
+              file: null,
+              line: loc48.line,
+              column: loc48.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a local alias of ` +
+                `the guarded global '${origGlobal48}' defined in this fn body; calling through the alias ` +
+                `bypasses SYN004–SYN047 name-token checks; call '${origGlobal48}' directly so the relevant ` +
+                `SYN check fires, or wrap in unsafe "calls ${origGlobal48} via local alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn048.rule,
+              idiom: syn048.idiom,
+              rewrite: syn048.rewrite,
             });
           }
         }

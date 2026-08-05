@@ -3401,6 +3401,52 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN048: {
+    code: "SYN048",
+    title: "fn-body-local alias of a SYN-guarded global bypasses SYN004–SYN047 name-token detection",
+    rule:
+      "Declaring a binding inside a fn body that aliases a SYN-guarded global (`const req = fetch`, " +
+      "`const run = eval`) and then calling through that alias (`req(url)`, `run(code)`) in the same fn body " +
+      "bypasses all 47 prior SYN checks: those checks fire on the canonical identifier token, but the call-site " +
+      "token is `req` or `run` — not `fetch` or `eval`. " +
+      "SYN044 only covers module-scope aliases (it explicitly skips fn-body-local bindings to avoid shadowing " +
+      "false positives at module scope). " +
+      "SYN048 fills the gap: per-fn-body pre-pass collects `const`/`let`/`var <alias> = <guarded-global>` " +
+      "declarations inside the fn body (skipping nested fn bodies to respect scope), then fires when the alias " +
+      "is called (next significant token is `(` or `?.`) in the same body. Member-access calls (`obj.req()`), " +
+      "declaration sites, and `unsafe {}` blocks are suppressed.",
+    idiom:
+      "call the guarded global directly so the relevant SYN check fires; " +
+      "if aliasing is genuinely needed for readability or dependency injection, wrap the call in " +
+      "`unsafe \"calls <global> via local alias for <reason>\" { req(...) }`",
+    rewrite:
+      "// before — const req = fetch inside fn body; req(url) bypasses SYN007\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const req = fetch\n" +
+      "  return req(url)  // SYN048\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN048: fetch aliased inside fn body; req() bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const req = fetch\n" +
+      "  return req(url)  // SYN048 — same as fetch(url), bypasses SYN004–SYN047\n" +
+      "}\n\n" +
+      "// SYN048: eval aliased inside fn body; run() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  const run = eval\n" +
+      "  return run(code)  // SYN048\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly (then SYN007/SYN004 fires)\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",
