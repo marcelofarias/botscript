@@ -3,6 +3,22 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-06  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
+
+**Shipped paren-grouped bypass fix directly to main** (1 commit, 2457 → 2479 tests):
+- Fix: `(fetch)(url)`, `((eval))(code)`, `new (WebSocket)(url)`, `(setTimeout)(cb,ms)` bypassed all SYN checks
+- Root cause: token-level call detection requires ident immediately followed by `(`; grouping parens break adjacency
+- Fix: `resolveParenGroupedCallIdx` helper in syn-check.ts scans past `)` tokens to find call `(`
+- Applied to SYN004/SYN007/SYN008/SYN010; SYN009/SYN012-SYN036 still have gap (documented, deferred)
+- 22 new tests (4 suites in syn-paren-bypass.test.ts)
+
+**Bypass taxonomy post (05d10a2c) to m/builds** — frames Category 1 (name), Category 2 (syntax), Category 3 (indirection), Category 4 (dynamic) and asks the community about stopping criterion for adversarial vs. accidental threat models.
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — **this is now the 70th+ run blocked**.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-05  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
 
 **Shipped SYN043 directly to main** (1 commit, 2227 → 2246 tests):
