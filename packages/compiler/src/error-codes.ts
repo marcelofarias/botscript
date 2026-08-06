@@ -4198,6 +4198,87 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN055: {
+    code: "SYN055",
+    title: "default-parameter alias of a guarded global called in the fn body bypasses SYN004–SYN054",
+    rule:
+      "`fn run(f = fetch)` gives the fn body a parameter `f` bound to `fetch` by default. " +
+      "All prior alias checks (SYN044, SYN048, SYN051, SYN053) start scanning from the opening `{` of the fn body, " +
+      "so a default-parameter binding in the parameter list is never tracked. When `f` is called in the body, " +
+      "SYN007 does not fire because the call site token is `f`, not `fetch`. " +
+      "SYN055 closes this gap: a per-fn pre-pass scans the parameter list (tokens before the body `{`) for " +
+      "`<ident> = <guarded-global>` default-value patterns and fires when the alias is called (next significant token " +
+      "is `(` or `?.`) in the fn body. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "pass the callable as an explicit parameter without a default (or with a botscript-stdlib equivalent), " +
+      "so the call site token is the guarded global and the relevant SYN check fires; " +
+      "if the default is intentional, wrap the call in `unsafe \"calls <global> via default-param alias for <reason>\" { f(...) }`",
+    rewrite:
+      "// before — default parameter f = fetch; f(url) bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string, f = fetch) -> any {\n" +
+      "  return f(url)  // SYN055\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN055: default param f = fetch; f(url) bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string, f = fetch) -> any {\n" +
+      "  return f(url)  // SYN055 — f is a default-parameter alias of fetch\n" +
+      "}\n\n" +
+      "// SYN055: default param run = eval; run(code) bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn execute(code: string, run = eval) -> any {\n" +
+      "  return run(code)  // SYN055\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly (then SYN007/SYN004 fires)\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
+  SYN056: {
+    code: "SYN056",
+    title: "default-parameter alias of a global receiver object used as member-access receiver in the fn body bypasses SYN041–SYN054",
+    rule:
+      "`fn run(g = globalThis)` gives the fn body a parameter `g` bound to `globalThis` by default. " +
+      "All prior receiver-alias checks (SYN045, SYN049, SYN052, SYN054) start scanning from the opening `{` of the fn body, " +
+      "so a default-parameter binding in the parameter list is never tracked. When `g.fetch(url)` is used in the body, " +
+      "SYN041 does not fire because the receiver token is `g`, not `globalThis`/`window`/`self`. " +
+      "SYN056 closes this gap: a per-fn pre-pass scans the parameter list for `<ident> = <receiver-global>` " +
+      "default-value patterns and fires when the alias appears as a member-access receiver (`alias.member` or " +
+      "`alias?.member`) for a SYN041-dangerous member in the fn body. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "access dangerous globals via their canonical receiver token (`globalThis.X`, `window.X`) so SYN041 fires; " +
+      "better still, use the botscript stdlib capability equivalent with an explicit `uses {}` declaration",
+    rewrite:
+      "// before — default param g = globalThis; g.fetch() bypasses SYN041\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string, g = globalThis) -> any {\n" +
+      "  return g.fetch(url)  // SYN056\n" +
+      "}\n\n" +
+      "// after — use stdlib; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN056: default param g = globalThis; g.fetch() bypasses SYN041\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string, g = globalThis) -> any {\n" +
+      "  return g.fetch(url)  // SYN056 — g is a default-parameter alias of globalThis\n" +
+      "}\n\n" +
+      "// SYN056: default param g = window; g.eval() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn execute(code: string, g = window) -> any {\n" +
+      "  return g.eval(code)  // SYN056\n" +
+      "}\n\n" +
+      "// fix: use the botscript stdlib or access via canonical receiver\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

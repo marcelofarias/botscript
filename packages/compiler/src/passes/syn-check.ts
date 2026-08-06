@@ -591,6 +591,24 @@
  *           or `alias?.member`) for any member in SYN041_DANGEROUS_MEMBERS in the same fn
  *           body. `unsafe {}` blocks suppressed.
  *
+ *   SYN055  A default-parameter alias of a SYN-guarded global is called in the fn body (?bs 0.7+).
+ *           `fn run(f = fetch)` binds `fetch` to `f` as a default parameter value. All prior alias
+ *           checks (SYN044/SYN048/SYN051/SYN053) start scanning from the opening `{` of the fn body,
+ *           so the default-parameter binding is never tracked. When `f(url)` is called in the body,
+ *           SYN007 does not fire because the call site token is `f`, not `fetch`. SYN055 closes this
+ *           gap: a per-fn pre-pass scans the parameter list (token range before `bodyTokenStart`) for
+ *           `<ident> = <guarded-global>` default-value patterns; fires when the alias is called
+ *           (next significant token is `(` or `?.`) in the fn body. `unsafe {}` suppressed.
+ *
+ *   SYN056  A default-parameter alias of a global receiver object (`globalThis`, `window`, `self`)
+ *           is used as a member-access receiver for a SYN041-dangerous member in the fn body (?bs 0.7+).
+ *           `fn run(g = globalThis)` binds `globalThis` to `g`; all prior receiver-alias checks
+ *           (SYN045/SYN049/SYN052/SYN054) start from the body `{`, so the default-parameter binding
+ *           is never tracked. `g.fetch(url)` bypasses SYN041 because the receiver token is `g`, not
+ *           `globalThis`. SYN056 closes the gap: a per-fn pre-pass scans the parameter list for
+ *           `<ident> = <receiver-global>` default-value patterns; fires when the alias appears as a
+ *           member-access receiver for any SYN041_DANGEROUS_MEMBERS member in the fn body.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -777,6 +795,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn052 = getErrorCode("SYN052")!;
   const syn053 = getErrorCode("SYN053")!;
   const syn054 = getErrorCode("SYN054")!;
+  const syn055 = getErrorCode("SYN055")!;
+  const syn056 = getErrorCode("SYN056")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -794,6 +814,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   // if `const f = fetch` is at module level and `fn run() { const f = x; f() }` exists,
   // flagging `f()` inside run() would be wrong because the inner binding shadows the alias.
   const fnBodyCharRanges = program.fns.map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+  // Header ranges cover the fn signature (parameter list + return type annotation) from the fn
+  // keyword to the body opener `{`. Used by SYN051/SYN052 to avoid treating default-parameter
+  // aliases (`fn run(f = fetch)`) as module-scope assignment aliases.
+  const fnHeaderCharRanges = program.fns.map((f) => ({ start: f.decl.start, end: f.decl.body.start }));
   const guardedGlobalAliases = new Map<string, string>(); // alias name → original guarded global (SYN044)
   const receiverAliases = new Map<string, string>();       // alias name → original receiver global (SYN045)
   const renamedDestructAliases = new Map<string, { original: string; receiver: string }>(); // SYN046
@@ -838,8 +862,9 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   for (let ai = 0; ai < tokens.length; ai++) {
     const atok = tokens[ai];
     if (!atok || atok.kind !== "ident") continue;
-    // Module-scope only: skip if inside any fn body.
+    // Module-scope only: skip if inside any fn body or fn header (parameter list / return type).
     if (fnBodyCharRanges.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+    if (fnHeaderCharRanges.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
     // Next must be `=` (eq — not `==`, `===`, `+=`, etc.)
     const eqAi51 = nextSignificant(tokens, ai + 1);
     const eqTok51 = tokens[eqAi51];
@@ -1187,6 +1212,86 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
   }
 
+  // SYN055: pre-pass — collect default-parameter aliases of guarded globals.
+  // The parameter list (before bodyTokenStart) is never scanned by SYN048/SYN053 pre-passes,
+  // which start from bodyTokenStart. `fn run(f = fetch)` assigns fetch to f as a default value;
+  // when f(url) is called in the body SYN007 does not fire. SYN055 closes this gap.
+  const defaultParamGuardedAliases55 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const paramEnd55 = decl.bodyTokenStart ?? decl.tokenStart;
+    const defaultAliases55 = new Map<string, string>();
+    for (let ai = decl.tokenStart; ai < paramEnd55; ai++) {
+      const atok = tokens[ai];
+      if (!atok || atok.kind !== "ident") continue;
+      const eqAi55 = nextSignificant(tokens, ai + 1);
+      const eqTok55 = tokens[eqAi55];
+      if (!eqTok55 || eqTok55.kind !== "eq") continue;
+      // Skip if preceded by `const`/`let`/`var` (not valid in param lists, but defensive).
+      const prevAi55 = prevSignificant(tokens, ai - 1);
+      const prevTok55 = tokens[prevAi55];
+      if (prevTok55 && prevTok55.kind === "ident" &&
+          (prevTok55.text === "const" || prevTok55.text === "let" || prevTok55.text === "var")) continue;
+      // Skip member-write LHS: preceded by `.` or `?.`.
+      if (prevTok55 && ((prevTok55.kind === "punct" && prevTok55.text === ".") || prevTok55.kind === "questionDot")) continue;
+      // RHS must be a bare guarded-global ident (no call, no member access).
+      const rhsAi55 = nextSignificant(tokens, eqAi55 + 1);
+      const rhsTok55 = tokens[rhsAi55];
+      if (!rhsTok55 || rhsTok55.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(rhsTok55.text)) continue;
+      const afterRhsAi55 = nextSignificant(tokens, rhsAi55 + 1);
+      const afterRhs55 = tokens[afterRhsAi55];
+      if (afterRhs55 && afterRhs55.kind === "punct" && afterRhs55.text === ".") continue;
+      if (afterRhs55 && afterRhs55.kind === "questionDot") continue;
+      if (afterRhs55 && afterRhs55.kind === "open" && afterRhs55.text === "(") continue;
+      defaultAliases55.set(atok.text, rhsTok55.text);
+    }
+    if (defaultAliases55.size > 0) {
+      defaultParamGuardedAliases55.set(decl, defaultAliases55);
+    }
+  }
+
+  // SYN056: pre-pass — collect default-parameter aliases of global receiver objects.
+  // `fn run(g = globalThis)` assigns globalThis to g; g.fetch(url) bypasses SYN041 because
+  // the receiver token is g, not globalThis. SYN056 closes this gap.
+  const defaultParamReceiverAliases56 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const paramEnd56 = decl.bodyTokenStart ?? decl.tokenStart;
+    const receiverAliases56 = new Map<string, string>();
+    for (let ai = decl.tokenStart; ai < paramEnd56; ai++) {
+      const atok = tokens[ai];
+      if (!atok || atok.kind !== "ident") continue;
+      const eqAi56 = nextSignificant(tokens, ai + 1);
+      const eqTok56 = tokens[eqAi56];
+      if (!eqTok56 || eqTok56.kind !== "eq") continue;
+      const prevAi56 = prevSignificant(tokens, ai - 1);
+      const prevTok56 = tokens[prevAi56];
+      if (prevTok56 && prevTok56.kind === "ident" &&
+          (prevTok56.text === "const" || prevTok56.text === "let" || prevTok56.text === "var")) continue;
+      if (prevTok56 && ((prevTok56.kind === "punct" && prevTok56.text === ".") || prevTok56.kind === "questionDot")) continue;
+      const rhsAi56 = nextSignificant(tokens, eqAi56 + 1);
+      const rhsTok56 = tokens[rhsAi56];
+      if (!rhsTok56 || rhsTok56.kind !== "ident") continue;
+      if (!SYN045_RECEIVER_GLOBALS.has(rhsTok56.text)) continue;
+      const afterRhsAi56 = nextSignificant(tokens, rhsAi56 + 1);
+      const afterRhs56 = tokens[afterRhsAi56];
+      if (afterRhs56 && afterRhs56.kind === "punct" && afterRhs56.text === ".") continue;
+      if (afterRhs56 && afterRhs56.kind === "questionDot") continue;
+      if (afterRhs56 && afterRhs56.kind === "open" && afterRhs56.text === "(") continue;
+      receiverAliases56.set(atok.text, rhsTok56.text);
+    }
+    if (receiverAliases56.size > 0) {
+      defaultParamReceiverAliases56.set(decl, receiverAliases56);
+    }
+  }
+
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
@@ -1205,6 +1310,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const fnLocalDestruct50 = localDestructAliases50.get(decl);
     const fnLocalAssignAliases53 = localGuardedAssignAliases53.get(decl);
     const fnLocalReceiverAssign54 = localReceiverAssignAliases54.get(decl);
+    const fnDefaultParamAliases55 = defaultParamGuardedAliases55.get(decl);
+    const fnDefaultParamReceiverAliases56 = defaultParamReceiverAliases56.get(decl);
 
     // Single dispatch loop: nesting bookkeeping runs once per token position.
     // All SYN checks are dispatched via a switch on tok.text after an ident guard.
@@ -1565,6 +1672,94 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 rule: syn054.rule,
                 idiom: syn054.idiom,
                 rewrite: syn054.rewrite,
+              });
+            }
+          }
+        }
+      }
+
+      // ── SYN055: default-parameter alias of guarded global called in fn body ──────
+      // Must run BEFORE the switch for the same reason as SYN048.
+      if (fnDefaultParamAliases55 && fnDefaultParamAliases55.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx55 = nextSignificant(tokens, i + 1);
+        const next55 = tokens[nextIdx55];
+        const isCall55 =
+          next55 &&
+          ((next55.kind === "open" && next55.text === "(") || next55.kind === "questionDot");
+        if (isCall55) {
+          const prevIdx55 = prevSignificant(tokens, i - 1);
+          const prev55 = tokens[prevIdx55];
+          const isMemberAccess55 =
+            prev55 &&
+            ((prev55.kind === "punct" && prev55.text === ".") || prev55.kind === "questionDot");
+          const isDecl55 =
+            prev55 &&
+            ((prev55.kind === "keyword" && prev55.text === "fn") ||
+              (prev55.kind === "ident" &&
+                (prev55.text === "function" ||
+                  prev55.text === "const" ||
+                  prev55.text === "let" ||
+                  prev55.text === "var")));
+          if (!isMemberAccess55 && !isDecl55) {
+            const origGlobal55 = fnDefaultParamAliases55.get(tok.text)!;
+            const loc55 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN055",
+              severity: "warning",
+              file: null,
+              line: loc55.line,
+              column: loc55.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a default-parameter alias of ` +
+                `the guarded global '${origGlobal55}' (bound in the parameter list as \`${tok.text} = ${origGlobal55}\`); ` +
+                `calling through the alias bypasses SYN004–SYN054 name-token checks; ` +
+                `call '${origGlobal55}' directly so the relevant SYN check fires, ` +
+                `or wrap in unsafe "calls ${origGlobal55} via default-param alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn055.rule,
+              idiom: syn055.idiom,
+              rewrite: syn055.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN056: default-parameter alias of receiver object used as member-access receiver ──
+      // Must run BEFORE the switch for the same reason as SYN049.
+      if (fnDefaultParamReceiverAliases56 && fnDefaultParamReceiverAliases56.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx56 = nextSignificant(tokens, i + 1);
+        const next56 = tokens[nextIdx56];
+        const isDot56 = next56 && next56.kind === "punct" && next56.text === ".";
+        const isOptChain56 = next56 && next56.kind === "questionDot";
+        if (isDot56 || isOptChain56) {
+          const prevIdx56 = prevSignificant(tokens, i - 1);
+          const prev56 = tokens[prevIdx56];
+          const isMemberTarget56 = prev56 && ((prev56.kind === "punct" && prev56.text === ".") || prev56.kind === "questionDot");
+          if (!isMemberTarget56) {
+            const memberIdx56 = nextSignificant(tokens, nextIdx56 + 1);
+            const memberTok56 = tokens[memberIdx56];
+            if (memberTok56 && memberTok56.kind === "ident" && SYN041_DANGEROUS_MEMBERS.has(memberTok56.text)) {
+              const origReceiver56 = fnDefaultParamReceiverAliases56.get(tok.text)!;
+              const sep56 = isOptChain56 ? "?." : ".";
+              const loc56 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN056",
+                severity: "warning",
+                file: null,
+                line: loc56.line,
+                column: loc56.column,
+                start: tok.start,
+                end: memberTok56.end,
+                message:
+                  `fn '${decl.name}' accesses ${tok.text}${sep56}${memberTok56.text} — '${tok.text}' is a ` +
+                  `default-parameter alias of the global receiver '${origReceiver56}' (bound in the parameter list as \`${tok.text} = ${origReceiver56}\`); ` +
+                  `the alias is not in the SYN041 receiver watch-list, so '${tok.text}${sep56}${memberTok56.text}' ` +
+                  `bypasses SYN041–SYN055; access '${origReceiver56}${sep56}${memberTok56.text}' directly so SYN041 fires, ` +
+                  `or wrap in unsafe "uses ${memberTok56.text} via aliased ${origReceiver56} for <reason>" { ${tok.text}${sep56}${memberTok56.text} }`,
+                rule: syn056.rule,
+                idiom: syn056.idiom,
+                rewrite: syn056.rewrite,
               });
             }
           }
