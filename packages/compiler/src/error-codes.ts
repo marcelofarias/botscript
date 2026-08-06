@@ -3447,6 +3447,91 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN049: {
+    code: "SYN049",
+    title: "fn-body-local alias of a global receiver used as member-access receiver bypasses SYN041–SYN048",
+    rule:
+      "`const g = globalThis` (or `window`, `self`) declared inside a fn body followed by `g.fetch(url)` " +
+      "or `g['eval'](code)` in the same fn body bypasses SYN041–SYN048: SYN041 fires on `globalThis.X`, " +
+      "`window.X`, and `self.X` tokens directly, but when the receiver is a local alias the canonical receiver " +
+      "token does not appear at the call site. " +
+      "SYN045 covers module-scope receiver aliases; SYN049 closes the fn-body gap: per-fn-body pre-pass " +
+      "collects `const`/`let`/`var <alias> = <receiver-global>` declarations (skipping nested fn bodies), " +
+      "then fires when the alias is followed by `.` or `?.` and a dangerous member name from the SYN041 " +
+      "watch-list in the same fn body. Suppressed inside `unsafe {}` blocks and `unsafe \"reason\" fn` bodies.",
+    idiom:
+      "access dangerous globals via their canonical receiver token (`globalThis.X`, `window.X`) so SYN041 " +
+      "fires; better still, use the botscript stdlib capability equivalent with an explicit `uses {}` declaration",
+    rewrite:
+      "// before — const g = globalThis inside fn body; g.fetch() bypasses SYN007+SYN041\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const g = globalThis\n" +
+      "  return g.fetch(url)  // SYN049\n" +
+      "}\n\n" +
+      "// after — use stdlib; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN049: globalThis aliased inside fn body; g.fetch() bypasses SYN041\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const g = globalThis\n" +
+      "  return g.fetch(url)  // SYN049 — same as globalThis.fetch(url), bypasses SYN041–SYN048\n" +
+      "}\n\n" +
+      "// SYN049: window aliased inside fn body; w.eval() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  const w = window\n" +
+      "  return w.eval(code)  // SYN049\n" +
+      "}\n\n" +
+      "// fix: use the botscript stdlib or access via canonical receiver\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
+  SYN050: {
+    code: "SYN050",
+    title: "fn-body-local destructuring rename of a guarded global bypasses SYN004–SYN049 name-token detection",
+    rule:
+      "`const { fetch: req } = globalThis` (or `window`, `self`) declared inside a fn body followed by " +
+      "`req(url)` in the same fn body bypasses all 49 prior SYN checks: those checks fire on the canonical " +
+      "identifier token, but the call-site token is `req` — not `fetch`. " +
+      "SYN046 covers module-scope destructuring renames; SYN050 closes the fn-body gap: per-fn-body pre-pass " +
+      "collects `const`/`let`/`var { <guarded>: <alias> } = <receiver>` declarations inside each fn body " +
+      "(skipping nested fn bodies), then fires when the alias is called (next significant token is `(` or `?.`) " +
+      "in the same fn body. Member-access calls (`obj.req()`), declaration sites, and `unsafe {}` blocks are suppressed.",
+    idiom:
+      "call the guarded global directly so the relevant SYN check fires; if destructuring aliasing is " +
+      "genuinely needed, wrap the call in `unsafe \"calls <global> via destructured alias for <reason>\" { req(...) }`",
+    rewrite:
+      "// before — const { fetch: req } = globalThis inside fn body; req(url) bypasses SYN007\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const { fetch: req } = globalThis\n" +
+      "  return req(url)  // SYN050\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN050: fetch destructured-renamed inside fn body; req() bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const { fetch: req } = globalThis\n" +
+      "  return req(url)  // SYN050 — same as fetch(url), bypasses SYN004–SYN049\n" +
+      "}\n\n" +
+      "// SYN050: eval destructured-renamed inside fn body; run() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  const { eval: run } = globalThis\n" +
+      "  return run(code)  // SYN050\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly (then SYN007/SYN004 fires)\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
   SYN042: {
     code: "SYN042",
     title: "Reflect.* call bypasses static name-based SYN capability and property checks",

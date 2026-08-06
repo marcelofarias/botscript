@@ -521,6 +521,31 @@
  *           or `global.<member> = ...` / `global.<member> <op>= ...` assignments.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
+ *   SYN049  A fn-body-local binding that aliases a global receiver object (`globalThis`,
+ *           `window`, `self`) is used as a member-access receiver for a SYN041-dangerous
+ *           member in the same fn body (?bs 0.7+). `const g = globalThis` inside a fn
+ *           body followed by `g.fetch(url)` bypasses SYN041–SYN048: SYN041 fires on the
+ *           literal receiver tokens, and SYN048 fires on direct-call aliases — but when
+ *           the receiver is a fn-body-local alias `g`, neither fires. At runtime
+ *           `g.fetch(url)` and `globalThis.fetch(url)` are identical. SYN045 covers
+ *           module-scope receiver aliases; SYN049 closes the fn-body gap. Detection:
+ *           per-fn-body pre-pass collects `const`/`let`/`var <alias> = <receiver-global>`
+ *           declarations (skipping nested fn bodies); fires when alias appears as a
+ *           member-access receiver (`alias.member` or `alias?.member`) for any member in
+ *           SYN041_DANGEROUS_MEMBERS. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           bodies are suppressed.
+ *
+ *   SYN050  A fn-body-local destructuring rename of a SYN-guarded global is called in
+ *           the same fn body (?bs 0.7+). `const { fetch: req } = globalThis` inside a fn
+ *           body followed by `req(url)` bypasses SYN004–SYN049: canonical-ident checks
+ *           fire on `fetch`, receiver checks fire on `globalThis`, but the alias `req`
+ *           is on no watch-list. SYN046 covers module-scope destructuring renames;
+ *           SYN050 closes the fn-body gap. Detection: per-fn-body pre-pass collects
+ *           `const`/`let`/`var { <guarded>: <alias> } = <receiver>` declarations inside
+ *           each fn body (skipping nested fn bodies); fires when the alias is called
+ *           (next significant token is `(` or `?.`) in the same body. Member-access calls
+ *           (`obj.req()`), declaration sites, and `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -701,6 +726,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn046 = getErrorCode("SYN046")!;
   const syn047 = getErrorCode("SYN047")!;
   const syn048 = getErrorCode("SYN048")!;
+  const syn049 = getErrorCode("SYN049")!;
+  const syn050 = getErrorCode("SYN050")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -848,6 +875,114 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
   }
 
+  // SYN049: pre-pass — collect fn-body-local aliases of global receiver objects.
+  // SYN045 covers module-scope receiver aliases; `const g = globalThis` declared inside a fn body
+  // is not tracked there. Per-fn-body tracking avoids shadowing false-positives.
+  const localReceiverAliases49 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart49 = decl.bodyTokenStart ?? decl.tokenStart;
+    const nestedRanges49 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localReceiver49 = new Map<string, string>();
+    for (let ai = bodyStart49; ai < decl.tokenEnd; ai++) {
+      const atok = tokens[ai];
+      if (!atok) continue;
+      if (nestedRanges49.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      if (atok.kind !== "ident") continue;
+      if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+      const nameAi49 = nextSignificant(tokens, ai + 1);
+      const nameTok49 = tokens[nameAi49];
+      if (!nameTok49 || nameTok49.kind !== "ident") continue;
+      const eqAi49 = nextSignificant(tokens, nameAi49 + 1);
+      const eqTok49 = tokens[eqAi49];
+      if (!eqTok49 || eqTok49.kind !== "eq") continue;
+      const rhsAi49 = nextSignificant(tokens, eqAi49 + 1);
+      const rhsTok49 = tokens[rhsAi49];
+      if (!rhsTok49 || rhsTok49.kind !== "ident") continue;
+      if (!SYN045_RECEIVER_GLOBALS.has(rhsTok49.text)) continue;
+      // Exclude member access on RHS (const g = obj.globalThis)
+      const afterRhs49Ai = nextSignificant(tokens, rhsAi49 + 1);
+      const afterRhs49 = tokens[afterRhs49Ai];
+      if (afterRhs49 && afterRhs49.kind === "punct" && afterRhs49.text === ".") continue;
+      if (afterRhs49 && afterRhs49.kind === "questionDot") continue;
+      localReceiver49.set(nameTok49.text, rhsTok49.text);
+    }
+    if (localReceiver49.size > 0) {
+      localReceiverAliases49.set(decl, localReceiver49);
+    }
+  }
+
+  // SYN050: pre-pass — collect fn-body-local destructuring renames of guarded globals.
+  // SYN046 covers module-scope destructuring renames; fn-body destructuring is not tracked there.
+  // Detects: const { fetch: req } = globalThis inside a fn body → calling req() bypasses SYN007+SYN046.
+  const localDestructAliases50 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, { original: string; receiver: string }>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart50 = decl.bodyTokenStart ?? decl.tokenStart;
+    const bodyEnd50 = decl.tokenEnd;
+    const nestedRanges50 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localDestruct50 = new Map<string, { original: string; receiver: string }>();
+    for (let ai = bodyStart50; ai < bodyEnd50; ai++) {
+      const atok = tokens[ai];
+      if (!atok) continue;
+      if (nestedRanges50.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      if (atok.kind !== "ident") continue;
+      if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+      // Next must be `{` — destructuring pattern.
+      const braceAi50 = nextSignificant(tokens, ai + 1);
+      const braceTok50 = tokens[braceAi50];
+      if (!braceTok50 || !(braceTok50.kind === "open" && braceTok50.text === "{")) continue;
+      const closeBraceIdx50 = braceTok50.matchedAt;
+      if (closeBraceIdx50 === undefined) continue;
+      // After `}`: must be `=`.
+      const eqAi50 = nextSignificant(tokens, closeBraceIdx50 + 1);
+      const eqTok50 = tokens[eqAi50];
+      if (!eqTok50 || eqTok50.kind !== "eq") continue;
+      // RHS: must be a bare global-receiver ident.
+      const rhsAi50 = nextSignificant(tokens, eqAi50 + 1);
+      const rhsTok50 = tokens[rhsAi50];
+      if (!rhsTok50 || rhsTok50.kind !== "ident") continue;
+      if (!SYN045_RECEIVER_GLOBALS.has(rhsTok50.text)) continue;
+      // Scan inside `{ ... }` for `guardedGlobal : alias` rename pairs.
+      for (let di = braceAi50 + 1; di < closeBraceIdx50; di++) {
+        const dtok = tokens[di];
+        if (!dtok || dtok.kind !== "ident") continue;
+        if (!SYN037_GUARDED_GLOBALS.has(dtok.text)) continue;
+        const colonAi50 = nextSignificant(tokens, di + 1);
+        const colonTok50 = tokens[colonAi50];
+        if (!colonTok50 || !(colonTok50.kind === "punct" && colonTok50.text === ":")) continue;
+        const aliasAi50 = nextSignificant(tokens, colonAi50 + 1);
+        const aliasTok50 = tokens[aliasAi50];
+        if (!aliasTok50 || aliasTok50.kind !== "ident") continue;
+        localDestruct50.set(aliasTok50.text, { original: dtok.text, receiver: rhsTok50.text });
+        di = aliasAi50;
+      }
+    }
+    if (localDestruct50.size > 0) {
+      localDestructAliases50.set(decl, localDestruct50);
+    }
+  }
+
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
@@ -862,6 +997,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
     const bodyStart = decl.bodyTokenStart ?? decl.tokenStart;
     const fnLocalAliases48 = localGuardedAliases48.get(decl);
+    const fnLocalReceiver49 = localReceiverAliases49.get(decl);
+    const fnLocalDestruct50 = localDestructAliases50.get(decl);
 
     // Single dispatch loop: nesting bookkeeping runs once per token position.
     // All SYN checks are dispatched via a switch on tok.text after an ident guard.
@@ -1004,6 +1141,94 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn048.rule,
               idiom: syn048.idiom,
               rewrite: syn048.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN049: fn-body-local receiver alias used as member-access receiver ──────
+      // Must run BEFORE the switch for the same reason as SYN048.
+      if (fnLocalReceiver49 && fnLocalReceiver49.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx49 = nextSignificant(tokens, i + 1);
+        const next49 = tokens[nextIdx49];
+        const isDot49 = next49 && next49.kind === "punct" && next49.text === ".";
+        const isOptChain49 = next49 && next49.kind === "questionDot";
+        if (isDot49 || isOptChain49) {
+          const prevIdx49 = prevSignificant(tokens, i - 1);
+          const prev49 = tokens[prevIdx49];
+          const isMemberTarget49 = prev49 && ((prev49.kind === "punct" && prev49.text === ".") || prev49.kind === "questionDot");
+          if (!isMemberTarget49) {
+            const memberIdx49 = nextSignificant(tokens, nextIdx49 + 1);
+            const memberTok49 = tokens[memberIdx49];
+            if (memberTok49 && memberTok49.kind === "ident" && SYN041_DANGEROUS_MEMBERS.has(memberTok49.text)) {
+              const origReceiver49 = fnLocalReceiver49.get(tok.text)!;
+              const sep49 = isOptChain49 ? "?." : ".";
+              const loc49 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN049",
+                severity: "warning",
+                file: null,
+                line: loc49.line,
+                column: loc49.column,
+                start: tok.start,
+                end: memberTok49.end,
+                message:
+                  `fn '${decl.name}' accesses ${tok.text}${sep49}${memberTok49.text} — '${tok.text}' is a ` +
+                  `fn-body-local alias of the global receiver '${origReceiver49}' defined in this fn body; ` +
+                  `the alias is not in the SYN041 receiver watch-list, so '${tok.text}${sep49}${memberTok49.text}' ` +
+                  `bypasses SYN041–SYN048; access '${origReceiver49}${sep49}${memberTok49.text}' directly so SYN041 fires, ` +
+                  `or wrap in unsafe "uses ${memberTok49.text} via aliased ${origReceiver49} for <reason>" { ${tok.text}${sep49}${memberTok49.text} }`,
+                rule: syn049.rule,
+                idiom: syn049.idiom,
+                rewrite: syn049.rewrite,
+              });
+            }
+          }
+        }
+      }
+
+      // ── SYN050: fn-body-local destructuring rename of guarded global called in same fn body ──
+      // Must run BEFORE the switch for the same reason as SYN048.
+      if (fnLocalDestruct50 && fnLocalDestruct50.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx50 = nextSignificant(tokens, i + 1);
+        const next50 = tokens[nextIdx50];
+        const isCall50 =
+          next50 &&
+          ((next50.kind === "open" && next50.text === "(") || next50.kind === "questionDot");
+        if (isCall50) {
+          const prevIdx50 = prevSignificant(tokens, i - 1);
+          const prev50 = tokens[prevIdx50];
+          const isMemberAccess50 =
+            prev50 &&
+            ((prev50.kind === "punct" && prev50.text === ".") || prev50.kind === "questionDot");
+          const isDecl50 =
+            prev50 &&
+            ((prev50.kind === "keyword" && prev50.text === "fn") ||
+              (prev50.kind === "ident" &&
+                (prev50.text === "function" ||
+                  prev50.text === "const" ||
+                  prev50.text === "let" ||
+                  prev50.text === "var")));
+          if (!isMemberAccess50 && !isDecl50) {
+            const info50 = fnLocalDestruct50.get(tok.text)!;
+            const loc50 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN050",
+              severity: "warning",
+              file: null,
+              line: loc50.line,
+              column: loc50.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a fn-body-local destructuring ` +
+                `rename of '${info50.original}' from '${info50.receiver}' defined in this fn body; calling ` +
+                `through the alias bypasses SYN004–SYN049 name-token checks; call '${info50.original}' directly ` +
+                `so the relevant SYN check fires, or wrap in ` +
+                `unsafe "calls ${info50.original} via destructured alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn050.rule,
+              idiom: syn050.idiom,
+              rewrite: syn050.rewrite,
             });
           }
         }
