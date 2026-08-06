@@ -2541,9 +2541,10 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             }
           } else {
             // No parens — fire only if preceded by `new` (bare construction: `new XMLHttpRequest`)
-            // or followed by `?.` (optional call form handled above)
+            // or followed by `?.` (optional call form handled above),
+            // or it's a paren-grouped call: (XMLHttpRequest)(url) / new (XMLHttpRequest)(url).
             if (afterXhr && afterXhr.kind === "punct" && afterXhr.text === ".") continue;
-            if (!isNewExpr9) continue;
+            if (!isNewExpr9 && resolveParenGroupedCallIdx(tokens, i) === null) continue;
           }
 
           if (isInsideRange(tok.start, unsafeRanges)) continue;
@@ -2726,8 +2727,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx12 = nextSignificant(tokens, j);
           }
 
-          const callTok12 = tokens[callIdx12];
-          if (!callTok12 || !(callTok12.kind === "open" && callTok12.text === "(")) continue;
+          let callTok12 = tokens[callIdx12];
+          if (!callTok12 || !(callTok12.kind === "open" && callTok12.text === "(")) {
+            const parenIdx12 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx12 === null) continue;
+            callIdx12 = parenIdx12;
+            callTok12 = tokens[callIdx12]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { EventSource(url) { } } / { EventSource(url): T; }
           if (callTok12.matchedAt !== undefined) {
@@ -2847,8 +2853,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx13 = nextSignificant(tokens, j);
           }
 
-          const callTok13 = tokens[callIdx13];
-          if (!callTok13 || !(callTok13.kind === "open" && callTok13.text === "(")) continue;
+          let callTok13 = tokens[callIdx13];
+          if (!callTok13 || !(callTok13.kind === "open" && callTok13.text === "(")) {
+            const parenIdx13 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx13 === null) continue;
+            callIdx13 = parenIdx13;
+            callTok13 = tokens[callIdx13]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { Worker(url) { } } / { Worker(url): T; }
           if (callTok13.matchedAt !== undefined) {
@@ -2961,8 +2972,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             }
           }
 
-          const callTok14 = tokens[callIdx14];
-          if (!callTok14 || !(callTok14.kind === "open" && callTok14.text === "(")) continue;
+          let callTok14 = tokens[callIdx14];
+          if (!callTok14 || !(callTok14.kind === "open" && callTok14.text === "(")) {
+            const parenIdx14 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx14 === null) continue;
+            callIdx14 = parenIdx14;
+            callTok14 = tokens[callIdx14]!;
+          }
 
           // Exclude method shorthands and TS method signatures.
           // Guard `:` check against ternary consequents.

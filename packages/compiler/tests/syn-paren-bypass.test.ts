@@ -5,9 +5,10 @@
  * `fetch(url)` and `eval(code)` at runtime but bypass token-level SYN checks
  * because the ident is not immediately followed by `(`.
  *
- * Fixed in SYN004, SYN007, SYN008, SYN010 via `resolveParenGroupedCallIdx`.
- * The remaining SYN cases (SYN009, SYN012–SYN036) still have this gap and
- * are documented as known; this file tracks what IS fixed.
+ * Fixed in SYN004, SYN007, SYN008, SYN009, SYN010, SYN012, SYN013, SYN014
+ * via `resolveParenGroupedCallIdx`.
+ * The remaining SYN cases (SYN011, SYN015–SYN036) still have this gap where
+ * applicable; this file tracks what IS fixed.
  */
 
 import { describe, expect, it } from "vitest";
@@ -225,5 +226,183 @@ describe("SYN010 paren-grouped bypass", () => {
       "  return unsafe \"deferred effect\" { (setTimeout)(cb, 100) }\n" +
       "}\n";
     expect(transform(src).warnings.some((w) => w.code === "SYN010")).toBe(false);
+  });
+});
+
+// ── SYN009: (XMLHttpRequest)() ────────────────────────────────────────────────
+
+describe("SYN009 paren-grouped bypass", () => {
+  it("fires on (XMLHttpRequest)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return (XMLHttpRequest)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("fires on new (XMLHttpRequest)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new (XMLHttpRequest)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("fires on ((XMLHttpRequest))(url) — double paren", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return ((XMLHttpRequest))(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("still fires on direct new XMLHttpRequest() — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return new XMLHttpRequest()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN009")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return unsafe \"wraps XHR\" { (XMLHttpRequest)(url) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN009")).toBe(false);
+  });
+});
+
+// ── SYN012: (EventSource)() ──────────────────────────────────────────────────
+
+describe("SYN012 paren-grouped bypass", () => {
+  it("fires on (EventSource)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return (EventSource)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN012")).toBe(true);
+  });
+
+  it("fires on new (EventSource)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new (EventSource)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN012")).toBe(true);
+  });
+
+  it("still fires on direct new EventSource(url) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new EventSource(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN012")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return unsafe \"wraps SSE\" { (EventSource)(url) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN012")).toBe(false);
+  });
+});
+
+// ── SYN013: (Worker)() / (SharedWorker)() ────────────────────────────────────
+
+describe("SYN013 paren-grouped bypass", () => {
+  it("fires on new (Worker)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new (Worker)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("fires on (Worker)(url) — without new", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return (Worker)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("fires on new (SharedWorker)(url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new (SharedWorker)(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("still fires on direct new Worker(url) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return new Worker(url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN013")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return unsafe \"spawns worker\" { new (Worker)(url) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN013")).toBe(false);
+  });
+});
+
+// ── SYN014: (BroadcastChannel)() ─────────────────────────────────────────────
+
+describe("SYN014 paren-grouped bypass", () => {
+  it("fires on (BroadcastChannel)(name)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(name: string) -> any {\n" +
+      "  return (BroadcastChannel)(name)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN014")).toBe(true);
+  });
+
+  it("fires on new (BroadcastChannel)(name)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(name: string) -> any {\n" +
+      "  return new (BroadcastChannel)(name)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN014")).toBe(true);
+  });
+
+  it("still fires on direct new BroadcastChannel(name) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(name: string) -> any {\n" +
+      "  return new BroadcastChannel(name)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN014")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(name: string) -> any {\n" +
+      "  return unsafe \"cross-tab channel\" { (BroadcastChannel)(name) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN014")).toBe(false);
   });
 });
