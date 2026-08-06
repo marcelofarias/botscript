@@ -568,6 +568,29 @@
  *           (`alias.member` or `alias?.member`) for any member in SYN041_DANGEROUS_MEMBERS
  *           inside any fn body. `unsafe {}` blocks suppressed.
  *
+ *   SYN053  A fn-body assignment-expression alias of a SYN-guarded global is called in the
+ *           same fn body (?bs 0.7+). `let f; f = fetch` inside a fn body followed by `f(url)`
+ *           bypasses SYN004–SYN052: SYN048 fires on `const/let/var f = fetch` declarations
+ *           inside fn bodies, and SYN051 fires on module-scope assignment aliases, but a bare
+ *           assignment expression inside a fn body is tracked by neither. SYN053 closes this
+ *           remaining gap. Detection: per-fn-body pre-pass scans assignment expressions
+ *           (`<ident> = <guarded>`, not preceded by `const`/`let`/`var` or `.`/`?.`/`]`)
+ *           inside each fn body (excluding nested fn bodies); fires when the alias is called
+ *           (next significant token is `(` or `?.`) in the same fn body. `unsafe {}` suppressed.
+ *
+ *   SYN054  A fn-body assignment-expression alias of a global receiver object (`globalThis`,
+ *           `window`, `self`) is used as a member-access receiver for a SYN041-dangerous
+ *           member in the same fn body (?bs 0.7+). `let g; g = globalThis` inside a fn body
+ *           followed by `g.fetch(url)` bypasses SYN041–SYN053: SYN049 fires on
+ *           `const/let/var g = globalThis` declarations inside fn bodies, and SYN052 fires on
+ *           module-scope assignment aliases, but a bare assignment expression inside a fn body
+ *           is tracked by neither. SYN054 closes this remaining gap. Detection: per-fn-body
+ *           pre-pass scans assignment expressions (`<ident> = <receiver-global>`, not preceded
+ *           by `const`/`let`/`var` or `.`/`?.`/`]`) inside each fn body (excluding nested fn
+ *           bodies); fires when the alias appears as a member-access receiver (`alias.member`
+ *           or `alias?.member`) for any member in SYN041_DANGEROUS_MEMBERS in the same fn
+ *           body. `unsafe {}` blocks suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -752,6 +775,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn050 = getErrorCode("SYN050")!;
   const syn051 = getErrorCode("SYN051")!;
   const syn052 = getErrorCode("SYN052")!;
+  const syn053 = getErrorCode("SYN053")!;
+  const syn054 = getErrorCode("SYN054")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1050,6 +1075,118 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
   }
 
+  // SYN053: pre-pass — collect fn-body assignment-expression aliases of guarded globals.
+  // SYN048 covers `const/let/var f = fetch` declarations inside fn bodies.
+  // SYN051 covers module-scope assignment-expression aliases (`let f; f = fetch` at module level).
+  // SYN053 closes the remaining gap: bare assignment expressions inside fn bodies (`f = fetch`).
+  const localGuardedAssignAliases53 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart53 = decl.bodyTokenStart ?? decl.tokenStart;
+    const bodyEnd53 = decl.tokenEnd;
+    const nestedRanges53 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localAssignAliases53 = new Map<string, string>();
+    for (let ai = bodyStart53; ai < bodyEnd53; ai++) {
+      const atok = tokens[ai];
+      if (!atok || atok.kind !== "ident") continue;
+      if (nestedRanges53.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      // Next must be `=` (not `==`, `===`, `+=`, etc.)
+      const eqAi53 = nextSignificant(tokens, ai + 1);
+      const eqTok53 = tokens[eqAi53];
+      if (!eqTok53 || eqTok53.kind !== "eq") continue;
+      // Skip if preceded by `const`/`let`/`var` (SYN048 handles declaration form).
+      const prevAi53 = prevSignificant(tokens, ai - 1);
+      const prevTok53 = tokens[prevAi53];
+      if (prevTok53 && prevTok53.kind === "ident" &&
+          (prevTok53.text === "const" || prevTok53.text === "let" || prevTok53.text === "var")) continue;
+      // Skip member-write LHS: `obj.f = fetch` (preceded by `.` or `?.`).
+      if (prevTok53 && ((prevTok53.kind === "punct" && prevTok53.text === ".") || prevTok53.kind === "questionDot")) continue;
+      // Skip subscript-write LHS: `arr[0] = fetch` (preceded by `]`).
+      if (prevTok53 && prevTok53.kind === "close" && prevTok53.text === "]") continue;
+      // RHS: must be a bare guarded-global ident (no call, no member access).
+      const rhsAi53 = nextSignificant(tokens, eqAi53 + 1);
+      const rhsTok53 = tokens[rhsAi53];
+      if (!rhsTok53 || rhsTok53.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(rhsTok53.text)) continue;
+      const afterRhsAi53 = nextSignificant(tokens, rhsAi53 + 1);
+      const afterRhs53 = tokens[afterRhsAi53];
+      if (afterRhs53 && afterRhs53.kind === "punct" && afterRhs53.text === ".") continue;
+      if (afterRhs53 && afterRhs53.kind === "questionDot") continue;
+      if (afterRhs53 && afterRhs53.kind === "open" && afterRhs53.text === "(") continue;
+      // Only track if SYN048 didn't already capture this alias via declaration.
+      const fnLocalAliases48ForDecl = localGuardedAliases48.get(decl);
+      if (!fnLocalAliases48ForDecl || !fnLocalAliases48ForDecl.has(atok.text)) {
+        localAssignAliases53.set(atok.text, rhsTok53.text);
+      }
+    }
+    if (localAssignAliases53.size > 0) {
+      localGuardedAssignAliases53.set(decl, localAssignAliases53);
+    }
+  }
+
+  // SYN054: pre-pass — collect fn-body assignment-expression aliases of global receiver objects.
+  // SYN049 covers `const/let/var g = globalThis` declarations inside fn bodies.
+  // SYN052 covers module-scope assignment-expression aliases (`let g; g = globalThis` at module level).
+  // SYN054 closes the remaining gap: bare assignment expressions inside fn bodies (`g = globalThis`).
+  const localReceiverAssignAliases54 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart54 = decl.bodyTokenStart ?? decl.tokenStart;
+    const bodyEnd54 = decl.tokenEnd;
+    const nestedRanges54 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localReceiverAssign54 = new Map<string, string>();
+    for (let ai = bodyStart54; ai < bodyEnd54; ai++) {
+      const atok = tokens[ai];
+      if (!atok || atok.kind !== "ident") continue;
+      if (nestedRanges54.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      const eqAi54 = nextSignificant(tokens, ai + 1);
+      const eqTok54 = tokens[eqAi54];
+      if (!eqTok54 || eqTok54.kind !== "eq") continue;
+      const prevAi54 = prevSignificant(tokens, ai - 1);
+      const prevTok54 = tokens[prevAi54];
+      if (prevTok54 && prevTok54.kind === "ident" &&
+          (prevTok54.text === "const" || prevTok54.text === "let" || prevTok54.text === "var")) continue;
+      if (prevTok54 && ((prevTok54.kind === "punct" && prevTok54.text === ".") || prevTok54.kind === "questionDot")) continue;
+      if (prevTok54 && prevTok54.kind === "close" && prevTok54.text === "]") continue;
+      const rhsAi54 = nextSignificant(tokens, eqAi54 + 1);
+      const rhsTok54 = tokens[rhsAi54];
+      if (!rhsTok54 || rhsTok54.kind !== "ident") continue;
+      if (!SYN045_RECEIVER_GLOBALS.has(rhsTok54.text)) continue;
+      const afterRhsAi54 = nextSignificant(tokens, rhsAi54 + 1);
+      const afterRhs54 = tokens[afterRhsAi54];
+      if (afterRhs54 && afterRhs54.kind === "punct" && afterRhs54.text === ".") continue;
+      if (afterRhs54 && afterRhs54.kind === "questionDot") continue;
+      // Only track if SYN049 didn't already capture this via declaration.
+      const fnLocalReceiver49ForDecl = localReceiverAliases49.get(decl);
+      if (!fnLocalReceiver49ForDecl || !fnLocalReceiver49ForDecl.has(atok.text)) {
+        localReceiverAssign54.set(atok.text, rhsTok54.text);
+      }
+    }
+    if (localReceiverAssign54.size > 0) {
+      localReceiverAssignAliases54.set(decl, localReceiverAssign54);
+    }
+  }
+
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
@@ -1066,6 +1203,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const fnLocalAliases48 = localGuardedAliases48.get(decl);
     const fnLocalReceiver49 = localReceiverAliases49.get(decl);
     const fnLocalDestruct50 = localDestructAliases50.get(decl);
+    const fnLocalAssignAliases53 = localGuardedAssignAliases53.get(decl);
+    const fnLocalReceiverAssign54 = localReceiverAssignAliases54.get(decl);
 
     // Single dispatch loop: nesting bookkeeping runs once per token position.
     // All SYN checks are dispatched via a switch on tok.text after an ident guard.
@@ -1340,6 +1479,94 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               idiom: syn050.idiom,
               rewrite: syn050.rewrite,
             });
+          }
+        }
+      }
+
+      // ── SYN053: fn-body assignment-expression alias of guarded global called in same fn body ──
+      // Must run BEFORE the switch for the same reason as SYN048.
+      if (fnLocalAssignAliases53 && fnLocalAssignAliases53.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx53 = nextSignificant(tokens, i + 1);
+        const next53 = tokens[nextIdx53];
+        const isCall53 =
+          next53 &&
+          ((next53.kind === "open" && next53.text === "(") || next53.kind === "questionDot");
+        if (isCall53) {
+          const prevIdx53 = prevSignificant(tokens, i - 1);
+          const prev53 = tokens[prevIdx53];
+          const isMemberAccess53 =
+            prev53 &&
+            ((prev53.kind === "punct" && prev53.text === ".") || prev53.kind === "questionDot");
+          const isDecl53 =
+            prev53 &&
+            ((prev53.kind === "keyword" && prev53.text === "fn") ||
+              (prev53.kind === "ident" &&
+                (prev53.text === "function" ||
+                  prev53.text === "const" ||
+                  prev53.text === "let" ||
+                  prev53.text === "var")));
+          if (!isMemberAccess53 && !isDecl53) {
+            const origGlobal53 = fnLocalAssignAliases53.get(tok.text)!;
+            const loc53 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN053",
+              severity: "warning",
+              file: null,
+              line: loc53.line,
+              column: loc53.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a fn-body assignment alias of ` +
+                `the guarded global '${origGlobal53}' (set via assignment expression inside this fn body, not a declaration); ` +
+                `calling through the alias bypasses SYN004–SYN052 name-token checks; ` +
+                `call '${origGlobal53}' directly so the relevant SYN check fires, ` +
+                `or wrap in unsafe "calls ${origGlobal53} via assignment alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn053.rule,
+              idiom: syn053.idiom,
+              rewrite: syn053.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN054: fn-body assignment-expression alias of receiver used as member-access receiver ──
+      // Must run BEFORE the switch for the same reason as SYN049.
+      if (fnLocalReceiverAssign54 && fnLocalReceiverAssign54.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx54 = nextSignificant(tokens, i + 1);
+        const next54 = tokens[nextIdx54];
+        const isDot54 = next54 && next54.kind === "punct" && next54.text === ".";
+        const isOptChain54 = next54 && next54.kind === "questionDot";
+        if (isDot54 || isOptChain54) {
+          const prevIdx54 = prevSignificant(tokens, i - 1);
+          const prev54 = tokens[prevIdx54];
+          const isMemberTarget54 = prev54 && ((prev54.kind === "punct" && prev54.text === ".") || prev54.kind === "questionDot");
+          if (!isMemberTarget54) {
+            const memberIdx54 = nextSignificant(tokens, nextIdx54 + 1);
+            const memberTok54 = tokens[memberIdx54];
+            if (memberTok54 && memberTok54.kind === "ident" && SYN041_DANGEROUS_MEMBERS.has(memberTok54.text)) {
+              const origReceiver54 = fnLocalReceiverAssign54.get(tok.text)!;
+              const sep54 = isOptChain54 ? "?." : ".";
+              const loc54 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN054",
+                severity: "warning",
+                file: null,
+                line: loc54.line,
+                column: loc54.column,
+                start: tok.start,
+                end: memberTok54.end,
+                message:
+                  `fn '${decl.name}' accesses ${tok.text}${sep54}${memberTok54.text} — '${tok.text}' is a ` +
+                  `fn-body assignment alias of the global receiver '${origReceiver54}' (set via assignment expression inside this fn body); ` +
+                  `the alias is not in the SYN041 receiver watch-list, so '${tok.text}${sep54}${memberTok54.text}' ` +
+                  `bypasses SYN041–SYN053; access '${origReceiver54}${sep54}${memberTok54.text}' directly so SYN041 fires, ` +
+                  `or wrap in unsafe "uses ${memberTok54.text} via aliased ${origReceiver54} for <reason>" { ${tok.text}${sep54}${memberTok54.text} }`,
+                rule: syn054.rule,
+                idiom: syn054.idiom,
+                rewrite: syn054.rewrite,
+              });
+            }
           }
         }
       }
