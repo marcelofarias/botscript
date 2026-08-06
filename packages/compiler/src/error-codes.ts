@@ -4012,6 +4012,98 @@ const E: Record<string, ErrorCodeEntry> = {
       "?bs 0.7\n" +
       "fn now() intent: \"pure\" -> number = pure { time.now() }  // INT002 would fire here",
   },
+  SYN051: {
+    code: "SYN051",
+    title: "module-scope assignment-expression alias of a guarded global called in a fn body bypasses SYN004–SYN050",
+    rule:
+      "`let f; f = fetch` at module scope followed by `f(url)` inside a fn body bypasses SYN004–SYN050: " +
+      "all prior checks fire on the guarded identifier token at the call site, but `f` is not in any watch-list. " +
+      "SYN044 catches the `const/let/var f = fetch` declaration form; SYN051 closes the bare assignment gap: " +
+      "a pre-pass scans module-scope assignment expressions (`<ident> = <guarded>`, not preceded by `const`/`let`/`var`) " +
+      "and fires when the alias is called (next significant token is `(` or `?.`) in any fn body. " +
+      "Member-access calls (`obj.f()`), declaration sites, and `unsafe {}` blocks are suppressed.",
+    idiom:
+      "call the guarded global directly so the relevant SYN check fires; if the alias is genuinely needed, " +
+      "wrap the call in `unsafe \"calls <global> via assignment alias for <reason>\" { f(...) }`",
+    rewrite:
+      "// before — let f at module scope; f = fetch then f(url) in fn body bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "let f: typeof fetch\n" +
+      "f = fetch\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return f(url)  // SYN051\n" +
+      "}\n\n" +
+      "// after — call fetch directly; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN051: let f at module scope; f = fetch (assignment, not declaration); f() bypasses SYN007\n" +
+      "?bs 0.7\n" +
+      "let f: typeof fetch\n" +
+      "f = fetch\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return f(url)  // SYN051 — f is a module-scope assignment alias of fetch\n" +
+      "}\n\n" +
+      "// SYN051: f = eval; f() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "let f: typeof eval\n" +
+      "f = eval\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  return f(code)  // SYN051\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly (then SYN007/SYN004 fires)\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
+  SYN052: {
+    code: "SYN052",
+    title: "module-scope assignment-expression alias of a global receiver used as member-access receiver bypasses SYN041–SYN050",
+    rule:
+      "`let g; g = globalThis` (or `window`, `self`) at module scope followed by `g.fetch(url)` inside a fn body " +
+      "bypasses SYN041–SYN050: those checks fire on the literal receiver tokens (`globalThis`, `window`, `self`) " +
+      "and prior alias checks fire on `const/let/var`-declared aliases, but `g` assigned via a bare expression " +
+      "is not in any receiver watch-list. " +
+      "SYN045 catches the `const/let/var g = globalThis` declaration form; SYN052 closes the bare assignment gap: " +
+      "a pre-pass scans module-scope assignment expressions (`<ident> = <receiver-global>`, not preceded by `const`/`let`/`var`) " +
+      "and fires when the alias appears as a member-access receiver (`g.member` or `g?.member`) for a dangerous " +
+      "member in the SYN041 watch-list inside any fn body. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "access dangerous globals via their canonical receiver token (`globalThis.X`, `window.X`) so SYN041 " +
+      "fires; better still, use the botscript stdlib capability equivalent with an explicit `uses {}` declaration",
+    rewrite:
+      "// before — let g at module scope; g = globalThis then g.fetch() in fn body bypasses SYN041\n" +
+      "?bs 0.7\n" +
+      "let g: typeof globalThis\n" +
+      "g = globalThis\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return g.fetch(url)  // SYN052\n" +
+      "}\n\n" +
+      "// after — use stdlib; SYN007 fires if uses { net } is missing\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+    example:
+      "// SYN052: let g at module scope; g = globalThis (assignment); g.fetch() bypasses SYN041\n" +
+      "?bs 0.7\n" +
+      "let g: typeof globalThis\n" +
+      "g = globalThis\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return g.fetch(url)  // SYN052 — g is an assignment alias of globalThis\n" +
+      "}\n\n" +
+      "// SYN052: g = window; g.eval() bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "let g: typeof window\n" +
+      "g = window\n" +
+      "fn execute(code: string) -> any {\n" +
+      "  return g.eval(code)  // SYN052\n" +
+      "}\n\n" +
+      "// fix: use the botscript stdlib or access via canonical receiver\n" +
+      "fn load(url: string) uses { net } -> any {\n" +
+      "  return http.get(url)\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
