@@ -633,6 +633,32 @@ function isFunctionStarDecl(tokens: Token[], starIdx: number): boolean {
   return !!(prev && prev.kind === "ident" && prev.text === "function");
 }
 
+/**
+ * Resolve the call-open-paren for an ident token at `identIdx`, handling
+ * paren-grouped calls: `(fetch)(url)`, `((eval))(code)`, etc.
+ *
+ * Returns the index of the call `(` if the ident at `identIdx` is the sole
+ * content of one or more grouping parens that are then immediately called;
+ * returns null otherwise.
+ *
+ * Only handles the grouping form — `?.` and generic `<T>` type params are
+ * handled per-case before falling through to this helper.
+ */
+function resolveParenGroupedCallIdx(tokens: Token[], identIdx: number): number | null {
+  // Scan forward from the token immediately after the ident.
+  // If the sequence is `)...)(`, the ident is inside a paren group that is called.
+  let scanIdx = nextSignificant(tokens, identIdx + 1);
+  // Must start with a closing paren (the group ends right after the ident).
+  if (!tokens[scanIdx] || tokens[scanIdx]!.kind !== "close" || tokens[scanIdx]!.text !== ")") return null;
+  // Skip all consecutive closing parens — handles `((fetch))(url)`.
+  while (tokens[scanIdx]?.kind === "close" && tokens[scanIdx]?.text === ")") {
+    scanIdx = nextSignificant(tokens, scanIdx + 1);
+  }
+  // What follows must be a `(` call.
+  if (tokens[scanIdx]?.kind === "open" && tokens[scanIdx]?.text === "(") return scanIdx;
+  return null;
+}
+
 export interface SynCheckResult {
   code: string;
   warnings: ReadonlyArray<Diagnostic>;
@@ -2029,8 +2055,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (afterGeneric4 && afterGeneric4.kind === "open" && afterGeneric4.text === "(")
               callIdx4 = afterGenericIdx4;
           }
-          const callTok4 = tokens[callIdx4];
-          if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
+          let callTok4 = tokens[callIdx4];
+          if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) {
+            const parenIdx4 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx4 === null) continue;
+            callIdx4 = parenIdx4;
+            callTok4 = tokens[callIdx4]!;
+          }
 
           // Exclude declarations: `function eval(params) {}`, method shorthands, etc.
           if (callTok4.matchedAt !== undefined) {
@@ -2100,8 +2131,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             if (afterGeneric4 && afterGeneric4.kind === "open" && afterGeneric4.text === "(")
               callIdx4 = afterGenericIdx4;
           }
-          const callTok4 = tokens[callIdx4];
-          if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) continue;
+          let callTok4 = tokens[callIdx4];
+          if (!callTok4 || !(callTok4.kind === "open" && callTok4.text === "(")) {
+            const parenIdx4 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx4 === null) continue;
+            callIdx4 = parenIdx4;
+            callTok4 = tokens[callIdx4]!;
+          }
 
           // Exclude declarations and method shorthands. Guard `:` against ternary.
           if (callTok4.matchedAt !== undefined) {
@@ -2291,8 +2327,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             isOpt7 = true;
             callIdx7 = nextSignificant(tokens, nextIdx7 + 1);
           }
-          const callTok7 = tokens[callIdx7];
-          if (!callTok7 || !(callTok7.kind === "open" && callTok7.text === "(")) continue;
+          let callTok7 = tokens[callIdx7];
+          if (!callTok7 || !(callTok7.kind === "open" && callTok7.text === "(")) {
+            const parenIdx7 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx7 === null) continue;
+            callIdx7 = parenIdx7;
+            callTok7 = tokens[callIdx7]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { fetch(url) { } } / { fetch(url): T; }
           // Guard the `:` check against ternary consequents: `cond ? fetch(url) : other`
@@ -2384,8 +2425,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx8 = nextSignificant(tokens, j);
           }
 
-          const callTok8 = tokens[callIdx8];
-          if (!callTok8 || !(callTok8.kind === "open" && callTok8.text === "(")) continue;
+          let callTok8 = tokens[callIdx8];
+          if (!callTok8 || !(callTok8.kind === "open" && callTok8.text === "(")) {
+            const parenIdx8 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx8 === null) continue;
+            callIdx8 = parenIdx8;
+            callTok8 = tokens[callIdx8]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { WebSocket(url) { ... } } / { WebSocket(url): T; }
           // Guard the `:` check against ternary consequents: `cond ? WebSocket(url) : other`
@@ -5041,7 +5087,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             afterIdx10 = nextSignificant(tokens, afterIdx10 + 1);
             afterTok10 = tokens[afterIdx10];
           }
-          if (!afterTok10 || !(afterTok10.kind === "open" && afterTok10.text === "(")) continue;
+          if (!afterTok10 || !(afterTok10.kind === "open" && afterTok10.text === "(")) {
+            const parenIdx10 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx10 === null) continue;
+            afterIdx10 = parenIdx10;
+            afterTok10 = tokens[afterIdx10]!;
+          }
 
           // Exclude method shorthands and class methods: { setTimeout(fn) { ... } }
           const closeParenIdx10 = afterTok10.matchedAt;
