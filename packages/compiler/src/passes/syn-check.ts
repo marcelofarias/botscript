@@ -621,6 +621,15 @@
  *           `eval` or `Function` (not preceded by `.`/`?.`) is `kind==="template"`, the warning
  *           fires. `unsafe {}` blocks are suppressed.
  *
+ *   SYN058  `eval.constructor(...)` or `Function.constructor(...)` is called in a fn body (?bs 0.7+).
+ *           Every JavaScript function's `.constructor` property is `Function` — `eval.constructor`
+ *           and `Function.constructor` both return the Function constructor without using `eval`
+ *           or `Function` in a call position. SYN004 requires `eval`/`Function` to be followed
+ *           by `(`, `?.(`, `` ` ``, or `<T>(` — a trailing `.constructor` is none of these, so
+ *           the constructor-access form slips past detection. SYN058 closes the gap: when `eval`
+ *           or `Function` (bare, not a member access) is followed by `.constructor(` or
+ *           `?.constructor(` in a fn body, the warning fires. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -858,6 +867,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn055 = getErrorCode("SYN055")!;
   const syn056 = getErrorCode("SYN056")!;
   const syn057 = getErrorCode("SYN057")!;
+  const syn058 = getErrorCode("SYN058")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2069,6 +2079,45 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
             continue;
 
+          // ── SYN058: eval.constructor(...) — constructor-access bypass ────────
+          {
+            const dotIdx58e = nextSignificant(tokens, i + 1);
+            const dot58e = tokens[dotIdx58e];
+            const isDot58e = dot58e && dot58e.kind === "punct" && dot58e.text === ".";
+            const isOptDot58e = dot58e && dot58e.kind === "questionDot";
+            if (isDot58e || isOptDot58e) {
+              const memberIdx58e = nextSignificant(tokens, dotIdx58e + 1);
+              const member58e = tokens[memberIdx58e];
+              if (member58e && member58e.kind === "ident" && member58e.text === "constructor") {
+                const callIdx58e = nextSignificant(tokens, memberIdx58e + 1);
+                const callTok58e = tokens[callIdx58e];
+                if (callTok58e && callTok58e.kind === "open" && callTok58e.text === "(" &&
+                    !isInsideRange(tok.start, unsafeRanges)) {
+                  const sep58e = isOptDot58e ? "?." : ".";
+                  const loc58e = locationOf(src, tok.start);
+                  warnings.push({
+                    code: "SYN058",
+                    severity: "warning",
+                    file: null,
+                    line: loc58e.line,
+                    column: loc58e.column,
+                    start: tok.start,
+                    end: callTok58e.start + 1,
+                    message:
+                      `fn '${decl.name}' calls eval${sep58e}constructor(...) — ` +
+                      "eval.constructor is the Function constructor; this creates a new function " +
+                      "from a string and bypasses SYN004 call-detection; refactor to explicit " +
+                      "code or wrap in unsafe \"reason\" { eval.constructor(...) }",
+                    rule: syn058.rule,
+                    idiom: syn058.idiom,
+                    rewrite: syn058.rewrite,
+                  });
+                  break;
+                }
+              }
+            }
+          }
+
           // ── SYN057: eval`...` — tagged-template-literal bypass ──────────────
           {
             const tmplTok57 = tokens[nextSignificant(tokens, i + 1)];
@@ -2170,6 +2219,45 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: `obj.Function(...)` — preceded by `.` or `?.`
           if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
             continue;
+
+          // ── SYN058: Function.constructor(...) — constructor-access bypass ────
+          {
+            const dotIdx58f = nextSignificant(tokens, i + 1);
+            const dot58f = tokens[dotIdx58f];
+            const isDot58f = dot58f && dot58f.kind === "punct" && dot58f.text === ".";
+            const isOptDot58f = dot58f && dot58f.kind === "questionDot";
+            if (isDot58f || isOptDot58f) {
+              const memberIdx58f = nextSignificant(tokens, dotIdx58f + 1);
+              const member58f = tokens[memberIdx58f];
+              if (member58f && member58f.kind === "ident" && member58f.text === "constructor") {
+                const callIdx58f = nextSignificant(tokens, memberIdx58f + 1);
+                const callTok58f = tokens[callIdx58f];
+                if (callTok58f && callTok58f.kind === "open" && callTok58f.text === "(" &&
+                    !isInsideRange(tok.start, unsafeRanges)) {
+                  const sep58f = isOptDot58f ? "?." : ".";
+                  const loc58f = locationOf(src, tok.start);
+                  warnings.push({
+                    code: "SYN058",
+                    severity: "warning",
+                    file: null,
+                    line: loc58f.line,
+                    column: loc58f.column,
+                    start: tok.start,
+                    end: callTok58f.start + 1,
+                    message:
+                      `fn '${decl.name}' calls Function${sep58f}constructor(...) — ` +
+                      "Function.constructor is the Function constructor; this creates a new " +
+                      "function from a string and bypasses SYN004 call-detection; refactor to " +
+                      "explicit code or wrap in unsafe \"reason\" { Function.constructor(...) }",
+                    rule: syn058.rule,
+                    idiom: syn058.idiom,
+                    rewrite: syn058.rewrite,
+                  });
+                  break;
+                }
+              }
+            }
+          }
 
           // ── SYN057: Function`...` — tagged-template-literal bypass ──────────
           {

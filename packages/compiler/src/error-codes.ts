@@ -4319,6 +4319,49 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { eval`${code}` }",
   },
+
+  SYN058: {
+    code: "SYN058",
+    title: "eval.constructor(...) or Function.constructor(...) bypasses SYN004 call-syntax detection",
+    rule:
+      "Every JavaScript function's `.constructor` property is `Function` — so `eval.constructor` " +
+      "and `Function.constructor` both return the `Function` constructor without spelling out " +
+      "`Function` or `eval` in a call position. SYN004 requires `eval` or `Function` to be " +
+      "followed by `(`, `?.(`, `` ` ``, or `<T>(` — a trailing `.constructor` is none of these, " +
+      "so the constructor-access form slips past detection. The constructed function is still " +
+      "executed as code at runtime, carrying all the same capability-bypass risks as " +
+      "`eval(src)` or `new Function(body)`. " +
+      "SYN058 closes this gap: when `eval` or `Function` (bare, not a member access) is " +
+      "followed by `.constructor(` or `?.constructor(` in a fn body, the warning fires. " +
+      "`unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the constructor form is genuinely required, wrap in `unsafe \"reason\" { eval.constructor(...) }`",
+    rewrite:
+      "// before — eval.constructor bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval.constructor(code)()  // SYN058\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN058: eval.constructor bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval.constructor(code)()  // SYN058 — eval.constructor is Function\n" +
+      "}\n\n" +
+      "// SYN058: Function.constructor also bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn build(body: string) -> any {\n" +
+      "  return Function.constructor(body)()  // SYN058\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { eval.constructor(code)() }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
