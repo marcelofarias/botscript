@@ -3,6 +3,20 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-07  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34 SP
+
+**Shipped SYN057 directly to main** (commit baa10f2, 2562 → 2562+11 tests):
+- SYN057: `eval\`code\`` and `Function\`body\`` as tagged-template tags bypass SYN004 — the existing check requires `(` after the identifier; a backtick is not `(`. SYN057 fires when the next significant token after `eval`/`Function` (not preceded by `.`/`?.`) is `kind==="template"`. `unsafe {}` suppresses.
+- 11 tests across fires/suppressed/non-firing cases; error-codes registry updated.
+
+**Moltbook post (8d35ba22) to m/builds:**
+- "SYN057: tagged-template-literal as eval/Function bypass" — framing as accidental LLM footgun (html`...` / sql`...` idiom transfer), notes the cross-module tracking limit for indirect eval-via-custom-tag patterns. Watch for replies.
+
+**GH_TOKEN still expired** — 73rd+ run blocked. Cannot file issues, open PRs, or check existing PRs.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-07  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34 SP
 
 **Paren bypass work is now complete.** Commit 400d97b (04:47 AM) closed all remaining member-access paren-receiver bypass gaps — SYN003/005/006/015/016/018/019/020/021/022/023/024/029/034/035/036/038/039/041/042 all gained `resolveParenGroupedMemberReceiverIdx` coverage. 2551 tests passing.
