@@ -3198,8 +3198,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx17 = nextSignificant(tokens, j);
           }
 
-          const callTok17 = tokens[callIdx17];
-          if (!callTok17 || !(callTok17.kind === "open" && callTok17.text === "(")) continue;
+          let callTok17 = tokens[callIdx17];
+          if (!callTok17 || !(callTok17.kind === "open" && callTok17.text === "(")) {
+            const parenIdx17 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx17 === null) continue;
+            callIdx17 = parenIdx17;
+            callTok17 = tokens[callIdx17]!;
+          }
 
           // Exclude method shorthands and TS method signatures.
           if (callTok17.matchedAt !== undefined) {
@@ -3926,7 +3931,12 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             afterIdxRaf = nextSignificant(tokens, afterIdxRaf + 1);
             afterTokRaf = tokens[afterIdxRaf];
           }
-          if (!afterTokRaf || !(afterTokRaf.kind === "open" && afterTokRaf.text === "(")) continue;
+          if (!afterTokRaf || !(afterTokRaf.kind === "open" && afterTokRaf.text === "(")) {
+            const parenIdxRaf = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdxRaf === null) continue;
+            afterIdxRaf = parenIdxRaf;
+            afterTokRaf = tokens[afterIdxRaf]!;
+          }
 
           // Exclude method shorthands and class methods
           const closeParenIdxRaf = afterTokRaf.matchedAt;
@@ -4005,8 +4015,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx27 = nextSignificant(tokens, j);
           }
 
-          const callTok27 = tokens[callIdx27];
-          if (!callTok27 || !(callTok27.kind === "open" && callTok27.text === "(")) continue;
+          let callTok27 = tokens[callIdx27];
+          if (!callTok27 || !(callTok27.kind === "open" && callTok27.text === "(")) {
+            const parenIdx27 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx27 === null) continue;
+            callIdx27 = parenIdx27;
+            callTok27 = tokens[callIdx27]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { MutationObserver(cb) { } } / { MutationObserver(cb): T; }
           if (callTok27.matchedAt !== undefined) {
@@ -4110,8 +4125,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx28 = nextSignificant(tokens, j);
           }
 
-          const callTok28 = tokens[callIdx28];
-          if (!callTok28 || !(callTok28.kind === "open" && callTok28.text === "(")) continue;
+          let callTok28 = tokens[callIdx28];
+          if (!callTok28 || !(callTok28.kind === "open" && callTok28.text === "(")) {
+            const parenIdx28 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx28 === null) continue;
+            callIdx28 = parenIdx28;
+            callTok28 = tokens[callIdx28]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { Proxy(t, h) { } } / { Proxy(t, h): T; }
           if (callTok28.matchedAt !== undefined) {
@@ -4188,8 +4208,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx30 = nextSignificant(tokens, j);
           }
 
-          const callTok30 = tokens[callIdx30];
-          if (!callTok30 || !(callTok30.kind === "open" && callTok30.text === "(")) continue;
+          let callTok30 = tokens[callIdx30];
+          if (!callTok30 || !(callTok30.kind === "open" && callTok30.text === "(")) {
+            const parenIdx30 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx30 === null) continue;
+            callIdx30 = parenIdx30;
+            callTok30 = tokens[callIdx30]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { FinalizationRegistry(cb) { } } / { FinalizationRegistry(cb): T; }
           if (callTok30.matchedAt !== undefined) {
@@ -4266,8 +4291,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx31 = nextSignificant(tokens, j);
           }
 
-          const callTok31 = tokens[callIdx31];
-          if (!callTok31 || !(callTok31.kind === "open" && callTok31.text === "(")) continue;
+          let callTok31 = tokens[callIdx31];
+          if (!callTok31 || !(callTok31.kind === "open" && callTok31.text === "(")) {
+            const parenIdx31 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx31 === null) continue;
+            callIdx31 = parenIdx31;
+            callTok31 = tokens[callIdx31]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { MessageChannel() { } } / { MessageChannel(): T; }
           if (callTok31.matchedAt !== undefined) {
@@ -4344,8 +4374,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             callIdx32 = nextSignificant(tokens, j);
           }
 
-          const callTok32 = tokens[callIdx32];
-          if (!callTok32 || !(callTok32.kind === "open" && callTok32.text === "(")) continue;
+          let callTok32 = tokens[callIdx32];
+          if (!callTok32 || !(callTok32.kind === "open" && callTok32.text === "(")) {
+            const parenIdx32 = resolveParenGroupedCallIdx(tokens, i);
+            if (parenIdx32 === null) continue;
+            callIdx32 = parenIdx32;
+            callTok32 = tokens[callIdx32]!;
+          }
 
           // Exclude method shorthands and TS method signatures: { RTCPeerConnection() { } } / { RTCPeerConnection(): T; }
           if (callTok32.matchedAt !== undefined) {

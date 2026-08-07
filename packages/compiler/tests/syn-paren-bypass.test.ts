@@ -5,10 +5,11 @@
  * `fetch(url)` and `eval(code)` at runtime but bypass token-level SYN checks
  * because the ident is not immediately followed by `(`.
  *
- * Fixed in SYN004, SYN007, SYN008, SYN009, SYN010, SYN012, SYN013, SYN014
+ * Fixed in SYN004, SYN007, SYN008, SYN009, SYN010, SYN012, SYN013, SYN014,
+ * SYN017, SYN025, SYN026, SYN027, SYN028, SYN030, SYN031, SYN032
  * via `resolveParenGroupedCallIdx`.
- * The remaining SYN cases (SYN011, SYN015–SYN036) still have this gap where
- * applicable; this file tracks what IS fixed.
+ * The remaining SYN cases (SYN011, SYN015–SYN016, SYN018–SYN024, SYN029,
+ * SYN033–SYN036) still have this gap where applicable; this file tracks what IS fixed.
  */
 
 import { describe, expect, it } from "vitest";
@@ -404,5 +405,262 @@ describe("SYN014 paren-grouped bypass", () => {
       "  return unsafe \"cross-tab channel\" { (BroadcastChannel)(name) }\n" +
       "}\n";
     expect(transform(src).warnings.some((w) => w.code === "SYN014")).toBe(false);
+  });
+});
+
+// ── SYN017: (Notification)() ──────────────────────────────────────────────────
+
+describe("SYN017 paren-grouped bypass", () => {
+  it("fires on (Notification)(title)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(title: string) -> any {\n" +
+      "  return (Notification)(title)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
+
+  it("fires on new (Notification)(title)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(title: string) -> any {\n" +
+      "  return new (Notification)(title)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
+
+  it("still fires on direct new Notification(title) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(title: string) -> any {\n" +
+      "  return new Notification(title)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN017")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(title: string) -> any {\n" +
+      "  return unsafe \"sends browser notification\" { (Notification)(title) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN017")).toBe(false);
+  });
+});
+
+// ── SYN025: (requestAnimationFrame)() ────────────────────────────────────────
+
+describe("SYN025 paren-grouped bypass", () => {
+  it("fires on (requestAnimationFrame)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return (requestAnimationFrame)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN025")).toBe(true);
+  });
+
+  it("still fires on direct requestAnimationFrame(cb) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return requestAnimationFrame(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN025")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return unsafe \"schedules animation frame callback\" { (requestAnimationFrame)(cb) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN025")).toBe(false);
+  });
+});
+
+// ── SYN026: (requestIdleCallback)() ──────────────────────────────────────────
+
+describe("SYN026 paren-grouped bypass", () => {
+  it("fires on (requestIdleCallback)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return (requestIdleCallback)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN026")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return unsafe \"schedules idle callback\" { (requestIdleCallback)(cb) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN026")).toBe(false);
+  });
+});
+
+// ── SYN027: (MutationObserver)() / (IntersectionObserver)() ──────────────────
+
+describe("SYN027 paren-grouped bypass", () => {
+  it("fires on (MutationObserver)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return (MutationObserver)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("fires on new (IntersectionObserver)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return new (IntersectionObserver)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("still fires on direct new MutationObserver(cb) — no regression", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return new MutationObserver(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN027")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return unsafe \"observes DOM for changes\" { (MutationObserver)(cb) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN027")).toBe(false);
+  });
+});
+
+// ── SYN028: (Proxy)() ─────────────────────────────────────────────────────────
+
+describe("SYN028 paren-grouped bypass", () => {
+  it("fires on (Proxy)(target, handler)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(target: any, handler: any) -> any {\n" +
+      "  return (Proxy)(target, handler)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN028")).toBe(true);
+  });
+
+  it("fires on new (Proxy)(target, handler)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(target: any, handler: any) -> any {\n" +
+      "  return new (Proxy)(target, handler)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN028")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(target: any, handler: any) -> any {\n" +
+      "  return unsafe \"proxies target for logging\" { (Proxy)(target, handler) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN028")).toBe(false);
+  });
+});
+
+// ── SYN030: (FinalizationRegistry)() ─────────────────────────────────────────
+
+describe("SYN030 paren-grouped bypass", () => {
+  it("fires on (FinalizationRegistry)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return (FinalizationRegistry)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN030")).toBe(true);
+  });
+
+  it("fires on new (FinalizationRegistry)(cb)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return new (FinalizationRegistry)(cb)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN030")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(cb: any) -> any {\n" +
+      "  return unsafe \"registers GC callback for cleanup\" { (FinalizationRegistry)(cb) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN030")).toBe(false);
+  });
+});
+
+// ── SYN031: (MessageChannel)() ───────────────────────────────────────────────
+
+describe("SYN031 paren-grouped bypass", () => {
+  it("fires on (MessageChannel)()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return (MessageChannel)()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN031")).toBe(true);
+  });
+
+  it("fires on new (MessageChannel)()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return new (MessageChannel)()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN031")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return unsafe \"creates message channel for IPC\" { (MessageChannel)() }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN031")).toBe(false);
+  });
+});
+
+// ── SYN032: (RTCPeerConnection)() ────────────────────────────────────────────
+
+describe("SYN032 paren-grouped bypass", () => {
+  it("fires on (RTCPeerConnection)(config)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(config: any) -> any {\n" +
+      "  return (RTCPeerConnection)(config)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN032")).toBe(true);
+  });
+
+  it("fires on new (RTCPeerConnection)(config)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(config: any) -> any {\n" +
+      "  return new (RTCPeerConnection)(config)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN032")).toBe(true);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(config: any) -> any {\n" +
+      "  return unsafe \"opens WebRTC peer connection for video\" { (RTCPeerConnection)(config) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN032")).toBe(false);
   });
 });
