@@ -388,15 +388,19 @@
  *
  *   SYN037  A SYN-guarded global is invoked via `.call()`, `.apply()`, or `.bind()` in
  *           a fn body (?bs 0.7+). Expressions like `fetch.call(null, url)`,
- *           `WebSocket.apply(null, [url])`, or `setTimeout.bind(null)(fn, ms)` invoke
- *           the guarded global without using its name as the call-site token —
- *           SYN007–SYN036 switch on the callee name and therefore cannot fire. The
- *           same undeclared capability (network, timer, etc.) is exercised at runtime.
+ *           `WebSocket.apply(null, [url])`, `Function.call(null, body)`, or
+ *           `setTimeout.bind(null)(fn, ms)` invoke the guarded global without using its
+ *           name as the call-site token — SYN007–SYN036 switch on the callee name and
+ *           therefore cannot fire. The same undeclared capability (network, timer, etc.)
+ *           is exercised at runtime. `(eval).call(null, code)` and `(fetch).call(null,
+ *           url)` — paren-grouped receiver forms — are also detected.
  *           Detection: when token is `call`/`apply`/`bind`, look back through `.`/`?.`
- *           to the receiver; if the receiver is a SYN-guarded global name not itself
- *           preceded by `.`/`?.`, and the method is followed by `(`/`?.(`, warn SYN037.
+ *           to the receiver; resolve through paren groups (e.g. `(eval)`) to the ident;
+ *           if the ident is a SYN-guarded global not itself preceded by `.`/`?.`, and
+ *           the method is followed by `(`/`?.(`, warn SYN037.
  *           Excluded: `obj.fetch.call(...)` (receiver is a member, not a bare global),
- *           fn/function declarations named `call`/`apply`/`bind`.
+ *           `(obj.eval).call(...)` (paren-wrapped member), fn/function declarations
+ *           named `call`/`apply`/`bind`.
  *           `unsafe {}` blocks and `unsafe "reason" fn` bodies are suppressed.
  *
  *   SYN038  A property write to `globalThis`, `window`, or `self` was detected in a fn body
@@ -783,6 +787,7 @@ const SYN037_GUARDED_GLOBALS = new Set([
   "Proxy",              // SYN035
   "Reflect",            // SYN042
   "eval",               // SYN004
+  "Function",           // SYN004
   "postMessage",        // SYN027
   "addEventListener",   // SYN030
   "setTimeout",         // SYN010
@@ -4732,8 +4737,23 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             continue;
 
           // Look back to the receiver — must be a SYN-guarded global name.
-          const receiverIdx37 = prevSignificant(tokens, prevIdx37 - 1);
-          const receiver37 = tokens[receiverIdx37];
+          const receiverIdx37raw = prevSignificant(tokens, prevIdx37 - 1);
+          let receiver37 = tokens[receiverIdx37raw];
+          let receiverIdx37 = receiverIdx37raw;
+
+          // Paren-grouped bypass: `(eval).call(null, code)` — receiver is `)`, not a bare ident.
+          // Walk back through paren groups to find the actual receiver ident.
+          if (receiver37 && receiver37.kind === "close" && receiver37.text === ")") {
+            let scanBack = receiverIdx37raw;
+            while (tokens[scanBack]?.kind === "close" && tokens[scanBack]?.text === ")") {
+              scanBack = prevSignificant(tokens, scanBack - 1);
+            }
+            if (tokens[scanBack]?.kind === "ident") {
+              receiver37 = tokens[scanBack]!;
+              receiverIdx37 = scanBack;
+            }
+          }
+
           if (!receiver37 || receiver37.kind !== "ident") continue;
           if (!SYN037_GUARDED_GLOBALS.has(receiver37.text)) continue;
 

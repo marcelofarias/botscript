@@ -192,4 +192,88 @@ describe("SYN037 — guarded global .call()/.apply()/.bind() bypass (?bs 0.7+)",
     const syn037s = result.warnings.filter((w) => w.code === "SYN037");
     expect(syn037s.length).toBeGreaterThanOrEqual(2);
   });
+
+  // ── Function.call / Function.apply / Function.bind ────────────────────────
+
+  it("fires SYN037 on Function.call(null, body)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(body: string) -> any {\n" +
+      "  return Function.call(null, body)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("fires SYN037 on Function.apply(null, [body])", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(body: string) -> any {\n" +
+      "  return Function.apply(null, [body])\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("fires SYN037 on (Function).call(null, body) — paren+missing-global combined", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(body: string) -> any {\n" +
+      "  return (Function).call(null, body)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  // ── paren-grouped receiver bypass ─────────────────────────────────────────
+
+  it("fires on (eval).call(null, code) — paren-grouped receiver", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return (eval).call(null, code)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("fires on (fetch).call(null, url) — paren-grouped receiver", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn load(url: string) -> void {\n" +
+      "  (fetch).call(null, url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("fires on ((eval)).apply(null, [code]) — double paren-grouped receiver", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return ((eval)).apply(null, [code])\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("fires on (WebSocket).bind(null) — paren-grouped receiver", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return (WebSocket).bind(null)(url)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(true);
+  });
+
+  it("does NOT fire on (obj.eval).call(null, code) — member in parens, not bare global", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(sandbox: any, code: string) -> any {\n" +
+      "  return (sandbox.eval).call(null, code)\n" +
+      "}\n";
+    const result = compile(src);
+    expect(result.warnings.some((w) => w.code === "SYN037")).toBe(false);
+  });
 });

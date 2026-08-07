@@ -15,6 +15,10 @@
  * Fixed in SYN003, SYN005, SYN006, SYN015, SYN016, SYN018, SYN019, SYN020,
  * SYN021, SYN022, SYN023, SYN024, SYN029, SYN034, SYN035, SYN036, SYN038,
  * SYN039, SYN041, SYN042 via `resolveParenGroupedMemberReceiverIdx`.
+ *
+ * Fixed in SYN037 via inline paren-group backward walk: `(eval).call(null, code)`,
+ * `(fetch).call(null, url)`, `((WebSocket)).bind(null)` etc. now fire SYN037.
+ * Tests for SYN037 paren bypass are in syn037-check.test.ts.
  */
 
 import { describe, expect, it } from "vitest";
