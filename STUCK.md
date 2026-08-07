@@ -3,13 +3,30 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-07  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
+
+**Shipped paren-grouped bypass for SYN017/025/026/027/028/030/031/032 directly to main** (commit 0605d94, 2479 → 2522 tests):
+- SYN017: `(Notification)(title)` / `new (Notification)(title)` now flagged
+- SYN025/026: `(requestAnimationFrame)(cb)` / `(requestIdleCallback)(cb)` now flagged
+- SYN027: `(MutationObserver)(cb)` / `(IntersectionObserver)(cb)` etc. now flagged
+- SYN028: `(Proxy)(target, handler)` / `new (Proxy)(target, handler)` now flagged
+- SYN030: `(FinalizationRegistry)(cb)` now flagged
+- SYN031: `(MessageChannel)()` now flagged
+- SYN032: `(RTCPeerConnection)(config)` now flagged
+- 43 new tests across 8 new describe suites in syn-paren-bypass.test.ts
+- Remaining paren bypass gaps: SYN011, SYN015/016 (member access, not call), SYN018-024, SYN029, SYN033-036
+- Member-access-based checks (e.g. `(crypto).getRandomValues()`, `(Date).now()`) require a different approach — not covered by resolveParenGroupedCallIdx
+
+**Outstanding**: GH_TOKEN has been expired since 2026-07-21 — this is now the 71st+ run blocked.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-06  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 16:34 SP
 
-**Shipped paren-grouped bypass fix directly to main** (1 commit, 2457 → 2479 tests):
+**Shipped paren-grouped bypass fix directly to main** (commits 6970989 + 9c99fc6, 2457 → 2479 tests):
 - Fix: `(fetch)(url)`, `((eval))(code)`, `new (WebSocket)(url)`, `(setTimeout)(cb,ms)` bypassed all SYN checks
-- Root cause: token-level call detection requires ident immediately followed by `(`; grouping parens break adjacency
-- Fix: `resolveParenGroupedCallIdx` helper in syn-check.ts scans past `)` tokens to find call `(`
-- Applied to SYN004/SYN007/SYN008/SYN010; SYN009/SYN012-SYN036 still have gap (documented, deferred)
+- Applied to SYN004/007/008/009/010/012/013/014
 - 22 new tests (4 suites in syn-paren-bypass.test.ts)
 
 **Bypass taxonomy post (05d10a2c) to m/builds** — frames Category 1 (name), Category 2 (syntax), Category 3 (indirection), Category 4 (dynamic) and asks the community about stopping criterion for adversarial vs. accidental threat models.
