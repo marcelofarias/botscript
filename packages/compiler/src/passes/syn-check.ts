@@ -659,6 +659,27 @@ function resolveParenGroupedCallIdx(tokens: Token[], identIdx: number): number |
   return null;
 }
 
+/**
+ * Detect paren-receiver bypass for member-access checks.
+ * `(Math).random()`, `(localStorage).getItem()`, `((crypto)).getRandomValues()` etc. place
+ * the receiver ident inside a paren group then access a member — bypassing token-level
+ * "ident not preceded by `.`" guards that expect direct access.
+ *
+ * Returns the index of the `.` or `?.` token if the ident is inside `(ident)` and that
+ * group is immediately followed by a member-access operator; returns null otherwise.
+ */
+function resolveParenGroupedMemberReceiverIdx(tokens: Token[], identIdx: number): number | null {
+  let scanIdx = nextSignificant(tokens, identIdx + 1);
+  if (!tokens[scanIdx] || tokens[scanIdx]!.kind !== "close" || tokens[scanIdx]!.text !== ")") return null;
+  while (tokens[scanIdx]?.kind === "close" && tokens[scanIdx]?.text === ")") {
+    scanIdx = nextSignificant(tokens, scanIdx + 1);
+  }
+  const tok = tokens[scanIdx];
+  if (tok && tok.kind === "punct" && tok.text === ".") return scanIdx;
+  if (tok && tok.kind === "questionDot") return scanIdx;
+  return null;
+}
+
 export interface SynCheckResult {
   code: string;
   warnings: ReadonlyArray<Diagnostic>;
@@ -1977,8 +1998,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             continue;
 
           // Must be followed by `.` or `?.` (member access).
-          const nextIdx = nextSignificant(tokens, i + 1);
-          const next = tokens[nextIdx];
+          let nextIdx = nextSignificant(tokens, i + 1);
+          let next = tokens[nextIdx];
+          // Paren-receiver bypass: `(console).log()` — resolve through paren group.
+          const parenDotIdx = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx !== null) { nextIdx = parenDotIdx; next = tokens[nextIdx]; }
           const isDot = next && next.kind === "punct" && next.text === ".";
           const isOptChain = next && next.kind === "questionDot";
           if (!isDot && !isOptChain) continue;
@@ -2189,8 +2213,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx5 = nextSignificant(tokens, i + 1);
-          const next5 = tokens[nextIdx5];
+          let nextIdx5 = nextSignificant(tokens, i + 1);
+          let next5 = tokens[nextIdx5];
+          // Paren-receiver bypass: `(process).env` — resolve through paren group.
+          const parenDotIdx5 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx5 !== null) { nextIdx5 = parenDotIdx5; next5 = tokens[nextIdx5]; }
           const isDot5 = next5 && next5.kind === "punct" && next5.text === ".";
           const isOptChain5 = next5 && next5.kind === "questionDot";
           if (!isDot5 && !isOptChain5) continue;
@@ -3068,8 +3095,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx15)) continue;
 
           // Must be followed by `.` or `?.` — confirming access on the global, not a bare reference
-          const nextIdx15 = nextSignificant(tokens, i + 1);
-          const next15 = tokens[nextIdx15];
+          let nextIdx15 = nextSignificant(tokens, i + 1);
+          let next15 = tokens[nextIdx15];
+          // Paren-receiver bypass: `(localStorage).getItem()` — resolve through paren group.
+          const parenDotIdx15 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx15 !== null) { nextIdx15 = parenDotIdx15; next15 = tokens[nextIdx15]; }
           const isDot15 = next15 && next15.kind === "punct" && next15.text === ".";
           const isOptChain15 = next15 && next15.kind === "questionDot";
           if (!isDot15 && !isOptChain15) continue;
@@ -3112,8 +3142,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx16)) continue;
 
           // Must be followed by `.` or `?.` — confirming this is an access on the global, not a bare reference
-          const nextIdx16 = nextSignificant(tokens, i + 1);
-          const next16 = tokens[nextIdx16];
+          let nextIdx16 = nextSignificant(tokens, i + 1);
+          let next16 = tokens[nextIdx16];
+          // Paren-receiver bypass: `(indexedDB).open()` — resolve through paren group.
+          const parenDotIdx16 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx16 !== null) { nextIdx16 = parenDotIdx16; next16 = tokens[nextIdx16]; }
           const isDot16 = next16 && next16.kind === "punct" && next16.text === ".";
           const isOptChain16 = next16 && next16.kind === "questionDot";
           if (!isDot16 && !isOptChain16) continue;
@@ -3327,8 +3360,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx18 = nextSignificant(tokens, i + 1);
-          const next18 = tokens[nextIdx18];
+          let nextIdx18 = nextSignificant(tokens, i + 1);
+          let next18 = tokens[nextIdx18];
+          // Paren-receiver bypass: `(Math).random()` — resolve through paren group.
+          const parenDotIdx18 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx18 !== null) { nextIdx18 = parenDotIdx18; next18 = tokens[nextIdx18]; }
           const isDot18 = next18 && next18.kind === "punct" && next18.text === ".";
           const isOptChain18 = next18 && next18.kind === "questionDot";
           if (!isDot18 && !isOptChain18) continue;
@@ -3387,8 +3423,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx19)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx19 = nextSignificant(tokens, i + 1);
-          const next19 = tokens[nextIdx19];
+          let nextIdx19 = nextSignificant(tokens, i + 1);
+          let next19 = tokens[nextIdx19];
+          // Paren-receiver bypass: `(crypto).getRandomValues()` — resolve through paren group.
+          const parenDotIdx19 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx19 !== null) { nextIdx19 = parenDotIdx19; next19 = tokens[nextIdx19]; }
           const isDot19 = next19 && next19.kind === "punct" && next19.text === ".";
           const isOptChain19 = next19 && next19.kind === "questionDot";
           if (!isDot19 && !isOptChain19) continue;
@@ -3454,8 +3493,13 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
           const hasNew20 = prev20 && prev20.kind === "ident" && prev20.text === "new";
 
-          const nextIdx20 = nextSignificant(tokens, i + 1);
-          const next20 = tokens[nextIdx20];
+          let nextIdx20 = nextSignificant(tokens, i + 1);
+          let next20 = tokens[nextIdx20];
+          // Paren-receiver bypass: `(Date).now()` — resolve through paren group (Pattern 1 only).
+          if (!hasNew20) {
+            const parenDotIdx20 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+            if (parenDotIdx20 !== null) { nextIdx20 = parenDotIdx20; next20 = tokens[nextIdx20]; }
+          }
 
           // ── Pattern 1: Date.now() / Date?.now() ──────────────────────────
           // Followed by `.` or `?.`, then `now`, then `(` or `?.(`.
@@ -3669,8 +3713,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx21)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx21 = nextSignificant(tokens, i + 1);
-          const next21 = tokens[nextIdx21];
+          let nextIdx21 = nextSignificant(tokens, i + 1);
+          let next21 = tokens[nextIdx21];
+          // Paren-receiver bypass: `(performance).now()` — resolve through paren group.
+          const parenDotIdx21 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx21 !== null) { nextIdx21 = parenDotIdx21; next21 = tokens[nextIdx21]; }
           const isDot21 = next21 && next21.kind === "punct" && next21.text === ".";
           const isOptChain21 = next21 && next21.kind === "questionDot";
           if (!isDot21 && !isOptChain21) continue;
@@ -3769,8 +3816,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx23)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx23 = nextSignificant(tokens, i + 1);
-          const next23 = tokens[nextIdx23];
+          let nextIdx23 = nextSignificant(tokens, i + 1);
+          let next23 = tokens[nextIdx23];
+          // Paren-receiver bypass: `(navigator).userAgent` — resolve through paren group.
+          const parenDotIdx23 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx23 !== null) { nextIdx23 = parenDotIdx23; next23 = tokens[nextIdx23]; }
           const isDot23 = next23 && next23.kind === "punct" && next23.text === ".";
           const isOptChain23 = next23 && next23.kind === "questionDot";
           if (!isDot23 && !isOptChain23) continue;
@@ -3821,8 +3871,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx24)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx24 = nextSignificant(tokens, i + 1);
-          const next24 = tokens[nextIdx24];
+          let nextIdx24 = nextSignificant(tokens, i + 1);
+          let next24 = tokens[nextIdx24];
+          // Paren-receiver bypass: `(document).cookie` / `(document).write()` — resolve through paren group.
+          const parenDotIdx24 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx24 !== null) { nextIdx24 = parenDotIdx24; next24 = tokens[nextIdx24]; }
           const isDot24 = next24 && next24.kind === "punct" && next24.text === ".";
           const isOptChain24 = next24 && next24.kind === "questionDot";
           if (!isDot24 && !isOptChain24) continue;
@@ -4433,8 +4486,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx34)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx34 = nextSignificant(tokens, i + 1);
-          const next34 = tokens[nextIdx34];
+          let nextIdx34 = nextSignificant(tokens, i + 1);
+          let next34 = tokens[nextIdx34];
+          // Paren-receiver bypass: `(location).href` — resolve through paren group.
+          const parenDotIdx34 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx34 !== null) { nextIdx34 = parenDotIdx34; next34 = tokens[nextIdx34]; }
           const isDot34 = next34 && next34.kind === "punct" && next34.text === ".";
           const isOptChain34 = next34 && next34.kind === "questionDot";
           if (!isDot34 && !isOptChain34) continue;
@@ -4488,8 +4544,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx35)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdx35 = nextSignificant(tokens, i + 1);
-          const next35 = tokens[nextIdx35];
+          let nextIdx35 = nextSignificant(tokens, i + 1);
+          let next35 = tokens[nextIdx35];
+          // Paren-receiver bypass: `(history).pushState()` — resolve through paren group.
+          const parenDotIdx35 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx35 !== null) { nextIdx35 = parenDotIdx35; next35 = tokens[nextIdx35]; }
           const isDot35 = next35 && next35.kind === "punct" && next35.text === ".";
           const isOptChain35 = next35 && next35.kind === "questionDot";
           if (!isDot35 && !isOptChain35) continue;
@@ -4546,8 +4605,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdx36)) continue;
 
           // Must be followed by `.` or `?.` (member access on the WebAssembly namespace)
-          const nextIdx36 = nextSignificant(tokens, i + 1);
-          const next36 = tokens[nextIdx36];
+          let nextIdx36 = nextSignificant(tokens, i + 1);
+          let next36 = tokens[nextIdx36];
+          // Paren-receiver bypass: `(WebAssembly).instantiate()` — resolve through paren group.
+          const parenDotIdx36 = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdx36 !== null) { nextIdx36 = parenDotIdx36; next36 = tokens[nextIdx36]; }
           const isDot36 = next36 && next36.kind === "punct" && next36.text === ".";
           const isOptChain36 = next36 && next36.kind === "questionDot";
           if (!isDot36 && !isOptChain36) continue;
@@ -4680,8 +4742,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdxObj)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdxObj = nextSignificant(tokens, i + 1);
-          const nextObj = tokens[nextIdxObj];
+          let nextIdxObj = nextSignificant(tokens, i + 1);
+          let nextObj = tokens[nextIdxObj];
+          // Paren-receiver bypass: `(Object).defineProperty()` — resolve through paren group.
+          const parenDotIdxObj = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdxObj !== null) { nextIdxObj = parenDotIdxObj; nextObj = tokens[nextIdxObj]; }
           const isDotObj = nextObj && nextObj.kind === "punct" && nextObj.text === ".";
           const isOptChainObj = nextObj && nextObj.kind === "questionDot";
           if (!isDotObj && !isOptChainObj) continue;
@@ -4811,8 +4876,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (isFunctionStarDecl(tokens, prevIdxRef)) continue;
 
           // Must be followed by `.` or `?.`
-          const nextIdxRef = nextSignificant(tokens, i + 1);
-          const nextRef = tokens[nextIdxRef];
+          let nextIdxRef = nextSignificant(tokens, i + 1);
+          let nextRef = tokens[nextIdxRef];
+          // Paren-receiver bypass: `(Reflect).apply()` — resolve through paren group.
+          const parenDotIdxRef = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdxRef !== null) { nextIdxRef = parenDotIdxRef; nextRef = tokens[nextIdxRef]; }
           const isDotRef = nextRef && nextRef.kind === "punct" && nextRef.text === ".";
           const isOptChainRef = nextRef && nextRef.kind === "questionDot";
           if (!isDotRef && !isOptChainRef) continue;
@@ -4891,11 +4959,14 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prevGlob && prevGlob.kind === "ident" && prevGlob.text === "function") continue;
           if (isFunctionStarDecl(tokens, prevIdxGlob)) continue;
 
-          const nextIdxGlob = nextSignificant(tokens, i + 1);
-          const nextGlob = tokens[nextIdxGlob];
+          let nextIdxGlob = nextSignificant(tokens, i + 1);
+          let nextGlob = tokens[nextIdxGlob];
+          // Paren-receiver bypass: `(globalThis).fetch()` — resolve through paren group.
+          const parenDotIdxGlob = resolveParenGroupedMemberReceiverIdx(tokens, i);
+          if (parenDotIdxGlob !== null) { nextIdxGlob = parenDotIdxGlob; nextGlob = tokens[nextIdxGlob]; }
           const isDotGlob = nextGlob && nextGlob.kind === "punct" && nextGlob.text === ".";
           const isOptChainGlob = nextGlob && nextGlob.kind === "questionDot";
-          const isBracketGlob = nextGlob && nextGlob.kind === "open" && nextGlob.text === "[";
+          const isBracketGlob = !isDotGlob && !isOptChainGlob && nextGlob && nextGlob.kind === "open" && nextGlob.text === "[";
 
           // ── SYN043: computed string bracket access — globalThis['fetch'] etc. ──
           if (isBracketGlob) {

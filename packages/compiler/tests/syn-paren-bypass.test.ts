@@ -1,15 +1,20 @@
 /**
- * Tests for parenthesized-call bypass detection.
+ * Tests for parenthesized-call and paren-receiver bypass detection.
  *
  * `(fetch)(url)`, `((eval))(code)`, etc. are syntactically equivalent to
  * `fetch(url)` and `eval(code)` at runtime but bypass token-level SYN checks
  * because the ident is not immediately followed by `(`.
  *
+ * `(Math).random()`, `(localStorage).getItem()`, etc. bypass member-access checks
+ * because the receiver ident is not directly followed by `.` or `?.`.
+ *
  * Fixed in SYN004, SYN007, SYN008, SYN009, SYN010, SYN012, SYN013, SYN014,
  * SYN017, SYN025, SYN026, SYN027, SYN028, SYN030, SYN031, SYN032
  * via `resolveParenGroupedCallIdx`.
- * The remaining SYN cases (SYN011, SYN015–SYN016, SYN018–SYN024, SYN029,
- * SYN033–SYN036) still have this gap where applicable; this file tracks what IS fixed.
+ *
+ * Fixed in SYN003, SYN005, SYN006, SYN015, SYN016, SYN018, SYN019, SYN020,
+ * SYN021, SYN022, SYN023, SYN024, SYN029, SYN034, SYN035, SYN036, SYN038,
+ * SYN039, SYN041, SYN042 via `resolveParenGroupedMemberReceiverIdx`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -662,5 +667,302 @@ describe("SYN032 paren-grouped bypass", () => {
       "  return unsafe \"opens WebRTC peer connection for video\" { (RTCPeerConnection)(config) }\n" +
       "}\n";
     expect(transform(src).warnings.some((w) => w.code === "SYN032")).toBe(false);
+  });
+});
+
+// ── Paren-receiver bypass: (global).member — member-access checks ────────────
+//
+// These are a different bypass class from the paren-grouped call `(fetch)(url)`.
+// Here the receiver is wrapped in parens: `(Math).random()`, so the ident is
+// not directly followed by `.` and evades token-level member-access guards.
+// Fixed via `resolveParenGroupedMemberReceiverIdx`.
+
+describe("SYN003 paren-receiver bypass", () => {
+  it("fires on (console).log(x)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(x: string) -> void {\n" +
+      "  (console).log(x)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN003")).toBe(true);
+  });
+
+  it("fires on ((console)).warn(x) — double paren", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(x: string) -> void {\n" +
+      "  ((console)).warn(x)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN003")).toBe(true);
+  });
+
+  it("does not fire on (console) with no member access", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return (console)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN003")).toBe(false);
+  });
+});
+
+describe("SYN005 paren-receiver bypass", () => {
+  it("fires on (process).env", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  return (process).env\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN005")).toBe(true);
+  });
+});
+
+describe("SYN015 paren-receiver bypass", () => {
+  it("fires on (localStorage).getItem(key)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(key: string) -> any {\n" +
+      "  return (localStorage).getItem(key)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN015")).toBe(true);
+  });
+
+  it("fires on (sessionStorage).setItem(key, val)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(key: string, val: string) -> void {\n" +
+      "  (sessionStorage).setItem(key, val)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN015")).toBe(true);
+  });
+
+  it("fires on ((localStorage)).removeItem(key) — double paren", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(key: string) -> void {\n" +
+      "  ((localStorage)).removeItem(key)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN015")).toBe(true);
+  });
+
+  it("does not fire on (localStorage) with no member access", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> any {\n" +
+      "  const x = (localStorage)\n" +
+      "  return x\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(key: string) -> any {\n" +
+      "  return unsafe \"accesses localStorage for caching\" { (localStorage).getItem(key) }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN015")).toBe(false);
+  });
+});
+
+describe("SYN016 paren-receiver bypass", () => {
+  it("fires on (indexedDB).open(name)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(name: string) -> any {\n" +
+      "  return (indexedDB).open(name)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN016")).toBe(true);
+  });
+});
+
+describe("SYN018 paren-receiver bypass", () => {
+  it("fires on (Math).random()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return (Math).random()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN018")).toBe(true);
+  });
+
+  it("fires on ((Math)).random() — double paren", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return ((Math)).random()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN018")).toBe(true);
+  });
+
+  it("does not fire on (Math).abs(x) — non-random member", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(x: number) -> number {\n" +
+      "  return (Math).abs(x)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN018")).toBe(false);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return unsafe \"uses Math.random for game\" { (Math).random() }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN018")).toBe(false);
+  });
+});
+
+describe("SYN019 paren-receiver bypass", () => {
+  it("fires on (crypto).getRandomValues(arr)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(arr: Uint8Array) -> void {\n" +
+      "  (crypto).getRandomValues(arr)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+
+  it("fires on (crypto).randomUUID()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> string {\n" +
+      "  return (crypto).randomUUID()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN019")).toBe(true);
+  });
+});
+
+describe("SYN020 paren-receiver bypass", () => {
+  it("fires on (Date).now()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return (Date).now()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN020")).toBe(true);
+  });
+
+  it("fires on ((Date)).now() — double paren", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return ((Date)).now()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN020")).toBe(true);
+  });
+
+  it("does not fire on (Date).parse(str) — non-ambient member", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(str: string) -> number {\n" +
+      "  return (Date).parse(str)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN020")).toBe(false);
+  });
+
+  it("suppressed inside unsafe block", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return unsafe \"uses current time for logging\" { (Date).now() }\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN020")).toBe(false);
+  });
+});
+
+describe("SYN021 paren-receiver bypass", () => {
+  it("fires on (performance).now()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return (performance).now()\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN021")).toBe(true);
+  });
+
+  it("fires on (performance).timeOrigin", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> number {\n" +
+      "  return (performance).timeOrigin\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN021")).toBe(true);
+  });
+});
+
+describe("SYN023 paren-receiver bypass", () => {
+  it("fires on (navigator).userAgent", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> string {\n" +
+      "  return (navigator).userAgent\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN023")).toBe(true);
+  });
+});
+
+describe("SYN024 paren-receiver bypass", () => {
+  it("fires on (document).cookie", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> string {\n" +
+      "  return (document).cookie\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN024")).toBe(true);
+  });
+});
+
+describe("SYN029 paren-receiver bypass", () => {
+  it("fires on (document).write(html)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(html: string) -> void {\n" +
+      "  (document).write(html)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN029")).toBe(true);
+  });
+
+  it("fires on (document).writeln(html)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(html: string) -> void {\n" +
+      "  (document).writeln(html)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN029")).toBe(true);
+  });
+});
+
+describe("SYN034 paren-receiver bypass", () => {
+  it("fires on (location).href", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run() -> string {\n" +
+      "  return (location).href\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN034")).toBe(true);
+  });
+});
+
+describe("SYN035 paren-receiver bypass", () => {
+  it("fires on (history).pushState(state, title, url)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(state: any, title: string, url: string) -> void {\n" +
+      "  (history).pushState(state, title, url)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN035")).toBe(true);
+  });
+});
+
+describe("SYN036 paren-receiver bypass", () => {
+  it("fires on (WebAssembly).instantiate(bytes, imports)", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(bytes: any, imports: any) -> any {\n" +
+      "  return (WebAssembly).instantiate(bytes, imports)\n" +
+      "}\n";
+    expect(transform(src).warnings.some((w) => w.code === "SYN036")).toBe(true);
   });
 });
