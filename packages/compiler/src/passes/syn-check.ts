@@ -609,6 +609,14 @@
  *           `<ident> = <receiver-global>` default-value patterns; fires when the alias appears as a
  *           member-access receiver for any SYN041_DANGEROUS_MEMBERS member in the fn body.
  *
+ *   SYN057  `eval` or `Function` is used as a tagged-template tag in a fn body (?bs 0.7+).
+ *           `eval\`code\`` and `Function\`body\`` call the function with the template parts as
+ *           arguments — the template string is executed as code at runtime. SYN004 requires a
+ *           trailing `(` to fire; a bare backtick is not `(`, so the tagged-template form bypasses
+ *           detection. SYN057 closes the gap: when the immediate next significant token after
+ *           `eval` or `Function` (not preceded by `.`/`?.`) is `kind==="template"`, the warning
+ *           fires. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -844,6 +852,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn054 = getErrorCode("SYN054")!;
   const syn055 = getErrorCode("SYN055")!;
   const syn056 = getErrorCode("SYN056")!;
+  const syn057 = getErrorCode("SYN057")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2055,6 +2064,32 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
             continue;
 
+          // ── SYN057: eval`...` — tagged-template-literal bypass ──────────────
+          {
+            const tmplTok57 = tokens[nextSignificant(tokens, i + 1)];
+            if (tmplTok57 && tmplTok57.kind === "template" && !isInsideRange(tok.start, unsafeRanges)) {
+              const loc57 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN057",
+                severity: "warning",
+                file: null,
+                line: loc57.line,
+                column: loc57.column,
+                start: tok.start,
+                end: tmplTok57.end,
+                message:
+                  `fn '${decl.name}' uses eval as a tagged-template tag — ` +
+                  "eval`code` executes the template string as code, bypassing SYN004's " +
+                  "call-syntax detection; refactor to explicit code or wrap in " +
+                  'unsafe "reason" { eval(`...`) }',
+                rule: syn057.rule,
+                idiom: syn057.idiom,
+                rewrite: syn057.rewrite,
+              });
+              break;
+            }
+          }
+
           // Must be followed by `(`, `?.(`, or `<T>(`.
           const nextIdx4 = nextSignificant(tokens, i + 1);
           const next4 = tokens[nextIdx4];
@@ -2130,6 +2165,32 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           // Exclude: `obj.Function(...)` — preceded by `.` or `?.`
           if (prev4 && ((prev4.kind === "punct" && prev4.text === ".") || prev4.kind === "questionDot"))
             continue;
+
+          // ── SYN057: Function`...` — tagged-template-literal bypass ──────────
+          {
+            const tmplTok57f = tokens[nextSignificant(tokens, i + 1)];
+            if (tmplTok57f && tmplTok57f.kind === "template" && !isInsideRange(tok.start, unsafeRanges)) {
+              const loc57f = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN057",
+                severity: "warning",
+                file: null,
+                line: loc57f.line,
+                column: loc57f.column,
+                start: tok.start,
+                end: tmplTok57f.end,
+                message:
+                  `fn '${decl.name}' uses Function as a tagged-template tag — ` +
+                  "Function`body` constructs and returns a new function from the template string, " +
+                  "bypassing SYN004's call-syntax detection; refactor to explicit code or wrap in " +
+                  'unsafe "reason" { Function(`...`) }',
+                rule: syn057.rule,
+                idiom: syn057.idiom,
+                rewrite: syn057.rewrite,
+              });
+              break;
+            }
+          }
 
           // Must be followed by `(`, `?.(`, or `<T>(`.
           const nextIdx4 = nextSignificant(tokens, i + 1);

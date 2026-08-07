@@ -4279,6 +4279,46 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return http.get(url)\n" +
       "}",
   },
+  SYN057: {
+    code: "SYN057",
+    title: "eval or Function used as a tagged-template tag bypasses SYN004 call-syntax detection",
+    rule:
+      "`eval\\`code\\`` and `Function\\`body\\`` are valid JavaScript: when a function appears " +
+      "immediately before a template literal without `()`, the function is called as a tagged-template " +
+      "handler with the template parts as its argument. SYN004 requires `eval` or `Function` to be " +
+      "followed by `(`, `?.(`, or `<T>(` — a bare backtick is not `(`, so the tagged-template form " +
+      "slips past detection. The template string is still executed as code at runtime, carrying all " +
+      "the same capability-bypass risks as `eval(src)` or `new Function(body)`. " +
+      "SYN057 closes this gap: when `eval` or `Function` is the tag of a template literal in a fn body, " +
+      "the warning fires. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the tagged-template form is genuinely required, wrap in `unsafe \"reason\" { eval\\`...\\` }`",
+    rewrite:
+      "// before — eval as tagged template bypasses SYN004\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval`${code}`  // SYN057\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN057: eval as tagged template\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval`${code}`  // SYN057 — tagged template bypasses SYN004\n" +
+      "}\n\n" +
+      "// SYN057: Function as tagged template\n" +
+      "?bs 0.7\n" +
+      "fn build(body: string) -> any {\n" +
+      "  return Function`return 42`()  // SYN057 — Function\\`...\\` constructs a fn from template\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { eval`${code}` }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
