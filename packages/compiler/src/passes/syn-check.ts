@@ -639,6 +639,18 @@
  *           not preceded by `.`/`?.`) is followed by `.prototype.constructor(` (each `.` may
  *           be `?.`) in a fn body, the warning fires. `unsafe {}` blocks are suppressed.
  *
+ *   SYN060  A function-expression literal's `.constructor(...)` is called in a fn body (?bs 0.7+).
+ *           Every JavaScript function's `.constructor` property is `Function` — so
+ *           `(()=>{}).constructor(code)()` and `(function(){}).constructor(code)()` both
+ *           execute arbitrary code, just like `new Function(code)()`. SYN004–SYN059 guard
+ *           the named idents `eval` and `Function`; when the receiver is an anonymous function
+ *           expression literal, none of those idents appear and the guarded-name checks are
+ *           invisible to this form. SYN060 closes the gap: when `)` closes a paren group
+ *           whose top-level content is a function expression (contains `=>` at the top level,
+ *           or the first significant token is the `function` keyword) and is immediately
+ *           followed by `.constructor(` or `?.constructor(` in a fn body, the warning fires.
+ *           `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -708,6 +720,44 @@ function resolveParenGroupedMemberReceiverIdx(tokens: Token[], identIdx: number)
   if (tok && tok.kind === "punct" && tok.text === ".") return scanIdx;
   if (tok && tok.kind === "questionDot") return scanIdx;
   return null;
+}
+
+/**
+ * Returns true if the token range (openIdx..closeIdx, exclusive) is a function expression:
+ * - Arrow function: `=>` appears at depth 0 within the group.
+ * - Function expression: first significant token is the `function` keyword.
+ * - Async arrow/function: `async` followed by `function` or a `=>` later in the group.
+ * Used by SYN060 to distinguish `(()=>{}).constructor(code)` from `(someObj).constructor(code)`.
+ */
+function isFunctionExpressionGroup(tokens: Token[], openIdx: number, closeIdx: number): boolean {
+  const firstIdx = nextSignificant(tokens, openIdx + 1);
+  const first = tokens[firstIdx];
+  if (!first || firstIdx >= closeIdx) return false;
+
+  // `function` keyword: (function() {}) or (function* () {})
+  // `function` is lexed as an ident in botscript (not in the KEYWORDS set).
+  if (first.kind === "ident" && first.text === "function") return true;
+
+  // `async` prefix: (async function() {}) or (async () => {})
+  // The fatArrow scan below will catch the async-arrow form; handle async-function here.
+  if (first.kind === "keyword" && first.text === "async") {
+    const nextIdx = nextSignificant(tokens, firstIdx + 1);
+    const next = tokens[nextIdx];
+    if (next && next.kind === "ident" && next.text === "function") return true;
+    // async arrow falls through to the fatArrow scan below
+  }
+
+  // Arrow function: look for `=>` at depth 0 between openIdx and closeIdx.
+  let depth = 0;
+  for (let j = openIdx + 1; j < closeIdx; j++) {
+    const t = tokens[j];
+    if (!t) continue;
+    if (t.kind === "open") { depth++; continue; }
+    if (t.kind === "close") { depth--; if (depth < 0) break; continue; }
+    if (depth === 0 && t.kind === "fatArrow") return true;
+  }
+
+  return false;
 }
 
 export interface SynCheckResult {
@@ -878,6 +928,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn057 = getErrorCode("SYN057")!;
   const syn058 = getErrorCode("SYN058")!;
   const syn059 = getErrorCode("SYN059")!;
+  const syn060 = getErrorCode("SYN060")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -5461,6 +5512,57 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             });
           }
 
+          break;
+        }
+
+        // ── SYN060: (fn-expr).constructor(...) — function-expression .constructor bypass ──
+        case "constructor": {
+          // Must be followed by `(` — a call, not a reference.
+          const callIdx60 = nextSignificant(tokens, i + 1);
+          const callTok60 = tokens[callIdx60];
+          if (!callTok60 || !(callTok60.kind === "open" && callTok60.text === "(")) continue;
+
+          // Must be preceded by `.` or `?.`.
+          const dotIdx60 = prevSignificant(tokens, i - 1);
+          const dot60 = tokens[dotIdx60];
+          const isDot60 = dot60 && dot60.kind === "punct" && dot60.text === ".";
+          const isOptDot60 = dot60 && dot60.kind === "questionDot";
+          if (!isDot60 && !isOptDot60) continue;
+
+          // What's before the dot: must be `)` closing a paren group.
+          const beforeDotIdx60 = prevSignificant(tokens, dotIdx60 - 1);
+          const beforeDot60 = tokens[beforeDotIdx60];
+          if (!beforeDot60 || beforeDot60.kind !== "close" || beforeDot60.text !== ")") continue;
+
+          // Get the matching open paren index via matchedAt (set by the lexer).
+          const openIdx60 = beforeDot60.matchedAt;
+          if (openIdx60 === undefined) continue;
+
+          // The paren group must contain a function expression.
+          if (!isFunctionExpressionGroup(tokens, openIdx60, beforeDotIdx60)) continue;
+
+          if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+          const sep60 = isOptDot60 ? "?." : ".";
+          const loc60 = locationOf(src, tokens[openIdx60]!.start);
+          warnings.push({
+            code: "SYN060",
+            severity: "warning",
+            file: null,
+            line: loc60.line,
+            column: loc60.column,
+            start: tokens[openIdx60]!.start,
+            end: callTok60.start + 1,
+            message:
+              `fn '${decl.name}' calls (fn-expr)${sep60}constructor(...) — ` +
+              "every function's .constructor is the Function constructor; " +
+              "this creates a new function from a string and bypasses SYN004–SYN059 " +
+              "(those guard 'eval' and 'Function' by name; anonymous function expressions don't spell either); " +
+              `refactor to explicit code or wrap in unsafe "reason" { (fn-expr)${sep60}constructor(...) }`,
+            rule: syn060.rule,
+            idiom: syn060.idiom,
+            rewrite: syn060.rewrite,
+          });
           break;
         }
 

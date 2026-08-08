@@ -4407,6 +4407,48 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { Function.prototype.constructor(code)() }",
   },
+  SYN060: {
+    code: "SYN060",
+    title: "(fn-expr).constructor(...) — function-expression .constructor bypasses SYN004–SYN059",
+    rule:
+      "Every JavaScript function's `.constructor` property is the `Function` constructor — so " +
+      "`(()=>{}).constructor(code)()` and `(function(){}).constructor(code)()` both create " +
+      "and execute arbitrary code at runtime, exactly like `new Function(code)()`. " +
+      "SYN004–SYN059 guard the named idents `eval` and `Function`, but when the receiver is " +
+      "an anonymous function expression literal, none of those idents appear in the source: " +
+      "the guarded-name checks are invisible to this form. SYN060 closes this gap: when `)` " +
+      "closes a paren group whose content is a function expression (arrow `=>` or `function` " +
+      "keyword at the top level of the group) and is immediately followed by `.constructor(` " +
+      "or `?.constructor(` in a fn body, the warning fires. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the function-expression constructor form is genuinely required, wrap in " +
+      "`unsafe \"reason\" { (()=>{}).constructor(...) }`",
+    rewrite:
+      "// before — function-expression .constructor bypasses SYN004–SYN059\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return (()=>{}).constructor(code)()  // SYN060\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN060: arrow-function .constructor bypasses SYN004–SYN059\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return (()=>{}).constructor(code)()  // SYN060\n" +
+      "}\n\n" +
+      "// SYN060: function-expression .constructor also fires\n" +
+      "?bs 0.7\n" +
+      "fn build(body: string) -> any {\n" +
+      "  return (function(){}).constructor(body)()  // SYN060\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { (()=>{}).constructor(code)() }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
