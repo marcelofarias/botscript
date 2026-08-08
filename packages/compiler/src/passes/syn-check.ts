@@ -630,6 +630,15 @@
  *           or `Function` (bare, not a member access) is followed by `.constructor(` or
  *           `?.constructor(` in a fn body, the warning fires. `unsafe {}` blocks are suppressed.
  *
+ *   SYN059  `eval.prototype.constructor(...)` or `Function.prototype.constructor(...)` is called
+ *           in a fn body (?bs 0.7+). The `.prototype` hop makes SYN058 miss this form: SYN058
+ *           looks for `.constructor(` immediately after the guarded ident, but `.prototype.`
+ *           inserts an intermediate member-access step. The result is identical —
+ *           `Function.prototype.constructor` evaluates to `Function` — so code execution bypass
+ *           is identical to SYN058. SYN059 closes this gap: when `eval` or `Function` (bare,
+ *           not preceded by `.`/`?.`) is followed by `.prototype.constructor(` (each `.` may
+ *           be `?.`) in a fn body, the warning fires. `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -868,6 +877,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn056 = getErrorCode("SYN056")!;
   const syn057 = getErrorCode("SYN057")!;
   const syn058 = getErrorCode("SYN058")!;
+  const syn059 = getErrorCode("SYN059")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2118,6 +2128,55 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             }
           }
 
+          // ── SYN059: eval.prototype.constructor(...) — two-hop bypass ────────
+          {
+            const dot59e1 = tokens[nextSignificant(tokens, i + 1)];
+            const isDot59e1 = dot59e1 && dot59e1.kind === "punct" && dot59e1.text === ".";
+            const isOptDot59e1 = dot59e1 && dot59e1.kind === "questionDot";
+            if (isDot59e1 || isOptDot59e1) {
+              const proto59eIdx = nextSignificant(tokens, (nextSignificant(tokens, i + 1)) + 1);
+              const proto59e = tokens[proto59eIdx];
+              if (proto59e && proto59e.kind === "ident" && proto59e.text === "prototype") {
+                const dot59e2Idx = nextSignificant(tokens, proto59eIdx + 1);
+                const dot59e2 = tokens[dot59e2Idx];
+                const isDot59e2 = dot59e2 && dot59e2.kind === "punct" && dot59e2.text === ".";
+                const isOptDot59e2 = dot59e2 && dot59e2.kind === "questionDot";
+                if (isDot59e2 || isOptDot59e2) {
+                  const ctor59eIdx = nextSignificant(tokens, dot59e2Idx + 1);
+                  const ctor59e = tokens[ctor59eIdx];
+                  if (ctor59e && ctor59e.kind === "ident" && ctor59e.text === "constructor") {
+                    const call59eIdx = nextSignificant(tokens, ctor59eIdx + 1);
+                    const call59e = tokens[call59eIdx];
+                    if (call59e && call59e.kind === "open" && call59e.text === "(" &&
+                        !isInsideRange(tok.start, unsafeRanges)) {
+                      const sep59e1 = isOptDot59e1 ? "?." : ".";
+                      const sep59e2 = isOptDot59e2 ? "?." : ".";
+                      const loc59e = locationOf(src, tok.start);
+                      warnings.push({
+                        code: "SYN059",
+                        severity: "warning",
+                        file: null,
+                        line: loc59e.line,
+                        column: loc59e.column,
+                        start: tok.start,
+                        end: call59e.start + 1,
+                        message:
+                          `fn '${decl.name}' calls eval${sep59e1}prototype${sep59e2}constructor(...) — ` +
+                          "Function.prototype.constructor is the Function constructor; " +
+                          "the .prototype hop bypasses SYN058's direct .constructor check; " +
+                          "refactor to explicit code or wrap in unsafe \"reason\" { eval.prototype.constructor(...) }",
+                        rule: syn059.rule,
+                        idiom: syn059.idiom,
+                        rewrite: syn059.rewrite,
+                      });
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           // ── SYN057: eval`...` — tagged-template-literal bypass ──────────────
           {
             const tmplTok57 = tokens[nextSignificant(tokens, i + 1)];
@@ -2254,6 +2313,55 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                     rewrite: syn058.rewrite,
                   });
                   break;
+                }
+              }
+            }
+          }
+
+          // ── SYN059: Function.prototype.constructor(...) — two-hop bypass ────
+          {
+            const dot59f1 = tokens[nextSignificant(tokens, i + 1)];
+            const isDot59f1 = dot59f1 && dot59f1.kind === "punct" && dot59f1.text === ".";
+            const isOptDot59f1 = dot59f1 && dot59f1.kind === "questionDot";
+            if (isDot59f1 || isOptDot59f1) {
+              const proto59fIdx = nextSignificant(tokens, (nextSignificant(tokens, i + 1)) + 1);
+              const proto59f = tokens[proto59fIdx];
+              if (proto59f && proto59f.kind === "ident" && proto59f.text === "prototype") {
+                const dot59f2Idx = nextSignificant(tokens, proto59fIdx + 1);
+                const dot59f2 = tokens[dot59f2Idx];
+                const isDot59f2 = dot59f2 && dot59f2.kind === "punct" && dot59f2.text === ".";
+                const isOptDot59f2 = dot59f2 && dot59f2.kind === "questionDot";
+                if (isDot59f2 || isOptDot59f2) {
+                  const ctor59fIdx = nextSignificant(tokens, dot59f2Idx + 1);
+                  const ctor59f = tokens[ctor59fIdx];
+                  if (ctor59f && ctor59f.kind === "ident" && ctor59f.text === "constructor") {
+                    const call59fIdx = nextSignificant(tokens, ctor59fIdx + 1);
+                    const call59f = tokens[call59fIdx];
+                    if (call59f && call59f.kind === "open" && call59f.text === "(" &&
+                        !isInsideRange(tok.start, unsafeRanges)) {
+                      const sep59f1 = isOptDot59f1 ? "?." : ".";
+                      const sep59f2 = isOptDot59f2 ? "?." : ".";
+                      const loc59f = locationOf(src, tok.start);
+                      warnings.push({
+                        code: "SYN059",
+                        severity: "warning",
+                        file: null,
+                        line: loc59f.line,
+                        column: loc59f.column,
+                        start: tok.start,
+                        end: call59f.start + 1,
+                        message:
+                          `fn '${decl.name}' calls Function${sep59f1}prototype${sep59f2}constructor(...) — ` +
+                          "Function.prototype.constructor is the Function constructor; " +
+                          "the .prototype hop bypasses SYN058's direct .constructor check; " +
+                          "refactor to explicit code or wrap in unsafe \"reason\" { Function.prototype.constructor(...) }",
+                        rule: syn059.rule,
+                        idiom: syn059.idiom,
+                        rewrite: syn059.rewrite,
+                      });
+                      break;
+                    }
+                  }
                 }
               }
             }

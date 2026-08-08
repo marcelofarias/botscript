@@ -4362,6 +4362,51 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { eval.constructor(code)() }",
   },
+
+  SYN059: {
+    code: "SYN059",
+    title: "eval.prototype.constructor(...) or Function.prototype.constructor(...) bypasses SYN058",
+    rule:
+      "`Function.prototype.constructor` evaluates to `Function` — so " +
+      "`Function.prototype.constructor(body)()` creates and executes arbitrary code " +
+      "just like `new Function(body)()`. SYN058 catches `eval.constructor(` and " +
+      "`Function.constructor(` but not the two-hop form where `.prototype.` is " +
+      "inserted between the guarded ident and `.constructor(`: SYN058 looks for " +
+      "`.constructor(` as the immediate next member after the ident, so " +
+      "`.prototype.constructor(` is invisible to it. The runtime behavior is " +
+      "identical — code execution from a string — and all the same capability-bypass " +
+      "risks apply. SYN059 closes this gap: when `eval` or `Function` (bare, not " +
+      "preceded by `.`/`?.`) is followed by `.prototype.constructor(` (each dot may " +
+      "be `?.`) in a fn body, the warning fires. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the prototype.constructor form is genuinely required, wrap in " +
+      "`unsafe \"reason\" { Function.prototype.constructor(...) }`",
+    rewrite:
+      "// before — Function.prototype.constructor bypasses SYN058\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Function.prototype.constructor(code)()  // SYN059\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN059: Function.prototype.constructor bypasses SYN058\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Function.prototype.constructor(code)()  // SYN059\n" +
+      "}\n\n" +
+      "// SYN059: eval.prototype.constructor also bypasses SYN058\n" +
+      "?bs 0.7\n" +
+      "fn build(body: string) -> any {\n" +
+      "  return eval.prototype.constructor(body)()  // SYN059\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { Function.prototype.constructor(code)() }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
