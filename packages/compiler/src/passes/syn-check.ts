@@ -662,6 +662,16 @@
  *           by `.constructor.constructor(` (each dot may be `?.`) in a fn body, the warning fires.
  *           `unsafe {}` blocks are suppressed.
  *
+ *   SYN062  An `Object.getPrototypeOf(expr).constructor(...)`, `Reflect.getPrototypeOf(expr).constructor(...)`,
+ *           or `expr.__proto__.constructor(...)` call was detected in a fn body (?bs 0.7+).
+ *           `Object.getPrototypeOf(fn)` and `Reflect.getPrototypeOf(fn)` both return `Function.prototype`;
+ *           `.constructor` on `Function.prototype` is the `Function` constructor itself, so
+ *           `.constructor(code)()` executes arbitrary code like `new Function(code)()`. The `__proto__`
+ *           read variant walks the same prototype chain. SYN004–SYN061 guard `eval`/`Function` by name,
+ *           fn-expression shape, and primitive-literal two-hop chains; prototype-navigation via
+ *           `getPrototypeOf`/`__proto__` spells none of those guarded forms. SYN062 closes the gap.
+ *           `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -941,6 +951,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn059 = getErrorCode("SYN059")!;
   const syn060 = getErrorCode("SYN060")!;
   const syn061 = getErrorCode("SYN061")!;
+  const syn062 = getErrorCode("SYN062")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -5626,6 +5637,99 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rewrite: syn061.rewrite,
             });
             break; // exit switch, continue outer loop
+          }
+
+          // ── SYN062: Object/Reflect.getPrototypeOf(expr).constructor(...) or
+          //            expr.__proto__.constructor(...) ─────────────────────────
+          syn062: {
+            // Must be followed by `(` — a call.
+            const callIdx62 = nextSignificant(tokens, i + 1);
+            const callTok62 = tokens[callIdx62];
+            if (!callTok62 || !(callTok62.kind === "open" && callTok62.text === "(")) break syn062;
+
+            // Must be preceded by `.` or `?.`.
+            const dotIdx62 = prevSignificant(tokens, i - 1);
+            const dot62 = tokens[dotIdx62];
+            const isDot62 = dot62 && dot62.kind === "punct" && dot62.text === ".";
+            const isOptDot62 = dot62 && dot62.kind === "questionDot";
+            if (!isDot62 && !isOptDot62) break syn062;
+
+            const beforeDotIdx62 = prevSignificant(tokens, dotIdx62 - 1);
+            const beforeDot62 = tokens[beforeDotIdx62];
+            if (!beforeDot62) break syn062;
+
+            const sep62 = isOptDot62 ? "?." : ".";
+
+            // ── Case A: expr.__proto__.constructor(...) ──────────────────────
+            if (beforeDot62.kind === "ident" && beforeDot62.text === "__proto__") {
+              if (isInsideRange(tok.start, unsafeRanges)) break syn062;
+              const loc62 = locationOf(src, beforeDot62.start);
+              warnings.push({
+                code: "SYN062",
+                severity: "warning",
+                file: null,
+                line: loc62.line,
+                column: loc62.column,
+                start: beforeDot62.start,
+                end: callTok62.start + 1,
+                message:
+                  `fn '${decl.name}' reads __proto__${sep62}constructor(...) — ` +
+                  "`__proto__` walks up the prototype chain; `.constructor` on `Function.prototype` is the `Function` constructor; " +
+                  "this creates a new function from a string and bypasses SYN004–SYN061; " +
+                  `refactor to explicit code or wrap in unsafe "reason" { target.__proto__${sep62}constructor(...) }`,
+                rule: syn062.rule,
+                idiom: syn062.idiom,
+                rewrite: syn062.rewrite,
+              });
+              break; // exit switch
+            }
+
+            // ── Case B: Object/Reflect.getPrototypeOf(expr).constructor(...) ─
+            // The token before `.constructor` is `)` closing a getPrototypeOf() call.
+            if (!(beforeDot62.kind === "close" && beforeDot62.text === ")")) break syn062;
+            const openIdx62 = beforeDot62.matchedAt;
+            if (openIdx62 === undefined) break syn062;
+
+            // Ident before `(` must be `getPrototypeOf`
+            const methodIdx62 = prevSignificant(tokens, openIdx62 - 1);
+            const method62 = tokens[methodIdx62];
+            if (!method62 || method62.kind !== "ident" || method62.text !== "getPrototypeOf") break syn062;
+
+            // Before `getPrototypeOf` must be `.` or `?.`
+            const dot2Idx62 = prevSignificant(tokens, methodIdx62 - 1);
+            const dot262 = tokens[dot2Idx62];
+            const isDot262 = dot262 && dot262.kind === "punct" && dot262.text === ".";
+            const isOptDot262 = dot262 && dot262.kind === "questionDot";
+            if (!isDot262 && !isOptDot262) break syn062;
+
+            // Before the dot must be `Object` or `Reflect`
+            const nsIdx62 = prevSignificant(tokens, dot2Idx62 - 1);
+            const ns62 = tokens[nsIdx62];
+            if (!ns62 || ns62.kind !== "ident" || (ns62.text !== "Object" && ns62.text !== "Reflect")) break syn062;
+
+            if (isInsideRange(tok.start, unsafeRanges)) break syn062;
+
+            const sep262 = isOptDot262 ? "?." : ".";
+            const loc62 = locationOf(src, ns62.start);
+            warnings.push({
+              code: "SYN062",
+              severity: "warning",
+              file: null,
+              line: loc62.line,
+              column: loc62.column,
+              start: ns62.start,
+              end: callTok62.start + 1,
+              message:
+                `fn '${decl.name}' calls ${ns62.text}${sep262}getPrototypeOf(...)${sep62}constructor(...) — ` +
+                `\`${ns62.text}.getPrototypeOf(fn)\` returns \`Function.prototype\`; ` +
+                "`.constructor` on `Function.prototype` is the `Function` constructor; " +
+                "this creates a new function from a string and bypasses SYN004–SYN061; " +
+                `refactor to explicit code or wrap in unsafe "reason" { ${ns62.text}${sep262}getPrototypeOf(...)${sep62}constructor(...) }`,
+              rule: syn062.rule,
+              idiom: syn062.idiom,
+              rewrite: syn062.rewrite,
+            });
+            break; // exit switch
           }
 
           // ── SYN060: (fn-expr).constructor(...) — function-expression .constructor bypass ──

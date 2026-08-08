@@ -4498,6 +4498,55 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { [].constructor.constructor(code)() }",
   },
+
+  SYN062: {
+    code: "SYN062",
+    title: "Object/Reflect.getPrototypeOf(expr).constructor(...) or __proto__.constructor(...) — prototype-navigation path reaches Function (?bs 0.7+)",
+    rule:
+      "`Object.getPrototypeOf(fn)` and `Reflect.getPrototypeOf(fn)` both return `Function.prototype`; " +
+      "calling `.constructor(...)` on `Function.prototype` invokes the `Function` constructor, " +
+      "which executes a string as code at runtime — exactly like `new Function(code)()`. " +
+      "Similarly, `expr.__proto__` walks the prototype chain, and `.constructor` on the result " +
+      "can reach `Function` the same way. " +
+      "SYN004–SYN061 guard `eval`/`Function` by name, fn-expression shape, primitive-literal two-hop " +
+      "chains, and `.prototype.constructor` on named idents; prototype-navigation via " +
+      "`Object.getPrototypeOf`/`Reflect.getPrototypeOf`/`__proto__` spells none of those guarded forms. " +
+      "SYN062 closes this gap: when `Object.getPrototypeOf(...).constructor(` (or the Reflect or " +
+      "`__proto__` variants) appears in a fn body, the warning fires. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the prototype-navigation form is genuinely required, wrap in " +
+      "`unsafe \"reason\" { Object.getPrototypeOf(...).constructor(...) }`",
+    rewrite:
+      "// before — getPrototypeOf().constructor bypasses SYN004–SYN061\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Object.getPrototypeOf(function(){}).constructor(code)()  // SYN062\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN062: Object.getPrototypeOf path reaches Function\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Object.getPrototypeOf(function(){}).constructor(code)()  // SYN062\n" +
+      "}\n\n" +
+      "// SYN062: Reflect.getPrototypeOf also fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Reflect.getPrototypeOf(function(){}).constructor(code)()  // SYN062\n" +
+      "}\n\n" +
+      "// SYN062: __proto__ read + .constructor also fires\n" +
+      "?bs 0.7\n" +
+      "fn run(x: any, code: string) -> any {\n" +
+      "  return x.__proto__.constructor(code)()  // SYN062\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { Object.getPrototypeOf(fn).constructor(code)() }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
