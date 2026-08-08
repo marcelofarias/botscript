@@ -1,17 +1,18 @@
 /**
- * Tests for SYN061: primitive-literal .constructor.constructor(...) — two-hop
- * constructor chain reaches Function, bypassing SYN004–SYN060 (?bs 0.7+).
+ * Tests for SYN061: expr.constructor.constructor(...) — two-hop constructor chain
+ * reaches Function, bypassing SYN004–SYN060 (?bs 0.7+).
  *
- * SYN061 fires when a primitive literal token (string, number, template, array
- * literal `]`, or boolean `true`/`false`) is immediately followed by
+ * SYN061 fires when ANY expression is immediately followed by
  * `.constructor.constructor(` (each dot may be `?.`) inside a fn body.
+ * Every JS value's .constructor is a constructor function, and every constructor
+ * function's .constructor is Function — so this two-hop chain always reaches Function.
  * `unsafe {}` blocks suppress the warning.
  */
 
 import { describe, expect, it } from "vitest";
 import { transform } from "../src/transform.js";
 
-describe("SYN061: primitive-literal .constructor.constructor bypass (0.7+)", () => {
+describe("SYN061: expr.constructor.constructor bypass (0.7+)", () => {
   // ── fires cases ──────────────────────────────────────────────────────────
 
   it("fires on [].constructor.constructor(code)()", () => {
@@ -126,17 +127,37 @@ describe("SYN061: primitive-literal .constructor.constructor bypass (0.7+)", () 
     expect(() => transform(src)).not.toThrow();
   });
 
-  // ── non-firing cases ─────────────────────────────────────────────────────
+  it("fires on ({}).constructor.constructor(code)()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return ({}).constructor.constructor(code)()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN061")).toBe(true);
+  });
 
-  it("does NOT fire on obj.constructor.constructor (non-primitive receiver)", () => {
+  it("fires on (function(){}).constructor.constructor(code)()", () => {
+    const src =
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return (function(){}).constructor.constructor(code)()\n" +
+      "}\n";
+    const result = transform(src);
+    expect(result.warnings.some((w) => w.code === "SYN061")).toBe(true);
+  });
+
+  it("fires on obj.constructor.constructor (any-expr receiver)", () => {
     const src =
       "?bs 0.7\n" +
       "fn run(obj: any, code: string) -> any {\n" +
       "  return obj.constructor.constructor(code)()\n" +
       "}\n";
     const result = transform(src);
-    expect(result.warnings.some((w) => w.code === "SYN061")).toBe(false);
+    expect(result.warnings.some((w) => w.code === "SYN061")).toBe(true);
   });
+
+  // ── non-firing cases ─────────────────────────────────────────────────────
 
   it("does NOT fire on [].constructor alone (not a call)", () => {
     const src =

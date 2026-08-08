@@ -651,16 +651,15 @@
  *           followed by `.constructor(` or `?.constructor(` in a fn body, the warning fires.
  *           `unsafe {}` blocks are suppressed.
  *
- *   SYN061  A primitive-literal `.constructor.constructor(...)` two-hop chain is called in a fn body
- *           (?bs 0.7+). Every JS primitive (`""`, `0`, `true`, `false`, `[]`) has a `.constructor`
- *           (`String`, `Number`, `Boolean`, `Array`), and every built-in constructor's `.constructor`
- *           is `Function` — so `[].constructor.constructor(code)()` executes arbitrary code like
- *           `new Function(code)()`. SYN004–SYN060 guard `eval`/`Function` by name and anonymous
- *           fn expressions by shape; a two-hop chain through a primitive literal spells none of
- *           those forms. SYN061 closes the gap: when a primitive literal token (string, number,
- *           template, array-literal `]`, or boolean ident `true`/`false`) is immediately followed
- *           by `.constructor.constructor(` (each dot may be `?.`) in a fn body, the warning fires.
- *           `unsafe {}` blocks are suppressed.
+ *   SYN061  Any `.constructor.constructor(...)` two-hop chain is called in a fn body (?bs 0.7+).
+ *           Every JS value's `.constructor` is some constructor function, and every constructor
+ *           function's `.constructor` is `Function` — so `[].constructor.constructor(code)()`,
+ *           `({}).constructor.constructor(code)()`, and `(function(){}).constructor.constructor(code)()`
+ *           all execute arbitrary code like `new Function(code)()`. SYN004–SYN060 guard `eval`/`Function`
+ *           by name and anonymous fn expressions by one-hop `.constructor(`; a two-hop chain through
+ *           any expression spells none of those guarded forms. SYN061 closes the gap: when any expression
+ *           is immediately followed by `.constructor.constructor(` (each dot may be `?.`) in a fn body,
+ *           the warning fires. `unsafe {}` blocks are suppressed.
  *
  *   SYN062  An `Object.getPrototypeOf(expr).constructor(...)`, `Reflect.getPrototypeOf(expr).constructor(...)`,
  *           or `expr.__proto__.constructor(...)` call was detected in a fn body (?bs 0.7+).
@@ -668,7 +667,7 @@
  *           `.constructor` on `Function.prototype` is the `Function` constructor itself, so
  *           `.constructor(code)()` executes arbitrary code like `new Function(code)()`. The `__proto__`
  *           read variant walks the same prototype chain. SYN004–SYN061 guard `eval`/`Function` by name,
- *           fn-expression shape, and primitive-literal two-hop chains; prototype-navigation via
+ *           fn-expression shape, and two-hop `.constructor.constructor(` chains; prototype-navigation via
  *           `getPrototypeOf`/`__proto__` spells none of those guarded forms. SYN062 closes the gap.
  *           `unsafe {}` blocks are suppressed.
  *
@@ -5540,9 +5539,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
 
         // ── SYN060/SYN061: .constructor(...) bypasses ────────────────────────
         case "constructor": {
-          // ── SYN061: <primitive>.constructor.constructor(...) — two-hop chain ──
+          // ── SYN061: <expr>.constructor.constructor(...) — two-hop chain ──
           // This token is the outer `constructor` (the one followed by `(`).
-          // Pattern: <prim> . constructor . constructor (
+          // Pattern: <any-expr> . constructor . constructor (
+          // Every JS value's .constructor is some function; every function's .constructor is
+          // Function — so this two-hop chain always reaches the Function constructor.
           // Check this first: it's a stricter match (two-hop vs one-hop).
           syn061: {
             // Must be followed by `(` — a call.
@@ -5569,69 +5570,44 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
             const isOptDot261 = dot261 && dot261.kind === "questionDot";
             if (!isDot261 && !isOptDot261) break syn061;
 
-            // Before the second dot must be a primitive literal or array-literal close.
-            // Also handles paren-wrapped numbers like `(0)` — `)` closes a group
-            // whose sole content is a primitive literal.
-            const primIdx61 = prevSignificant(tokens, dot2Idx61 - 1);
-            const prim61 = tokens[primIdx61];
-            if (!prim61) break syn061;
-
-            let isPrimLit61 =
-              prim61.kind === "string" ||
-              prim61.kind === "number" ||
-              prim61.kind === "template" ||
-              (prim61.kind === "close" && prim61.text === "]") || // array literal
-              (prim61.kind === "ident" && (prim61.text === "true" || prim61.text === "false"));
-
-            // `(0)`, `("str")` etc: `)` wraps a single primitive literal.
-            if (!isPrimLit61 && prim61.kind === "close" && prim61.text === ")") {
-              const openParenIdx61 = prim61.matchedAt;
-              if (openParenIdx61 !== undefined) {
-                const insideFirst = nextSignificant(tokens, openParenIdx61 + 1);
-                const insideLast = prevSignificant(tokens, primIdx61 - 1);
-                const insideTok = tokens[insideFirst];
-                if (
-                  insideFirst === insideLast &&
-                  insideTok &&
-                  (insideTok.kind === "number" ||
-                    insideTok.kind === "string" ||
-                    insideTok.kind === "template" ||
-                    (insideTok.kind === "ident" &&
-                      (insideTok.text === "true" || insideTok.text === "false")))
-                ) {
-                  isPrimLit61 = true;
-                }
-              }
-            }
-
-            if (!isPrimLit61) break syn061;
+            // Any expression before the second dot is sufficient — every JS value's
+            // .constructor is a constructor function, and every constructor's .constructor
+            // is Function. No restriction to primitive literals.
+            const recvIdx61 = prevSignificant(tokens, dot2Idx61 - 1);
+            const recv61 = tokens[recvIdx61];
+            if (!recv61) break syn061;
 
             if (isInsideRange(tok.start, unsafeRanges)) break syn061;
 
-            const litText61 =
-              prim61.kind === "close" && prim61.text === "]"
+            // Build a readable label for the receiver expression.
+            const recvText61 =
+              recv61.kind === "close" && recv61.text === "]"
                 ? "[]"
-                : prim61.kind === "close" && prim61.text === ")"
-                  ? `(${tokens[nextSignificant(tokens, prim61.matchedAt! + 1)]?.text ?? "0"})`
-                  : prim61.text;
+                : recv61.kind === "close" && recv61.text === ")"
+                  ? "(...)"
+                  : recv61.kind === "close" && recv61.text === "}"
+                    ? "{...}"
+                    : (recv61.kind === "string" || recv61.kind === "number" || recv61.kind === "template" || recv61.kind === "ident")
+                      ? recv61.text
+                      : "expr";
             const sep261 = isOptDot261 ? "?." : ".";
             const sep61 = isOptDot61 ? "?." : ".";
-            const loc61 = locationOf(src, prim61.start);
+            const loc61 = locationOf(src, recv61.start);
             warnings.push({
               code: "SYN061",
               severity: "warning",
               file: null,
               line: loc61.line,
               column: loc61.column,
-              start: prim61.start,
+              start: recv61.start,
               end: callTok61.start + 1,
               message:
-                `fn '${decl.name}' calls ${litText61}${sep261}constructor${sep61}constructor(...) — ` +
-                "every primitive's .constructor is a built-in (String/Number/Boolean/Array), " +
-                "and every built-in constructor's .constructor is the Function constructor; " +
-                "this two-hop chain creates a new function from a string and bypasses SYN004–SYN060 " +
-                "(those guard 'eval'/'Function' by name or fn-expression by shape; primitive literals spell neither); " +
-                `refactor to explicit code or wrap in unsafe "reason" { ${litText61}${sep261}constructor${sep61}constructor(...) }`,
+                `fn '${decl.name}' calls ${recvText61}${sep261}constructor${sep61}constructor(...) — ` +
+                "every JS value's .constructor is a constructor function, " +
+                "and every constructor's .constructor is the Function constructor; " +
+                "this two-hop chain always reaches Function and creates new functions from strings, bypassing SYN004–SYN060 " +
+                "(those guard 'eval'/'Function' by name or expressions by one-hop .constructor shape); " +
+                `refactor to explicit code or wrap in unsafe "reason" { ${recvText61}${sep261}constructor${sep61}constructor(...) }`,
               rule: syn061.rule,
               idiom: syn061.idiom,
               rewrite: syn061.rewrite,

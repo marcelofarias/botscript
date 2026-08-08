@@ -4451,25 +4451,27 @@ const E: Record<string, ErrorCodeEntry> = {
   },
   SYN061: {
     code: "SYN061",
-    title: "primitive-literal .constructor.constructor(...) — two-hop constructor chain reaches Function (?bs 0.7+)",
+    title: "expr.constructor.constructor(...) — two-hop constructor chain reaches Function (?bs 0.7+)",
     rule:
-      "Every JavaScript primitive value (`\"\"`, `0`, `true`, `false`, `[]`) has a `.constructor` " +
-      "property (`String`, `Number`, `Boolean`, `Array`), and every built-in constructor's `.constructor` " +
-      "is the `Function` constructor — so `[].constructor.constructor(code)()`, " +
-      "`\"\".constructor.constructor(code)()`, and `(0).constructor.constructor(code)()` all create " +
-      "and execute arbitrary code at runtime, exactly like `new Function(code)()`. " +
-      "SYN004–SYN060 guard the named idents `eval` and `Function` and anonymous function expressions, " +
-      "but a two-hop chain starting from a primitive literal spells none of those guarded names — " +
-      "all prior checks are invisible to this form. SYN061 closes this gap: when a primitive " +
-      "literal token (`string`, `number`, `template`, array-literal `]`, or boolean `true`/`false`) " +
-      "is immediately followed by `.constructor.constructor(` (each dot may be `?.`) in a fn body, " +
-      "the warning fires. `unsafe {}` blocks are suppressed.",
+      "Every JavaScript value's `.constructor` property is a constructor function " +
+      "(`String`, `Number`, `Boolean`, `Array`, `Object`, `Function`, or a user class), " +
+      "and every constructor function's `.constructor` is the `Function` constructor — " +
+      "so any `.constructor.constructor(code)()` chain executes arbitrary code at runtime, " +
+      "exactly like `new Function(code)()`. This applies to any receiver: " +
+      "`[].constructor.constructor(code)()`, `({}).constructor.constructor(code)()`, " +
+      "`(function(){}).constructor.constructor(code)()`, and `x.constructor.constructor(code)()` " +
+      "are all equivalent. " +
+      "SYN004–SYN060 guard `eval`/`Function` by name and fn expressions by one-hop `.constructor(`; " +
+      "a two-hop chain through any expression spells none of those guarded forms. " +
+      "SYN061 closes the gap: any expression immediately followed by " +
+      "`.constructor.constructor(` (each dot may be `?.`) in a fn body triggers the warning. " +
+      "`unsafe {}` blocks are suppressed.",
     idiom:
       "use explicit code instead of runtime string evaluation; " +
       "if the two-hop constructor form is genuinely required, wrap in " +
-      "`unsafe \"reason\" { [].constructor.constructor(...) }`",
+      "`unsafe \"reason\" { expr.constructor.constructor(...) }`",
     rewrite:
-      "// before — primitive-literal .constructor.constructor bypasses SYN004–SYN060\n" +
+      "// before — .constructor.constructor bypasses SYN004–SYN060\n" +
       "?bs 0.7\n" +
       "fn run(code: string) -> any {\n" +
       "  return [].constructor.constructor(code)()  // SYN061\n" +
@@ -4485,18 +4487,18 @@ const E: Record<string, ErrorCodeEntry> = {
       "fn run(code: string) -> any {\n" +
       "  return [].constructor.constructor(code)()  // SYN061\n" +
       "}\n\n" +
-      "// SYN061: string-literal constructor chain also fires\n" +
+      "// SYN061: object-literal constructor chain also fires\n" +
       "?bs 0.7\n" +
       "fn run(code: string) -> any {\n" +
-      "  return \"\".constructor.constructor(code)()  // SYN061\n" +
+      "  return ({}).constructor.constructor(code)()  // SYN061\n" +
       "}\n\n" +
-      "// SYN061: number-literal constructor chain also fires\n" +
+      "// SYN061: function-expression constructor chain also fires\n" +
       "?bs 0.7\n" +
       "fn run(code: string) -> any {\n" +
-      "  return (0).constructor.constructor(code)()  // SYN061\n" +
+      "  return (function(){}).constructor.constructor(code)()  // SYN061\n" +
       "}\n\n" +
       "// fix: remove dynamic evaluation; use explicit code\n" +
-      "// or: unsafe \"reason\" { [].constructor.constructor(code)() }",
+      "// or: unsafe \"reason\" { expr.constructor.constructor(code)() }",
   },
 
   SYN062: {
@@ -4508,8 +4510,8 @@ const E: Record<string, ErrorCodeEntry> = {
       "which executes a string as code at runtime — exactly like `new Function(code)()`. " +
       "Similarly, `expr.__proto__` walks the prototype chain, and `.constructor` on the result " +
       "can reach `Function` the same way. " +
-      "SYN004–SYN061 guard `eval`/`Function` by name, fn-expression shape, primitive-literal two-hop " +
-      "chains, and `.prototype.constructor` on named idents; prototype-navigation via " +
+      "SYN004–SYN061 guard `eval`/`Function` by name, fn-expression shape, and " +
+      "any `.constructor.constructor(` two-hop chain; prototype-navigation via " +
       "`Object.getPrototypeOf`/`Reflect.getPrototypeOf`/`__proto__` spells none of those guarded forms. " +
       "SYN062 closes this gap: when `Object.getPrototypeOf(...).constructor(` (or the Reflect or " +
       "`__proto__` variants) appears in a fn body, the warning fires. `unsafe {}` blocks are suppressed.",
