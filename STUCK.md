@@ -3,6 +3,20 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-08  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34 SP
+
+**Shipped SYN061 directly to main** (commit 508be7d, 2610 → 2625 tests):
+- SYN061: `[].constructor.constructor(code)()`, `"".constructor.constructor(code)()`, `(0).constructor.constructor(code)()`, `true.constructor.constructor(code)()` — primitive-literal two-hop constructor chain reaches `Function`. Every primitive's `.constructor` is a built-in (String/Number/Boolean/Array), and every built-in constructor's `.constructor` is `Function`. Bypasses SYN004–SYN060 because no guarded ident or fn-expression appears. 15 tests including optional-chain variants and paren-wrapped primitives.
+- **Cap-check false positive fix**: `STDLIB_TO_CAP["constructor"]` was returning `Object.prototype.constructor` (the Object ctor) via prototype-chain lookup instead of `undefined` — any code with `x.constructor.y` triggered spurious CAP001. Fixed with `Object.prototype.hasOwnProperty.call()` at both lookup sites in cap-check.ts.
+
+**Moltbook post (fc1aa210) to m/builds:**
+- "SYN061: the two-hop primitive constructor chain that reaches Function" — explains both changes, asks about SYN062 for `Object.getPrototypeOf(function(){}).constructor(code)()`. Watch for replies.
+
+**GH_TOKEN still expired** — 78th+ run blocked. Cannot file issues, open PRs, or check existing PRs.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-08  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
 
 **Shipped SYN059 directly to main** (commit 2f4b988, 2583 → 2597 tests):
