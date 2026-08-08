@@ -651,6 +651,17 @@
  *           followed by `.constructor(` or `?.constructor(` in a fn body, the warning fires.
  *           `unsafe {}` blocks are suppressed.
  *
+ *   SYN061  A primitive-literal `.constructor.constructor(...)` two-hop chain is called in a fn body
+ *           (?bs 0.7+). Every JS primitive (`""`, `0`, `true`, `false`, `[]`) has a `.constructor`
+ *           (`String`, `Number`, `Boolean`, `Array`), and every built-in constructor's `.constructor`
+ *           is `Function` — so `[].constructor.constructor(code)()` executes arbitrary code like
+ *           `new Function(code)()`. SYN004–SYN060 guard `eval`/`Function` by name and anonymous
+ *           fn expressions by shape; a two-hop chain through a primitive literal spells none of
+ *           those forms. SYN061 closes the gap: when a primitive literal token (string, number,
+ *           template, array-literal `]`, or boolean ident `true`/`false`) is immediately followed
+ *           by `.constructor.constructor(` (each dot may be `?.`) in a fn body, the warning fires.
+ *           `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -929,6 +940,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn058 = getErrorCode("SYN058")!;
   const syn059 = getErrorCode("SYN059")!;
   const syn060 = getErrorCode("SYN060")!;
+  const syn061 = getErrorCode("SYN061")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -5515,8 +5527,108 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           break;
         }
 
-        // ── SYN060: (fn-expr).constructor(...) — function-expression .constructor bypass ──
+        // ── SYN060/SYN061: .constructor(...) bypasses ────────────────────────
         case "constructor": {
+          // ── SYN061: <primitive>.constructor.constructor(...) — two-hop chain ──
+          // This token is the outer `constructor` (the one followed by `(`).
+          // Pattern: <prim> . constructor . constructor (
+          // Check this first: it's a stricter match (two-hop vs one-hop).
+          syn061: {
+            // Must be followed by `(` — a call.
+            const callIdx61 = nextSignificant(tokens, i + 1);
+            const callTok61 = tokens[callIdx61];
+            if (!callTok61 || !(callTok61.kind === "open" && callTok61.text === "(")) break syn061;
+
+            // Must be preceded by `.` or `?.`.
+            const dotIdx61 = prevSignificant(tokens, i - 1);
+            const dot61 = tokens[dotIdx61];
+            const isDot61 = dot61 && dot61.kind === "punct" && dot61.text === ".";
+            const isOptDot61 = dot61 && dot61.kind === "questionDot";
+            if (!isDot61 && !isOptDot61) break syn061;
+
+            // Before the dot must be the inner `constructor` ident.
+            const innerCtorIdx61 = prevSignificant(tokens, dotIdx61 - 1);
+            const innerCtor61 = tokens[innerCtorIdx61];
+            if (!innerCtor61 || innerCtor61.kind !== "ident" || innerCtor61.text !== "constructor") break syn061;
+
+            // Inner `constructor` must be preceded by `.` or `?.`.
+            const dot2Idx61 = prevSignificant(tokens, innerCtorIdx61 - 1);
+            const dot261 = tokens[dot2Idx61];
+            const isDot261 = dot261 && dot261.kind === "punct" && dot261.text === ".";
+            const isOptDot261 = dot261 && dot261.kind === "questionDot";
+            if (!isDot261 && !isOptDot261) break syn061;
+
+            // Before the second dot must be a primitive literal or array-literal close.
+            // Also handles paren-wrapped numbers like `(0)` — `)` closes a group
+            // whose sole content is a primitive literal.
+            const primIdx61 = prevSignificant(tokens, dot2Idx61 - 1);
+            const prim61 = tokens[primIdx61];
+            if (!prim61) break syn061;
+
+            let isPrimLit61 =
+              prim61.kind === "string" ||
+              prim61.kind === "number" ||
+              prim61.kind === "template" ||
+              (prim61.kind === "close" && prim61.text === "]") || // array literal
+              (prim61.kind === "ident" && (prim61.text === "true" || prim61.text === "false"));
+
+            // `(0)`, `("str")` etc: `)` wraps a single primitive literal.
+            if (!isPrimLit61 && prim61.kind === "close" && prim61.text === ")") {
+              const openParenIdx61 = prim61.matchedAt;
+              if (openParenIdx61 !== undefined) {
+                const insideFirst = nextSignificant(tokens, openParenIdx61 + 1);
+                const insideLast = prevSignificant(tokens, primIdx61 - 1);
+                const insideTok = tokens[insideFirst];
+                if (
+                  insideFirst === insideLast &&
+                  insideTok &&
+                  (insideTok.kind === "number" ||
+                    insideTok.kind === "string" ||
+                    insideTok.kind === "template" ||
+                    (insideTok.kind === "ident" &&
+                      (insideTok.text === "true" || insideTok.text === "false")))
+                ) {
+                  isPrimLit61 = true;
+                }
+              }
+            }
+
+            if (!isPrimLit61) break syn061;
+
+            if (isInsideRange(tok.start, unsafeRanges)) break syn061;
+
+            const litText61 =
+              prim61.kind === "close" && prim61.text === "]"
+                ? "[]"
+                : prim61.kind === "close" && prim61.text === ")"
+                  ? `(${tokens[nextSignificant(tokens, prim61.matchedAt! + 1)]?.text ?? "0"})`
+                  : prim61.text;
+            const sep261 = isOptDot261 ? "?." : ".";
+            const sep61 = isOptDot61 ? "?." : ".";
+            const loc61 = locationOf(src, prim61.start);
+            warnings.push({
+              code: "SYN061",
+              severity: "warning",
+              file: null,
+              line: loc61.line,
+              column: loc61.column,
+              start: prim61.start,
+              end: callTok61.start + 1,
+              message:
+                `fn '${decl.name}' calls ${litText61}${sep261}constructor${sep61}constructor(...) — ` +
+                "every primitive's .constructor is a built-in (String/Number/Boolean/Array), " +
+                "and every built-in constructor's .constructor is the Function constructor; " +
+                "this two-hop chain creates a new function from a string and bypasses SYN004–SYN060 " +
+                "(those guard 'eval'/'Function' by name or fn-expression by shape; primitive literals spell neither); " +
+                `refactor to explicit code or wrap in unsafe "reason" { ${litText61}${sep261}constructor${sep61}constructor(...) }`,
+              rule: syn061.rule,
+              idiom: syn061.idiom,
+              rewrite: syn061.rewrite,
+            });
+            break; // exit switch, continue outer loop
+          }
+
+          // ── SYN060: (fn-expr).constructor(...) — function-expression .constructor bypass ──
           // Must be followed by `(` — a call, not a reference.
           const callIdx60 = nextSignificant(tokens, i + 1);
           const callTok60 = tokens[callIdx60];

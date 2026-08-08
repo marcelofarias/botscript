@@ -164,6 +164,7 @@ function checkDirectFn(src: string, tokens: Token[], fn: FnDecl, inner: FnDecl[]
     if (insideAny(i, inner)) continue;
     const tok = tokens[i];
     if (!tok || tok.kind !== "ident") continue;
+    if (!Object.prototype.hasOwnProperty.call(STDLIB_TO_CAP, tok.text)) continue;
     const cap = STDLIB_TO_CAP[tok.text];
     if (!cap) continue;
     const nextIdx = nextSignificant(tokens, i + 1);
@@ -388,7 +389,9 @@ function scanBody(
       ? aliases.get(tok.text)
       : undefined;
     const canonical = aliasCanonical ?? tok.text;
-    const cap = STDLIB_TO_CAP[canonical];
+    const cap = Object.prototype.hasOwnProperty.call(STDLIB_TO_CAP, canonical)
+      ? STDLIB_TO_CAP[canonical]
+      : undefined;
     const isDot = next?.kind === "punct" && next.text === ".";
     const isOptChain = acceptOptionalChain && next?.kind === "questionDot";
     if (cap && (isDot || isOptChain)) {

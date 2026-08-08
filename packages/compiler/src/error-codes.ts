@@ -4449,6 +4449,55 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { (()=>{}).constructor(code)() }",
   },
+  SYN061: {
+    code: "SYN061",
+    title: "primitive-literal .constructor.constructor(...) — two-hop constructor chain reaches Function (?bs 0.7+)",
+    rule:
+      "Every JavaScript primitive value (`\"\"`, `0`, `true`, `false`, `[]`) has a `.constructor` " +
+      "property (`String`, `Number`, `Boolean`, `Array`), and every built-in constructor's `.constructor` " +
+      "is the `Function` constructor — so `[].constructor.constructor(code)()`, " +
+      "`\"\".constructor.constructor(code)()`, and `(0).constructor.constructor(code)()` all create " +
+      "and execute arbitrary code at runtime, exactly like `new Function(code)()`. " +
+      "SYN004–SYN060 guard the named idents `eval` and `Function` and anonymous function expressions, " +
+      "but a two-hop chain starting from a primitive literal spells none of those guarded names — " +
+      "all prior checks are invisible to this form. SYN061 closes this gap: when a primitive " +
+      "literal token (`string`, `number`, `template`, array-literal `]`, or boolean `true`/`false`) " +
+      "is immediately followed by `.constructor.constructor(` (each dot may be `?.`) in a fn body, " +
+      "the warning fires. `unsafe {}` blocks are suppressed.",
+    idiom:
+      "use explicit code instead of runtime string evaluation; " +
+      "if the two-hop constructor form is genuinely required, wrap in " +
+      "`unsafe \"reason\" { [].constructor.constructor(...) }`",
+    rewrite:
+      "// before — primitive-literal .constructor.constructor bypasses SYN004–SYN060\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [].constructor.constructor(code)()  // SYN061\n" +
+      "}\n\n" +
+      "// after — avoid dynamic evaluation entirely\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  // replace with explicit logic\n" +
+      "}",
+    example:
+      "// SYN061: array-literal constructor chain reaches Function\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [].constructor.constructor(code)()  // SYN061\n" +
+      "}\n\n" +
+      "// SYN061: string-literal constructor chain also fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return \"\".constructor.constructor(code)()  // SYN061\n" +
+      "}\n\n" +
+      "// SYN061: number-literal constructor chain also fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return (0).constructor.constructor(code)()  // SYN061\n" +
+      "}\n\n" +
+      "// fix: remove dynamic evaluation; use explicit code\n" +
+      "// or: unsafe \"reason\" { [].constructor.constructor(code)() }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
