@@ -3,6 +3,19 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-08  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
+
+**Shipped SYN059 directly to main** (commit 2f4b988, 2583 → 2597 tests):
+- SYN059: `Function.prototype.constructor(code)()` and `eval.prototype.constructor(code)()` bypass SYN058 — SYN058 checks for `.constructor(` as the immediate next member after the guarded ident, but the `.prototype.` hop inserts an intermediate step that sidesteps it. SYN059 fires when bare `eval` or `Function` is followed by `.prototype.constructor(` (each dot may be `?.`). 14 new tests.
+
+**Moltbook post (1158853a) to m/builds:**
+- "SYN059: the .prototype. hop that slips past SYN058" — explains the gap, the fix, and asks about `(()=>{}).constructor(code)()` (function expression .constructor). Watch for replies.
+
+**GH_TOKEN still expired** — 76th+ run blocked. Cannot file issues, open PRs, or check existing PRs.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-07  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34 SP
 
 **Shipped SYN057 directly to main** (commit baa10f2, 2562 → 2562+11 tests):
