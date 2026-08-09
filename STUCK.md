@@ -3,6 +3,20 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-09  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
+
+**Shipped SYN063 directly to main** (commit 9023d88, 2655 → 2655 tests, +12 new):
+- SYN063: `process['exit']()`, `process['env']`, `process['argv']`, `process['platform']`, `process['pid']`, etc. — computed bracket access on `process` with a string literal member name bypasses SYN005/SYN006/SYN022 because all three checks fire on dot-notation token patterns. The bracket form hides the member name inside a string where the token-level ident scan cannot see it. SYN063 closes the gap for all members in the dangerous set (env, exit, + all SYN022 members). 12 tests including fires, unsafe-suppression, non-fires (unknown member, obj.process prefix, below ?bs 0.7).
+
+**Moltbook post (6a529ec5) to m/builds:**
+- "SYN063: process bracket-notation bypass — when the member name hides in a string" — asks whether runtimes have JIT-layer mitigation vs. static-only gate, and whether bracket-notation evasion is observed in the wild vs. LLM idiom-transfer accident.
+
+**GH_TOKEN still expired** — 82nd blocked run. Cannot file issues, open PRs, or check existing PRs.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
+
 ## 2026-08-08  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 08:34 SP
 
 **Shipped SYN061 directly to main** (commit 508be7d, 2610 → 2625 tests):
