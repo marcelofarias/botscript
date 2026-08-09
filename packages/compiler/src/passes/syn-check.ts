@@ -702,6 +702,18 @@
  *           notation with a dangerous string-literal key or any non-literal key.
  *           `unsafe {}` suppresses.
  *
+ *   SYN066  A SYN-guarded global (`eval`, `fetch`, `Function`, etc.) is stored as a named
+ *           property value inside an inline object literal, and that property is immediately
+ *           dot-called on the same object in a fn body (?bs 0.7+). Example:
+ *           `{ exec: eval }.exec(code)` or `({ run: fetch }).run(url)`. The per-ident
+ *           call-position checks (SYN004, SYN007, …) look for the guarded ident followed
+ *           by `(`; inside `{ exec: eval }` the token after `eval` is `}`, not `(`.
+ *           Alias-binding checks (SYN044–SYN065) look for binding declarations, not
+ *           object-property assignments. SYN066 closes the gap: when a guarded global
+ *           appears after `:` in an object literal property and the same property key is
+ *           dot-called on the immediately following expression, the warning fires.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -985,6 +997,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn063 = getErrorCode("SYN063")!;
   const syn064 = getErrorCode("SYN064")!;
   const syn065 = getErrorCode("SYN065")!;
+  const syn066 = getErrorCode("SYN066")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1500,6 +1513,91 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const fnLocalReceiverAssign54 = localReceiverAssignAliases54.get(decl);
     const fnDefaultParamAliases55 = defaultParamGuardedAliases55.get(decl);
     const fnDefaultParamReceiverAliases56 = defaultParamReceiverAliases56.get(decl);
+
+    // ── SYN066: inline object-literal property alias bypass — pre-pass ──────
+    // Pattern: { <prop>: <guarded-global> }.<prop>(...) — guarded global stored
+    // as an object property value and immediately dot-called on the same object.
+    // This bypasses both the per-ident call-position SYN checks (SYN004, SYN007, …)
+    // and all alias-binding checks (SYN044–SYN065), since neither expects the
+    // guarded global to be tucked inside an object literal.
+    for (let i66 = bodyStart; i66 < decl.tokenEnd; i66++) {
+      const tok66 = tokens[i66];
+      if (!tok66 || tok66.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok66.text)) continue;
+
+      // Must be in property-value position: preceded by `:` then an ident key.
+      const colonIdx66 = prevSignificant(tokens, i66 - 1);
+      const colon66 = tokens[colonIdx66];
+      if (!colon66 || colon66.kind !== "punct" || colon66.text !== ":") continue;
+
+      const propKeyIdx66 = prevSignificant(tokens, colonIdx66 - 1);
+      const propKey66 = tokens[propKeyIdx66];
+      if (!propKey66 || propKey66.kind !== "ident") continue;
+      const propName66 = propKey66.text;
+
+      // Backward scan from i66-1 to bodyStart to find the enclosing `{`.
+      let openBraceIdx66 = -1;
+      let depth66 = 0;
+      for (let j = i66 - 1; j >= bodyStart; j--) {
+        const t66 = tokens[j];
+        if (!t66) continue;
+        if (t66.kind === "close") { depth66++; continue; }
+        if (t66.kind === "open") {
+          if (depth66 === 0 && t66.text === "{") { openBraceIdx66 = j; break; }
+          depth66--;
+        }
+      }
+      if (openBraceIdx66 < 0) continue;
+
+      const closeBraceIdx66 = tokens[openBraceIdx66]!.matchedAt;
+      if (closeBraceIdx66 === undefined) continue;
+
+      // After the closing `}`, skip any closing parens (handles `({ prop: eval }).prop(`).
+      let afterIdx66 = nextSignificant(tokens, closeBraceIdx66 + 1);
+      while (tokens[afterIdx66]?.kind === "close" && tokens[afterIdx66]?.text === ")") {
+        afterIdx66 = nextSignificant(tokens, afterIdx66 + 1);
+      }
+
+      // Next must be `.` or `?.`.
+      const dot66 = tokens[afterIdx66];
+      const isDot66 = dot66 && dot66.kind === "punct" && dot66.text === ".";
+      const isOptDot66 = dot66 && dot66.kind === "questionDot";
+      if (!isDot66 && !isOptDot66) continue;
+
+      // Followed by the same property key name.
+      const nameIdx66 = nextSignificant(tokens, afterIdx66 + 1);
+      const name66 = tokens[nameIdx66];
+      if (!name66 || name66.kind !== "ident" || name66.text !== propName66) continue;
+
+      // Followed by `(` — a call.
+      const callIdx66 = nextSignificant(tokens, nameIdx66 + 1);
+      const call66 = tokens[callIdx66];
+      if (!call66 || call66.kind !== "open" || call66.text !== "(") continue;
+
+      if (isInsideRange(tok66.start, unsafeRanges)) continue;
+
+      const sep66 = isOptDot66 ? "?." : ".";
+      const loc66 = locationOf(src, tok66.start);
+      warnings.push({
+        code: "SYN066",
+        severity: "warning",
+        file: null,
+        line: loc66.line,
+        column: loc66.column,
+        start: tok66.start,
+        end: call66.start + 1,
+        message:
+          `fn '${decl.name}' stores ${tok66.text} as property '${propName66}' of an inline object ` +
+          `then calls it via { ${propName66}: ${tok66.text} }${sep66}${propName66}(...) — ` +
+          `SYN004/SYN007/… only fire when ${tok66.text} is in call position (followed by '('); ` +
+          `alias-binding checks (SYN044–SYN065) only track binding declarations, not inline object properties; ` +
+          `the runtime effect is identical to calling ${tok66.text}(...) directly; ` +
+          `refactor to call ${tok66.text} directly or wrap in unsafe "reason" { { ${propName66}: ${tok66.text} }${sep66}${propName66}(...) }`,
+        rule: syn066.rule,
+        idiom: syn066.idiom,
+        rewrite: syn066.rewrite,
+      });
+    }
 
     // Single dispatch loop: nesting bookkeeping runs once per token position.
     // All SYN checks are dispatched via a switch on tok.text after an ident guard.

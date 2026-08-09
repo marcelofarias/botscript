@@ -4696,6 +4696,60 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: use dot notation or wrap in unsafe with a narrow reason\n" +
       "// unsafe \"globalThis[key] is validated against a fixed allowlist\" { globalThis[key] }",
   },
+  SYN066: {
+    code: "SYN066",
+    title: "object-literal property value is a SYN-guarded global, immediately called via property access — inline alias bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as the value of " +
+      "a named property inside an inline object literal, and that property is immediately accessed and " +
+      "called on the same object — `{ exec: eval }.exec(code)` or `({ run: fetch }).run(url)`. " +
+      "All per-ident SYN checks (SYN004, SYN007, SYN008, …) look for the guarded ident in a call " +
+      "position (followed by `(` or `?.(`). All alias-binding checks (SYN044–SYN065) look for " +
+      "binding declarations (`const alias = eval`, destructuring patterns, default params). " +
+      "The inline object-property form combines aliasing and calling in one expression: the guarded " +
+      "global is stored as a property value then retrieved and called in the same expression. " +
+      "No existing check covers this shape. SYN066 closes the gap: when a guarded global appears " +
+      "after `:` in an object literal property and the same property key is dot-called on the " +
+      "immediately following expression, the warning fires. " +
+      "Limitation: cross-statement bindings (`const obj = { run: eval }; obj.run(code)`) require " +
+      "taint analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if indirect invocation is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { { exec: eval }.exec(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — object property hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return { exec: eval }.exec(code)  // SYN066: eval stored as property, called via .exec()\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN066: eval aliased as object property, immediately called\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return { exec: eval }.exec(code)  // SYN066\n" +
+      "}\n\n" +
+      "// SYN066: fetch aliased, paren-wrapped form\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return ({ run: fetch }).run(url)  // SYN066\n" +
+      "}\n\n" +
+      "// SYN066: Function aliased as property\n" +
+      "?bs 0.7\n" +
+      "fn execute(body: string) -> any {\n" +
+      "  return { make: Function }.make(body)()  // SYN066\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
