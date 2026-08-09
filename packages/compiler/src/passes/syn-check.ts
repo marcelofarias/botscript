@@ -476,15 +476,15 @@
  *           suppressed.
  *
  *   SYN044  A module-scope binding that aliases a SYN-guarded global is called inside a
- *           fn body (?bs 0.7+). `const f = fetch` followed by `f(url)` inside a fn body
- *           bypasses SYN004–SYN043 because all name-token checks fire on the guarded
+ *           fn body (?bs 0.7+). `const f = fetch` followed by `f(url)` or `f\`code\`` inside
+ *           a fn body bypasses SYN004–SYN043 because all name-token checks fire on the guarded
  *           identifier itself — the alias name `f` is not in any watch-list, so the
  *           capability model is invisible to callers. Detection: a `const`/`let`/`var`
  *           binding at module scope whose initialiser is exactly a bare SYN037-guarded
  *           global name (no member access, no call on the RHS); when that binding name
- *           appears as a direct call in any fn body (not a method access, not a
- *           declaration), SYN044 fires. Fn-body-level aliases are not tracked to avoid
- *           shadowing false positives. `unsafe {}` blocks and `unsafe "reason" fn`
+ *           appears as a direct call or tagged-template tag in any fn body (not a method
+ *           access, not a declaration), SYN044 fires. Fn-body-level aliases are not tracked
+ *           to avoid shadowing false positives. `unsafe {}` blocks and `unsafe "reason" fn`
  *           bodies are suppressed.
  *
  *   SYN045  A module-scope binding that aliases a global receiver object (`globalThis`,
@@ -1523,7 +1523,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const isCall44 =
           next44 && (
             (next44.kind === "open" && next44.text === "(") ||
-            next44.kind === "questionDot"
+            next44.kind === "questionDot" ||
+            next44.kind === "template"
           );
         if (isCall44) {
           const prevIdx44 = prevSignificant(tokens, i - 1);
@@ -1536,6 +1537,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess44 && !isDecl44) {
             const origGlobal44 = guardedGlobalAliases.get(tok.text)!;
             const loc44 = locationOf(src, tok.start);
+            const callForm44 = next44!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN044",
               severity: "warning",
@@ -1545,7 +1547,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a module-scope alias of ` +
+                `fn '${decl.name}' calls '${callForm44}' — '${tok.text}' is a module-scope alias of ` +
                 `the guarded global '${origGlobal44}'; calling through the alias bypasses SYN004–SYN043 ` +
                 `name-token checks; call '${origGlobal44}' directly so the relevant SYN check fires, ` +
                 `or wrap in unsafe "calls ${origGlobal44} via alias for <reason>" { ${tok.text}(...) }`,
@@ -1565,7 +1567,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const isCall46 =
           next46 && (
             (next46.kind === "open" && next46.text === "(") ||
-            next46.kind === "questionDot"
+            next46.kind === "questionDot" ||
+            next46.kind === "template"
           );
         if (isCall46) {
           const prevIdx46 = prevSignificant(tokens, i - 1);
@@ -1578,6 +1581,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess46 && !isDecl46) {
             const info46 = renamedDestructAliases.get(tok.text)!;
             const loc46 = locationOf(src, tok.start);
+            const callForm46 = next46!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN046",
               severity: "warning",
@@ -1587,7 +1591,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a module-scope ` +
+                `fn '${decl.name}' calls '${callForm46}' — '${tok.text}' is a module-scope ` +
                 `destructuring rename of the guarded global '${info46.original}' (via '${info46.receiver}'); ` +
                 `calling through the renamed alias bypasses SYN004–SYN045 name-token checks; ` +
                 `call '${info46.original}' or '${info46.receiver}.${info46.original}' directly so the relevant SYN check fires, ` +
@@ -1608,7 +1612,8 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const isCall51 =
           next51 && (
             (next51.kind === "open" && next51.text === "(") ||
-            next51.kind === "questionDot"
+            next51.kind === "questionDot" ||
+            next51.kind === "template"
           );
         if (isCall51) {
           const prevIdx51 = prevSignificant(tokens, i - 1);
@@ -1621,6 +1626,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess51 && !isDecl51) {
             const origGlobal51 = guardedGlobalAssignAliases51.get(tok.text)!;
             const loc51 = locationOf(src, tok.start);
+            const callForm51 = next51!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN051",
               severity: "warning",
@@ -1630,7 +1636,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a module-scope assignment alias of ` +
+                `fn '${decl.name}' calls '${callForm51}' — '${tok.text}' is a module-scope assignment alias of ` +
                 `the guarded global '${origGlobal51}' (set via assignment expression, not a declaration); ` +
                 `calling through the alias bypasses SYN004–SYN050 name-token checks; ` +
                 `call '${origGlobal51}' directly so the relevant SYN check fires, ` +
@@ -1651,7 +1657,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const next48 = tokens[nextIdx48];
         const isCall48 =
           next48 &&
-          ((next48.kind === "open" && next48.text === "(") || next48.kind === "questionDot");
+          ((next48.kind === "open" && next48.text === "(") || next48.kind === "questionDot" || next48.kind === "template");
         if (isCall48) {
           const prevIdx48 = prevSignificant(tokens, i - 1);
           const prev48 = tokens[prevIdx48];
@@ -1669,6 +1675,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess48 && !isDecl48) {
             const origGlobal48 = fnLocalAliases48.get(tok.text)!;
             const loc48 = locationOf(src, tok.start);
+            const callForm48 = next48!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN048",
               severity: "warning",
@@ -1678,7 +1685,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a local alias of ` +
+                `fn '${decl.name}' calls '${callForm48}' — '${tok.text}' is a local alias of ` +
                 `the guarded global '${origGlobal48}' defined in this fn body; calling through the alias ` +
                 `bypasses SYN004–SYN047 name-token checks; call '${origGlobal48}' directly so the relevant ` +
                 `SYN check fires, or wrap in unsafe "calls ${origGlobal48} via local alias for <reason>" { ${tok.text}(...) }`,
@@ -1738,7 +1745,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const next50 = tokens[nextIdx50];
         const isCall50 =
           next50 &&
-          ((next50.kind === "open" && next50.text === "(") || next50.kind === "questionDot");
+          ((next50.kind === "open" && next50.text === "(") || next50.kind === "questionDot" || next50.kind === "template");
         if (isCall50) {
           const prevIdx50 = prevSignificant(tokens, i - 1);
           const prev50 = tokens[prevIdx50];
@@ -1756,6 +1763,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess50 && !isDecl50) {
             const info50 = fnLocalDestruct50.get(tok.text)!;
             const loc50 = locationOf(src, tok.start);
+            const callForm50 = next50!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN050",
               severity: "warning",
@@ -1765,7 +1773,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a fn-body-local destructuring ` +
+                `fn '${decl.name}' calls '${callForm50}' — '${tok.text}' is a fn-body-local destructuring ` +
                 `rename of '${info50.original}' from '${info50.receiver}' defined in this fn body; calling ` +
                 `through the alias bypasses SYN004–SYN049 name-token checks; call '${info50.original}' directly ` +
                 `so the relevant SYN check fires, or wrap in ` +
@@ -1785,7 +1793,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const next53 = tokens[nextIdx53];
         const isCall53 =
           next53 &&
-          ((next53.kind === "open" && next53.text === "(") || next53.kind === "questionDot");
+          ((next53.kind === "open" && next53.text === "(") || next53.kind === "questionDot" || next53.kind === "template");
         if (isCall53) {
           const prevIdx53 = prevSignificant(tokens, i - 1);
           const prev53 = tokens[prevIdx53];
@@ -1803,6 +1811,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess53 && !isDecl53) {
             const origGlobal53 = fnLocalAssignAliases53.get(tok.text)!;
             const loc53 = locationOf(src, tok.start);
+            const callForm53 = next53!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN053",
               severity: "warning",
@@ -1812,7 +1821,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a fn-body assignment alias of ` +
+                `fn '${decl.name}' calls '${callForm53}' — '${tok.text}' is a fn-body assignment alias of ` +
                 `the guarded global '${origGlobal53}' (set via assignment expression inside this fn body, not a declaration); ` +
                 `calling through the alias bypasses SYN004–SYN052 name-token checks; ` +
                 `call '${origGlobal53}' directly so the relevant SYN check fires, ` +
@@ -1873,7 +1882,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         const next55 = tokens[nextIdx55];
         const isCall55 =
           next55 &&
-          ((next55.kind === "open" && next55.text === "(") || next55.kind === "questionDot");
+          ((next55.kind === "open" && next55.text === "(") || next55.kind === "questionDot" || next55.kind === "template");
         if (isCall55) {
           const prevIdx55 = prevSignificant(tokens, i - 1);
           const prev55 = tokens[prevIdx55];
@@ -1891,6 +1900,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (!isMemberAccess55 && !isDecl55) {
             const origGlobal55 = fnDefaultParamAliases55.get(tok.text)!;
             const loc55 = locationOf(src, tok.start);
+            const callForm55 = next55!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
             warnings.push({
               code: "SYN055",
               severity: "warning",
@@ -1900,7 +1910,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               start: tok.start,
               end: tok.end,
               message:
-                `fn '${decl.name}' calls '${tok.text}()' — '${tok.text}' is a default-parameter alias of ` +
+                `fn '${decl.name}' calls '${callForm55}' — '${tok.text}' is a default-parameter alias of ` +
                 `the guarded global '${origGlobal55}' (bound in the parameter list as \`${tok.text} = ${origGlobal55}\`); ` +
                 `calling through the alias bypasses SYN004–SYN054 name-token checks; ` +
                 `call '${origGlobal55}' directly so the relevant SYN check fires, ` +
