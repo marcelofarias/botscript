@@ -4549,6 +4549,52 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: remove dynamic evaluation; use explicit code\n" +
       "// or: unsafe \"reason\" { Object.getPrototypeOf(fn).constructor(code)() }",
   },
+  SYN063: {
+    code: "SYN063",
+    title: "process['member'] computed bracket access — string literal hides dangerous member name from SYN005/SYN006/SYN022 (?bs 0.7+)",
+    rule:
+      "SYN005 catches `process.env`, SYN006 catches `process.exit()`, and SYN022 catches other " +
+      "`process.*` member accesses — but all three fire on the dot-notation token pattern. " +
+      "The bracket form `process['exit']()` or `process['env']` puts the member name inside a " +
+      "string literal where the token-level ident checks cannot see it; the capability bypass at " +
+      "runtime is identical. SYN063 closes the gap: `process[<string-literal>]` where the string " +
+      "names a member covered by SYN005/SYN006/SYN022 fires this warning. `unsafe {}` suppresses.",
+    idiom:
+      "use the dot-notation form (`process.env`, `process.exit()`, etc.) so the SYN005/SYN006/SYN022 " +
+      "checks fire and the suppression path is visible; " +
+      "if bracket notation is genuinely required, wrap in " +
+      "`unsafe \"reason\" { process['member'] }`",
+    rewrite:
+      "// before — bracket notation bypasses SYN005/SYN006/SYN022\n" +
+      "?bs 0.7\n" +
+      "fn bail(code: number) -> void {\n" +
+      "  process['exit'](code)  // SYN063: hides 'exit' from SYN006\n" +
+      "}\n\n" +
+      "// after — dot notation so SYN006 fires and suppression is explicit\n" +
+      "?bs 0.7\n" +
+      "fn bail(code: number) -> void {\n" +
+      "  return err(\"non-zero exit\")  // idiomatic: propagate, don't terminate\n" +
+      "  // or: unsafe \"exits on invalid config\" { process.exit(code) }\n" +
+      "}",
+    example:
+      "// SYN063: process['exit'] bracket bypass\n" +
+      "?bs 0.7\n" +
+      "fn bail(code: number) -> void {\n" +
+      "  process['exit'](code)  // SYN063\n" +
+      "}\n\n" +
+      "// SYN063: process['env'] bracket bypass\n" +
+      "?bs 0.7\n" +
+      "fn getKey() -> string {\n" +
+      "  return process['env']['API_KEY']  // SYN063\n" +
+      "}\n\n" +
+      "// SYN063: process['argv'] bracket bypass\n" +
+      "?bs 0.7\n" +
+      "fn args() -> string[] {\n" +
+      "  return process['argv']  // SYN063\n" +
+      "}\n\n" +
+      "// fix: use dot notation (SYN006 fires) then wrap in unsafe if genuinely needed\n" +
+      "// or: pass exit code as explicit fn parameter with a Result return",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

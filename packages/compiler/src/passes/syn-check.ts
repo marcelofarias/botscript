@@ -671,6 +671,16 @@
  *           `getPrototypeOf`/`__proto__` spells none of those guarded forms. SYN062 closes the gap.
  *           `unsafe {}` blocks are suppressed.
  *
+ *   SYN063  A computed string bracket access on `process` — `process['exit']()`,
+ *           `process['env']`, `process['argv']`, etc. — was detected in a fn body (?bs 0.7+).
+ *           SYN005 catches `process.env`, SYN006 catches `process.exit()`, and SYN022 catches
+ *           other `process.*` member accesses, but all three fire on the dot-notation token
+ *           pattern. The bracket form puts the member name inside a string literal where the
+ *           token-level ident checks cannot see it; the capability bypass at runtime is identical.
+ *           SYN063 closes the gap: when `process[<string-literal>]` appears in a fn body and the
+ *           string names a member covered by SYN005/SYN006/SYN022, the warning fires.
+ *           `unsafe {}` blocks are suppressed.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -951,6 +961,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn060 = getErrorCode("SYN060")!;
   const syn061 = getErrorCode("SYN061")!;
   const syn062 = getErrorCode("SYN062")!;
+  const syn063 = getErrorCode("SYN063")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2547,7 +2558,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (prev5 && ((prev5.kind === "punct" && prev5.text === ".") || prev5.kind === "questionDot"))
             continue;
 
-          // Must be followed by `.` or `?.`
+          // Must be followed by `.`, `?.`, or `[` (bracket notation).
           let nextIdx5 = nextSignificant(tokens, i + 1);
           let next5 = tokens[nextIdx5];
           // Paren-receiver bypass: `(process).env` — resolve through paren group.
@@ -2555,6 +2566,43 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           if (parenDotIdx5 !== null) { nextIdx5 = parenDotIdx5; next5 = tokens[nextIdx5]; }
           const isDot5 = next5 && next5.kind === "punct" && next5.text === ".";
           const isOptChain5 = next5 && next5.kind === "questionDot";
+          const isBracket5 = !isDot5 && !isOptChain5 && next5 && next5.kind === "open" && next5.text === "[";
+
+          // ── SYN063: computed string bracket access — process['exit'] etc. ──
+          if (isBracket5) {
+            const strIdx63 = nextSignificant(tokens, nextIdx5 + 1);
+            const strTok63 = tokens[strIdx63];
+            if (strTok63 && strTok63.kind === "string") {
+              const raw63 = strTok63.text;
+              const memberName63 = raw63.slice(1, -1);
+              const isProcessDangerous63 =
+                memberName63 === "env" || memberName63 === "exit" ||
+                SYN022_PROCESS_MEMBERS.has(memberName63);
+              if (isProcessDangerous63 && !isInsideRange(tok.start, unsafeRanges)) {
+                const loc63 = locationOf(src, tok.start);
+                warnings.push({
+                  code: "SYN063",
+                  severity: "warning",
+                  file: null,
+                  line: loc63.line,
+                  column: loc63.column,
+                  start: tok.start,
+                  end: strTok63.end,
+                  message:
+                    `fn '${decl.name}' accesses process['${memberName63}'] via computed bracket notation — ` +
+                    `the string literal hides the dangerous member name from SYN005/SYN006/SYN022 token-level detection; ` +
+                    `the capability bypass is identical to process.${memberName63} at runtime; ` +
+                    `use the dot-notation form so the check fires, pass config as explicit parameters, ` +
+                    `or wrap in unsafe "reason" { process['${memberName63}'] }`,
+                  rule: syn063.rule,
+                  idiom: syn063.idiom,
+                  rewrite: syn063.rewrite,
+                });
+              }
+            }
+            continue;
+          }
+
           if (!isDot5 && !isOptChain5) continue;
 
           // Check the member name: `env` → SYN005, `exit` → SYN006.
