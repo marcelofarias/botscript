@@ -4595,6 +4595,60 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: use dot notation (SYN006 fires) then wrap in unsafe if genuinely needed\n" +
       "// or: pass exit code as explicit fn parameter with a Result return",
   },
+  SYN065: {
+    code: "SYN065",
+    title: "bracket access on an alias of a dangerous global receiver bypasses SYN043/SYN064 (?bs 0.7+)",
+    rule:
+      "SYN043 guards `globalThis['fetch']` (string-literal bracket) and SYN064 guards `globalThis[key]` " +
+      "(dynamic bracket) when the receiver is one of the six dangerous globals by name. " +
+      "SYN045/SYN049/SYN052/SYN054/SYN056 catch dot-member access via aliases (`g.fetch()`). " +
+      "When an alias of a dangerous receiver is accessed via bracket notation — " +
+      "`g = globalThis; g['fetch']()` or `g[key]()` — neither the receiver-name checks " +
+      "(SYN041–SYN043/SYN047/SYN063/SYN064) nor the alias dot-checks (SYN045–SYN064) fire. " +
+      "SYN065 closes this gap: it fires when an alias of `globalThis`, `window`, `self`, or `global` " +
+      "is accessed via bracket notation with either a string-literal key that names a dangerous member " +
+      "or a non-literal key (where the member name cannot be resolved at compile time). " +
+      "All five alias binding forms trigger SYN065: module-scope const/let/var, module-scope assignment, " +
+      "fn-body const/let/var, fn-body assignment, and default-parameter bindings.",
+    idiom:
+      "use dot-notation on the direct receiver so the relevant SYN041 check fires; " +
+      "if bracket notation on an alias is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { alias[key] }` so the access is auditable",
+    rewrite:
+      "// before — alias hides the receiver name from SYN041; bracket hides the member from SYN043\n" +
+      "?bs 0.7\n" +
+      "const g = globalThis;\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return g['fetch'](url)  // SYN065: alias + string-literal bracket\n" +
+      "}\n\n" +
+      "// after — dot notation on the direct receiver so SYN041 fires\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return globalThis.fetch(url)  // SYN041: visible to checker\n" +
+      "}",
+    example:
+      "// SYN065: module-scope const alias + string-literal bracket\n" +
+      "?bs 0.7\n" +
+      "const g = globalThis;\n" +
+      "fn run(url: string) -> any {\n" +
+      "  return g['fetch'](url)  // SYN065\n" +
+      "}\n\n" +
+      "// SYN065: fn-body const alias + dynamic bracket key\n" +
+      "?bs 0.7\n" +
+      "fn run(key: string) -> any {\n" +
+      "  const w = window;\n" +
+      "  return w[key]()  // SYN065\n" +
+      "}\n\n" +
+      "// SYN065: module-scope assignment alias + dynamic bracket\n" +
+      "?bs 0.7\n" +
+      "let g: any;\n" +
+      "g = globalThis;\n" +
+      "fn run(key: string) -> any {\n" +
+      "  return g[key]()  // SYN065\n" +
+      "}\n\n" +
+      "// fix: dot notation on the direct receiver, or wrap in unsafe\n" +
+      "// unsafe \"g[key] key is validated against a fixed allowlist\" { g[key] }",
+  },
   SYN064: {
     code: "SYN064",
     title: "dynamic (non-literal) computed bracket access on a dangerous receiver — member name unresolvable at compile time (?bs 0.7+)",

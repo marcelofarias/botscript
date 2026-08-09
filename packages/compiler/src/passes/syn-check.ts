@@ -691,6 +691,17 @@
  *           `argv`, …). SYN064 fires when the key is not a string literal or number literal.
  *           `unsafe {}` suppresses.
  *
+ *   SYN065  A bracket access (string-literal or dynamic key) on an alias of a dangerous global
+ *           receiver was detected in a fn body (?bs 0.7+). SYN043 guards `globalThis['fetch']`
+ *           and SYN064 guards `globalThis[key]` on direct receiver tokens. SYN045/SYN049/
+ *           SYN052/SYN054/SYN056 catch dot-member access via aliases (`g.fetch()`). When an
+ *           alias is used with bracket notation — `g = globalThis; g['fetch']()` or `g[key]()` —
+ *           none of those checks fire. SYN065 closes the gap: fires when any of the five alias
+ *           binding forms (module-scope const/let/var, module-scope assignment, fn-body
+ *           const/let/var, fn-body assignment, default-parameter) is accessed via bracket
+ *           notation with a dangerous string-literal key or any non-literal key.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -973,6 +984,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn062 = getErrorCode("SYN062")!;
   const syn063 = getErrorCode("SYN063")!;
   const syn064 = getErrorCode("SYN064")!;
+  const syn065 = getErrorCode("SYN065")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2020,6 +2032,85 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                 idiom: syn052.idiom,
                 rewrite: syn052.rewrite,
               });
+            }
+          }
+        }
+      }
+
+      // ── SYN065: bracket access via any alias of a dangerous global receiver ──
+      // SYN045/049/052/054/056 fire on dot-member access for their respective alias forms.
+      // None fire on bracket notation — `g['fetch']()` and `g[key]()` bypass all of them.
+      // SYN065 closes this gap across all five alias binding sites.
+      {
+        const origReceiver65 =
+          receiverAliases.get(tok.text) ??
+          receiverAssignAliases52.get(tok.text) ??
+          fnLocalReceiver49?.get(tok.text) ??
+          fnLocalReceiverAssign54?.get(tok.text) ??
+          fnDefaultParamReceiverAliases56?.get(tok.text);
+
+        if (origReceiver65 !== undefined && !isInsideRange(tok.start, unsafeRanges)) {
+          // Exclude: alias used as a property target itself: `obj.g['fetch']`
+          const prevIdx65 = prevSignificant(tokens, i - 1);
+          const prev65 = tokens[prevIdx65];
+          const isMemberTarget65 =
+            prev65 && ((prev65.kind === "punct" && prev65.text === ".") || prev65.kind === "questionDot");
+
+          if (!isMemberTarget65) {
+            const nextIdx65 = nextSignificant(tokens, i + 1);
+            const next65 = tokens[nextIdx65];
+
+            if (next65 && next65.kind === "open" && next65.text === "[") {
+              const keyIdx65 = nextSignificant(tokens, nextIdx65 + 1);
+              const keyTok65 = tokens[keyIdx65];
+
+              if (keyTok65 && keyTok65.kind === "string") {
+                // String-literal key: fire only when the member is dangerous
+                const memberName65 = keyTok65.text.slice(1, -1);
+                if (SYN041_DANGEROUS_MEMBERS.has(memberName65)) {
+                  const loc65 = locationOf(src, tok.start);
+                  warnings.push({
+                    code: "SYN065",
+                    severity: "warning",
+                    file: null,
+                    line: loc65.line,
+                    column: loc65.column,
+                    start: tok.start,
+                    end: keyTok65.end,
+                    message:
+                      `fn '${decl.name}' accesses ${tok.text}['${memberName65}'] — '${tok.text}' is an alias ` +
+                      `of the global receiver '${origReceiver65}'; the alias name bypasses SYN041's receiver ` +
+                      `watch-list and the string literal bypasses SYN043's string-bracket check on direct receivers; ` +
+                      `use ${origReceiver65}.${memberName65} directly so SYN041 fires, ` +
+                      `or wrap in unsafe "uses ${memberName65} via aliased ${origReceiver65} for <reason>" { ${tok.text}['${memberName65}'] }`,
+                    rule: syn065.rule,
+                    idiom: syn065.idiom,
+                    rewrite: syn065.rewrite,
+                  });
+                }
+              } else if (keyTok65 && keyTok65.kind !== "number") {
+                // Dynamic key: always fire — member name unresolvable at compile time
+                const loc65 = locationOf(src, tok.start);
+                warnings.push({
+                  code: "SYN065",
+                  severity: "warning",
+                  file: null,
+                  line: loc65.line,
+                  column: loc65.column,
+                  start: tok.start,
+                  end: keyTok65.end,
+                  message:
+                    `fn '${decl.name}' accesses ${tok.text}[<dynamic key>] — '${tok.text}' is an alias ` +
+                    `of the global receiver '${origReceiver65}'; the alias bypasses SYN041's receiver watch-list ` +
+                    `and the dynamic key bypasses SYN064's non-literal bracket check on direct receivers; ` +
+                    `any member could be a SYN-guarded global (fetch, eval, WebSocket, …); ` +
+                    `use dot-notation on the direct receiver so SYN041 fires, ` +
+                    `or wrap in unsafe "reason" { ${tok.text}[key] }`,
+                  rule: syn065.rule,
+                  idiom: syn065.idiom,
+                  rewrite: syn065.rewrite,
+                });
+              }
             }
           }
         }
