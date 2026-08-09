@@ -4595,6 +4595,53 @@ const E: Record<string, ErrorCodeEntry> = {
       "// fix: use dot notation (SYN006 fires) then wrap in unsafe if genuinely needed\n" +
       "// or: pass exit code as explicit fn parameter with a Result return",
   },
+  SYN064: {
+    code: "SYN064",
+    title: "dynamic (non-literal) computed bracket access on a dangerous receiver — member name unresolvable at compile time (?bs 0.7+)",
+    rule:
+      "SYN041–SYN043 guard `globalThis`/`window`/`self` bracket accesses when the key is a " +
+      "string literal (member name visible at compile time). SYN047 and SYN063 extend this to " +
+      "`global` and `process` string-literal bracket forms. When the bracket key is a variable, " +
+      "expression, or template literal, none of those checks can resolve the member name — any " +
+      "member could be one of the SYN-guarded globals (`fetch`, `eval`, `WebSocket`, …) or " +
+      "dangerous process members (`env`, `exit`, `argv`, …). SYN064 fires on `receiver[<non-literal>]` " +
+      "where `receiver` is `globalThis`, `window`, `self`, `global`, or `process`. `unsafe {}` suppresses.",
+    idiom:
+      "use static dot-notation access so the relevant SYN check fires (SYN041–SYN047/SYN005/SYN006/SYN022); " +
+      "if a dynamic key is genuinely required, wrap in " +
+      "`unsafe \"reason\" { receiver[key] }` so the access is auditable",
+    rewrite:
+      "// before — dynamic key; member name unresolvable; SYN064 fires\n" +
+      "?bs 0.7\n" +
+      "fn lookup(key: string) -> any {\n" +
+      "  return globalThis[key]  // SYN064: key unknown at compile time\n" +
+      "}\n\n" +
+      "// after — dot notation so the member-level SYN check fires\n" +
+      "?bs 0.7\n" +
+      "fn lookup(key: string) -> any {\n" +
+      "  // use an explicit switch/if on the known members, each with the dot form:\n" +
+      "  // or wrap the dynamic form in unsafe \"reason\" { globalThis[key] }\n" +
+      "  return unsafe \"key is a fixed enum validated above\" { globalThis[key] }\n" +
+      "}",
+    example:
+      "// SYN064: dynamic key on globalThis\n" +
+      "?bs 0.7\n" +
+      "fn run(key: string) -> any {\n" +
+      "  return globalThis[key]()  // SYN064\n" +
+      "}\n\n" +
+      "// SYN064: template literal key on process\n" +
+      "?bs 0.7\n" +
+      "fn bail(member: string) -> void {\n" +
+      "  process[`${member}`](1)  // SYN064\n" +
+      "}\n\n" +
+      "// SYN064: variable key on window\n" +
+      "?bs 0.7\n" +
+      "fn call(name: string) -> any {\n" +
+      "  return window[name]()  // SYN064\n" +
+      "}\n\n" +
+      "// fix: use dot notation or wrap in unsafe with a narrow reason\n" +
+      "// unsafe \"globalThis[key] is validated against a fixed allowlist\" { globalThis[key] }",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

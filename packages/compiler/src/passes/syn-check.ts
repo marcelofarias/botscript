@@ -681,6 +681,16 @@
  *           string names a member covered by SYN005/SYN006/SYN022, the warning fires.
  *           `unsafe {}` blocks are suppressed.
  *
+ *   SYN064  A dynamic (non-string-literal) computed bracket access on `globalThis`, `window`,
+ *           `self`, `global`, or `process` was detected in a fn body (?bs 0.7+).
+ *           SYN041–SYN043 guard dot-notation and string-literal bracket accesses on global
+ *           receivers; SYN047 and SYN063 extend this to `global` and `process`. When the
+ *           bracket key is a variable, template literal, or expression, none of those checks
+ *           can resolve the member name at compile time — any member could be a SYN-guarded
+ *           global (`fetch`, `eval`, `WebSocket`, …) or dangerous process member (`env`, `exit`,
+ *           `argv`, …). SYN064 fires when the key is not a string literal or number literal.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -962,6 +972,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn061 = getErrorCode("SYN061")!;
   const syn062 = getErrorCode("SYN062")!;
   const syn063 = getErrorCode("SYN063")!;
+  const syn064 = getErrorCode("SYN064")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2599,6 +2610,27 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                   rewrite: syn063.rewrite,
                 });
               }
+            } else if (strTok63 && strTok63.kind !== "number" && !isInsideRange(tok.start, unsafeRanges)) {
+              // ── SYN064: dynamic (non-literal) bracket key on process ──────────
+              const loc64p = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN064",
+                severity: "warning",
+                file: null,
+                line: loc64p.line,
+                column: loc64p.column,
+                start: tok.start,
+                end: strTok63.end,
+                message:
+                  `fn '${decl.name}' accesses process[<dynamic key>] — ` +
+                  `the bracket key is not a string literal, so the member name cannot be resolved at compile time; ` +
+                  `any member could be dangerous (env, exit, argv, …); ` +
+                  `use dot-notation so the relevant SYN005/SYN006/SYN022 check fires, ` +
+                  `or wrap in unsafe "reason" { process[key] }`,
+                rule: syn064.rule,
+                idiom: syn064.idiom,
+                rewrite: syn064.rewrite,
+              });
             }
             continue;
           }
@@ -5394,6 +5426,27 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                   rewrite: syn043.rewrite,
                 });
               }
+            } else if (strTok43 && strTok43.kind !== "number" && !isInsideRange(tok.start, unsafeRanges)) {
+              // ── SYN064: dynamic (non-literal) bracket key — member unresolvable ──
+              const loc64 = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN064",
+                severity: "warning",
+                file: null,
+                line: loc64.line,
+                column: loc64.column,
+                start: tok.start,
+                end: strTok43.end,
+                message:
+                  `fn '${decl.name}' accesses ${tok.text}[<dynamic key>] — ` +
+                  `the bracket key is not a string literal, so the member name cannot be resolved at compile time; ` +
+                  `any member could be a SYN-guarded global (fetch, eval, WebSocket, …); ` +
+                  `use dot-notation so the relevant SYN041 check fires, ` +
+                  `or wrap in unsafe "reason" { ${tok.text}[key] }`,
+                rule: syn064.rule,
+                idiom: syn064.idiom,
+                rewrite: syn064.rewrite,
+              });
             }
             continue;
           }
@@ -5516,6 +5569,27 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
                   rewrite: syn047.rewrite,
                 });
               }
+            } else if (strTok47 && strTok47.kind !== "number" && !isInsideRange(tok.start, unsafeRanges)) {
+              // ── SYN064: dynamic (non-literal) bracket key on global ──────────
+              const loc64g = locationOf(src, tok.start);
+              warnings.push({
+                code: "SYN064",
+                severity: "warning",
+                file: null,
+                line: loc64g.line,
+                column: loc64g.column,
+                start: tok.start,
+                end: strTok47.end,
+                message:
+                  `fn '${decl.name}' accesses global[<dynamic key>] — ` +
+                  `the bracket key is not a string literal, so the member name cannot be resolved at compile time; ` +
+                  `any member could be a SYN-guarded global (fetch, eval, WebSocket, …); ` +
+                  `use dot-notation so the relevant SYN041/SYN047 check fires, ` +
+                  `or wrap in unsafe "reason" { global[key] }`,
+                rule: syn064.rule,
+                idiom: syn064.idiom,
+                rewrite: syn064.rewrite,
+              });
             }
             break;
           }
