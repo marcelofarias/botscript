@@ -759,6 +759,18 @@
  *           terminal position and fires when the mutation result is immediately called.
  *           `unsafe {}` suppresses.
  *
+ *   SYN072  `Reflect.get(<global-receiver>, '<dangerous-member>')` in a fn body (?bs 0.7+).
+ *           `Reflect.get(globalThis, 'eval')` is semantically identical to `globalThis.eval` at
+ *           runtime: both return the global `eval` function. SYN041 guards the dot-access form
+ *           (`globalThis.eval`) and SYN043 guards the bracket-literal form (`globalThis['eval']`),
+ *           but `Reflect.get` encodes the key as a string argument — the dangerous global name
+ *           is hidden from both token-level checks. SYN042 guards other `Reflect.*` methods
+ *           (apply, construct, set, defineProperty, deleteProperty, setPrototypeOf) but does not
+ *           include `get`. SYN072 closes the gap: when the first argument is a global receiver
+ *           token (`globalThis`, `window`, `self`, `global`) and the second argument is a string
+ *           literal whose unquoted value is in `SYN041_DANGEROUS_MEMBERS`, the warning fires.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -919,6 +931,8 @@ const SYN042_REFLECT_METHODS = new Set([
   "deleteProperty",                 // property deletion — invisible structural mutation
   "setPrototypeOf",                 // prototype replacement — parallel to SYN040
 ]);
+// SYN072: global receiver tokens whose dangerous properties can be extracted via Reflect.get()
+const SYN072_REFLECT_GET_RECEIVERS = new Set(["globalThis", "window", "self", "global"]);
 // SYN041: dangerous globals reachable via globalThis / window / self receivers
 const SYN041_DANGEROUS_MEMBERS = new Set([
   "fetch", "WebSocket", "EventSource", "Worker", "SharedWorker",
@@ -1048,6 +1062,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn069 = getErrorCode("SYN069")!;
   const syn070 = getErrorCode("SYN070")!;
   const syn071 = getErrorCode("SYN071")!;
+  const syn072 = getErrorCode("SYN072")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -6210,6 +6225,57 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
           const methodIdxRef = nextSignificant(tokens, nextIdxRef + 1);
           const methodRef = tokens[methodIdxRef];
           if (!methodRef || methodRef.kind !== "ident") continue;
+
+          // ── SYN072: Reflect.get(<global-receiver>, '<dangerous-member>') ───────────
+          if (methodRef.text === "get") {
+            // Must be followed by `(`
+            const callIdx72 = nextSignificant(tokens, methodIdxRef + 1);
+            const callTok72 = tokens[callIdx72];
+            if (!callTok72 || !(callTok72.kind === "open" && callTok72.text === "(")) continue;
+            if (isInsideRange(tok.start, unsafeRanges)) continue;
+
+            // First argument: global receiver token
+            const arg1Idx72 = nextSignificant(tokens, callIdx72 + 1);
+            const arg1Tok72 = tokens[arg1Idx72];
+            if (!arg1Tok72 || arg1Tok72.kind !== "ident") continue;
+            if (!SYN072_REFLECT_GET_RECEIVERS.has(arg1Tok72.text)) continue;
+
+            // Comma separator
+            const comma72Idx = nextSignificant(tokens, arg1Idx72 + 1);
+            const comma72Tok = tokens[comma72Idx];
+            if (!comma72Tok || comma72Tok.kind !== "punct" || comma72Tok.text !== ",") continue;
+
+            // Second argument: string literal whose unquoted value is a dangerous member
+            const arg2Idx72 = nextSignificant(tokens, comma72Idx + 1);
+            const arg2Tok72 = tokens[arg2Idx72];
+            if (!arg2Tok72 || arg2Tok72.kind !== "string") continue;
+            const memberName72 = arg2Tok72.text.slice(1, -1);
+            if (!SYN041_DANGEROUS_MEMBERS.has(memberName72)) continue;
+
+            const loc72 = locationOf(src, tok.start);
+            warnings.push({
+              code: "SYN072",
+              severity: "warning",
+              file: null,
+              line: loc72.line,
+              column: loc72.column,
+              start: tok.start,
+              end: arg2Tok72.end,
+              message:
+                `fn '${decl.name}' reads ${arg1Tok72.text}['${memberName72}'] via Reflect.get() — ` +
+                `semantically identical to ${arg1Tok72.text}.${memberName72} at runtime; ` +
+                `SYN041 guards the dot-access form and SYN043 guards the bracket-literal form, ` +
+                `but Reflect.get() encodes the key as a string argument, hiding the dangerous ` +
+                `global name from both token-level checks; ` +
+                `use botscript stdlib equivalents with explicit uses {} declarations, ` +
+                `or wrap in unsafe "uses ${memberName72} via Reflect.get for <reason>" { Reflect.get(${arg1Tok72.text}, '${memberName72}') }`,
+              rule: syn072.rule,
+              idiom: syn072.idiom,
+              rewrite: syn072.rewrite,
+            });
+            break;
+          }
+
           if (!SYN042_REFLECT_METHODS.has(methodRef.text)) continue;
 
           // Must be followed by `(` or `?.(`

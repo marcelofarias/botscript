@@ -4968,6 +4968,60 @@ const E: Record<string, ErrorCodeEntry> = {
       "}",
   },
 
+  SYN072: {
+    code: "SYN072",
+    title: "Reflect.get(<global-receiver>, '<dangerous-member>') — Reflect property-read bypass of SYN041/SYN043 (?bs 0.7+)",
+    rule:
+      "`Reflect.get(globalThis, 'eval')` is semantically identical to `globalThis.eval` at runtime: " +
+      "both return the global `eval` function. SYN041 guards the dot-access form (`globalThis.eval`) " +
+      "and SYN043 guards the bracket-literal form (`globalThis['eval']`), but `Reflect.get` encodes " +
+      "the property key as a string argument — the dangerous global name is hidden from both " +
+      "token-level checks. SYN042 guards other `Reflect.*` methods (apply, construct, set, " +
+      "defineProperty, deleteProperty, setPrototypeOf) but does not include `get`. " +
+      "SYN072 closes the gap: when `Reflect.get` is called with a global-receiver token " +
+      "(`globalThis`, `window`, `self`, `global`) as the first argument and a string literal " +
+      "in SYN041_DANGEROUS_MEMBERS as the second argument, the warning fires.",
+    idiom:
+      "access the dangerous global directly — `globalThis.eval` or just `eval` — so the relevant " +
+      "SYN check (SYN041 or SYN004) fires and the capability use is visible; " +
+      "if `Reflect.get` is genuinely needed, wrap in " +
+      "`unsafe \"uses <member> via Reflect.get for <reason>\" { Reflect.get(globalThis, '<member>') }` " +
+      "to make the bypass auditable",
+    rewrite:
+      "// before — Reflect.get hides 'eval' from token-level SYN041/SYN043 detection\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Reflect.get(globalThis, 'eval')(code)  // SYN072\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN072: eval extracted via Reflect.get on globalThis\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return Reflect.get(globalThis, 'eval')(code)  // SYN072\n" +
+      "}\n\n" +
+      "// SYN072: fetch extracted via Reflect.get on window\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return Reflect.get(window, 'fetch')(url)  // SYN072\n" +
+      "}\n\n" +
+      "// SYN072: Function constructor accessed via Reflect.get\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  const F = Reflect.get(globalThis, 'Function')  // SYN072\n" +
+      "  return F(code)()\n" +
+      "}\n\n" +
+      "// fix: access directly so SYN041 or SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
+
   SYN071: {
     code: "SYN071",
     title: "inline array pop()/shift() retrieval of a SYN-guarded global — Array mutation-method bypass (?bs 0.7+)",
