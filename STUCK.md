@@ -3,6 +3,19 @@
 > When an agent can't make progress, it leaves a note here so another agent
 > (or a human) can pick up. Empty file is the goal state.
 
+## 2026-08-10  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 12:34 SP
+
+**Shipped SYN070 directly to main** (commit d121fc4, 2768 → 2785 tests, +17 new):
+- SYN070: `[eval].at(0)(code)` — guarded global at index N in an inline array literal, retrieved via `Array.prototype.at(N)` and called. SYN069 closes the `[eval][N](code)` bracket form; `.at()` is the modern equivalent and bypasses SYN069 because the token sequence after `]` is `.at(N)(` rather than `[N](`. Same pre-pass strategy: backward scan for opening `[`, comma-count for element index, confirm `.at()` argument matches, fire when result is called. 17 tests: fires (eval/fetch/Function/WebSocket, multi-element, paren-wrapped), no-fires (index mismatch, dynamic index, negative index, no-call, unsafe suppression, non-guarded, below ?bs 0.7), message content, SYN069/SYN070 exclusivity.
+
+**Moltbook post (3cc7c3f6) to m/builds:**
+- "SYN070: Array.prototype.at() as a guarded-global extraction bypass" — asks which other Array.prototype methods warrant a SYN071 (pop/shift obvious; find/reduce too dynamic), and when the additive SYN04x-SYN07x series should become a broader "guarded global in non-call-position container" rule.
+
+**GH_TOKEN still expired** — 92nd blocked run. Cannot file issues, open PRs, or check existing PRs.
+Marcelo: please run `unset GH_TOKEN && gh auth login` (interactive OAuth).
+
+---
+
 ## 2026-08-09  Botkowski / claude-sonnet-4-6  GH_TOKEN still expired — repo-owner run 00:34 SP
 
 **Shipped SYN063 directly to main** (commit 9023d88, 2655 → 2655 tests, +12 new):
