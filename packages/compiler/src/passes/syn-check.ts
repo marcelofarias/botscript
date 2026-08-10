@@ -740,6 +740,16 @@
  *           index matches the bracket-access literal, and fires when the result is called.
  *           `unsafe {}` suppresses.
  *
+ *   SYN070  A SYN-guarded global (`eval`, `fetch`, `Function`, etc.) appears at index N in an
+ *           inline array literal that is immediately accessed via `.at(N)` and called in a fn
+ *           body — `[eval].at(0)(code)`, `[x, fetch].at(1)(url)`. SYN069 closes the bracket-
+ *           notation gap (`[eval][0](...)`); `Array.prototype.at()` is the modern equivalent and
+ *           bypasses SYN069 because the token sequence after `]` is `.at(N)(` not `[N](`. All
+ *           per-ident checks still miss the global (not in call position inside `[...]`); all
+ *           alias-binding checks miss it (no binding). SYN070 closes the gap: a pre-pass finds
+ *           guarded globals in array-element position, confirms the index matches the `.at()`
+ *           argument, and fires when the result is called. `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1027,6 +1037,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn067 = getErrorCode("SYN067")!;
   const syn068 = getErrorCode("SYN068")!;
   const syn069 = getErrorCode("SYN069")!;
+  const syn070 = getErrorCode("SYN070")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1925,6 +1936,123 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn069.rule,
         idiom: syn069.idiom,
         rewrite: syn069.rewrite,
+      });
+    }
+
+    // ── SYN070: inline array-element .at(N) bypass — pre-pass ───────────────
+    // Pattern: [guarded_global].at(N)(...) — guarded global at index N in an
+    // inline array literal, retrieved via Array.prototype.at(N) and called.
+    // Mirrors SYN069 but for the .at() method form instead of [N] bracket form.
+    for (let i70 = bodyStart; i70 < decl.tokenEnd; i70++) {
+      const tok70 = tokens[i70];
+      if (!tok70 || tok70.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok70.text)) continue;
+
+      // Must be in array-element position: prev significant token is `[` or `,`
+      const prevIdx70 = prevSignificant(tokens, i70 - 1);
+      const prev70 = tokens[prevIdx70];
+      const inArray70 =
+        (prev70 && prev70.kind === "open" && prev70.text === "[") ||
+        (prev70 && prev70.kind === "punct" && prev70.text === ",");
+      if (!inArray70) continue;
+
+      // Backward scan to find the opening `[` of the enclosing array literal.
+      let openBracketIdx70 = -1;
+      {
+        let d70 = 0;
+        for (let j = i70 - 1; j >= bodyStart; j--) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "close") { d70++; continue; }
+          if (t.kind === "open") {
+            if (d70 === 0 && t.text === "[") { openBracketIdx70 = j; break; }
+            d70--;
+          }
+        }
+      }
+      if (openBracketIdx70 < 0) continue;
+
+      // Count commas at depth 0 between opening `[` and tok70 to determine index.
+      let elemIndex70 = 0;
+      {
+        let d70 = 0;
+        for (let j = openBracketIdx70 + 1; j < i70; j++) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "open") { d70++; continue; }
+          if (t.kind === "close") { d70--; continue; }
+          if (d70 === 0 && t.kind === "punct" && t.text === ",") elemIndex70++;
+        }
+      }
+
+      // Use matchedAt to find the closing `]` of the array literal.
+      const closeBracketIdx70 = tokens[openBracketIdx70]!.matchedAt;
+      if (closeBracketIdx70 === undefined) continue;
+
+      // After `]`, skip any closing parens (handles `([eval]).at(0)(code)`).
+      let afterCloseIdx70 = nextSignificant(tokens, closeBracketIdx70 + 1);
+      while (tokens[afterCloseIdx70]?.kind === "close" && tokens[afterCloseIdx70]?.text === ")") {
+        afterCloseIdx70 = nextSignificant(tokens, afterCloseIdx70 + 1);
+      }
+
+      // Expect `.at` — a dot token followed by ident `at`.
+      const dotTok70 = tokens[afterCloseIdx70];
+      if (!dotTok70 || dotTok70.kind !== "punct" || dotTok70.text !== ".") continue;
+      const atIdx70 = nextSignificant(tokens, afterCloseIdx70 + 1);
+      const atTok70 = tokens[atIdx70];
+      if (!atTok70 || atTok70.kind !== "ident" || atTok70.text !== "at") continue;
+
+      // Expect `(` opening the .at() argument list.
+      const openParenIdx70 = nextSignificant(tokens, atIdx70 + 1);
+      const openParen70 = tokens[openParenIdx70];
+      if (!openParen70 || !(openParen70.kind === "open" && openParen70.text === "(")) continue;
+
+      // Inside the parens, must be a numeric literal.
+      const numIdx70 = nextSignificant(tokens, openParenIdx70 + 1);
+      const numTok70 = tokens[numIdx70];
+      if (!numTok70 || numTok70.kind !== "number") continue;
+
+      // The numeric value must match the element index (negative indices not tracked).
+      const indexVal70 = parseInt(numTok70.text, 10);
+      if (isNaN(indexVal70) || indexVal70 < 0 || indexVal70 !== elemIndex70) continue;
+
+      // After the number, must be closing `)`.
+      const closeParenIdx70 = nextSignificant(tokens, numIdx70 + 1);
+      const closeParen70 = tokens[closeParenIdx70];
+      if (!closeParen70 || !(closeParen70.kind === "close" && closeParen70.text === ")")) continue;
+
+      // After `)`, must be `(` or `?.(` — a call on the returned value.
+      const callIdx70 = nextSignificant(tokens, closeParenIdx70 + 1);
+      const callTok70 = tokens[callIdx70];
+      const isCall70 =
+        callTok70 && (
+          (callTok70.kind === "open" && callTok70.text === "(") ||
+          callTok70.kind === "questionDot"
+        );
+      if (!isCall70) continue;
+
+      if (isInsideRange(tok70.start, unsafeRanges)) continue;
+
+      const loc70 = locationOf(src, tok70.start);
+      warnings.push({
+        code: "SYN070",
+        severity: "warning",
+        file: null,
+        line: loc70.line,
+        column: loc70.column,
+        start: tok70.start,
+        end: closeParen70!.end,
+        message:
+          `fn '${decl.name}' stores ${tok70.text} at index ${elemIndex70} of an inline array ` +
+          `then calls it via [${tok70.text}].at(${elemIndex70})(...) — ` +
+          `SYN004/SYN007/… only fire when ${tok70.text} is in call position (followed by '('); ` +
+          `SYN069 closes the [N] bracket form but .at(N) is the modern equivalent and bypasses it; ` +
+          `alias-binding checks (SYN044–SYN068) only track binding declarations, not inline array elements; ` +
+          `the runtime effect is identical to calling ${tok70.text}(...) directly; ` +
+          `refactor to call ${tok70.text} directly or wrap in unsafe "reason" { [${tok70.text}].at(${elemIndex70})(...) }`,
+        rule: syn070.rule,
+        idiom: syn070.idiom,
+        rewrite: syn070.rewrite,
       });
     }
 

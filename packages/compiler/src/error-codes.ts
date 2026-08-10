@@ -4920,6 +4920,53 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+  SYN070: {
+    code: "SYN070",
+    title: "inline array-element .at(N) retrieval of a SYN-guarded global — Array.prototype.at bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "at index N in an inline array literal, and that array is immediately accessed via " +
+      "`.at(N)` and called — `[eval].at(0)(code)`, `[x, fetch].at(1)(url)`. " +
+      "SYN069 closes the bracket-notation gap (`[eval][0](code)`), but `Array.prototype.at()` is " +
+      "the modern equivalent and bypasses SYN069: the token pattern after `]` is `.at(N)(` rather " +
+      "than `[N](`. All per-ident SYN checks still miss the guarded global inside the array literal " +
+      "(not in call position). All alias-binding checks miss it (no binding declaration). " +
+      "SYN070 closes the gap: when a guarded global appears at index N in an inline array literal " +
+      "that is immediately accessed via `.at(literal-N)` and called, the warning fires. " +
+      "Limitation: cross-statement forms (`const arr = [eval]; arr.at(0)(code)`) require taint " +
+      "analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if the `.at()` form is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { [eval].at(0)(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — .at() hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].at(0)(code)  // SYN070: eval at index 0, retrieved via .at(0)\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN070: eval at index 0, retrieved via .at(0)\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].at(0)(code)  // SYN070\n" +
+      "}\n\n" +
+      "// SYN070: fetch at index 1, accessed via .at(1)\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return [something, fetch].at(1)(url)  // SYN070\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
