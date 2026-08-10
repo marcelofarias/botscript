@@ -730,6 +730,16 @@
  *           SYN068 closes the fn-body gap: a per-fn pre-pass collects local array-destructuring
  *           aliases and fires when they are called within the same fn body. `unsafe {}` suppresses.
  *
+ *   SYN069  A SYN-guarded global (`eval`, `fetch`, `Function`, etc.) appears at index N in an
+ *           inline array literal that is immediately bracket-accessed with the numeric literal N
+ *           and called in a fn body — `[eval][0](code)`, `[x, fetch][1](url)`. Per-ident checks
+ *           (SYN004, SYN007, …) fire on guarded idents in call position; inside `[eval]` the
+ *           guarded ident is followed by `]`, not `(`. Alias-binding checks (SYN044–SYN068)
+ *           track binding declarations; this pattern has no binding. SYN069 closes the gap:
+ *           a per-fn pre-pass finds guarded globals in array-element position, confirms the
+ *           index matches the bracket-access literal, and fires when the result is called.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1016,6 +1026,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn066 = getErrorCode("SYN066")!;
   const syn067 = getErrorCode("SYN067")!;
   const syn068 = getErrorCode("SYN068")!;
+  const syn069 = getErrorCode("SYN069")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1807,6 +1818,113 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn066.rule,
         idiom: syn066.idiom,
         rewrite: syn066.rewrite,
+      });
+    }
+
+    // ── SYN069: inline array-element bracket-access bypass — pre-pass ────────
+    // Pattern: [guarded_global][N](...) — guarded global at index N in an inline
+    // array literal, immediately retrieved via [N] and called. Bypasses per-ident
+    // call-position SYN checks (eval is inside [...], not followed by `(`) and
+    // alias-binding checks (no binding declaration involved).
+    for (let i69 = bodyStart; i69 < decl.tokenEnd; i69++) {
+      const tok69 = tokens[i69];
+      if (!tok69 || tok69.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok69.text)) continue;
+
+      // Must be in array-element position: prev significant token is `[` or `,`
+      const prevIdx69 = prevSignificant(tokens, i69 - 1);
+      const prev69 = tokens[prevIdx69];
+      const inArray69 =
+        (prev69 && prev69.kind === "open" && prev69.text === "[") ||
+        (prev69 && prev69.kind === "punct" && prev69.text === ",");
+      if (!inArray69) continue;
+
+      // Backward scan to find the opening `[` of the enclosing array literal.
+      let openBracketIdx69 = -1;
+      {
+        let d69 = 0;
+        for (let j = i69 - 1; j >= bodyStart; j--) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "close") { d69++; continue; }
+          if (t.kind === "open") {
+            if (d69 === 0 && t.text === "[") { openBracketIdx69 = j; break; }
+            d69--;
+          }
+        }
+      }
+      if (openBracketIdx69 < 0) continue;
+
+      // Count commas at depth 0 between opening `[` and tok69 to determine index.
+      let elemIndex69 = 0;
+      {
+        let d69 = 0;
+        for (let j = openBracketIdx69 + 1; j < i69; j++) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "open") { d69++; continue; }
+          if (t.kind === "close") { d69--; continue; }
+          if (d69 === 0 && t.kind === "punct" && t.text === ",") elemIndex69++;
+        }
+      }
+
+      // Use matchedAt to find the closing `]` of the array literal.
+      const closeBracketIdx69 = tokens[openBracketIdx69]!.matchedAt;
+      if (closeBracketIdx69 === undefined) continue;
+
+      // After the closing `]`, skip any closing parens (handles `([eval])[0](code)`).
+      let afterCloseIdx69 = nextSignificant(tokens, closeBracketIdx69 + 1);
+      while (tokens[afterCloseIdx69]?.kind === "close" && tokens[afterCloseIdx69]?.text === ")") {
+        afterCloseIdx69 = nextSignificant(tokens, afterCloseIdx69 + 1);
+      }
+      const afterClose69 = tokens[afterCloseIdx69];
+      if (!afterClose69 || !(afterClose69.kind === "open" && afterClose69.text === "[")) continue;
+
+      // Inside the index bracket, must be a numeric literal.
+      const numIdx69 = nextSignificant(tokens, afterCloseIdx69 + 1);
+      const numTok69 = tokens[numIdx69];
+      if (!numTok69 || numTok69.kind !== "number") continue;
+
+      // The numeric value must match the element index.
+      const indexVal69 = parseInt(numTok69.text, 10);
+      if (isNaN(indexVal69) || indexVal69 !== elemIndex69) continue;
+
+      // After the number, must be closing `]`.
+      const closeIdx2_69 = nextSignificant(tokens, numIdx69 + 1);
+      const close2_69 = tokens[closeIdx2_69];
+      if (!close2_69 || !(close2_69.kind === "close" && close2_69.text === "]")) continue;
+
+      // After `]`, must be `(` or `?.(` — a call.
+      const callIdx69 = nextSignificant(tokens, closeIdx2_69 + 1);
+      const callTok69 = tokens[callIdx69];
+      const isCall69 =
+        callTok69 && (
+          (callTok69.kind === "open" && callTok69.text === "(") ||
+          callTok69.kind === "questionDot"
+        );
+      if (!isCall69) continue;
+
+      if (isInsideRange(tok69.start, unsafeRanges)) continue;
+
+      const loc69 = locationOf(src, tok69.start);
+      warnings.push({
+        code: "SYN069",
+        severity: "warning",
+        file: null,
+        line: loc69.line,
+        column: loc69.column,
+        start: tok69.start,
+        end: close2_69!.end,
+        message:
+          `fn '${decl.name}' stores ${tok69.text} at index ${elemIndex69} of an inline array ` +
+          `then calls it via [${tok69.text}][${elemIndex69}](...) — ` +
+          `SYN004/SYN007/… only fire when ${tok69.text} is in call position (followed by '('); ` +
+          `alias-binding checks (SYN044–SYN068) only track binding declarations, not inline array elements; ` +
+          `the runtime effect is identical to calling ${tok69.text}(...) directly; ` +
+          `refactor to call ${tok69.text} directly or wrap in unsafe "reason" { [${tok69.text}][${elemIndex69}](...) }`,
+        rule: syn069.rule,
+        idiom: syn069.idiom,
+        rewrite: syn069.rewrite,
       });
     }
 

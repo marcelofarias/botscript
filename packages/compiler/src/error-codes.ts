@@ -4865,6 +4865,61 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+  SYN069: {
+    code: "SYN069",
+    title: "inline array-element bracket-access of a SYN-guarded global — inline array alias bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "at index N in an inline array literal, and that array is immediately bracket-accessed with " +
+      "the numeric literal N, then called — `[eval][0](code)`, `[x, fetch][1](url)`. " +
+      "All per-ident SYN checks (SYN004, SYN007, SYN008, …) fire on the guarded ident token in " +
+      "call position (followed by `(` or `?.(`). Inside `[eval]`, `eval` is followed by `]` — " +
+      "no call-position match. All alias-binding checks (SYN044–SYN068) look for binding " +
+      "declarations (`const alias = eval`, destructuring patterns, default params, etc.); no " +
+      "binding declaration is involved here. This single-expression form combines array storage " +
+      "and indexed retrieval in one expression, giving the guarded global a call site that no " +
+      "existing check covers. SYN069 closes the gap: when a guarded global appears at index N " +
+      "in an inline array literal that is immediately bracket-accessed with numeric literal N " +
+      "and called, the warning fires. " +
+      "Limitation: cross-statement forms (`const arr = [eval]; arr[0](code)`) require taint " +
+      "analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if the array form is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { [eval][0](code) }` to make the bypass auditable",
+    rewrite:
+      "// before — inline array hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval][0](code)  // SYN069: eval at index 0, retrieved and called via [0]\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN069: eval at index 0, retrieved and called\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval][0](code)  // SYN069\n" +
+      "}\n\n" +
+      "// SYN069: fetch at index 1, other element at index 0\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return [something, fetch][1](url)  // SYN069\n" +
+      "}\n\n" +
+      "// SYN069: Function at index 0, called and invoked\n" +
+      "?bs 0.7\n" +
+      "fn execute(body: string) -> any {\n" +
+      "  return [Function][0](body)()  // SYN069\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
