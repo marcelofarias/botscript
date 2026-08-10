@@ -4808,6 +4808,63 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+  SYN068: {
+    code: "SYN068",
+    title: "fn-body-local array-destructuring alias of a SYN-guarded global called in the same fn body — local array-destructure alias bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "in an array literal on the RHS of a fn-body-local array-destructuring declaration " +
+      "(`const [e] = [eval]` inside a fn body), and the corresponding LHS binding is called " +
+      "within the same fn body. " +
+      "All per-ident SYN checks (SYN004, SYN007, SYN008, …) fire on the guarded ident token in " +
+      "call position. All alias-binding checks (SYN044–SYN067) look for the guarded ident in " +
+      "declaration-RHS position. SYN067 covers module-scope array-destructuring; fn-body local " +
+      "declarations are not tracked there. The LHS binding name is not on any watchlist, so alias " +
+      "checks do not fire either. " +
+      "SYN068 closes the gap: a per-fn pre-pass correlates each guarded global found in a fn-body " +
+      "RHS array literal with the LHS ident at the same positional index, and fires when that ident " +
+      "is later called in the same fn body.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if array destructuring is genuinely needed, wrap the call in " +
+      "`unsafe \"reason\" { e(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — fn-body array destructuring hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  const [e] = [eval]  // fn-body local\n" +
+      "  return e(code)  // SYN068: e is a fn-body array-destructuring alias of eval\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN068: eval aliased via fn-body array destructuring\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  const [e] = [eval]\n" +
+      "  return e(code)  // SYN068\n" +
+      "}\n\n" +
+      "// SYN068: fetch at index 1\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  const [a, r] = [something, fetch]\n" +
+      "  return r(url)  // SYN068\n" +
+      "}\n\n" +
+      "// SYN068: Function aliased via fn-body array destructuring\n" +
+      "?bs 0.7\n" +
+      "fn execute(body: string) -> any {\n" +
+      "  const [make] = [Function]\n" +
+      "  return make(body)()  // SYN068\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

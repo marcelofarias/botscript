@@ -723,6 +723,13 @@
  *           ident at the same positional index in the LHS array pattern, registering it as
  *           an alias. `unsafe {}` suppresses.
  *
+ *   SYN068  A SYN-guarded global (`eval`, `fetch`, `Function`, etc.) appears as an element
+ *           in an array literal on the RHS of a fn-body-local array-destructuring declaration
+ *           (`const [e] = [eval]` inside a fn body), and the corresponding LHS binding is
+ *           called within the same fn body. SYN067 covers only module-scope declarations.
+ *           SYN068 closes the fn-body gap: a per-fn pre-pass collects local array-destructuring
+ *           aliases and fires when they are called within the same fn body. `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1008,6 +1015,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn065 = getErrorCode("SYN065")!;
   const syn066 = getErrorCode("SYN066")!;
   const syn067 = getErrorCode("SYN067")!;
+  const syn068 = getErrorCode("SYN068")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -1033,6 +1041,11 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const receiverAliases = new Map<string, string>();       // alias name → original receiver global (SYN045)
   const renamedDestructAliases = new Map<string, { original: string; receiver: string }>(); // SYN046
   const arrayDestructAliases67 = new Map<string, string>(); // alias name → guarded global (SYN067)
+  // SYN068: per-fn-body local array-destructuring aliases (keyed by fn decl).
+  const localArrayDestructAliases68 = new Map<
+    (typeof program.fns)[0]["decl"],
+    Map<string, string>
+  >();
   for (let ai = 0; ai < tokens.length; ai++) {
     const atok = tokens[ai];
     if (!atok || atok.kind !== "ident") continue;
@@ -1594,6 +1607,102 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     }
   }
 
+  // SYN068: pre-pass — collect fn-body-local array-destructuring aliases of guarded globals per fn.
+  // Mirrors SYN067 but scoped to each fn body rather than module scope.
+  // Detects: `const [e] = [eval]` inside a fn body → calling e() in the same fn bypasses SYN004.
+  for (const { decl } of program.fns) {
+    if (decl.unsafeReason !== undefined) continue;
+    const bodyStart68 = decl.bodyTokenStart ?? decl.tokenStart;
+    const nestedRanges68 = program.fns
+      .filter(
+        (f) =>
+          f.decl !== decl &&
+          f.decl.body.start >= decl.body.start &&
+          f.decl.body.end <= decl.body.end,
+      )
+      .map((f) => ({ start: f.decl.body.start, end: f.decl.body.end }));
+    const localMap68 = new Map<string, string>();
+    for (let ai = bodyStart68; ai < decl.tokenEnd; ai++) {
+      const atok = tokens[ai];
+      if (!atok) continue;
+      if (nestedRanges68.some((r) => atok.start >= r.start && atok.start < r.end)) continue;
+      if (atok.kind !== "ident") continue;
+      if (atok.text !== "const" && atok.text !== "let" && atok.text !== "var") continue;
+      // Next must be `[` — array destructuring pattern.
+      const lhsBracketAi68 = nextSignificant(tokens, ai + 1);
+      const lhsBracketTok68 = tokens[lhsBracketAi68];
+      if (!lhsBracketTok68 || !(lhsBracketTok68.kind === "open" && lhsBracketTok68.text === "[")) continue;
+      const lhsCloseIdx68 = lhsBracketTok68.matchedAt;
+      if (lhsCloseIdx68 === undefined) continue;
+      // After `]`: must be `=`.
+      const eqAi68 = nextSignificant(tokens, lhsCloseIdx68 + 1);
+      const eqTok68 = tokens[eqAi68];
+      if (!eqTok68 || eqTok68.kind !== "eq") continue;
+      // RHS: must be `[` — array literal.
+      const rhsBracketAi68 = nextSignificant(tokens, eqAi68 + 1);
+      const rhsBracketTok68 = tokens[rhsBracketAi68];
+      if (!rhsBracketTok68 || !(rhsBracketTok68.kind === "open" && rhsBracketTok68.text === "[")) continue;
+      const rhsCloseIdx68 = rhsBracketTok68.matchedAt;
+      if (rhsCloseIdx68 === undefined) continue;
+
+      // Collect LHS idents by position (skip nested patterns and rest).
+      const lhsIdents68 = new Map<number, string>();
+      {
+        let pos = 0;
+        let j = lhsBracketAi68 + 1;
+        while (j < lhsCloseIdx68) {
+          const t = tokens[j];
+          if (!t) { j++; continue; }
+          if (t.kind === "punct" && t.text === ",") { pos++; j++; continue; }
+          if (t.kind === "operator" && t.text === "...") { j++; continue; }
+          if (t.kind === "open" && (t.text === "[" || t.text === "{")) {
+            if (t.matchedAt !== undefined) j = t.matchedAt + 1;
+            else j++;
+            continue;
+          }
+          if (t.kind === "ident" && !lhsIdents68.has(pos)) {
+            lhsIdents68.set(pos, t.text);
+          }
+          j++;
+        }
+      }
+      if (lhsIdents68.size === 0) continue;
+
+      // Scan RHS array for guarded globals; match to LHS ident at the same position.
+      {
+        let pos = 0;
+        let j = rhsBracketAi68 + 1;
+        while (j < rhsCloseIdx68) {
+          const t = tokens[j];
+          if (!t) { j++; continue; }
+          if (t.kind === "punct" && t.text === ",") { pos++; j++; continue; }
+          if (t.kind === "open") {
+            if (t.matchedAt !== undefined) j = t.matchedAt + 1;
+            else j++;
+            continue;
+          }
+          if (t.kind === "ident" && SYN037_GUARDED_GLOBALS.has(t.text)) {
+            const prevTok68 = tokens[prevSignificant(tokens, j - 1)];
+            const isPrecededByDot68 = prevTok68 && (
+              (prevTok68.kind === "punct" && prevTok68.text === ".") ||
+              prevTok68.kind === "questionDot"
+            );
+            if (!isPrecededByDot68) {
+              const lhsIdent68 = lhsIdents68.get(pos);
+              if (lhsIdent68 !== undefined) {
+                localMap68.set(lhsIdent68, t.text);
+              }
+            }
+          }
+          j++;
+        }
+      }
+    }
+    if (localMap68.size > 0) {
+      localArrayDestructAliases68.set(decl, localMap68);
+    }
+  }
+
   const nesting = computeNesting(program.fns.map((f) => f.decl));
 
   for (const { decl } of program.fns) {
@@ -1614,6 +1723,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
     const fnLocalReceiverAssign54 = localReceiverAssignAliases54.get(decl);
     const fnDefaultParamAliases55 = defaultParamGuardedAliases55.get(decl);
     const fnDefaultParamReceiverAliases56 = defaultParamReceiverAliases56.get(decl);
+    const fnLocalArrayDestruct68 = localArrayDestructAliases68.get(decl);
 
     // ── SYN066: inline object-literal property alias bypass — pre-pass ──────
     // Pattern: { <prop>: <guarded-global> }.<prop>(...) — guarded global stored
@@ -1849,6 +1959,57 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
               rule: syn067.rule,
               idiom: syn067.idiom,
               rewrite: syn067.rewrite,
+            });
+          }
+        }
+      }
+
+      // ── SYN068: fn-body-local array-destructuring alias of guarded global called in same fn body ──
+      // Mirrors SYN067 but fires on fn-body-local declarations instead of module-scope ones.
+      if (fnLocalArrayDestruct68?.has(tok.text) && !isInsideRange(tok.start, unsafeRanges)) {
+        const nextIdx68 = nextSignificant(tokens, i + 1);
+        const next68 = tokens[nextIdx68];
+        const isCall68 =
+          next68 && (
+            (next68.kind === "open" && next68.text === "(") ||
+            next68.kind === "questionDot" ||
+            next68.kind === "template"
+          );
+        if (isCall68) {
+          const prevIdx68 = prevSignificant(tokens, i - 1);
+          const prev68 = tokens[prevIdx68];
+          const isMemberAccess68 = prev68 && (
+            (prev68.kind === "punct" && prev68.text === ".") ||
+            prev68.kind === "questionDot"
+          );
+          const isDecl68 = prev68 && (
+            (prev68.kind === "keyword" && prev68.text === "fn") ||
+            (prev68.kind === "ident" && (
+              prev68.text === "function" || prev68.text === "const" ||
+              prev68.text === "let" || prev68.text === "var"
+            ))
+          );
+          if (!isMemberAccess68 && !isDecl68) {
+            const origGlobal68 = fnLocalArrayDestruct68!.get(tok.text)!;
+            const loc68 = locationOf(src, tok.start);
+            const callForm68 = next68!.kind === "template" ? `${tok.text}\`...\`` : `${tok.text}()`;
+            warnings.push({
+              code: "SYN068",
+              severity: "warning",
+              file: null,
+              line: loc68.line,
+              column: loc68.column,
+              start: tok.start,
+              end: tok.end,
+              message:
+                `fn '${decl.name}' calls '${callForm68}' — '${tok.text}' is a fn-body-local ` +
+                `array-destructuring alias of the guarded global '${origGlobal68}'; ` +
+                `calling through the alias bypasses SYN004–SYN067 name-token checks; ` +
+                `call '${origGlobal68}' directly so the relevant SYN check fires, ` +
+                `or wrap in unsafe "calls ${origGlobal68} via local array-destructure alias for <reason>" { ${tok.text}(...) }`,
+              rule: syn068.rule,
+              idiom: syn068.idiom,
+              rewrite: syn068.rewrite,
             });
           }
         }
