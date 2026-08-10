@@ -750,6 +750,15 @@
  *           guarded globals in array-element position, confirms the index matches the `.at()`
  *           argument, and fires when the result is called. `unsafe {}` suppresses.
  *
+ *   SYN071  A SYN-guarded global appears as the last element of an inline array literal that is
+ *           immediately mutated via `.pop()` and called — `[eval].pop()(code)`, or as the first
+ *           element mutated via `.shift()` — `[eval].shift()(code)`, `[x, fetch].shift()(url)`.
+ *           SYN069 closes `[N]` bracket access; SYN070 closes `.at(N)`; `.pop()` and `.shift()`
+ *           are zero-argument mutation methods that return the last/first element and bypass both.
+ *           SYN071 closes this gap: a pre-pass verifies the guarded global is in the appropriate
+ *           terminal position and fires when the mutation result is immediately called.
+ *           `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1038,6 +1047,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn068 = getErrorCode("SYN068")!;
   const syn069 = getErrorCode("SYN069")!;
   const syn070 = getErrorCode("SYN070")!;
+  const syn071 = getErrorCode("SYN071")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2053,6 +2063,129 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn070.rule,
         idiom: syn070.idiom,
         rewrite: syn070.rewrite,
+      });
+    }
+
+    // ── SYN071: inline array-element pop()/shift() bypass — pre-pass ─────────
+    // Patterns:
+    //   [eval].pop()(code)           — last element retrieved via .pop()
+    //   [eval].shift()(code)         — first element retrieved via .shift()
+    //   [x, eval].pop()(code)        — guarded global at last position
+    //   [fetch, x].shift()(url)      — guarded global at first position
+    // SYN069 closes [N] bracket access; SYN070 closes .at(N); .pop()/.shift()
+    // are zero-argument mutation methods that bypass both since there is no index literal.
+    // Strategy: scan for guarded globals in array-element position, then read the method
+    // token from the stream and validate the global is at the correct position for that method.
+    for (let i71 = bodyStart; i71 < decl.tokenEnd; i71++) {
+      const tok71 = tokens[i71];
+      if (!tok71 || tok71.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok71.text)) continue;
+
+      // Must be in array-element position: prev significant token is `[` or `,`
+      const prevIdx71 = prevSignificant(tokens, i71 - 1);
+      const prev71 = tokens[prevIdx71];
+      const isFirst71 = !!(prev71 && prev71.kind === "open" && prev71.text === "[");
+      const isAfterComma71 = !!(prev71 && prev71.kind === "punct" && prev71.text === ",");
+      if (!isFirst71 && !isAfterComma71) continue;
+
+      // Backward scan to find the opening `[` of the enclosing array literal.
+      let openBracketIdx71 = -1;
+      {
+        let d71 = 0;
+        for (let j = i71 - 1; j >= bodyStart; j--) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "close") { d71++; continue; }
+          if (t.kind === "open") {
+            if (d71 === 0 && t.text === "[") { openBracketIdx71 = j; break; }
+            d71--;
+          }
+        }
+      }
+      if (openBracketIdx71 < 0) continue;
+
+      // Use matchedAt to find the closing `]` of the array literal.
+      const closeBracketIdx71 = tokens[openBracketIdx71]!.matchedAt;
+      if (closeBracketIdx71 === undefined) continue;
+
+      // After `]`, skip any closing parens (handles `([eval]).pop()(code)`).
+      let afterCloseIdx71 = nextSignificant(tokens, closeBracketIdx71 + 1);
+      while (tokens[afterCloseIdx71]?.kind === "close" && tokens[afterCloseIdx71]?.text === ")") {
+        afterCloseIdx71 = nextSignificant(tokens, afterCloseIdx71 + 1);
+      }
+
+      // Expect `.pop` or `.shift` — dot token followed by one of the two idents.
+      const dotTok71 = tokens[afterCloseIdx71];
+      if (!dotTok71 || dotTok71.kind !== "punct" || dotTok71.text !== ".") continue;
+      const methodIdx71 = nextSignificant(tokens, afterCloseIdx71 + 1);
+      const methodTok71 = tokens[methodIdx71];
+      if (!methodTok71 || methodTok71.kind !== "ident") continue;
+      if (methodTok71.text !== "pop" && methodTok71.text !== "shift") continue;
+      const method71 = methodTok71.text as "pop" | "shift";
+
+      // Validate the guarded global is in the correct position for the actual method.
+      // .pop() returns the LAST element: no top-level commas may follow tok71 before `]`.
+      // .shift() returns the FIRST element: tok71 must be directly after `[` (isFirst71).
+      if (method71 === "pop") {
+        let isLast71 = true;
+        let d71 = 0;
+        for (let j = i71 + 1; j < closeBracketIdx71; j++) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "open") { d71++; continue; }
+          if (t.kind === "close") { d71--; continue; }
+          if (d71 === 0 && t.kind === "punct" && t.text === ",") { isLast71 = false; break; }
+        }
+        if (!isLast71) continue;
+      } else {
+        // .shift(): global must be the first element
+        if (!isFirst71) continue;
+      }
+
+      // Expect `()` — empty argument list (pop/shift take no arguments).
+      const openParen71Idx = nextSignificant(tokens, methodIdx71 + 1);
+      const openParen71 = tokens[openParen71Idx];
+      if (!openParen71 || !(openParen71.kind === "open" && openParen71.text === "(")) continue;
+      const closeParen71Idx = openParen71.matchedAt;
+      if (closeParen71Idx === undefined) continue;
+      // Verify the parens are empty (no arguments to pop/shift).
+      const insideIdx71 = nextSignificant(tokens, openParen71Idx + 1);
+      if (insideIdx71 !== closeParen71Idx) continue; // non-empty arg list
+
+      // After `()`, must be `(` or `?.(` — a call on the returned value.
+      const callIdx71 = nextSignificant(tokens, closeParen71Idx + 1);
+      const callTok71 = tokens[callIdx71];
+      const isCall71 =
+        callTok71 && (
+          (callTok71.kind === "open" && callTok71.text === "(") ||
+          callTok71.kind === "questionDot"
+        );
+      if (!isCall71) continue;
+
+      if (isInsideRange(tok71.start, unsafeRanges)) continue;
+
+      const loc71 = locationOf(src, tok71.start);
+      const posLabel71 = method71 === "pop" ? "last" : "first";
+      warnings.push({
+        code: "SYN071",
+        severity: "warning",
+        file: null,
+        line: loc71.line,
+        column: loc71.column,
+        start: tok71.start,
+        end: tokens[closeParen71Idx]!.end,
+        message:
+          `fn '${decl.name}' stores ${tok71.text} as the ${posLabel71} element of an inline array ` +
+          `then calls it via [${tok71.text}].${method71}()(...) — ` +
+          `SYN004/SYN007/… only fire when ${tok71.text} is in call position (followed by '('); ` +
+          `SYN069 closes [N] bracket form and SYN070 closes .at(N), but .${method71}() is a ` +
+          `zero-argument mutation method that returns the ${posLabel71} element and bypasses both; ` +
+          `alias-binding checks (SYN044–SYN068) only track binding declarations, not inline array elements; ` +
+          `the runtime effect is identical to calling ${tok71.text}(...) directly; ` +
+          `refactor to call ${tok71.text} directly or wrap in unsafe "reason" { [${tok71.text}].${method71}()(...) }`,
+        rule: syn071.rule,
+        idiom: syn071.idiom,
+        rewrite: syn071.rewrite,
       });
     }
 

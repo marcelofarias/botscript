@@ -4967,6 +4967,62 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+
+  SYN071: {
+    code: "SYN071",
+    title: "inline array pop()/shift() retrieval of a SYN-guarded global — Array mutation-method bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "in an inline array literal, and that array is immediately mutated via `.pop()` (last element) " +
+      "or `.shift()` (first element), and the result is called — `[eval].pop()(code)`, " +
+      "`[eval].shift()(code)`, `[x, fetch].pop()(url)`. " +
+      "SYN069 closes the bracket-notation gap (`[eval][N](code)`) and SYN070 closes the `.at(N)` gap; " +
+      "`.pop()` and `.shift()` are zero-argument mutation methods that return the last or first element " +
+      "respectively and bypass both: the token sequence after `]` is `.pop()(` or `.shift()(` rather " +
+      "than `[N](` or `.at(N)(`. All per-ident SYN checks still miss the guarded global inside the " +
+      "array literal (not in call position); all alias-binding checks miss it (no binding declaration). " +
+      "SYN071 closes the gap: when a guarded global appears as the last element (for `.pop()`) or " +
+      "first element (for `.shift()`) of an inline array literal that is immediately mutated and the " +
+      "result called, the warning fires. " +
+      "Limitation: cross-statement forms (`const arr = [eval]; arr.pop()(code)`) require taint " +
+      "analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if the `.pop()`/`.shift()` form is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { [eval].pop()(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — .pop() hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].pop()(code)  // SYN071: eval is last element, retrieved via .pop()\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN071: eval is last element, retrieved via .pop()\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].pop()(code)  // SYN071\n" +
+      "}\n\n" +
+      "// SYN071: fetch is first element, retrieved via .shift()\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return [fetch].shift()(url)  // SYN071\n" +
+      "}\n\n" +
+      "// SYN071: eval at last position in multi-element array, .pop() retrieves it\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [something, eval].pop()(code)  // SYN071\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {
