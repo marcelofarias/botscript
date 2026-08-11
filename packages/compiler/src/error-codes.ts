@@ -5077,6 +5077,63 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+
+  SYN073: {
+    code: "SYN073",
+    title: "inline array find()/findLast() retrieval of a SYN-guarded global — Array higher-order bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "in an inline array literal, and that array is immediately searched via `.find(callback)` or " +
+      "`.findLast(callback)`, and the result is called — `[eval].find(Boolean)(code)`, " +
+      "`[fetch].find(x => x)(url)`, `[eval].findLast(Boolean)(code)`. " +
+      "SYN069 closes direct bracket access (`[eval][N](code)`), SYN070 closes `.at(N)`, and " +
+      "SYN071 closes `.pop()`/`.shift()`; `.find()` and `.findLast()` are higher-order methods " +
+      "that accept a callback predicate and return the first/last element satisfying it — a truthiness " +
+      "predicate (`Boolean`, `x => x`, `x => !!x`) trivially returns the dangerous global stored in " +
+      "the array. All per-ident SYN checks miss the guarded global inside the array literal (not in " +
+      "call position); alias-binding checks miss it (no binding declaration). " +
+      "SYN073 closes the gap: when a guarded global appears as any element of an inline array literal " +
+      "that is immediately searched via `.find(...)` or `.findLast(...)` and the result called, the " +
+      "warning fires regardless of the callback form. " +
+      "Limitation: cross-statement forms (`const arr = [eval]; arr.find(Boolean)(code)`) require " +
+      "taint analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if the `.find()`/`.findLast()` form is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { [eval].find(Boolean)(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — .find() hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].find(Boolean)(code)  // SYN073: eval returned via truthiness predicate\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN073: eval retrieved via .find(Boolean)\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].find(Boolean)(code)  // SYN073\n" +
+      "}\n\n" +
+      "// SYN073: fetch retrieved via .find(x => x)\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return [fetch].find(x => x)(url)  // SYN073\n" +
+      "}\n\n" +
+      "// SYN073: eval retrieved via .findLast(Boolean)\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].findLast(Boolean)(code)  // SYN073\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

@@ -771,6 +771,16 @@
  *           literal whose unquoted value is in `SYN041_DANGEROUS_MEMBERS`, the warning fires.
  *           `unsafe {}` suppresses.
  *
+ *   SYN073  A SYN-guarded global appears as any element of an inline array literal that is
+ *           immediately searched via `.find(callback)` or `.findLast(callback)`, and the result
+ *           is called (?bs 0.7+). SYN069 closes direct bracket access (`[eval][N](code)`),
+ *           SYN070 closes `.at(N)`, and SYN071 closes `.pop()`/`.shift()`; `.find()` and
+ *           `.findLast()` are higher-order methods that accept a predicate callback and return
+ *           the first/last matching element — a truthiness predicate (`Boolean`, `x => x`)
+ *           trivially returns the dangerous global. Per-ident SYN checks miss it (not in call
+ *           position); alias-binding checks miss it (no binding declaration). SYN073 closes
+ *           the gap regardless of callback form. `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1063,6 +1073,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn070 = getErrorCode("SYN070")!;
   const syn071 = getErrorCode("SYN071")!;
   const syn072 = getErrorCode("SYN072")!;
+  const syn073 = getErrorCode("SYN073")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2201,6 +2212,112 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn071.rule,
         idiom: syn071.idiom,
         rewrite: syn071.rewrite,
+      });
+    }
+
+    // ── SYN073: inline array-element find()/findLast() bypass — pre-pass ──────
+    // Patterns:
+    //   [eval].find(Boolean)(code)       — Boolean predicate returns eval
+    //   [eval].find(x => x)(code)        — identity arrow returns eval
+    //   [fetch].findLast(Boolean)(url)   — findLast variant
+    //   [x, eval].find(Boolean)(code)    — guarded global at any position
+    // SYN069 closes [N] bracket access, SYN070 closes .at(N), SYN071 closes .pop()/.shift().
+    // .find()/.findLast() accept a callback predicate — a truthiness check trivially returns
+    // the dangerous global. Strategy: find guarded global in array-element position, verify
+    // .find/.findLast follows with a non-empty arg list, then require a call on the result.
+    for (let i73 = bodyStart; i73 < decl.tokenEnd; i73++) {
+      const tok73 = tokens[i73];
+      if (!tok73 || tok73.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok73.text)) continue;
+
+      // Must be in array-element position: prev significant token is `[` or `,`
+      const prevIdx73 = prevSignificant(tokens, i73 - 1);
+      const prev73 = tokens[prevIdx73];
+      const inArray73 =
+        !!(prev73 && prev73.kind === "open" && prev73.text === "[") ||
+        !!(prev73 && prev73.kind === "punct" && prev73.text === ",");
+      if (!inArray73) continue;
+
+      // Backward scan to find the opening `[` of the enclosing array literal.
+      let openBracketIdx73 = -1;
+      {
+        let d73 = 0;
+        for (let j = i73 - 1; j >= bodyStart; j--) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "close") { d73++; continue; }
+          if (t.kind === "open") {
+            if (d73 === 0 && t.text === "[") { openBracketIdx73 = j; break; }
+            d73--;
+          }
+        }
+      }
+      if (openBracketIdx73 < 0) continue;
+
+      // Use matchedAt to find the closing `]` of the array literal.
+      const closeBracketIdx73 = tokens[openBracketIdx73]!.matchedAt;
+      if (closeBracketIdx73 === undefined) continue;
+
+      // After `]`, skip any closing parens (handles `([eval]).find(...)`).
+      let afterCloseIdx73 = nextSignificant(tokens, closeBracketIdx73 + 1);
+      while (tokens[afterCloseIdx73]?.kind === "close" && tokens[afterCloseIdx73]?.text === ")") {
+        afterCloseIdx73 = nextSignificant(tokens, afterCloseIdx73 + 1);
+      }
+
+      // Expect `.find` or `.findLast` — dot token followed by the method ident.
+      const dotTok73 = tokens[afterCloseIdx73];
+      if (!dotTok73 || dotTok73.kind !== "punct" || dotTok73.text !== ".") continue;
+      const methodIdx73 = nextSignificant(tokens, afterCloseIdx73 + 1);
+      const methodTok73 = tokens[methodIdx73];
+      if (!methodTok73 || methodTok73.kind !== "ident") continue;
+      if (methodTok73.text !== "find" && methodTok73.text !== "findLast") continue;
+      const method73 = methodTok73.text as "find" | "findLast";
+
+      // Expect `(` — opening of find/findLast argument list.
+      const openFindIdx73 = nextSignificant(tokens, methodIdx73 + 1);
+      const openFindTok73 = tokens[openFindIdx73];
+      if (!openFindTok73 || !(openFindTok73.kind === "open" && openFindTok73.text === "(")) continue;
+      const closeFindIdx73 = openFindTok73.matchedAt;
+      if (closeFindIdx73 === undefined) continue;
+
+      // Require a non-empty argument list (the callback must be present).
+      const firstArgIdx73 = nextSignificant(tokens, openFindIdx73 + 1);
+      if (firstArgIdx73 === closeFindIdx73) continue; // empty parens — not a valid .find() call
+
+      // After the find/findLast call's `)`, must be `(` or `?.(` — a call on the returned value.
+      const callIdx73 = nextSignificant(tokens, closeFindIdx73 + 1);
+      const callTok73 = tokens[callIdx73];
+      const isCall73 =
+        callTok73 && (
+          (callTok73.kind === "open" && callTok73.text === "(") ||
+          callTok73.kind === "questionDot"
+        );
+      if (!isCall73) continue;
+
+      if (isInsideRange(tok73.start, unsafeRanges)) continue;
+
+      const loc73 = locationOf(src, tok73.start);
+      warnings.push({
+        code: "SYN073",
+        severity: "warning",
+        file: null,
+        line: loc73.line,
+        column: loc73.column,
+        start: tok73.start,
+        end: tokens[closeFindIdx73]!.end,
+        message:
+          `fn '${decl.name}' stores ${tok73.text} in an inline array ` +
+          `then calls it via [${tok73.text}].${method73}(callback)(...) — ` +
+          `SYN004/SYN007/… only fire when ${tok73.text} is in call position (followed by '('); ` +
+          `SYN069 closes [N] bracket form, SYN070 closes .at(N), and SYN071 closes .pop()/.shift(), ` +
+          `but .${method73}() is a higher-order method whose callback predicate can trivially return ` +
+          `the dangerous global (e.g. Boolean, x => x) — bypassing all positional checks; ` +
+          `alias-binding checks (SYN044–SYN068) only track binding declarations, not inline array elements; ` +
+          `the runtime effect is identical to calling ${tok73.text}(...) directly; ` +
+          `refactor to call ${tok73.text} directly or wrap in unsafe "reason" { [${tok73.text}].${method73}(callback)(...) }`,
+        rule: syn073.rule,
+        idiom: syn073.idiom,
+        rewrite: syn073.rewrite,
       });
     }
 
