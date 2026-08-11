@@ -5134,6 +5134,63 @@ const E: Record<string, ErrorCodeEntry> = {
       "  return eval(code)  // SYN004 — visible to checker\n" +
       "}",
   },
+  SYN074: {
+    code: "SYN074",
+    title: "inline array reduce()/reduceRight() retrieval of a SYN-guarded global — Array accumulator bypass (?bs 0.7+)",
+    rule:
+      "A SYN-guarded global (`eval`, `fetch`, `Function`, `WebSocket`, etc.) appears as an element " +
+      "in an inline array literal, and that array is immediately reduced via `.reduce(callback)` or " +
+      "`.reduceRight(callback)`, and the result is called — `[eval].reduce(fn => fn)(code)`, " +
+      "`[fetch].reduceRight(fn => fn)(url)`, `[x, eval].reduce((a, fn) => fn)(code)`. " +
+      "SYN069 closes direct bracket access (`[eval][N](code)`), SYN070 closes `.at(N)`, " +
+      "SYN071 closes `.pop()`/`.shift()`, and SYN073 closes `.find()`/`.findLast()`. " +
+      "`.reduce()` and `.reduceRight()` provide two additional extraction paths: a single-element " +
+      "array with no initial value returns the element without calling the callback at all; a " +
+      "callback of the form `(acc, fn) => fn` or `(_, fn) => fn` returns the last visited element. " +
+      "All per-ident SYN checks miss the guarded global inside the array literal (not in call " +
+      "position); alias-binding checks miss it (no binding declaration). " +
+      "SYN074 closes the gap: when a guarded global appears as any element of an inline array " +
+      "literal that is immediately reduced via `.reduce(...)` or `.reduceRight(...)` and the result " +
+      "called, the warning fires. " +
+      "Limitation: cross-statement forms (`const arr = [eval]; arr.reduce(fn)(code)`) require " +
+      "taint analysis and are not yet detected.",
+    idiom:
+      "call the guarded global directly — `eval(code)` or `fetch(url)` — so the relevant SYN check " +
+      "fires; if the `.reduce()`/`.reduceRight()` form is genuinely needed, wrap in " +
+      "`unsafe \"reason\" { [eval].reduce(fn => fn)(code) }` to make the bypass auditable",
+    rewrite:
+      "// before — .reduce() hides guarded global from call-site SYN checks\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].reduce(fn => fn)(code)  // SYN074: eval returned by accumulator pass-through\n" +
+      "}\n\n" +
+      "// after — call directly so SYN004 fires\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004: direct call, visible to checker\n" +
+      "}",
+    example:
+      "// SYN074: eval retrieved via .reduce() with no initial value\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [eval].reduce(fn => fn)(code)  // SYN074\n" +
+      "}\n\n" +
+      "// SYN074: fetch retrieved via .reduceRight()\n" +
+      "?bs 0.7\n" +
+      "fn load(url: string) -> any {\n" +
+      "  return [fetch].reduceRight(fn => fn)(url)  // SYN074\n" +
+      "}\n\n" +
+      "// SYN074: eval at any element position\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return [something, eval].reduce((a, fn) => fn)(code)  // SYN074\n" +
+      "}\n\n" +
+      "// fix: call the guarded global directly\n" +
+      "?bs 0.7\n" +
+      "fn run(code: string) -> any {\n" +
+      "  return eval(code)  // SYN004 — visible to checker\n" +
+      "}",
+  },
 };
 
 export function getErrorCode(code: string): ErrorCodeEntry | undefined {

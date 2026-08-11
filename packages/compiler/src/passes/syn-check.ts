@@ -781,6 +781,16 @@
  *           position); alias-binding checks miss it (no binding declaration). SYN073 closes
  *           the gap regardless of callback form. `unsafe {}` suppresses.
  *
+ *   SYN074  A SYN-guarded global appears as any element of an inline array literal that is
+ *           immediately reduced via `.reduce(callback)` or `.reduceRight(callback)`, and the
+ *           result is called (?bs 0.7+). SYN069–SYN073 close prior inline-array bypass forms.
+ *           `.reduce()` and `.reduceRight()` add two more extraction paths: (1) a single-element
+ *           array with no initial value returns the element without calling the callback at all;
+ *           (2) a callback such as `(acc, fn) => fn` or `(_, fn) => fn` returns the last visited
+ *           element. Per-ident SYN checks miss the guarded global in array-element position (not
+ *           in call position); alias-binding checks miss it (no binding declaration). SYN074 closes
+ *           the gap regardless of callback form. `unsafe {}` suppresses.
+ *
  * All checks share a single token scan per fn body. The outer loop runs once,
  * skipping nested fn bodies once. Per-token dispatch is a switch on tok.text
  * after a kind==="ident" guard.
@@ -1074,6 +1084,7 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
   const syn071 = getErrorCode("SYN071")!;
   const syn072 = getErrorCode("SYN072")!;
   const syn073 = getErrorCode("SYN073")!;
+  const syn074 = getErrorCode("SYN074")!;
 
   // Collect char-offset ranges where all SYN checks are suppressed:
   // 1. `unsafe "reason" { ... }` expression blocks — explicit acknowledgment.
@@ -2318,6 +2329,115 @@ export function passSynCheck(src: string, version: VersionInfo): SynCheckResult 
         rule: syn073.rule,
         idiom: syn073.idiom,
         rewrite: syn073.rewrite,
+      });
+    }
+
+    // ── SYN074: inline array-element reduce()/reduceRight() bypass — pre-pass ─
+    // Patterns:
+    //   [eval].reduce(fn => fn)(code)          — identity reducer, no initial value
+    //   [eval].reduceRight(fn => fn)(code)     — right-to-left variant
+    //   [x, eval].reduce((a, fn) => fn)(code)  — guarded global at any position
+    // SYN069–SYN073 close prior inline-array bypass forms.
+    // reduce/reduceRight provide two extraction paths:
+    //   (1) single-element array with no initial value returns the element without calling
+    //       the callback at all — [eval].reduce(anything) returns eval immediately.
+    //   (2) a callback that returns its second parameter extracts the last/first element.
+    // Strategy: find guarded global in array-element position, verify .reduce/.reduceRight
+    // follows with a non-empty arg list, then require a call on the result.
+    for (let i74 = bodyStart; i74 < decl.tokenEnd; i74++) {
+      const tok74 = tokens[i74];
+      if (!tok74 || tok74.kind !== "ident") continue;
+      if (!SYN037_GUARDED_GLOBALS.has(tok74.text)) continue;
+
+      // Must be in array-element position: prev significant token is `[` or `,`
+      const prevIdx74 = prevSignificant(tokens, i74 - 1);
+      const prev74 = tokens[prevIdx74];
+      const inArray74 =
+        !!(prev74 && prev74.kind === "open" && prev74.text === "[") ||
+        !!(prev74 && prev74.kind === "punct" && prev74.text === ",");
+      if (!inArray74) continue;
+
+      // Backward scan to find the opening `[` of the enclosing array literal.
+      let openBracketIdx74 = -1;
+      {
+        let d74 = 0;
+        for (let j = i74 - 1; j >= bodyStart; j--) {
+          const t = tokens[j];
+          if (!t) continue;
+          if (t.kind === "close") { d74++; continue; }
+          if (t.kind === "open") {
+            if (d74 === 0 && t.text === "[") { openBracketIdx74 = j; break; }
+            d74--;
+          }
+        }
+      }
+      if (openBracketIdx74 < 0) continue;
+
+      // Use matchedAt to find the closing `]` of the array literal.
+      const closeBracketIdx74 = tokens[openBracketIdx74]!.matchedAt;
+      if (closeBracketIdx74 === undefined) continue;
+
+      // After `]`, skip any closing parens (handles `([eval]).reduce(...)`).
+      let afterCloseIdx74 = nextSignificant(tokens, closeBracketIdx74 + 1);
+      while (tokens[afterCloseIdx74]?.kind === "close" && tokens[afterCloseIdx74]?.text === ")") {
+        afterCloseIdx74 = nextSignificant(tokens, afterCloseIdx74 + 1);
+      }
+
+      // Expect `.reduce` or `.reduceRight` — dot token followed by the method ident.
+      const dotTok74 = tokens[afterCloseIdx74];
+      if (!dotTok74 || dotTok74.kind !== "punct" || dotTok74.text !== ".") continue;
+      const methodIdx74 = nextSignificant(tokens, afterCloseIdx74 + 1);
+      const methodTok74 = tokens[methodIdx74];
+      if (!methodTok74 || methodTok74.kind !== "ident") continue;
+      if (methodTok74.text !== "reduce" && methodTok74.text !== "reduceRight") continue;
+      const method74 = methodTok74.text as "reduce" | "reduceRight";
+
+      // Expect `(` — opening of reduce/reduceRight argument list.
+      const openReduceIdx74 = nextSignificant(tokens, methodIdx74 + 1);
+      const openReduceTok74 = tokens[openReduceIdx74];
+      if (!openReduceTok74 || !(openReduceTok74.kind === "open" && openReduceTok74.text === "(")) continue;
+      const closeReduceIdx74 = openReduceTok74.matchedAt;
+      if (closeReduceIdx74 === undefined) continue;
+
+      // Require a non-empty argument list (the callback must be present).
+      const firstArgIdx74 = nextSignificant(tokens, openReduceIdx74 + 1);
+      if (firstArgIdx74 === closeReduceIdx74) continue; // empty parens — not a valid .reduce() call
+
+      // After the reduce/reduceRight call's `)`, must be `(` or `?.(` — a call on the returned value.
+      const callIdx74 = nextSignificant(tokens, closeReduceIdx74 + 1);
+      const callTok74 = tokens[callIdx74];
+      const isCall74 =
+        callTok74 && (
+          (callTok74.kind === "open" && callTok74.text === "(") ||
+          callTok74.kind === "questionDot"
+        );
+      if (!isCall74) continue;
+
+      if (isInsideRange(tok74.start, unsafeRanges)) continue;
+
+      const loc74 = locationOf(src, tok74.start);
+      warnings.push({
+        code: "SYN074",
+        severity: "warning",
+        file: null,
+        line: loc74.line,
+        column: loc74.column,
+        start: tok74.start,
+        end: tokens[closeReduceIdx74]!.end,
+        message:
+          `fn '${decl.name}' stores ${tok74.text} in an inline array ` +
+          `then calls it via [${tok74.text}].${method74}(callback)(...) — ` +
+          `SYN004/SYN007/… only fire when ${tok74.text} is in call position (followed by '('); ` +
+          `SYN069–SYN073 close prior inline-array bypass forms, ` +
+          `but .${method74}() is an accumulator method that can return the dangerous global: ` +
+          `a single-element array with no initial value returns it without calling the callback, ` +
+          `and a pass-through callback ((acc, fn) => fn) extracts it regardless of position; ` +
+          `alias-binding checks (SYN044–SYN068) only track binding declarations, not inline array elements; ` +
+          `the runtime effect is identical to calling ${tok74.text}(...) directly; ` +
+          `refactor to call ${tok74.text} directly or wrap in unsafe "reason" { [${tok74.text}].${method74}(callback)(...) }`,
+        rule: syn074.rule,
+        idiom: syn074.idiom,
+        rewrite: syn074.rewrite,
       });
     }
 
