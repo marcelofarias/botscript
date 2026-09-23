@@ -35,6 +35,22 @@ function id(x){return x} id(setTimeout)  // pass-through fn
 ```
 Every one is "just one more SYN code" — forever.
 
+### Verified escapes (runnable receipt, `main` @ f18d3df, SYN074 present)
+
+Calling `passSynCheck(src, {resolved:"0.7"})` on these — each a guarded global (`window`) reaching `.fetch` — the family emits **zero diagnostics**:
+
+| Form | botscript | result |
+|---|---|---|
+| wrap+index | `let g = [window][0]; g.fetch(u)` | **NO WARNING** |
+| comma operator | `let w = (0, window); w.fetch(u)` | **NO WARNING** |
+| ternary | `let w = (true ? window : window); w.fetch(u)` | **NO WARNING** |
+| nested wrap+index | `let g = [[window]][0][0]; g.fetch(u)` | **NO WARNING** |
+| object-value alias | `let o = {w: window}; o.w.fetch(u)` | **NO WARNING** |
+
+Controls that *do* fire, confirming detection is otherwise live: `eval('1+1')`→SYN004, `window.fetch(u)`→SYN041, `(window).fetch(u)`→SYN041.
+
+Note two of the four escapes I originally guessed above are in fact **already caught** — `globalThis['fet'+'ch'](u)`→SYN064, `id(setTimeout)(…)`→SYN010. That doesn't weaken the argument, it *is* the argument: each "obvious" escape has already spawned its own code (SYN010, SYN064), and yet the five one-liners above still walk straight through. Every plug spawns a code; the holes never close. A binding-resolution pass closes all five (and their infinite cousins) with one rule.
+
 ## Cost this is already imposing
 
 - **8 open PRs** (#150, #162, #176, #177, #181, #182, #184) grinding **6–31 rounds** of Copilot ping-pong each, none merged.
